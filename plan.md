@@ -279,20 +279,42 @@ The response follows the GraphQL specification: `{ "data": …, "errors": [ … 
 - Each error has `message`, `path`, and `extensions.code`.
 - The codes are: `INVALID_VARIABLES`, `NOT_FOUND`, `AMBIGUOUS_ID`, `ACTOR_NOT_FOUND`, `DUPLICATE_ID`, `COLUMN_NOT_EMPTY`, `DEPENDENCY_CYCLE`, `TAG_RENAME_CYCLE`, `NOTHING_TO_UNDO`, `UNDO_CONFLICT`, `INVALID_FILTER`, `INVALID_DATE`, `INVALID_TAG_NAME`, `INVALID_SLUG`, `INVALID_ORDINAL`, `BOARD_BUSY`.
 - The message must tell the model how to correct the call. For example, an `AMBIGUOUS_ID` error gives the matching ids.
-- A syntax or validation error gives the GraphQL "did you mean" suggestion. This is after the field-name rewrite in §4.5.
+- A syntax or validation error gives the GraphQL "did you mean" suggestion. This is after the name rewrite in §4.5.
 - If a mutation field fails, no patch of that field is written. The patches of the other fields of the call are written (§5.4). The tool validates all patches of a field before it keeps them.
 - The tool does not throw for a GraphQL error. It returns the response JSON. The tool throws only for a fault that the caller cannot correct, for example an I/O failure.
 
-### 4.5 Forgiving field names
+### 4.5 Forgiving names
 
-The agent can write a mutation name in the verbNoun order (`addTask`) or in the nounVerb order (`taskAdd`). Both orders work.
+The agent can make many small mistakes in names. The tool corrects each name that it can match with no doubt. A rewrite step changes the parsed document before validation.
 
-- **The schema has one name for each field.** The canonical form is verbNoun (`addTask`, `moveTask`, `initBoard`). Thus, the schema that introspection shows stays small.
-- **A rewrite step runs before validation.** It looks at each top-level field of a mutation. If the schema does not have that name, the step tries the other word order. If it finds a match, it changes the field to the canonical name.
-- **The response key does not change.** The rewrite adds a GraphQL alias. For example, `taskAdd(...)` becomes `taskAdd: addTask(...)`. Thus, the caller finds the result under the name that it wrote.
-- **The same step accepts verb synonyms.** `create`/`new`/`insert` → `add`, `remove`/`rm`/`del` → `delete`, `edit`/`modify`/`set`/`patch` → `update`, `mv` → `move`, `done`/`finish`/`close` → `complete`, `label` → `tag`, `unlabel` → `untag`, `restore` → `unarchive`. Plural nouns change to the singular. These are the Rust verb aliases. **`create` never maps to `init`.**
-- **A caller alias is kept.** If the caller already wrote an alias (`x: taskAdd(...)`), the step keeps `x`.
-- If no rewrite matches, normal validation runs and gives the "did you mean" error.
+**Positions.** The rewrite applies to each name in the document:
+
+| Position | Example of agent input | Rewritten to |
+|---|---|---|
+| Top-level mutation | `taskAdd`, `createTask`, `create_task` | `addTask` |
+| Field in a selection | `{ task { Title, desc, labels } }` | `title`, `description`, `tags` |
+| Argument and `input` field | `moveTask(input: { task_id: …, status: "doing" })` | `id`, `column` |
+| Enum value | `DONE`, `Done` | the canonical value |
+| Root query field | `{ tasks { … } }` | `{ board { tasks { … } } }` |
+
+**Match steps.** For each name that the schema does not have, the step tries these in order. It stops at the first step that gives exactly one match:
+
+1. The exact name.
+2. The same name with the case and style made the same: `camelCase`, `snake_case`, `kebab-case`, and any letter case.
+3. The singular or plural form.
+4. For a top-level mutation: the other word order (verbNoun or nounVerb) and the verb synonyms. The synonyms are `create`/`new`/`insert` → `add`, `remove`/`rm`/`del` → `delete`, `edit`/`modify`/`set`/`patch` → `update`, `mv` → `move`, `done`/`finish`/`close` → `complete`, `label` → `tag`, `unlabel` → `untag`, and `restore` → `unarchive`. These are the Rust verb aliases.
+5. The alias table of the field, for example `desc` → `description`, `label` → `tag`, `status` → `column`, `assignee` → `assignees`, `task_id` → `id`.
+6. A close spelling: one changed, added, or removed letter. This step applies only to names of 4 or more letters.
+
+**Rules:**
+
+- **No guess when there is a tie.** If one step gives two or more matches, the tool does not choose. It returns an error that lists the matching names.
+- **Some mappings are never made.** The tool keeps a list of mappings that it must not make. For example, `create` never maps to `init`.
+- **The schema has one name for each field.** The canonical names use camelCase, and mutations use the verbNoun form (`addTask`, `moveTask`, `initBoard`). The aliases are defined in Swift next to each field, so the Swift types stay the one source of truth (§1). Introspection shows only the canonical names, so the schema stays small.
+- **The response key does not change.** For a field in a selection, the rewrite adds a GraphQL alias. For example, `taskAdd(...)` becomes `taskAdd: addTask(...)`, and `desc` becomes `desc: description`. Thus, the caller finds the result under the name that it wrote. If the caller already wrote an alias (`x: taskAdd(...)`), the step keeps `x`.
+- **Root query fields.** If the root has no field with the name, but `Board` has one, the step moves the field into `board { … }`. After execution, the tool moves the result back, so the response has `data.tasks`, not `data.board.tasks`.
+- **The tool tells the agent what it changed.** The response has `extensions.rewrites`, a list of `{ from, to, path }`. Thus, the agent learns the canonical names.
+- If no step matches, normal validation runs and gives the "did you mean" error (§4.4).
 - The rewrite does not change the log. The log holds only property patches (§5.1).
 
 ## 5. Storage: the event log
@@ -391,7 +413,7 @@ The data is small, so each call can do a full replay (§5.4 gives the scope). If
 
 ### 5.4 Call path
 
-1. Parse the GraphQL document. Run the field-name rewrite (§4.5). Validate the document against the public schema.
+1. Parse the GraphQL document. Run the name rewrite (§4.5). Validate the document against the public schema.
 2. Replay the current board. Replay a related board only when the call reaches it: by an edge (for example `dependsOn`), a URI, or a `board` field. Each board is replayed at most one time for each call.
 3. For a query: run the resolvers and return the response.
 4. For each mutation field, in order:
@@ -634,7 +656,7 @@ FoundationModelsKanban/
                      TagNode.swift, CommentNode.swift, BoardNode.swift, Ordinal.swift
       Events/        Event.swift, EventLog.swift (read, append, lock), Replay.swift
       GraphQL/       Schema.swift (public, Graphiti), PatchSchema.swift (internal `patch`), QueryResolvers.swift,
-                     MutationResolvers.swift, FieldNameRewrite.swift (§4.5), Errors.swift, Scalars.swift
+                     MutationResolvers.swift, NameRewrite.swift (§4.5), Errors.swift, Scalars.swift
       Derived/       Readiness.swift, VirtualTags.swift, Progress.swift, Timeline.swift
       Filter/        FilterParser.swift, FilterEvaluator.swift
       Search/        TaskSearchItem.swift (SearchableMetadata), TaskSearch.swift
@@ -699,7 +721,7 @@ Each step must compile and pass its tests before the next step starts.
 9. **Tags.** Slug, name validation, auto color, the `#marker` parser, the read-time union of edges and markers, the `renamedTo` redirect, and marker removal in `untagTask`.
 10. **Filter DSL.** Parser and evaluator. Use it in `tasks`, `nextTask`, and the `tasks` fields of `Column`, `Actor`, and `Tag`.
 11. **Public mutations.** All mutations in §4.2 except `undo` and `redo`. The forgiving refs, the sugar mutations, auto-init, and the session actor.
-12. **Errors and forgiving names.** The error codes and corrective messages in §4.4. The field-name rewrite in §4.5.
+12. **Errors and forgiving names.** The error codes and corrective messages in §4.4. The name rewrite in §4.5, at all positions, with the alias tables, the list of mappings that are never made, and `extensions.rewrites`.
 13. **Search.** `searchTasks` with `MetadataSearcher` (§6.4). Test it first with no embedder, then with an injected fake embedder.
 14. **Undo and redo.** The inverse table, the undone state derived from the log, conflict detection, `force`, and the `history` query (§6.5), in one board.
 15. **Cross-repo.** `BoardLocator` (scan, search roots, index), board refs, `Query.board(id:)` and `boards`, the `board` field on mutations, multi-board locks, the replay scope (§5.4), enabling a related repo, and `undo` of a transaction that spans boards (§6.6). Unknown targets count as not done.
@@ -753,6 +775,7 @@ Each step must compile and pass its tests before the next step starts.
   - A log with an unknown property still replays. A new property on an old node gives its default value.
   - `variables` as an object, as a JSON string, as JSON in a code fence, as `null`, and as no key all give the same result. A string that is not a JSON object gives `INVALID_VARIABLES`.
   - Each error code has a test, and each message gives a correction.
+  - Forgiving names (§4.5): a wrong case, `snake_case`, a plural, an alias, and one wrong letter each give the canonical name, at each position. A tie gives an error that lists the matches. `{ tasks }` gives the same result as `{ board { tasks } }`, under `data.tasks`. Each rewrite is in `extensions.rewrites`.
   - `taskAdd`, `addTask`, and `createTask` give the same event. The response key is the name that the caller wrote. `createTask` does not map to `initBoard`.
   - A deep query (task → dependsOn → comments → author) returns the correct nested graph.
 - **Tool test.** Call the `Tool` with `GeneratedContent` arguments, and compare the JSON output.
@@ -770,12 +793,13 @@ The owner made each decision below.
 6. **Search. — DECIDED.** Use FoundationModelsMetadataRegistry (`MetadataSearcher`), which uses FoundationModelsRanker for BM25 + trigram + optional embedding cosine with RRF fusion (§6.4). The kanban package does not write its own ranker.
 7. **Tags in the description text. — DECIDED.** A task gets its tags from two sources: the `tags` edges and the `#markers` in the current description. The projection calculates the union at read time (§6.1). `tagTask` changes only edges. `untagTask` removes the edge, and also the marker if it is in the text. The Rust rule (the body text is the only source) is not used, because the last write to the description wins, and a merge can then lose a tag.
 8. **Shape of `variables`. — DECIDED.** Accept both forms: a plain object (code mode) and a JSON object in a string (the on-device model). Also accept a code fence around the JSON, `null`, and no value. A custom `ConvertibleFromGeneratedContent` init does the decode. The declared schema of `variables` is `DynamicGenerationSchema(anyOf:)` of a string and an object with no properties. Multitool passes a script object, and an empty object from the model means "no variables" (§7.1).
-9. **GraphQL engine. — DECIDED.** Use `GraphQLSwift/GraphQL` for parse, validate, and execute. Use `GraphQLSwift/Graphiti` to build the schema from Swift types, so that the Swift types are the one source of truth. The SDL is generated, not written. The forgiving field-name rewrite (§4.5) changes the parsed document before validation. The internal `patch` mutation is in a separate schema, so that the model cannot write a patch directly.
+9. **GraphQL engine. — DECIDED.** Use `GraphQLSwift/GraphQL` for parse, validate, and execute. Use `GraphQLSwift/Graphiti` to build the schema from Swift types, so that the Swift types are the one source of truth. The SDL is generated, not written. The forgiving name rewrite (§4.5) changes the parsed document before validation. The internal `patch` mutation is in a separate schema, so that the model cannot write a patch directly.
 10. **Schema in the tool description. — DECIDED.** The description does not hold the schema. It holds the purpose, the root fields, and one tested example query. The agent learns the schema with standard introspection (§7.1). Thus, the schema has one view, and it cannot go out of date.
 11. **Import of old boards. — DECIDED.** No import. The tool does not read the Rust `.kanban/` data. Replay reads only `*.jsonl` files, so old Rust files (`.yaml`, `.md`) in the same directory are ignored.
 12. **Undo. — DECIDED.** Undo and redo are in the first version (§6.5). A transaction is one tool call. `undo` appends inverse patches and never changes the log. A conflict with a later change is refused unless `force: true`. The undone state is derived from the log, so it survives git merges. A `history` query lists transactions.
 13. **Cross-repo location. — DECIDED.** Scan the parent directory of the current repo, plus search roots from the config, for git repos. No key-to-path map. The scan finds enabled boards (with `.kanban/board.jsonl`) and related repos that are not enabled yet (key from `origin`). The tool can read and change related boards in the same format, and its first mutation in a related repo that is not enabled makes the board there (§6.6).
 14. **Mutation name order. — DECIDED.** Each mutation has the noun in its name. A generic mutation with the type as a parameter is not used, because GraphQL has no generics. The tool accepts both orders, verbNoun (`addTask`) and nounVerb (`taskAdd`), and also the verb synonyms. The SDL uses verbNoun as the one canonical form. A rewrite step before validation does the mapping (§4.5).
+16. **Forgiving names. — DECIDED.** The rewrite of §4.5 applies to every name: mutations, selection fields, arguments and `input` fields, enum values, and root query fields. It matches by style and case, singular and plural, an alias table, and one wrong letter. It never guesses on a tie, and it reports each change in `extensions.rewrites`.
 15. **Tag rename. — DECIDED.** Tags use the slug as identifier. A rename makes a redirect (§6.2): the old tag gets `renamedTo`, and the projection follows it for edges and for `#markers`. No task patches are necessary, and concurrent branches stay correct. A rename that changes only `name`, and a rename that changes the edge on each task, are not used.
 
 ## 13. References
