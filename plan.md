@@ -27,7 +27,7 @@ It changes four items:
 
 1. **GraphQL in, GraphQL out.** The tool takes `{query, variables, operationName}` and returns `{data, errors}`, the same as a GraphQL server. There is no transport layer.
 2. **Swift types first.** Swift types are the one source of truth for nodes, edges, queries, and mutations. Graphiti builds the GraphQL schema from these types. The SDL is generated from the schema. No hand-written `.graphql` file exists.
-3. **No background work.** Each call runs to completion before it returns. The API is `async`, but the tool has no background task, no watcher, and no event bus.
+3. **No background work in the tool.** Each tool call runs to completion before it returns. The API is `async`, but the tool has no background task. Only a GraphQL subscription on `KanbanGraph` starts a file watcher, and the watcher stops when the last subscriber stops (§6.7).
 4. **Event sourcing.** The event log is the only stored data. The current state is the result of the replay of the log. The tool does not write a YAML or Markdown file for an entity.
 5. **Graph.** Each entity is a node with a global URI. Each relation is an edge that stores the URI of the target node.
 6. **Cross-repo.** A task in one repo can depend on a task in a different repo. The tool can also read and change the boards of other repos that it finds on the disk (§6.6).
@@ -55,7 +55,7 @@ It changes four items:
 - **Perspectives.** These are a GUI concept. A saved view is a saved GraphQL query document. See §12, item 2.
 - **Entity YAML and Markdown files.** The event log replaces them.
 - **Diff-patch changelog.** The GraphQL mutation log replaces it.
-- **Watcher, entity cache events, broadcast channels, GUI views and commands, merge-driver install.** (The Rust undo stack is replaced by undo from the event log, §6.5.)
+- **Entity cache events, broadcast channels, GUI views and commands, merge-driver install.** (The Rust watcher and change events are replaced by GraphQL subscriptions, §6.7. The Rust undo stack is replaced by undo from the event log, §6.5.)
 - **The `_plan` ACP plan data** that the Rust MCP wrapper adds to task mutation results. A caller can get this data with a query.
 
 ## 3. The graph
@@ -151,6 +151,7 @@ The schema is defined in Swift (`GraphQL/Schema.swift`) with Graphiti, from the 
 ```graphql
 scalar Date
 scalar DateTime
+scalar JSON                           # any JSON value; used for the before and after values of a change
 
 interface Node { id: ID! }
 
@@ -169,11 +170,30 @@ type Board implements Node {
   nextTask(filter: String): Task
   searchTasks(query: String!, filter: String, first: Int = 10): [TaskHit!]!   # §6.4
   summary: BoardSummary!              # counts: total, ready, blocked, done, percent
-  history(node: ID, actor: ID, first: Int = 20): [Change!]!   # §6.5, newest first
+  history(type: [NodeType!], node: ID, actor: ID, filter: String, derived: Boolean = true,
+          since: ID, first: Int = 20): [Change!]!   # §6.5, newest first; since = only after that txn (§6.7)
 }
 
-type Change { txn: ID!  at: DateTime!  actor: Actor!  ops: [String!]!  boards: [String!]!  nodes: [Node!]!  undone: Boolean!  undoes: ID }
+type Change {                         # one transaction (one tool call); §6.5, §6.7
+  txn: ID!  at: DateTime!  actor: Actor!  ops: [String!]!  boards: [String!]!
+  undone: Boolean!  undoes: ID
+  updates(type: [NodeType!], node: ID): [NodeUpdate!]!   # one item for each node that changed
+}
+type NodeUpdate {
+  id: ID!                             # the node URI; always set, also for a deleted node
+  type: NodeType!                     # BOARD | COLUMN | TASK | TAG | ACTOR | COMMENT
+  kind: UpdateKind!                   # CREATED | UPDATED | DELETED | RESTORED
+  source: UpdateSource!               # PATCH (a stored property changed) | DERIVED (only a derived field changed)
+  fields: [FieldChange!]!
+  node: Node                          # the node now; null when it is deleted
+}
+type FieldChange {
+  name: String!                       # the public field name, for example "column", "tags", "ready"
+  before: JSON  after: JSON           # for a single value
+  added: [JSON!]  removed: [JSON!]    # for a list value, for example tags, assignees, dependsOn
+}
 # Change.boards has one key when the transaction changed one board.
+# history(node:) and changes(node:) match a Change that has an update for that node.
 
 type Column implements Node { id: ID!  name: String!  order: Int!  tasks(filter: String): [Task!]! }
 type Actor  implements Node { id: ID!  name: String!  color: String  tasks(filter: String): [Task!]! }
@@ -205,6 +225,11 @@ type Task implements Node {
 }
 
 type Comment implements Node { id: ID!  shortId: String!  task: Task!  author: Actor!  text: String!  created: DateTime!  updated: DateTime! }
+
+type Subscription {
+  changes(board: String, type: [NodeType!], node: ID, actor: ID, filter: String,
+          derived: Boolean = true): Change!   # §6.7; the live form of history
+}
 
 type Query {
   board(id: String): Board            # no id = this repo, never null. With an id: a board key, repo directory name,
@@ -277,7 +302,7 @@ mutation {
 The response follows the GraphQL specification: `{ "data": …, "errors": [ … ] }`.
 
 - Each error has `message`, `path`, and `extensions.code`.
-- The codes are: `INVALID_VARIABLES`, `NOT_FOUND`, `AMBIGUOUS_ID`, `ACTOR_NOT_FOUND`, `DUPLICATE_ID`, `COLUMN_NOT_EMPTY`, `DEPENDENCY_CYCLE`, `TAG_RENAME_CYCLE`, `NOTHING_TO_UNDO`, `UNDO_CONFLICT`, `INVALID_FILTER`, `INVALID_DATE`, `INVALID_TAG_NAME`, `INVALID_SLUG`, `INVALID_ORDINAL`, `BOARD_BUSY`.
+- The codes are: `INVALID_VARIABLES`, `NOT_FOUND`, `AMBIGUOUS_ID`, `ACTOR_NOT_FOUND`, `DUPLICATE_ID`, `COLUMN_NOT_EMPTY`, `DEPENDENCY_CYCLE`, `TAG_RENAME_CYCLE`, `NOTHING_TO_UNDO`, `UNDO_CONFLICT`, `INVALID_FILTER`, `INVALID_DATE`, `INVALID_TAG_NAME`, `INVALID_SLUG`, `INVALID_ORDINAL`, `BOARD_BUSY`, `SUBSCRIPTION_NOT_IN_TOOL`.
 - The message must tell the model how to correct the call. For example, an `AMBIGUOUS_ID` error gives the matching ids.
 - A syntax or validation error gives the GraphQL "did you mean" suggestion. This is after the name rewrite in §4.5.
 - If a mutation field fails, no patch of that field is written. The patches of the other fields of the call are written (§5.4). The tool validates all patches of a field before it keeps them.
@@ -443,7 +468,7 @@ The data is small, so each call can do a full replay (§5.4 gives the scope). If
 | `moveTask` | Ordinal priority: an explicit `ordinal`, then `before` or `after` a neighbor, then append at the end. A missing column is created (name = slug in title case). |
 | Default column on add | The column with the minimum `order`. |
 | Ordinals | Fractional index (Figma algorithm), lowercase hex, default `"80"`. Byte compatibility with Rust is not necessary because the storage is new. |
-| Session actor | The session actor is the `actor` value of `KanbanTool.make`, else the OS user. When a call writes at least one other patch to a board, it also makes sure that the session actor exists in that board (an actor `set` patch if it is new). A call that writes nothing writes no actor patch. This rule is the same in the current repo and in related boards. Thus, the envelope `actor` always names a real actor. |
+| Session actor | The session actor is the `actor` value of `KanbanGraph.init`, else the OS user. When a call writes at least one other patch to a board, it also makes sure that the session actor exists in that board (an actor `set` patch if it is new). A call that writes nothing writes no actor patch. This rule is the same in the current repo and in related boards. Thus, the envelope `actor` always names a real actor. |
 | Assignees | Each assignee must be a known actor. If `addTask` has no assignee, use the session actor if it was a known actor before the call. |
 | Comment author | An explicit `actor`, else the session actor. The actor is made if it does not exist. |
 | Column and actor slugs | The slug rule of §3.2 (lowercase, not empty). |
@@ -521,7 +546,7 @@ body     = [^ \t\n\r#@^$()&|!]+
   - `id` = the task URI.
   - `renderBlock()` = the title, the tag names, and the description.
 - **Mode.** Use `.retrieval`. Do not use `.selection`: it calls an LLM, and the result then changes from call to call.
-- **Embedder.** Optional. `KanbanTool.make(..., embedder: (any TextEmbedding)? = nil)`. With no embedder, search uses only BM25 + trigram and needs no model. The agent can give a `PooledEmbedder`.
+- **Embedder.** Optional. `KanbanGraph(..., embedder: (any TextEmbedding)? = nil)`. With no embedder, search uses only BM25 + trigram and needs no model. The agent can give a `PooledEmbedder`.
 - **Life of the searcher.** `KanbanGraph` keeps one `MetadataSearcher` for each board, for its life. After each replay of a board, call `update(items:)` on the searcher of that board. This embeds again only the tasks that changed. Nothing is written to disk.
 - **Filter.** `MetadataSearcher.search(intent:limit:)` has no filter argument. Thus, call it with `limit` = the number of tasks in the board. Then remove the tasks that do not pass `filter` (§6.3), and keep the first `first` results. `archived` and done tasks are excluded by default, the same as `tasks`.
 - **Result.** `TaskHit { task: Task!, score: Float!, signals: SearchSignals }`. `SearchSignals` holds `bm25`, `trigram`, and `cosine` (null when there is no embedder).
@@ -555,8 +580,8 @@ Undo uses the event log. It never deletes or changes a line in the log. It appen
 - **Conflict.** A later transaction that is not undone can change the same property of the same node (for a set: the same member). For a node that the transaction made, a later edge to that node is also a conflict. In that case, `undo` writes nothing and returns `UNDO_CONFLICT`. The error gives the later transactions. `undo(txn: <id>, force: true)` writes the inverse anyway, and the undo then wins (last write wins).
 - **Graph rules still apply.** An inverse that breaks a rule in §3.3 is refused. For example, an undo of `deleteColumn` that would put back a column is accepted, but an undo of `addColumn` when the column now has tasks gives `COLUMN_NOT_EMPTY`.
 - **Many boards.** A transaction that changes more than one board records all board keys in `boards` on each of its patches (§5.1). This is possible because the call writes all its patches at the end (§5.4). `undo` and `redo` of such a transaction need all those boards. If one board is not in the index, they write nothing and return `NOT_FOUND`, and the message names the missing board.
-- **`history`** (on `Board`) lists the transactions that changed that board, newest first, with `txn`, time, actor, `ops`, `boards`, the changed nodes, and `undone`. It can filter by node and by actor. The agent uses it to find a `txn` to undo.
-- **Result.** `undo` and `redo` return the `Change` that they wrote. The caller can select the changed nodes from it.
+- **`history`** (on `Board`) lists the transactions that changed that board, newest first, with `txn`, time, actor, `ops`, `boards`, `undone`, and the `updates` of each node (§6.7). It can filter by node and by actor. The agent uses it to find a `txn` to undo.
+- **Result.** `undo` and `redo` return the `Change` that they wrote. The caller can select its `updates` (§6.7).
 
 See §12, item 12.
 
@@ -583,6 +608,35 @@ A **related board** is the board of a different repo on the same disk. The tool 
 - **Not found.** A `dependsOn` target in a board that the scan cannot find counts as not done (§3.3). A mutation on a node in a board that cannot be found gives `NOT_FOUND`, and the message lists the search roots.
 
 See §12, item 13.
+
+### 6.7 Observe changes
+
+GraphQL has a standard operation to observe changes: `subscription`. `KanbanGraph` runs subscriptions. The tool does not (a tool call returns one result and then ends).
+
+```graphql
+subscription { changes(board: "FoundationModelsMultitool", filter: "#kanban") {
+  txn at actor { name } ops
+  updates { id type kind source fields { name before after added removed }
+            node { ... on Task { title column { name } ready } } } } }
+```
+
+- **One event type.** A subscription sends `Change`, the same type that `history` returns (§6.5). Thus, a subscription is the live form of `history`, and there is no second event type.
+- **All node types.** A `Change` has one `NodeUpdate` for each node that the transaction changed: `Board`, `Column`, `Task`, `Tag`, `Actor`, and `Comment`. A client can show each update without one more query.
+- **Kind.** `CREATED` for the first patch of a node. `DELETED` for `delete: true`. `RESTORED` for `delete: false`. `UPDATED` for each other change.
+- **Fields.** Each `FieldChange` gives the public field name and the values before and after the transaction. A list field (for example `tags`, `assignees`, `dependsOn`) gives `added` and `removed`. `KanbanGraph` calculates the values from the projection just before and just after the transaction. Thus, the values are the same that a query shows, not the raw patch.
+- **Derived updates.** A change to one node can change derived fields of other nodes. For example, `completeTask` on task A can make task B `ready`, change `blockedBy` and `virtualTags` of B, and change `Board.summary`. Also, a tag rename or a tag delete changes `tags` of each task that uses the tag. `KanbanGraph` compares the derived fields (§5.3, step 4) and the read-time tags (§6.1) of each task in the changed boards, before and after. It adds a `NodeUpdate` with `source: DERIVED` for each node whose values changed. The data is small, so a full compare is fast enough. `derived: false` on `changes` leaves these updates out.
+- **Derived updates across boards.** A `dependsOn` edge can point to a task in a related board. When that task changes, the tasks that depend on it can become ready. A subscriber on the board of those tasks gets these derived updates only while the watcher of the other board also runs. Thus, `KanbanGraph` also watches each board that a `dependsOn` edge of a watched board reaches.
+- **Filters.** `type` keeps only updates of these node types. `node` keeps only updates of this node. `filter` (§6.3) keeps only updates of tasks that match it, and of the comments on those tasks. A `Change` with no update after the filters is not sent.
+- **Arguments.** `board` (no value = the current repo), `type`, `node`, `actor`, `filter`, and `derived`. `history` takes the same filters, so that a client can catch up with `history(since:)` and then subscribe with the same arguments.
+- **Changes from this process.** When `KanbanGraph` commits a call (§5.4), it sends the `Change` to each matching subscriber at once.
+- **Changes from other processes, `git pull`, or a merge.** While at least one subscription is active on a board, `KanbanGraph` watches the `.kanban/` directory of that board with FSEvents. When a file changes, it replays the board and finds the event ids that are new. It does not use file positions, because a `union` merge can rewrite a file. It groups the new events by `txn` and sends one `Change` for each transaction, in `txn` order.
+- **Watcher life.** The watcher of a board starts with the first subscriber of that board and stops when the last subscriber of that board stops. With no subscriber, nothing runs in the background (§1, principle 3).
+- **Serial gate.** A subscription stream does not hold the serial gate of `execute` (§7.2). Each `Change` is resolved through the gate, one at a time.
+- **Engine.** `graphqlSubscribe` of GraphQLSwift/GraphQL returns `Result<any AsyncSequence & Sendable, GraphQLErrors>`. Graphiti declares the `changes` field with `SubscriptionField`, whose resolver returns an `AsyncSequence & Sendable`. `KanbanGraph` gives an `AsyncStream<Change>` for each subscriber.
+- **In the tool.** A `subscription` sent through `KanbanTool` returns the error `SUBSCRIPTION_NOT_IN_TOOL`. The message tells the agent to use `board { history(since: <txn>) }` to get the changes after a known transaction.
+- **In the CLI.** `kanban watch '<subscription>'` prints one JSON line for each event, until the user stops it.
+
+See §12, item 17.
 
 ## 7. The tool
 
@@ -612,7 +666,7 @@ struct KanbanArguments: ConvertibleFromGeneratedContent {
   - an object schema with no properties.
 
   The encoded JSON Schema then has `anyOf` and no top-level `type`, so Multitool passes a script object through. The on-device model can only make an empty object with the second choice. Thus, an empty object means "no variables". If the document then needs a variable, validation gives the normal GraphQL error, and the model can send the string form or put the values in the document.
-- **Tests for this schema.** A unit test encodes `KanbanArguments.generationSchema` and checks that `variables` has `anyOf` and no `type`. The step 17 test sends an object and a string through Multitool. A test with a real `LanguageModelSession` checks that the on-device model makes the string form for a document with variables.
+- **Tests for this schema.** A unit test encodes `KanbanArguments.generationSchema` and checks that `variables` has `anyOf` and no `type`. The step 18 test sends an object and a string through Multitool. A test with a real `LanguageModelSession` checks that the on-device model makes the string form for a document with variables.
 - The decoder keeps the JSON types: number, boolean, null, list, and object. GraphQL input coercion then converts them, for example a JSON number to `Int` or `Float`.
 - The tool description is short. It gives the purpose of the tool, the root fields (`board`, `boards`, `node`, `nodes`), and one example query. It does not hold the schema.
 - To learn the schema, the agent uses standard GraphQL introspection (`__schema`, `__type`). The engine answers from the live schema, so the answer is always correct.
@@ -623,24 +677,26 @@ struct KanbanArguments: ConvertibleFromGeneratedContent {
 ### 7.2 Public API
 
 ```swift
-public enum KanbanTool {
-    public static let name = "kanban"
-    public static func make(root: URL, actor: String?, locator: BoardLocator = .default,   // locator holds the extra search roots
-                            embedder: (any TextEmbedding)? = nil) throws -> any Tool
+public actor KanbanGraph {                     // the engine: the tool, the CLI, a GUI, and tests use it
+    public init(root: URL, actor: String?, locator: BoardLocator = .default,   // locator holds the extra search roots
+                embedder: (any TextEmbedding)? = nil) throws
+    public func execute(query: String, variables: [String: Map], operationName: String?) async throws -> String
+    public func subscribe(query: String, variables: [String: Map], operationName: String?) async throws
+        -> AsyncThrowingStream<String, Error>   // one GraphQL response (JSON) for each event (§6.7)
     public static var schemaSDL: String { get }   // generated from the Graphiti schema
 }
 
-public actor KanbanGraph {                     // the engine, for direct use and for tests
-    public init(root: URL, actor: String?, locator: BoardLocator, embedder: (any TextEmbedding)?) throws
-    public func execute(query: String, variables: [String: Map], operationName: String?) async throws -> String
+public struct KanbanTool: Tool {
+    public init(graph: KanbanGraph)            // the tool wraps a graph that the caller made
+    public let name = "kanban"
 }
 ```
 
-- The tool is a thin wrapper around `KanbanGraph`.
-- **What `KanbanGraph` keeps across calls:** the board index (§6.6), one `MetadataSearcher` for each board (§6.4), and the optional replay cache.
+- **The tool takes a `KanbanGraph` in its constructor.** It is a thin wrapper: it decodes `KanbanArguments` and calls `execute`. The host makes the graph one time and can give the same graph to other clients, for example a GUI that subscribes. Thus, all clients in one process share one board index, one set of searchers, and one serial gate.
+- **What `KanbanGraph` keeps across calls:** the board index (§6.6), one `MetadataSearcher` for each board (§6.4), the optional replay cache, and the active subscribers and watchers (§6.7).
 - **What it builds again on each call:** the `Graph`, by replay (§5.4).
 - It is an `actor`, so its state is safe. An actor can run a second call at each `await`, so the actor alone does not make calls run one at a time. Thus, `execute` also goes through a serial gate (an async queue), and calls in the same process run one at a time. The file locks and the commit check (§5.4) protect against other processes.
-- A CLI target (`kanban`) runs `kanban '<document>' [--variables <json>]` against the current directory, and `kanban --schema` prints the generated SDL.
+- A CLI target (`kanban`) runs `kanban '<document>' [--variables <json>]` against the current directory. `kanban watch '<subscription>'` prints one JSON line for each event (§6.7). `kanban --schema` prints the generated SDL.
 
 ## 8. Package layout
 
@@ -663,6 +719,7 @@ FoundationModelsKanban/
       Tags/          TagSlug.swift, TagMarkers.swift, AutoColor.swift
       Undo/          Inverse.swift, UndoneState.swift, History.swift
       CrossRepo/     BoardLocator.swift
+      Observe/       ChangeFeed.swift (subscribers), BoardWatcher.swift (FSEvents)
       Tool/          KanbanTool.swift, KanbanArguments.swift, KanbanGraph.swift
     kanban/          KanbanMain.swift (CLI)
   Tests/
@@ -687,7 +744,7 @@ Dependencies. Get siblings by URL, the same as CodeContext:
 3. A script can pass `variables` as a plain object or as a JSON string. Both work (§7.1).
 4. In `FoundationModelsACPAgent/Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift`:
    - Add a `kanban` config section in `Configuration/ToolSectionCodec.swift` (`ToolSection<KanbanToolOptions>`, add to `knownKeys`).
-   - In `makeRegistry(context:)`, add `builder.addTool(try KanbanTool.make(...))`.
+   - In `makeRegistry(context:)`, make one `KanbanGraph` and add `builder.addTool(KanbanTool(graph: graph))`. Keep the graph, so that other parts of the agent can subscribe to it.
    - Add a row to the README § Tools table.
    - Add the package dependency in `FoundationModelsACPAgent/Package.swift`.
 5. The ACP agent work is a separate change in that repo. This plan only makes the package ready for it.
@@ -725,8 +782,9 @@ Each step must compile and pass its tests before the next step starts.
 13. **Search.** `searchTasks` with `MetadataSearcher` (§6.4). Test it first with no embedder, then with an injected fake embedder.
 14. **Undo and redo.** The inverse table, the undone state derived from the log, conflict detection, `force`, and the `history` query (§6.5), in one board.
 15. **Cross-repo.** `BoardLocator` (scan, search roots, index), board refs, `Query.board(id:)` and `boards`, the `board` field on mutations, multi-board locks, the replay scope (§5.4), enabling a related repo, and `undo` of a transaction that spans boards (§6.6). Unknown targets count as not done.
-16. **Tool and CLI.** `KanbanTool`, `KanbanArguments`, the short tool description with its tested example, and the `kanban` CLI.
-17. **Multitool proof.** A test that registers the tool in a `MultiTool.Builder` and runs a `runCode` script that adds a task, reads `nextTask`, and moves the task. The script passes `variables` once as an object and once as a JSON string.
+16. **Observe changes.** `Change` with `NodeUpdate` and `FieldChange` for all node types, the before-and-after compare with derived updates, `Subscription.changes` with its filters, `history(since:)`, the change feed for commits in this process, the FSEvents watcher with its life rule, and `kanban watch` (§6.7).
+17. **Tool and CLI.** `KanbanTool`, `KanbanArguments`, the short tool description with its tested example, and the `kanban` CLI.
+18. **Multitool proof.** A test that registers the tool in a `MultiTool.Builder` and runs a `runCode` script that adds a task, reads `nextTask`, and moves the task. The script passes `variables` once as an object and once as a JSON string.
 
 ## 11. Testing
 
@@ -763,6 +821,8 @@ Each step must compile and pass its tests before the next step starts.
   - Two temporary repos side by side: `addTask(board: "<related>")` writes to the related log. A related repo with no `.kanban/` gets a new board on its first mutation. A task in one board depends on a task in the other, and `ready` changes when the other task is done. One call that changes both boards is reversed by one `undo`.
   - A `dependsOn` cycle is refused.
   - Broken merged states (§5.3): two branches each add half of a dependency cycle; one branch deletes a column while another moves a task into it; two branches make a rename cycle. After a `union` merge, replay succeeds and the projection follows §5.3.
+  - Updates of all node types: for each public mutation, the `Change` has one `NodeUpdate` for each changed node, with the correct `kind`, and `FieldChange` values that equal a query before and after. `completeTask` on A gives a `DERIVED` update for B (`ready`, `blockedBy`, `virtualTags`) and for the board (`summary`). A tag rename gives `DERIVED` `tags` updates for the tasks that use the tag. `derived: false` leaves them out.
+  - Subscriptions: a commit in this process sends one `Change` to a matching subscriber. A log line that another process appends sends one `Change`. A `union` merge that rewrites a file sends only the new transactions. The watcher stops after the last subscriber stops. A `subscription` sent through the tool gives `SUBSCRIPTION_NOT_IN_TOOL`. `history(since:)` returns only the later transactions.
   - Two concurrent `execute` calls on one `KanbanGraph` run one at a time (the serial gate of §7.2).
   - Two processes add the two halves of a `dependsOn` cycle across two boards at the same time: one call gets `DEPENDENCY_CYCLE` after its commit check.
   - Two processes add a task at the same time: both tasks are written, and the short ids are unique (the commit check of §5.4).
@@ -779,7 +839,7 @@ Each step must compile and pass its tests before the next step starts.
   - `taskAdd`, `addTask`, and `createTask` give the same event. The response key is the name that the caller wrote. `createTask` does not map to `initBoard`.
   - A deep query (task → dependsOn → comments → author) returns the correct nested graph.
 - **Tool test.** Call the `Tool` with `GeneratedContent` arguments, and compare the JSON output.
-- **Code mode test.** Step 17.
+- **Code mode test.** Step 18.
 
 ## 12. Decisions
 
@@ -801,6 +861,7 @@ The owner made each decision below.
 14. **Mutation name order. — DECIDED.** Each mutation has the noun in its name. A generic mutation with the type as a parameter is not used, because GraphQL has no generics. The tool accepts both orders, verbNoun (`addTask`) and nounVerb (`taskAdd`), and also the verb synonyms. The SDL uses verbNoun as the one canonical form. A rewrite step before validation does the mapping (§4.5).
 15. **Tag rename. — DECIDED.** Tags use the slug as identifier. A rename makes a redirect (§6.2): the old tag gets `renamedTo`, and the projection follows it for edges and for `#markers`. No task patches are necessary, and concurrent branches stay correct. A rename that changes only `name`, and a rename that changes the edge on each task, are not used.
 16. **Forgiving names. — DECIDED.** The rewrite of §4.5 applies to every name: mutations, selection fields, arguments and `input` fields, enum values, and root query fields. It matches by style and case, singular and plural, an alias table, and one wrong letter. It never guesses on a tie, and it reports each change in `extensions.rewrites`.
+17. **Observe changes. — DECIDED.** Use GraphQL subscriptions (`Subscription.changes`) on `KanbanGraph`. The event is `Change`, the same type as `history`. It has one `NodeUpdate` for each changed node of all six types, with field values before and after, and `DERIVED` updates for nodes whose derived fields changed (for example a task that becomes ready). Commits in this process are sent at once. Changes from other processes and merges come from an FSEvents watcher that runs only while a subscriber exists. The tool takes a `KanbanGraph` in its constructor and does not run subscriptions; an agent polls with `history(since:)`.
 
 ## 13. References
 
