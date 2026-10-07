@@ -30,10 +30,26 @@ comments:
     - plan.md §8 does not list swift-collections. It was already a transitive dependency of GraphQL; it is now explicit, because Scalars.swift sorts an `OrderedDictionary`.
     - next: /review
   timestamp: 2026-10-07T12:29:01.663732+00:00
+- actor: wballard
+  id: 01m4b5kqp0mkj4zwt13qss6qfe
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 4a27ab7). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. The review did not examine Package.resolved because no validator matches it. The .reviewignore file excludes the .kanban/ files.
+    - next: The task is in done. No work is open.
+  timestamp: 2026-10-07T12:32:30.912455+00:00
+- actor: wballard
+  id: 01m4b5kzgxchr9rx21052vkqj6
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 6 files (Package.swift, Package.resolved, Schema.swift, PatchSchema.swift, Scalars.swift, GraphQLEngineTests.swift)
+    - test: green — swift test, 13 passed, 0 warnings
+    - commit: 4a27ab7
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T12:32:38.941329+00:00
 depends_on:
 - 01M4B3V22A3PCQRESESTYBQ2FH
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '8180'
 title: 'GraphQL engine: Graphiti schema end to end'
 ---
 ## What
