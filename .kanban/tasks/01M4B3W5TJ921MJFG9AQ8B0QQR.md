@@ -59,10 +59,26 @@ comments:
     - evidence: 1 file — Sources/FoundationModelsKanban/Body/UnifiedDiff.swift. `swift build --build-tests`: 0 warnings. `swift test`: 34 tests in 3 suites passed. 3 of 3 findings checked.
     - next: /review
   timestamp: 2026-10-07T12:43:59.056153+00:00
+- actor: wballard
+  id: 01m4b6bmzrvsgqvp885k3894nw
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (1935328). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. All 3 items in the prior Review Findings section are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T12:45:34.584414+00:00
+- actor: wballard
+  id: 01m4b6bz4d48zxytyj9z2bqxfh
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 file (UnifiedDiff.swift), 3/3 findings fixed
+    - test: green — swift test, 34 passed, 0 warnings
+    - commit: 1935328
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T12:45:44.973191+00:00
 depends_on:
 - 01M4B3V22A3PCQRESESTYBQ2FH
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '8280'
 title: 'Body diff: make and reverse a unified diff'
 ---
 ## What
