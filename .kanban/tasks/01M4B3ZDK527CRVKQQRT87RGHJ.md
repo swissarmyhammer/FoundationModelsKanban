@@ -76,13 +76,29 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsKanbanTests/Tool/CommitTests.swift. `swift test --filter CommitTests`: 13 tests in 1 suite passed. Red proof: with the signature recording removed, `swift test --filter 'CommitTests/(commitRecordsSignatures|callAfterCommitRunsOneTime)'` failed with 5 issues; recording restored. `swift test`: 582 tests in 36 suites passed, 0 compiler warnings. swiftlint (no_magic_numbers, line_length 120, missing_docs) on the file: no findings.
     - next: /review
   timestamp: 2026-10-07T18:46:01.777693+00:00
+- actor: wballard
+  id: 01m4bv1ys927xck7qcma5e6jh6
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (2a126eb). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. 1 file reviewed. 2 files in .kanban/ not reviewed (.reviewignore). All items in the prior Review Findings section are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T18:47:17.033852+00:00
+- actor: wballard
+  id: 01m4bv24yx1anynkaxvfd57dy8
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 file (CommitTests.swift); 2/2 findings checked; red proof with signature recording removed
+    - test: green — swift test, 582 passed, 0 warnings
+    - commit: 2a126eb
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T18:47:23.357465+00:00
 depends_on:
 - 01M4B3YYXT069TKADQ93CBAA93
 - 01M4B3X08THVXHAJEQ4Z8PDB4H
 - 01M4B4ADV9EPW7N9VGBVBVV8WM
 - 01M4B4A8735GAP57Q8ZVDP5HY2
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: 9b80
 title: 'Commit path: patch mutation, locks, signature check'
 ---
 ## What
