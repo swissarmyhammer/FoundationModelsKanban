@@ -35,6 +35,18 @@ struct NodeLog: Hashable, Sendable {
         node = NodeFold(folding: events, for: ref)?.node
     }
 
+    /// Folds the decoded events of one node into the state of the node. The working copy of a call uses it to fold a
+    /// node again after a new patch (plan.md §5.4 step 4).
+    ///
+    /// - Parameters:
+    ///   - events: The events of the node, in any order. Each event must change the node, and each event id must be
+    ///     different.
+    ///   - ref: The local ref of the node.
+    init(folding events: [Event], for ref: LocalRef) {
+        self.events = events.sorted { lhs, rhs in lhs.id < rhs.id }
+        node = NodeFold(folding: self.events, for: ref)?.node
+    }
+
     /// Gives the events of the sorted lines, with each repeated event removed.
     ///
     /// - Parameter lines: The parsed lines, in replay order.
@@ -274,6 +286,92 @@ extension NodeFold {
             dependsOn: properties.removeEdges(forKey: PropertyName.dependsOn),
             columnMoves: columnMoves
         )
+    }
+}
+
+// MARK: - Changes
+
+extension PatchInput {
+    /// Gives the part of this patch that changes the node after some events (plan.md §5.4 step 4.2).
+    ///
+    /// The fold applies the patch to the folded state of the node, and the result keeps only what the fold changed:
+    ///
+    /// - `set` and `unset`: each property whose value after the fold is not its value before.
+    /// - `add` and `remove`: each member that the fold added or removed. When the patch adds and removes one member,
+    ///   the result of the fold decides.
+    /// - `delete`: only when it changes the tombstone state of the node.
+    /// - `edit`: only when its diff has a hunk.
+    ///
+    /// - Parameter events: The events of the node so far, in replay order.
+    /// - Returns: The patch with the parts that change the node, or `nil` when the patch changes nothing.
+    /// - Throws: An ``EventError`` from ``init(node:set:unset:add:remove:delete:edit:)``. The parts are parts of this
+    ///   patch, so a valid patch gives no error.
+    func changes(afterFolding events: [Event]) throws(EventError) -> PatchInput? {
+        let fold = NodeFold(folding: events, for: node)
+        let before = fold?.properties ?? PropertyBag()
+        var after = before
+        after.update(with: self)
+        let values = before.valueChanges(to: after, named: Set(set.keys).union(unset))
+        let members = before.memberChanges(to: after, named: Set(add.keys).union(remove.keys))
+        let isDeleted = fold?.deleted != nil
+        let deleteChange = delete.flatMap { delete in delete == isDeleted ? nil : delete }
+        let editChange = edit.flatMap { edit in edit.body.isEmpty ? nil : edit }
+        let hasChange = !values.set.isEmpty || !values.unset.isEmpty || !members.add.isEmpty
+            || !members.remove.isEmpty || deleteChange != nil || editChange != nil
+        guard hasChange else {
+            return nil
+        }
+        return try PatchInput(
+            node: node,
+            set: values.set,
+            unset: values.unset,
+            add: members.add,
+            remove: members.remove,
+            delete: deleteChange,
+            edit: editChange
+        )
+    }
+}
+
+extension PropertyBag {
+    /// Compares the single values of some properties with their values in a later bag.
+    ///
+    /// - Parameters:
+    ///   - later: The bag after a patch.
+    ///   - names: The names of the properties to compare.
+    /// - Returns: The `set` part for each property with a new value, and the `unset` part, in name order, for each
+    ///   property that lost its value.
+    fileprivate func valueChanges(
+        to later: PropertyBag,
+        named names: Set<String>
+    ) -> (set: [String: PatchValue], unset: [String]) {
+        let changed = names.sorted().filter { name in values[name] != later.values[name] }
+        let set = changed.compactMap { name in later.values[name].map { value in (name, value) } }
+        return (Dictionary(uniqueKeysWithValues: set), changed.filter { name in later.values[name] == nil })
+    }
+
+    /// Compares the members of some set-valued properties with their members in a later bag.
+    ///
+    /// - Parameters:
+    ///   - later: The bag after a patch.
+    ///   - names: The names of the properties to compare.
+    /// - Returns: The `add` part with the new members, and the `remove` part with the members that are gone. A
+    ///   property with no change has no entry.
+    fileprivate func memberChanges(
+        to later: PropertyBag,
+        named names: Set<String>
+    ) -> (add: [String: [StoredRef]], remove: [String: [StoredRef]]) {
+        var add: [String: [StoredRef]] = [:]
+        var remove: [String: [StoredRef]] = [:]
+        for name in names {
+            let old = members[name] ?? []
+            let new = later.members[name] ?? []
+            let added = new.filter { member in !old.contains(member) }
+            let removed = old.filter { member in !new.contains(member) }
+            add[name] = added.isEmpty ? nil : added
+            remove[name] = removed.isEmpty ? nil : removed
+        }
+        return (add, remove)
     }
 }
 

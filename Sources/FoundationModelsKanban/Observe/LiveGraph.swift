@@ -29,6 +29,11 @@ struct LiveGraph: Sendable {
     /// entry.
     private(set) var signatures: [LocalRef: FileSignature]
 
+    /// The event log of the board.
+    var log: EventLog {
+        loader.log
+    }
+
     /// Loads a board with the full parallel loader, and records the signature of each node file.
     ///
     /// The signatures are read before the files. Thus, a write between the two reads gives a different signature at
@@ -78,20 +83,59 @@ struct LiveGraph: Sendable {
         return events.map(\.id).filter { id in !knownIDs.contains(id) }
     }
 
+    /// Makes the graph of a commit the live graph, after the commit appended its events (plan.md §5.4 step 5.4).
+    ///
+    /// The call records the new signature of each log file that the commit appended to. Thus, the watcher event for
+    /// this write finds no change, and the tool does not read its own write again.
+    ///
+    /// - Parameters:
+    ///   - committed: The working graph of the call. It holds the state that the appended events give.
+    ///   - written: The events that the commit appended, in the order of their ids.
+    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a log file cannot be read. Then nothing changes.
+    mutating func adopt(_ committed: Graph, writing written: [Event]) throws(EventLogError) {
+        let newSignatures = try fileSignatures(of: Set(written.map(\.patch.node)))
+        install(committed, events: EventMerge.merged([events, written]), signatures: newSignatures)
+    }
+
     /// Reads the files of some nodes again, stage by stage, and joins their nodes into the graph.
     ///
     /// - Parameter refs: The local refs of the changed nodes.
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a file cannot be read. Then nothing changes.
     private mutating func reload(filesOf refs: Set<LocalRef>) async throws(EventLogError) {
-        let newSignatures = try refs.map { ref throws(EventLogError) in (ref, try loader.log.signature(of: ref)) }
+        let newSignatures = try fileSignatures(of: refs)
         var updated = graph
         let eventLists = try await loader.readStages(
             listingFilesWith: { type in Array(refs.filter { ref in ref.nodeType == type }) },
             joiningInto: &updated
         )
         let keptEvents = events.filter { event in !refs.contains(event.patch.node) }
-        graph = updated
-        events = EventMerge.merged([keptEvents] + eventLists)
+        install(updated, events: EventMerge.merged([keptEvents] + eventLists), signatures: newSignatures)
+    }
+
+    /// Reads the signature of the log file of each of some nodes.
+    ///
+    /// - Parameter refs: The local refs of the nodes.
+    /// - Returns: The signature of each file, by the local ref of its node. A node with no file gives `nil`.
+    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a file cannot be read.
+    private func fileSignatures(of refs: Set<LocalRef>) throws(EventLogError) -> [LocalRef: FileSignature?] {
+        let pairs = try refs.map { ref throws(EventLogError) in (ref, try loader.log.signature(of: ref)) }
+        return Dictionary(uniqueKeysWithValues: pairs)
+    }
+
+    /// Replaces the graph and the event list, and records the signatures of the changed files.
+    ///
+    /// - Parameters:
+    ///   - newGraph: The new graph.
+    ///   - newEvents: The new global event list, in the order of the event ids.
+    ///   - newSignatures: The signature of each changed file, by the local ref of its node. A `nil` signature removes
+    ///     the entry of a file that is gone.
+    private mutating func install(
+        _ newGraph: Graph,
+        events newEvents: [Event],
+        signatures newSignatures: [LocalRef: FileSignature?]
+    ) {
+        graph = newGraph
+        events = newEvents
         for (ref, signature) in newSignatures {
             signatures[ref] = signature
         }

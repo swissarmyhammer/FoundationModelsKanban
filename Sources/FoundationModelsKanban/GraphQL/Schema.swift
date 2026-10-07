@@ -2,51 +2,69 @@ import Foundation
 import Graphiti
 import GraphQL
 
-/// The in-memory graph of the current board that the resolvers read and change.
+/// The working copy of the current board for one run of a call, which the resolvers read and change (plan.md §5.4).
 ///
-/// The actor makes each change to the graph one at a time, so that resolvers that run concurrently do not race. A
-/// query reads one ``BoardView`` of the graph, so that all the fields of the query see the same state.
+/// The actor makes each change to the working copy one at a time, so that resolvers that run concurrently do not race.
+/// A query reads one ``BoardView`` of the graph, so that all the fields of the query see the same state. A mutation
+/// field changes the working copy only through ``runField(as:_:)``.
 actor BoardStore {
-    /// The graph of the board now.
-    private(set) var graph: Graph
+    /// The working copy of the run.
+    private(set) var work: WorkingCopy
 
     /// The current key of the board, for example `github.com/swissarmyhammer/FoundationModelsKanban`. Each `id` in
     /// the output starts with `kanban://` and this key (plan.md §3.2).
     let boardKey: String
 
-    /// Makes a store that holds the graph of a board.
+    /// Makes a store that holds the working copy of a board.
     ///
     /// - Parameters:
-    ///   - graph: The first state of the graph.
+    ///   - work: The working copy at the start of the run.
     ///   - boardKey: The current key of the board.
-    init(graph: Graph, boardKey: String) {
-        self.graph = graph
+    init(working work: WorkingCopy, boardKey: String) {
+        self.work = work
         self.boardKey = boardKey
     }
 
-    /// The read view of the graph now.
+    /// The read view of the working graph now.
     var view: BoardView {
-        BoardView(of: graph, inBoard: boardKey)
+        BoardView(of: work.graph, inBoard: boardKey)
     }
 
-    /// Changes the board node.
+    /// Runs one mutation field on the working copy. A field that throws keeps none of its patches.
     ///
-    /// This step has no event log, so the change goes into the graph only. The commit path writes the patches in a
-    /// later step (plan.md §5.4).
+    /// - Parameters:
+    ///   - operation: The name of the public mutation of the field, or `nil` for the internal `patch` mutation.
+    ///   - body: Makes and applies the patches of the field, and checks the graph rules.
+    /// - Returns: The value of the body.
+    /// - Throws: The error of the body. Then the working copy does not change.
+    func runField<Value: Sendable, Failure: Error>(
+        as operation: String?,
+        _ body: (inout WorkingCopy) throws(Failure) -> Value
+    ) throws(Failure) -> Value {
+        try work.runField(as: operation, body)
+    }
+
+    /// Changes the board node with one patch: `set name` and an `edit` diff of the body (plan.md §5.5). The commit
+    /// writes the patch at the end of the call.
     ///
     /// - Parameters:
     ///   - input: The changes. A field that is not set does not change.
     ///   - time: The time of the change. It becomes the `updated` value.
     /// - Returns: The read view of the graph after the change.
-    /// - Throws: ``KanbanError/notFound(type:reference:)`` when the graph has no board node.
-    func update(with input: UpdateBoardInput?, at time: DateTime) throws(KanbanError) -> BoardView {
-        guard var board = graph.boardNode else {
-            throw .notFound(type: .board, reference: boardKey)
+    /// - Throws: ``KanbanError/notFound(type:reference:)`` when the graph has no board node. An ``EventError`` when
+    ///   the patch breaks a rule of the log.
+    func update(with input: UpdateBoardInput?, at time: DateTime) throws -> BoardView {
+        guard let board = work.graph.boardNode else {
+            throw KanbanError.notFound(type: .board, reference: boardKey)
         }
-        board.name = input?.name ?? board.name
-        board.fields.body = input?.body ?? board.fields.body
-        board.fields.updated = time
-        graph.update(with: .board(board))
+        let patch = try PatchInput(
+            node: .board,
+            set: input?.name.map { name in [PropertyName.name: .json(.string(name))] } ?? [:],
+            edit: input?.body.map { body in PatchEdit(body: UnifiedDiff(from: board.fields.body, to: body).text) }
+        )
+        try runField(as: PublicSchema.updateBoardField) { work throws(EventError) in
+            try work.apply(patch, at: time)
+        }
         return view
     }
 }
@@ -161,11 +179,12 @@ struct KanbanResolver: Sendable {
     ///   - context: The context of the call.
     ///   - arguments: The changes to the board.
     /// - Returns: The board after the change.
-    /// - Throws: ``KanbanError/notFound(type:reference:)`` when the graph has no board node.
+    /// - Throws: ``KanbanError/notFound(type:reference:)`` when the graph has no board node. An ``EventError`` when
+    ///   the patch breaks a rule of the log.
     func updateBoard(
         context: KanbanContext,
         arguments: UpdateBoardArguments
-    ) async throws(KanbanError) -> BoardObject {
+    ) async throws -> BoardObject {
         try await BoardObject(in: context.store.update(with: arguments.input, at: context.clock()))
     }
 }
@@ -553,6 +572,9 @@ extension CanonicalName {
 /// The schema does not have the internal `patch` mutation (plan.md §12,
 /// item 9). ``PatchSchema`` has it.
 struct PublicSchema: API {
+    /// The name of the `updateBoard` mutation. It is also the operation name in the `ops` of its events.
+    static let updateBoardField = "updateBoard"
+
     /// The root resolver.
     let resolver = KanbanResolver()
 
@@ -571,7 +593,7 @@ struct PublicSchema: API {
                 }
             }
             .addMutation {
-                Field("updateBoard", at: KanbanResolver.updateBoard) {
+                Field(Self.updateBoardField, at: KanbanResolver.updateBoard) {
                     Argument("input", at: \.input)
                 }
             }

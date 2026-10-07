@@ -232,4 +232,22 @@ extension KanbanError {
     func responseError(at path: [PathComponent] = []) -> ResponseError {
         ResponseError(message: message, path: path, extensions: ResponseError.Extensions(code: code))
     }
+
+    /// The JSON of a response that holds only errors, and no `data`.
+    private struct ErrorResponse: Encodable {
+        /// The errors of the response.
+        let errors: [ResponseError]
+    }
+
+    /// Makes the GraphQL response of a call that fails as a whole with this error, for example `BOARD_BUSY` (plan.md
+    /// §5.4 step 5.2): `{"errors": [...]}`, with no `data`. The keys are in sorted order, and a `/` is not escaped,
+    /// the same as each other response of the tool.
+    ///
+    /// - Returns: The response as JSON text.
+    /// - Throws: An error from the JSON encoder.
+    func responseJSON() throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        return String(decoding: try encoder.encode(ErrorResponse(errors: [responseError()])), as: UTF8.self)
+    }
 }

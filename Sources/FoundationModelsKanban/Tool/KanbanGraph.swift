@@ -10,6 +10,9 @@ import GraphQL
 /// parallel loader (plan.md §5.3). The engine then keeps the graph in memory. A repo with no `.kanban/` directory
 /// gives an empty board with the name of the repo directory, and a query writes no file.
 ///
+/// Each call runs on a working copy of the live graph. A call that keeps patches commits them at the end of the call,
+/// under the lock of the board, and the working copy then becomes the live graph (plan.md §5.4).
+///
 /// The engine is an actor, so its state is safe. An actor can start a second call at each `await`, so the actor alone
 /// does not make calls run one at a time. Thus each call also goes through a serial gate (plan.md §7.2).
 public actor KanbanGraph {
@@ -22,6 +25,13 @@ public actor KanbanGraph {
     /// The clock that gives the time of a change. A test gives a fixed clock (plan.md §11).
     private let clock: @Sendable () -> DateTime
 
+    /// The local ref of the session actor: the actor of each event that a call writes.
+    private let sessionActor: LocalRef
+
+    /// The source of the transaction ULIDs and the event ids, until the first call loads the board. The session of
+    /// the board then continues it.
+    private let idSource: any ULIDSource
+
     /// Gets a call when each call starts and ends, or `nil` for no calls.
     private let observer: (any KanbanCallObserver)?
 
@@ -31,8 +41,8 @@ public actor KanbanGraph {
     /// The gate that lets one call run at a time.
     private let gate = SerialGate()
 
-    /// The live graph of the current board, or `nil` until the first call loads it.
-    private var store: BoardStore?
+    /// The live graph of the current board and its commit path, or `nil` until the first call loads the board.
+    private var session: CommitSession?
 
     /// The public schema in the GraphQL schema definition language (SDL), generated from the Graphiti schema.
     public static var schemaSDL: String {
@@ -47,37 +57,60 @@ public actor KanbanGraph {
     ///
     /// - Parameters:
     ///   - root: The root directory of the repo.
-    ///   - actor: The session actor of the mutations, or `nil`. The mutations of a later step use it.
+    ///   - actor: The name of the session actor of the mutations, or `nil` for the name of the OS user.
     /// - Throws: An error from Graphiti when a type of the public schema is not valid.
-    public init(root: URL, actor _: String?) throws {
-        try self.init(root: root, readingKeyWith: BoardKey.read(fromRepoAt:), timedBy: { DateTime(Date()) })
+    ///   ``KanbanError/invalidSlug(name:)`` when the actor name gives an empty slug.
+    public init(root: URL, actor: String?) throws {
+        try self.init(
+            root: root,
+            readingKeyWith: BoardKey.read(fromRepoAt:),
+            timedBy: { DateTime(Date()) },
+            actingAs: Self.sessionActor(named: actor),
+            mintingFrom: SystemULIDSource()
+        )
     }
 
-    /// Makes an engine with a key reader, a clock, and an observer that a test gives.
+    /// Makes an engine with a key reader, a clock, a session actor, a ULID source, and an observer that a test gives.
     ///
     /// - Parameters:
     ///   - root: The root directory of the repo.
     ///   - keyReader: Reads the key of the board from the repo.
     ///   - clock: Gives the time of a change.
+    ///   - actor: The local ref of the session actor.
+    ///   - ids: The source of the transaction ULIDs and the event ids.
     ///   - observer: Gets a call when each call starts and ends, or `nil` for no calls.
     /// - Throws: An error from Graphiti when a type of the public schema is not valid.
     init(
         root: URL,
         readingKeyWith keyReader: @escaping @Sendable (URL) throws(BoardKeyError) -> BoardKey,
         timedBy clock: @escaping @Sendable () -> DateTime,
+        actingAs actor: LocalRef,
+        mintingFrom ids: any ULIDSource,
         reportingTo observer: (any KanbanCallObserver)? = nil
     ) throws {
         self.root = root
         self.keyReader = keyReader
         self.clock = clock
+        sessionActor = actor
+        idSource = ids
         self.observer = observer
         schema = try PublicSchema()
     }
 
-    /// Runs one GraphQL document against the board (plan.md §5.4 steps 1 to 3).
+    /// Gives the session actor of a name: the actor whose slug is the slug of the name (plan.md §6).
+    ///
+    /// - Parameter name: The name of the actor, or `nil` for the name of the OS user.
+    /// - Returns: The local ref of the actor.
+    /// - Throws: ``KanbanError/invalidSlug(name:)`` when the name gives an empty slug.
+    static func sessionActor(named name: String?) throws(KanbanError) -> LocalRef {
+        .actor(slug: try Slug(columnOrActorName: name ?? NSUserName()).value)
+    }
+
+    /// Runs one GraphQL document against the board (plan.md §5.4).
     ///
     /// The call waits until each earlier call of the engine is done. A GraphQL error does not throw: the response has
-    /// it in `errors`.
+    /// it in `errors`. When a log of the board changed before each commit attempt, the response has the one error
+    /// `BOARD_BUSY`, and the call wrote nothing.
     ///
     /// - Parameters:
     ///   - query: The GraphQL document.
@@ -85,21 +118,21 @@ public actor KanbanGraph {
     ///   - operationName: The operation of the document to run, or `nil` when the document has one operation.
     /// - Returns: The GraphQL response (`{data, errors}`) as JSON text with sorted keys.
     /// - Throws: An I/O fault only: a ``BoardKeyError`` when git cannot give the board key, or an ``EventLogError``
-    ///   when a log file cannot be read.
+    ///   when a log file cannot be read, locked, or written.
     public func execute(query: String, variables: [String: Map], operationName: String?) async throws -> String {
         try await gate.run {
             try await self.respond(to: query, variables: variables, operationName: operationName)
         }
     }
 
-    /// Runs one document inside the serial gate.
+    /// Runs one document inside the serial gate, and commits the patches that its mutation fields kept.
     ///
     /// - Parameters:
     ///   - query: The GraphQL document.
     ///   - variables: The values of the variables of the document.
     ///   - operationName: The operation of the document to run, or `nil`.
     /// - Returns: The response as JSON text with sorted keys.
-    /// - Throws: A ``BoardKeyError`` or an ``EventLogError`` when the board cannot load.
+    /// - Throws: A ``BoardKeyError`` or an ``EventLogError`` when the board cannot load or a commit cannot write.
     private func respond(
         to query: String,
         variables: [String: Map],
@@ -107,49 +140,37 @@ public actor KanbanGraph {
     ) async throws -> String {
         await observer?.callDidStart()
         defer { observer?.callDidFinish() }
-        let context = KanbanContext(store: try await liveStore(), clock: clock)
-        return try await schema.respond(
-            to: query,
-            variables: variables,
-            operationName: operationName,
-            formattedWith: .sortedKeys,
-            context: context
-        )
+        var session = try await loadedSession()
+        defer { self.session = session }
+        let schema = schema
+        let clock = clock
+        do {
+            return try await session.run { store in
+                try await schema.respond(
+                    to: query,
+                    variables: variables,
+                    operationName: operationName,
+                    formattedWith: .sortedKeys,
+                    context: KanbanContext(store: store, clock: clock)
+                )
+            }
+        } catch let error as KanbanError {
+            return try error.responseJSON()
+        }
     }
 
-    /// Gives the live graph of the current board. The first call reads the board key and loads the board.
+    /// Gives the session of the current board. The first call reads the board key and loads the board.
     ///
-    /// - Returns: The store of the live graph.
+    /// - Returns: The session of the board.
     /// - Throws: A ``BoardKeyError`` when git cannot give the key, or an ``EventLogError`` when a log file cannot be
     ///   read. The next call then tries again.
-    private func liveStore() async throws -> BoardStore {
-        if let store {
-            return store
+    private func loadedSession() async throws -> CommitSession {
+        if let session {
+            return session
         }
         let key = try keyReader(root)
-        let graph = try await BoardLoader(reading: EventLog(repositoryAt: root)).load().graph
-            .withBoard(named: root.lastPathComponent, at: clock())
-        let loaded = BoardStore(graph: graph, boardKey: key.description)
-        store = loaded
-        return loaded
-    }
-}
-
-extension Graph {
-    /// Gives the graph with a board node. A graph that has no board node (a repo with no `.kanban/`, or no
-    /// `board.jsonl`) gets an empty board in memory only. No file is written.
-    ///
-    /// - Parameters:
-    ///   - name: The name of the empty board: the name of the repo directory.
-    ///   - time: The `created` and `updated` time of the empty board.
-    /// - Returns: This graph when it has a board node, else this graph with the empty board.
-    fileprivate func withBoard(named name: String, at time: DateTime) -> Graph {
-        guard boardNode == nil else {
-            return self
-        }
-        var graph = self
-        graph.update(with: .board(BoardNode(fields: NodeFields(created: time, updated: time), name: name)))
-        return graph
+        let live = try await LiveGraph.load(using: BoardLoader(reading: EventLog(repositoryAt: root)))
+        return CommitSession(of: live, inBoard: key, actingAs: sessionActor, mintingFrom: idSource, timedBy: clock)
     }
 }
 

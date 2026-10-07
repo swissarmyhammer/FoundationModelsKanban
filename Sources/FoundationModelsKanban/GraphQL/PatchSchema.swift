@@ -29,18 +29,24 @@ struct PatchArguments: Codable, Sendable {
 }
 
 extension KanbanResolver {
-    /// Resolves the internal `Mutation.patch`.
+    /// Resolves the internal `Mutation.patch`: applies one patch to the working graph of the call (plan.md §5.1,
+    /// §5.4 step 4).
     ///
-    /// This step has no event log, so the stub applies nothing. It returns
-    /// the patch that the engine decoded, as a `JSON` value. Thus a caller
-    /// sees the patch in the form that a later step applies.
+    /// The field keeps the patch, and the commit at the end of the call writes it. A patch that changes nothing is
+    /// not kept.
     ///
     /// - Parameters:
-    ///   - context: The context of the call.
+    ///   - context: The context of the call. Its store holds the working copy, and its clock gives the time.
     ///   - arguments: The patch.
-    /// - Returns: The decoded patch.
-    func patch(context _: KanbanContext, arguments: PatchArguments) async -> Map {
-        arguments.input.map
+    /// - Returns: The patch that the engine decoded, as a `JSON` value.
+    /// - Throws: An ``EventError`` when the patch breaks a rule of the log. Then the field keeps nothing.
+    func patch(context: KanbanContext, arguments: PatchArguments) async throws(EventError) -> Map {
+        let input = arguments.input
+        let time = context.clock()
+        try await context.store.runField(as: nil) { work throws(EventError) in
+            try work.apply(input, at: time)
+        }
+        return input.map
     }
 }
 

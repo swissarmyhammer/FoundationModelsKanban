@@ -84,7 +84,7 @@ struct QueryFixture {
     /// Makes a context that reads the board, with a fixed clock.
     var context: KanbanContext {
         KanbanContext(
-            store: BoardStore(graph: graph, boardKey: DependencyMarkersTests.boardKey),
+            store: BoardStore.fixture(of: graph, inBoard: DependencyMarkersTests.boardKey),
             clock: { DependencyMarkersTests.time }
         )
     }
@@ -128,5 +128,25 @@ struct QueryFixture {
     /// - Returns: The ref, for example `^ajv8v4t`.
     static func sigilRef(of text: String) -> String {
         "\(ShortID.sigil)\(ShortID(ofULIDString: text).value)"
+    }
+}
+
+extension BoardStore {
+    /// Makes a store whose working copy holds a fixture graph with no events. The test actor and a fixed ULID source
+    /// stamp the events of a mutation.
+    ///
+    /// A mutation folds a node again from its events, so a mutation of a fixture node starts from the empty state of
+    /// the node.
+    ///
+    /// - Parameters:
+    ///   - graph: The fixture graph.
+    ///   - key: The current key of the board.
+    /// - Returns: The store.
+    static func fixture(of graph: Graph, inBoard key: String) -> BoardStore {
+        let stamp = EventStamp(
+            actingAs: ReplayTests.actor,
+            mintingFrom: FixedULIDSource(at: ReplayTests.date(atStep: .zero))
+        )
+        return BoardStore(working: WorkingCopy(graph: graph, events: [], stamp: stamp), boardKey: key)
     }
 }

@@ -61,11 +61,27 @@ comments:
     - evidence: 3 files — Tests/FoundationModelsKanbanTests/Observe/LiveGraphApplyTests.swift, Tests/FoundationModelsKanbanTests/Events/LoaderTests.swift, Tests/FoundationModelsKanbanTests/Events/ReplayTests.swift. `swift test`: 566 tests in 35 suites passed, 0 compiler warnings.
     - next: /review
   timestamp: 2026-10-07T18:19:08.588939+00:00
+- actor: wballard
+  id: 01m4bsgx8jx8a84dps6599y9pn
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (3d06cf0). 3 files reviewed, 7 validator runs, 0 findings, 0 failed. All earlier review items are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T18:20:29.842089+00:00
+- actor: wballard
+  id: 01m4bsh387xhhsqmpa5pdq9hew
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 3 files (LiveGraphApplyTests.swift, LoaderTests.swift, ReplayTests.swift); 1/1 findings checked
+    - test: green — swift test, 566 passed, 0 warnings
+    - commit: 3d06cf0
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T18:20:35.975831+00:00
 depends_on:
 - 01M4B3XHRVFA2YDCJC76MAFQR5
 - 01M4B3X08THVXHAJEQ4Z8PDB4H
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: 9a80
 title: 'Live graph: apply changed files to the graph'
 ---
 ## What

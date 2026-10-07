@@ -42,6 +42,13 @@ struct KanbanGraphTests {
     /// in this time.
     static let firstCallDelay = Duration.milliseconds(100)
 
+    /// The ULID source of the mutations of a test engine. Its ids sort after each id of the fixture logs, because its
+    /// time is one step after the time of the fixture.
+    static let mutationIDs = FixedULIDSource(at: ReplayTests.date(atStep: 1))
+
+    /// The actor name of the session actor test.
+    static let actorName = "Claude Code"
+
     /// A query that reads the board, its tasks, and the column of each task. The one column of the fixture is the
     /// terminal column, so its tasks are done, and the query gives `excludeDone: false` to list them.
     static let boardQuery = """
@@ -66,7 +73,7 @@ struct KanbanGraphTests {
         boardKey
     }
 
-    /// Makes an engine for a repo, with the fixed clock.
+    /// Makes an engine for a repo, with the fixed clock, the test actor, and the fixed ULID source.
     ///
     /// - Parameters:
     ///   - root: The root directory of the repo.
@@ -78,7 +85,14 @@ struct KanbanGraphTests {
         readingKeyWith keyReader: @escaping @Sendable (URL) throws(BoardKeyError) -> BoardKey = fakeKey,
         reportingTo observer: (any KanbanCallObserver)? = nil
     ) throws -> KanbanGraph {
-        try KanbanGraph(root: root, readingKeyWith: keyReader, timedBy: { time }, reportingTo: observer)
+        try KanbanGraph(
+            root: root,
+            readingKeyWith: keyReader,
+            timedBy: { time },
+            actingAs: ReplayTests.actor,
+            mintingFrom: mutationIDs,
+            reportingTo: observer
+        )
     }
 
     /// Runs one document with no variables and no operation name.
@@ -252,6 +266,17 @@ struct KanbanGraphTests {
             try await Self.execute(Self.nameQuery, on: graph)
         }
         #expect(try await Self.execute(Self.nameQuery, on: graph) == Self.nameResponse)
+    }
+
+    @Test("The session actor is the actor with the slug of the actor name")
+    func sessionActorIsSlugOfName() throws {
+        #expect(try KanbanGraph.sessionActor(named: Self.actorName) == .actor(slug: "claude-code"))
+    }
+
+    @Test("With no actor name, the session actor is the actor with the slug of the OS user name")
+    func sessionActorFallsBackToUserName() throws {
+        let userSlug = try Slug(columnOrActorName: NSUserName()).value
+        #expect(try KanbanGraph.sessionActor(named: nil) == .actor(slug: userSlug))
     }
 
     @Test("The schema SDL has the board query and no patch mutation")

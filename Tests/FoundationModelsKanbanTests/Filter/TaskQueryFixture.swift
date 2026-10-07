@@ -48,7 +48,7 @@ struct TaskQueryFixture {
     /// Makes a context that reads the board, with a fixed clock.
     private var context: KanbanContext {
         KanbanContext(
-            store: BoardStore(graph: board.graph, boardKey: DependencyMarkersTests.boardKey),
+            store: BoardStore.fixture(of: board.graph, inBoard: DependencyMarkersTests.boardKey),
             clock: { DependencyMarkersTests.time }
         )
     }

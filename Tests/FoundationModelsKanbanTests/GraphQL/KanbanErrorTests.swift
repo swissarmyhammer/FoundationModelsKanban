@@ -254,6 +254,13 @@ struct KanbanErrorTests {
         #expect(decodedPath.isEmpty)
     }
 
+    @Test("The response of a call that fails has the error JSON in errors and no data")
+    func responseJSONHasOnlyErrors() throws {
+        let error = KanbanError.boardBusy(attempts: Self.commitAttempts)
+        let object = #"{"extensions":{"code":"BOARD_BUSY"},"message":"\#(error.message)","path":[]}"#
+        #expect(try error.responseJSON() == #"{"errors":[\#(object)]}"#)
+    }
+
     @Test("The JSON form decodes to the same value")
     func responseErrorRoundTrip() throws {
         let original = KanbanError.nothingToUndo.responseError(at: [.key("undo"), .index(0)])
