@@ -19,6 +19,12 @@ struct NameRewriteTests {
     /// The key of the `board` field that the rewrite adds around the first moved root field.
     private static let firstMoveKey = "_kanbanRoot0"
 
+    /// A query with the root field `tasks` in an inline fragment on the query type.
+    private static let inlineFragmentQuery = "{ ... on Query { tasks { totalCount } } }"
+
+    /// A query with the root field `tasks` in a fragment definition on the query type.
+    private static let fragmentDefinitionQuery = "{ ...Q } fragment Q on Query { tasks { totalCount } }"
+
     /// A filter that does not parse.
     private static let invalidFilter = "&&"
 
@@ -180,6 +186,37 @@ struct NameRewriteTests {
         let field = written == canonical ? written : Self.aliased(written, as: canonical)
         #expect(rewritten.text == "{ \(Self.firstMoveKey): board { \(field)\(selection) } }")
         #expect(rewritten.rewrites == [NameRewrite(from: written, to: "board.\(canonical)", path: [written])])
+    }
+
+    @Test(
+        "A root query field in an inline fragment or a fragment definition on the query type moves into board",
+        arguments: [
+            (Self.inlineFragmentQuery,
+             "{ ... on Query { \(Self.firstMoveKey): board { tasks { totalCount } } } }", ["tasks"]),
+            ("{ ... { tasks { totalCount } } }",
+             "{ ... { \(Self.firstMoveKey): board { tasks { totalCount } } } }", ["tasks"]),
+            (Self.fragmentDefinitionQuery,
+             "{ ...Q } fragment Q on Query { \(Self.firstMoveKey): board { tasks { totalCount } } }", ["Q", "tasks"]),
+        ]
+    )
+    func fragmentRootFieldMovesIntoBoard(document: String, text: String, path: [String]) throws {
+        let rewritten = try Self.rewritten(from: document)
+        #expect(rewritten.text == text)
+        #expect(rewritten.rewrites == [NameRewrite(from: "tasks", to: "board.tasks", path: path)])
+    }
+
+    @Test(
+        "A root query field in a fragment on the query type gives the same result as at the root, under data.tasks",
+        arguments: [Self.inlineFragmentQuery, Self.fragmentDefinitionQuery]
+    )
+    func fragmentRootFieldGivesRootResult(document: String) async throws {
+        let fixture = try QueryFixture()
+        let fromFragment = try await fixture.respond(to: document)
+        let fromRoot = try await fixture.respond(to: "{ tasks { totalCount } }")
+        let fragmentData = try #require(KanbanGraphTests.object(of: fromFragment)["data"] as? [String: Any])
+        let rootData = try #require(KanbanGraphTests.object(of: fromRoot)["data"] as? [String: Any])
+        #expect(fragmentData.keys.sorted() == ["tasks"])
+        #expect(NSDictionary(dictionary: fragmentData).isEqual(to: rootData))
     }
 
     @Test("A root field of the query type stays at the root")

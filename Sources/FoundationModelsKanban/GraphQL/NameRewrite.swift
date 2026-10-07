@@ -138,8 +138,8 @@ struct RewrittenDocument: Sendable {
 /// The rewrite reads each name at its position: a top-level mutation, a field in a selection, an argument, an `input`
 /// field, and an enum value. ``NameMatcher`` gives the canonical name. A field keeps its response key: the rewrite
 /// adds the name of the caller as a GraphQL alias, and keeps an alias that the caller wrote. A root query field that
-/// only `Board` has moves into a `board { … }` field. A name with no match stays as it is, so that validation gives
-/// the "did you mean" error.
+/// only `Board` has moves into a `board { … }` field, also in an inline fragment or a fragment definition on the
+/// query type. A name with no match stays as it is, so that validation gives the "did you mean" error.
 ///
 /// The nodes of the GraphQL syntax tree cannot be made outside the GraphQL module. Thus the rewrite changes the text
 /// of the document at the places that the parse gives, and the engine parses the new text again.
@@ -272,14 +272,14 @@ private struct RewriteWalk {
                 try visit(operation)
             case let fragment as FragmentDefinition:
                 let type = schema.getType(name: fragment.typeCondition.name.value)
-                try visitSelections(of: fragment.selectionSet, on: type, at: [fragment.name.value])
+                try visitSelections(of: fragment.selectionSet, on: type, at: [fragment.name.value], as: .anyOther)
             default:
                 continue
             }
         }
     }
 
-    /// Visits the root fields of an operation. A field of a `query` that only `Board` has moves into `board`.
+    /// Visits the root fields of an operation.
     ///
     /// - Parameter operation: The operation.
     /// - Throws: An error from the schema when a type gives no fields.
@@ -289,28 +289,33 @@ private struct RewriteWalk {
         case .mutation: (schema.mutationType, .topLevelMutation)
         case .subscription: (schema.subscriptionType, .anyOther)
         }
-        for selection in operation.selectionSet.selections {
-            if operation.operation == .query, let field = selection as? Field, try moveIntoBoard(field, from: root) {
-                continue
-            }
-            try visit(selection, on: root, at: [], as: position)
-        }
+        try visitSelections(of: operation.selectionSet, on: root, at: [], as: position)
     }
 
     /// Visits each selection of a selection set.
+    ///
+    /// When the selections read the query type, a field that only `Board` has moves into `board`. This applies to
+    /// the root fields of a `query`, and to the fields of an inline fragment or a fragment definition on the query
+    /// type. No field gives the query type, so these fields are always at the root of `data`.
     ///
     /// - Parameters:
     ///   - selectionSet: The selection set.
     ///   - parent: The type that the selections read, or `nil` when the type is not known.
     ///   - path: The path to the selection set.
+    ///   - position: The position of a field of the selection set.
     /// - Throws: An error from the schema when a type gives no fields.
     private mutating func visitSelections(
         of selectionSet: SelectionSet,
         on parent: (any GraphQLNamedType)?,
-        at path: [String]
+        at path: [String],
+        as position: NamePosition
     ) throws {
+        let readsQuery = schema.queryType.map { query in parent?.name == query.name } ?? false
         for selection in selectionSet.selections {
-            try visit(selection, on: parent, at: path, as: .anyOther)
+            if readsQuery, let field = selection as? Field, try moveIntoBoard(field, at: path) {
+                continue
+            }
+            try visit(selection, on: parent, at: path, as: position)
         }
     }
 
@@ -334,9 +339,7 @@ private struct RewriteWalk {
             try visit(field, on: parent, at: path, as: position)
         case let fragment as InlineFragment:
             let type = fragment.typeCondition.map { condition in schema.getType(name: condition.name.value) } ?? parent
-            for inner in fragment.selectionSet.selections {
-                try visit(inner, on: type, at: path, as: position)
-            }
+            try visitSelections(of: fragment.selectionSet, on: type, at: path, as: position)
         default:
             return
         }
@@ -372,13 +375,13 @@ private struct RewriteWalk {
     /// `Board` has one.
     ///
     /// - Parameters:
-    ///   - field: The root field.
-    ///   - root: The query type.
+    ///   - field: A field that reads the query type.
+    ///   - path: The path to the field: empty in an operation, or the name of a fragment definition.
     /// - Returns: `true` when the walk moved the field.
     /// - Throws: An error from the schema when a type gives no fields.
-    private mutating func moveIntoBoard(_ field: Field, from root: GraphQLObjectType?) throws -> Bool {
+    private mutating func moveIntoBoard(_ field: Field, at path: [String]) throws -> Bool {
         let name = WrittenName(field.name)
-        guard !name.text.hasPrefix(Self.introspectionPrefix), let rootFields = try Self.fields(of: root),
+        guard !name.text.hasPrefix(Self.introspectionPrefix), let rootFields = try Self.fields(of: schema.queryType),
               NameMatcher.match(for: name.text, among: Self.candidates(rootFields), at: .anyOther) == .notFound,
               let board = rootFields[Self.boardField],
               let boardFields = try Self.fields(of: getNamedType(type: board.type)),
@@ -389,12 +392,13 @@ private struct RewriteWalk {
             return false
         }
         let fieldKey = field.alias?.value ?? name.text
+        let fieldPath = path + [fieldKey]
         let boardKey = Self.rootMoveKeyPrefix + String(rootMoves.count)
         edits.append(TextEdit(range: start..<start, replacement: "\(boardKey): \(Self.boardField) { "))
-        rename(field, to: canonical, recordingAs: "\(Self.boardField).\(canonical)", at: [fieldKey])
+        rename(field, to: canonical, recordingAs: "\(Self.boardField).\(canonical)", at: fieldPath)
         edits.append(TextEdit(range: end..<end, replacement: " }"))
         rootMoves.append(RootMove(boardKey: boardKey, fieldKey: fieldKey))
-        try visitBody(of: field, as: definition, at: [fieldKey])
+        try visitBody(of: field, as: definition, at: fieldPath)
         return true
     }
 
@@ -409,7 +413,7 @@ private struct RewriteWalk {
         let arguments = field.arguments.map { argument in (argument.name, argument.value) }
         try visitNamedValues(arguments, typedBy: definition.args.mapValues(\.type), at: path)
         if let selectionSet = field.selectionSet {
-            try visitSelections(of: selectionSet, on: getNamedType(type: definition.type), at: path)
+            try visitSelections(of: selectionSet, on: getNamedType(type: definition.type), at: path, as: .anyOther)
         }
     }
 

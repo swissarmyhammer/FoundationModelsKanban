@@ -26,6 +26,44 @@ comments:
     - evidence: 3 files — Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift (new), Sources/FoundationModelsKanban/GraphQL/Schema.swift (`API.respond` runs the rewrite, `RewriteResponse` with `extensions.rewrites`), Tests/FoundationModelsKanbanTests/GraphQL/NameRewriteTests.swift (new). `swift test --filter NameRewriteTests`: 22 tests passed. `swift test`: 792 tests in 46 suites passed, 0 new warnings. swiftlint and swift format: 0 findings. periphery: no unused code.
     - next: /review
   timestamp: 2026-10-07T23:11:26.200055+00:00
+- actor: wballard
+  id: 01m4cacmv1dqy1jx4hk139kt68
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (c04c7f6); 1 finding (1 confirmed, 0 refuted) — Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift:293
+    - next: Do the open item in "Review Findings (2026-10-07 18:13)". Then review again.
+  timestamp: 2026-10-07T23:15:15.937922+00:00
+- actor: wballard
+  id: 01m4cacyvberd4pe0v922wxvc7
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 3 files (GraphQL/NameRewrite.swift, GraphQL/Schema.swift, NameRewriteTests.swift)
+    - test: green — swift test, 792 passed; build warnings only the 2 accepted kinds
+    - commit: c04c7f6
+    - review: findings — Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift:293
+  timestamp: 2026-10-07T23:15:26.187651+00:00
+- actor: wballard
+  id: 01m4camdxqt5adnjfy68xxapcq
+  text: |-
+    Finding NameRewrite.swift:293 `completeness/invariant-propagation` fixed (TDD). The preferred fix applies to both places: inline fragments and named fragment definitions.
+
+    RED: 2 new parameterized tests in NameRewriteTests (`fragmentRootFieldMovesIntoBoard`, 3 cases: `... on Query`, `...` with no type condition, and `fragment Q on Query`; `fragmentRootFieldGivesRootResult`, 2 cases through `QueryFixture.respond`). 8 assertion failures: the text was not rewritten, `rewrites` was `[]`, and `data` was nil because validation failed.
+
+    GREEN: the move check is now in `visitSelections(of:on:at:as:)`. It runs when the parent type is the query type. The operation root, the InlineFragment branch, and the fragment definition all go through `visitSelections`, so one check covers all three places. `moveIntoBoard(_:at:)` reads `schema.queryType` and takes the path, so a rewrite in fragment `Q` has the path `["Q", "tasks"]`.
+
+    Why the named fragment is correct with the text rewrite: no field in the schema returns the query type. Thus a fragment on `Query` can only be spread at the root of `data`, and the `_kanbanRoot<n>` key comes back at the root, where `callerResult(from:)` restores it. A spread in a mutation or a subscription is not valid GraphQL, so validation refuses it.
+
+    Discovery, recorded as task ^1w0aefx: two moved root fields with the same response key (for example a direct `tasks` and a `tasks` in a fragment) get two wrapper keys, and `restoring(_:moving:)` keeps only the first value. GraphQL would merge them. The bug existed before this change, for two direct `tasks` fields too.
+
+    Checks: `swift test` gave 794 tests in 46 suites, all pass. The only build warning is the accepted mlx "missing creator" kind.
+  timestamp: 2026-10-07T23:19:30.999344+00:00
+- actor: wballard
+  id: 01m4camfn9xaefbwt18q7h6nw7
+  text: |-
+    ### implement — changed
+    - evidence: 2 files — Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift, Tests/FoundationModelsKanbanTests/GraphQL/NameRewriteTests.swift. `swift test --filter NameRewriteTests/fragmentRootField`: RED 8 issues, then GREEN 2 tests (5 cases). `swift test`: 794 tests in 46 suites passed; the only build warning is the accepted mlx "missing creator" kind.
+    - next: /review
+  timestamp: 2026-10-07T23:19:32.777837+00:00
 depends_on:
 - 01M4B40W9YCS7ZKYB43KFK6T3Z
 - 01M4B406Z7RVSBJKKJ8KJW0CY2
@@ -55,3 +93,12 @@ Rewrite the parsed GraphQL document before validation. The basis is plan.md §4.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-07 18:13)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift:293` `completeness/invariant-propagation` — The root-field move into `board` runs only for a direct Field of a query operation. The same root query field inside an inline fragment on the query type (for example `{ ... on Query { tasks } }`) or inside a fragment definition on the query type is not moved. Those selections reach `visit(_:on:at:as:)` through `visitSelections` (line 313) and the InlineFragment branch (lines 335-339), which never call `moveIntoBoard`. The caller's `tasks` then fails validation with 'Cannot query field', even though the same name is accepted at the top level. Route root-level selections in inline fragments on the query type, and in fragment definitions on the query type, through the same move check as line 293. Or state in a doc comment that the move applies only to direct selections. Add one test with `{ ... on Query { tasks { totalCount } } }` that asserts the chosen behaviour.
