@@ -293,8 +293,8 @@ These mutations also have an optional `board` field in `input`, because they nam
 | `assignTask` / `unassignTask` | `id!`, `actor!` | task: `add` / `remove` on `assignees` |
 | `tagTask` / `untagTask` | `id!`, `tags!` | task: `add` / `remove` on `tags` (plus a tag `set` patch for each unknown tag) |
 | `deleteTask` / `undeleteTask` | `id!` | task: `delete` true / false |
-| `undo` | `txn` (optional), `force` | the inverse patches of the transaction (§6.5) |
-| `redo` | `txn` (optional), `force` | the inverse patches of an `undo` transaction (§6.5) |
+| `undo` | `txn` (optional), `force`, `board` (optional) | the inverse patches of the transaction (§6.5) |
+| `redo` | `txn` (optional), `force`, `board` (optional) | the inverse patches of an `undo` transaction (§6.5) |
 | `addColumn` / `updateColumn` / `deleteColumn` / `undeleteColumn` | `id`, `name`, `order`, `body` | column: `set`, `edit body` / `delete` true / false |
 | `addActor` / `updateActor` / `deleteActor` / `undeleteActor` | `id`, `name`, `color`, `body`, `ensure` | actor: `set`, `edit body` / `delete` true / false |
 | `addTag` / `updateTag` / `deleteTag` / `undeleteTag` | `id` (slug), `name`, `color`, `body` | tag: `set`, `edit body` / `delete` true / false (`addTag` is idempotent on slug). `updateTag` does not change the slug. |
