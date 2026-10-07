@@ -59,13 +59,29 @@ comments:
     - evidence: Sources/FoundationModelsKanban/GraphQL/Schema.swift; `swift build --build-tests` 0 warnings; `swift test` 451 tests in 29 suites passed; SDL (public and patch) identical before and after.
     - next: /review
   timestamp: 2026-10-07T16:57:56.149001+00:00
+- actor: wballard
+  id: 01m4bmxybpzefgkt6j7k0v701q
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 4d00f32). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. 1 file reviewed. 2 files in `.kanban/` not reviewed (.reviewignore). All prior Review Findings items are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T17:00:14.070644+00:00
+- actor: wballard
+  id: 01m4bmy486v6z9x1zpp0s44hbp
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 file (GraphQL/Schema.swift); 2/2 findings checked; SDL unchanged (diff)
+    - test: green — swift test, 451 passed, 0 warnings
+    - commit: 4d00f32
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T17:00:20.102475+00:00
 depends_on:
 - 01M4B3V9XKKT81TCZFJJT4PE6E
 - 01M4B3YC73VSKE9VEP29E3CZNQ
 - 01M4B4AJGSQDJ4PCBP2W5XQJKR
 - 01M4B3Y4M87387J50EQCD36VB0
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '9580'
 title: Public schema types and board queries
 ---
 ## What
