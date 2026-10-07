@@ -481,6 +481,35 @@ enum GraphQLTypeName {
     static let progress = "Progress"
 }
 
+/// The aliases of the fields, the arguments, and the `input` fields of the schemas: the other names that the agent can
+/// write for each name (plan.md §4.5, step 5).
+///
+/// The schema has one name for each field, and introspection shows only that name. The forgiving name rewrite reads
+/// this table, so that the Swift code stays the one source of the names (plan.md §1). A key is a GraphQL name of the
+/// schemas above, and its aliases apply at each position where the schema has the name.
+enum GraphQLFieldAliases {
+    /// The aliases of each name. The old names `description` (Board, Tag, Task) and `text` (Comment) are aliases of
+    /// `body` (plan.md §12, item 19).
+    static let byName: [String: [String]] = [
+        "body": ["description", "desc", "text", "content"],
+        "column": ["status"],
+        "assignees": ["assignee"],
+        "id": ["task_id"],
+        "tag": ["label"],
+        "tags": ["labels"],
+    ]
+}
+
+extension CanonicalName {
+    /// Makes the canonical name of a field, an argument, or an `input` field, with its aliases from
+    /// ``GraphQLFieldAliases``.
+    ///
+    /// - Parameter name: The GraphQL name, for example `body`.
+    init(field name: String) {
+        self.init(name: name, aliases: GraphQLFieldAliases.byName[name] ?? [])
+    }
+}
+
 /// The public GraphQL schema: the schema that the agent sees.
 ///
 /// The schema does not have the internal `patch` mutation (plan.md §12,

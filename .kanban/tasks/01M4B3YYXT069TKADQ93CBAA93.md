@@ -28,13 +28,29 @@ comments:
     - evidence: Sources/FoundationModelsKanban/Tool/KanbanGraph.swift (new), Sources/FoundationModelsKanban/GraphQL/Schema.swift, Tests/FoundationModelsKanbanTests/Tool/KanbanGraphTests.swift (new). `swift test --filter KanbanGraphTests`: 8 tests passed. `swift test`: 459 tests in 30 suites passed. periphery (`--retain-public`, tests built, native build system): no unused code.
     - next: /review
   timestamp: 2026-10-07T17:18:17.715076+00:00
+- actor: wballard
+  id: 01m4bp5jg1qqwdz1mc61ex47ys
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (880d9e6). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. 3 files reviewed. 2 .kanban files not reviewed (.reviewignore).
+    - next: None. The task is in done.
+  timestamp: 2026-10-07T17:21:52.641032+00:00
+- actor: wballard
+  id: 01m4bp5s11csx70cd0x1wdfbp5
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 3 files (Tool/KanbanGraph.swift, GraphQL/Schema.swift, KanbanGraphTests.swift)
+    - test: green — swift test, 459 passed, 0 warnings
+    - commit: 880d9e6
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T17:21:59.329404+00:00
 depends_on:
 - 01M4B3YQSXZCGCB08FVP8QCSF3
 - 01M4B3XHRVFA2YDCJC76MAFQR5
 - 01M4B3VKJ8W42AXVFVMH6WN5VQ
 - 01M4B4A8735GAP57Q8ZVDP5HY2
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: '9680'
 title: 'KanbanGraph: execute, serial gate, board load'
 ---
 ## What
