@@ -66,9 +66,26 @@ struct NameRewriteTests {
         let directory = try TemporaryDirectory()
         let mutation = AddUpdateTaskTests.mutation(of: addTaskField(named: name))
         let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
-        let data = try #require(KanbanGraphTests.object(of: response)["data"] as? [String: Any])
         let patch = try AddUpdateTaskTests.lastPatch(of: AddUpdateTaskTests.firstTask(in: response), in: directory)
-        return (data.keys.sorted(), patch)
+        return (try data(of: response).keys.sorted(), patch)
+    }
+
+    /// Gives the `data` object of a response.
+    ///
+    /// - Parameter response: The response JSON text.
+    /// - Returns: The `data` object.
+    /// - Throws: An error when the response has no `data` object.
+    private static func data(of response: String) throws -> [String: Any] {
+        try #require(KanbanGraphTests.object(of: response)["data"] as? [String: Any])
+    }
+
+    /// Gives the `errors` list of a response.
+    ///
+    /// - Parameter response: The response JSON text.
+    /// - Returns: The errors.
+    /// - Throws: An error when the response has no `errors` list.
+    private static func errors(of response: String) throws -> [[String: Any]] {
+        try #require(KanbanGraphTests.object(of: response)["errors"] as? [[String: Any]])
     }
 
     /// Gives the message of the first error of a response.
@@ -76,8 +93,48 @@ struct NameRewriteTests {
     /// - Parameter response: The response JSON text.
     /// - Returns: The message.
     private static func firstErrorMessage(of response: String) throws -> String {
-        let errors = try #require(KanbanGraphTests.object(of: response)["errors"] as? [[String: Any]])
-        return try #require(errors.first?["message"] as? String)
+        try #require(errors(of: response).first?["message"] as? String)
+    }
+
+    /// Runs a document and a reference document on one ``QueryFixture``, and expects the same `data` from both.
+    ///
+    /// - Parameters:
+    ///   - document: The document under test.
+    ///   - reference: The document that gives the expected result.
+    ///   - key: The key of the expected result in the `data` of the reference, or `nil` for all of `data`.
+    /// - Returns: The `data` of the document under test.
+    /// - Throws: An error when a response has no `data` object, or the reference has no object at `key`.
+    @discardableResult
+    private static func expectSameData(
+        of document: String,
+        as reference: String,
+        under key: String? = nil
+    ) async throws -> [String: Any] {
+        let fixture = try QueryFixture()
+        let actual = try await data(of: fixture.respond(to: document))
+        var expected = try await data(of: fixture.respond(to: reference))
+        if let key {
+            expected = try #require(expected[key] as? [String: Any])
+        }
+        #expect(NSDictionary(dictionary: actual).isEqual(to: expected))
+        return actual
+    }
+
+    /// Runs task mutations in sequence on the task of a fixture repo, through `execute`, and examines the delete
+    /// flag of the last patch of the task.
+    ///
+    /// - Parameters:
+    ///   - names: The mutation names, in the sequence that they run.
+    ///   - isDelete: The delete flag that the last patch must have.
+    /// - Returns: `true` when the last patch of the task has the delete flag `isDelete`.
+    /// - Throws: An error when the fixture repo cannot be made, or a mutation cannot run.
+    private static func lastPatch(afterRunning names: [String], isDelete: Bool) async throws -> Bool {
+        let directory = try TemporaryDirectory()
+        let fixture = try ColumnActorTests.makeFixtureGraph(in: directory)
+        for name in names {
+            _ = try await CommentTests.run(TaskOperationTests.taskField(name, of: fixture.task), on: fixture.graph)
+        }
+        return try ColumnActorTests.lastPatch(of: .task(fixture.task), isDelete: isDelete, in: directory)
     }
 
     // MARK: - Top-level mutation
@@ -210,13 +267,8 @@ struct NameRewriteTests {
         arguments: [Self.inlineFragmentQuery, Self.fragmentDefinitionQuery]
     )
     func fragmentRootFieldGivesRootResult(document: String) async throws {
-        let fixture = try QueryFixture()
-        let fromFragment = try await fixture.respond(to: document)
-        let fromRoot = try await fixture.respond(to: "{ tasks { totalCount } }")
-        let fragmentData = try #require(KanbanGraphTests.object(of: fromFragment)["data"] as? [String: Any])
-        let rootData = try #require(KanbanGraphTests.object(of: fromRoot)["data"] as? [String: Any])
+        let fragmentData = try await Self.expectSameData(of: document, as: "{ tasks { totalCount } }")
         #expect(fragmentData.keys.sorted() == ["tasks"])
-        #expect(NSDictionary(dictionary: fragmentData).isEqual(to: rootData))
     }
 
     @Test("A root field of the query type stays at the root")
@@ -228,12 +280,11 @@ struct NameRewriteTests {
 
     @Test("{ tasks } gives the same result as { board { tasks } }, under data.tasks")
     func rootTasksGivesBoardTasksResult() async throws {
-        let fixture = try QueryFixture()
-        let moved = try await fixture.respond(to: "{ tasks\(Self.taskListSelection) }")
-        let nested = try await fixture.respond(to: "{ board { tasks\(Self.taskListSelection) } }")
-        let movedData = try #require(KanbanGraphTests.object(of: moved)["data"] as? [String: Any])
-        let nestedData = try #require(KanbanGraphTests.object(of: nested)["data"] as? [String: Any])
-        #expect(NSDictionary(dictionary: movedData).isEqual(to: try #require(nestedData["board"] as? [String: Any])))
+        try await Self.expectSameData(
+            of: "{ tasks\(Self.taskListSelection) }",
+            as: "{ board { tasks\(Self.taskListSelection) } }",
+            under: "board"
+        )
     }
 
     @Test("The response of a root move has the move in extensions.rewrites")
@@ -248,10 +299,8 @@ struct NameRewriteTests {
         let response = try await QueryFixture().respond(
             to: #"{ tasks(filter: "\#(Self.invalidFilter)") { totalCount } }"#
         )
-        let object = try KanbanGraphTests.object(of: response)
-        let errors = try #require(object["errors"] as? [[String: Any]])
-        #expect(errors.first?["path"] as? [String] == ["tasks"])
-        #expect(object["data"] as? [String: NSNull] == ["tasks": NSNull()])
+        #expect(try Self.errors(of: response).first?["path"] as? [String] == ["tasks"])
+        #expect(try Self.data(of: response) as? [String: NSNull] == ["tasks": NSNull()])
     }
 
     // MARK: - Ties and no match
@@ -275,8 +324,7 @@ struct NameRewriteTests {
     func validationErrorHasCallerLocation() async throws {
         let document = "{ board { Name nmae } }"
         let response = try await QueryFixture().respond(to: document)
-        let errors = try #require(KanbanGraphTests.object(of: response)["errors"] as? [[String: Any]])
-        let location = try #require((errors.first?["locations"] as? [[String: Int]])?.first)
+        let location = try #require((Self.errors(of: response).first?["locations"] as? [[String: Int]])?.first)
         let column = try #require(document.range(of: "nmae")).lowerBound.utf16Offset(in: document) + 1
         #expect(location == ["line": 1, "column": column])
     }
@@ -316,18 +364,11 @@ struct NameRewriteTests {
 
     @Test("archiveTask runs deleteTask through execute")
     func archiveTaskRunsDeleteTask() async throws {
-        let directory = try TemporaryDirectory()
-        let fixture = try ColumnActorTests.makeFixtureGraph(in: directory)
-        _ = try await CommentTests.run(TaskOperationTests.taskField("archiveTask", of: fixture.task), on: fixture.graph)
-        #expect(try ColumnActorTests.lastPatch(of: .task(fixture.task), isDelete: true, in: directory))
+        #expect(try await Self.lastPatch(afterRunning: ["archiveTask"], isDelete: true))
     }
 
     @Test("restoreTask runs undeleteTask through execute")
     func restoreTaskRunsUndeleteTask() async throws {
-        let directory = try TemporaryDirectory()
-        let fixture = try ColumnActorTests.makeFixtureGraph(in: directory)
-        _ = try await CommentTests.run(TaskOperationTests.taskField("deleteTask", of: fixture.task), on: fixture.graph)
-        _ = try await CommentTests.run(TaskOperationTests.taskField("restoreTask", of: fixture.task), on: fixture.graph)
-        #expect(try ColumnActorTests.lastPatch(of: .task(fixture.task), isDelete: false, in: directory))
+        #expect(try await Self.lastPatch(afterRunning: ["deleteTask", "restoreTask"], isDelete: false))
     }
 }

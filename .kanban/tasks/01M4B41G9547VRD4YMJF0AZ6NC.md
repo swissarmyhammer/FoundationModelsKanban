@@ -64,6 +64,41 @@ comments:
     - evidence: 2 files — Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift, Tests/FoundationModelsKanbanTests/GraphQL/NameRewriteTests.swift. `swift test --filter NameRewriteTests/fragmentRootField`: RED 8 issues, then GREEN 2 tests (5 cases). `swift test`: 794 tests in 46 suites passed; the only build warning is the accepted mlx "missing creator" kind.
     - next: /review
   timestamp: 2026-10-07T23:19:32.777837+00:00
+- actor: wballard
+  id: 01m4cataqrhx6gyt8n2kxhc9gn
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (dbf5be7). 1 finding, 1 confirmed, 0 refuted. Tests/FoundationModelsKanbanTests/GraphQL/NameRewriteTests.swift:212 (reuse/reuse).
+    - next: Correct the open item in "Review Findings (2026-10-07 18:21)". Then do the review again.
+  timestamp: 2026-10-07T23:22:44.344669+00:00
+- actor: wballard
+  id: 01m4catkdfbmgbwedb5fchpdeq
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 2 files (GraphQL/NameRewrite.swift, NameRewriteTests.swift); 1/1 prior finding checked; new task ^1w0aefx recorded
+    - test: green — swift test, 794 passed; build warnings only the 2 accepted kinds
+    - commit: dbf5be7
+    - review: findings — Tests/FoundationModelsKanbanTests/GraphQL/NameRewriteTests.swift:212
+  timestamp: 2026-10-07T23:22:53.231047+00:00
+- actor: wballard
+  id: 01m4cayhyene99kdmjmzrpdxc8
+  text: |-
+    Finding NameRewriteTests.swift:212 `reuse/reuse` fixed. Only the test file changed. No production code changed, so no RED step applies. The full suite proves that the tests still pass.
+
+    The cause was repeated scaffolding: each test parsed the response itself. I removed that cause from the whole file:
+    - New `expectSameData(of:as:under:)`: it runs a document and a reference document on one `QueryFixture` and expects equal `data`. It returns the `data` of the document under test. `rootTasksGivesBoardTasksResult` calls it with `under: "board"`. `fragmentRootFieldGivesRootResult` calls it with no key, and it still expects the keys `["tasks"]`.
+    - New `data(of:)` and `errors(of:)`: one place for `#require(KanbanGraphTests.object(of:)["data"/"errors"] ...)`. `addedTask`, `firstErrorMessage`, `movedFieldErrorHasCallerPath`, and `validationErrorHasCallerLocation` now use them. `tieGivesErrorWithMatches` still reads the raw object, because it expects that `data` is absent.
+    - New `lastPatch(afterRunning:isDelete:)`: `archiveTaskRunsDeleteTask` and `restoreTaskRunsUndeleteTask` had the same setup (directory, fixture graph, run task fields, examine the last patch). They now call this helper with their own mutation names.
+
+    I did not read the dump of the validators whole. The file is 754k characters, more than the read limit. I used the rule list in the dispatch instructions.
+  timestamp: 2026-10-07T23:25:02.798449+00:00
+- actor: wballard
+  id: 01m4caykc29jtc25cjwwnp83zx
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsKanbanTests/GraphQL/NameRewriteTests.swift. `swift test`: 794 tests in 46 suites passed. Suite "Name rewrite of a document" passed. The only build warning is the accepted mlx "missing creator" kind. 1/1 finding of "Review Findings (2026-10-07 18:21)" checked.
+    - next: /review
+  timestamp: 2026-10-07T23:25:04.258474+00:00
 depends_on:
 - 01M4B40W9YCS7ZKYB43KFK6T3Z
 - 01M4B406Z7RVSBJKKJ8KJW0CY2
@@ -102,3 +137,12 @@ Rewrite the parsed GraphQL document before validation. The basis is plan.md §4.
 > - `.kanban/ (from .reviewignore)` — 4 file(s)
 
 - [x] `Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift:293` `completeness/invariant-propagation` — The root-field move into `board` runs only for a direct Field of a query operation. The same root query field inside an inline fragment on the query type (for example `{ ... on Query { tasks } }`) or inside a fragment definition on the query type is not moved. Those selections reach `visit(_:on:at:as:)` through `visitSelections` (line 313) and the InlineFragment branch (lines 335-339), which never call `moveIntoBoard`. The caller's `tasks` then fails validation with 'Cannot query field', even though the same name is accepted at the top level. Route root-level selections in inline fragments on the query type, and in fragment definitions on the query type, through the same move check as line 293. Or state in a doc comment that the move applies only to direct selections. Add one test with `{ ... on Query { tasks { totalCount } } }` that asserts the chosen behaviour.
+
+## Review Findings (2026-10-07 18:21)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 2 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Tests/FoundationModelsKanbanTests/GraphQL/NameRewriteTests.swift:212` `reuse/reuse` — The new test fragmentRootFieldGivesRootResult repeats the scaffolding of the existing test rootTasksGivesBoardTasksResult: it builds a QueryFixture, sends two documents, extracts the data dictionaries, and compares them with NSDictionary isEqual. The existing test is a near-match that was not extended. A parameter on that test would have covered the fragment forms. Two copies of the same comparison logic will drift apart. Parameterize rootTasksGivesBoardTasksResult, or add a shared private helper that runs two documents on one fixture and asserts their data is equal. Then both tests call that helper with their own documents and expected paths.
