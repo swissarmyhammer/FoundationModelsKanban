@@ -14,13 +14,17 @@ struct GraphQLEngineTests {
     /// The time that the fixed clock gives to a mutation.
     static let clockText = "2026-10-07T08:30:00.001Z"
 
+    /// The key of the fixture board.
+    static let boardKey = "local/kanban"
+
     /// Makes a context with a fixture board and a fixed clock, so that each
     /// response is deterministic.
     static func makeContext() throws -> KanbanContext {
         let created = try DateTime(rfc3339: createdText)
         let now = try DateTime(rfc3339: clockText)
-        let board = Board(name: "Kanban", body: "", created: created, updated: created)
-        return KanbanContext(store: BoardStore(board: board), clock: { now })
+        var graph = Graph()
+        graph.update(with: .board(BoardNode(fields: NodeFields(created: created, updated: created), name: "Kanban")))
+        return KanbanContext(store: BoardStore(graph: graph, boardKey: boardKey), clock: { now })
     }
 
     @Test("A query runs end to end and returns the expected JSON")
