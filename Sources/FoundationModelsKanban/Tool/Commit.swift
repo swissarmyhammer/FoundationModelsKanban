@@ -92,9 +92,10 @@ struct WorkingCopy: Sendable {
     /// The graph after the kept patches.
     private(set) var graph: Graph
 
-    /// The events of the live graph, in the order of their ids. The working copy reads the events of a node from it
-    /// the first time that a patch changes the node.
-    private let liveEvents: [Event]
+    /// The events of the live graph, in the order of their ids: the global event list of the board. The working copy
+    /// reads the events of a node from it the first time that a patch changes the node, and `Board.history` reads the
+    /// transactions from it (plan.md §6.5).
+    let liveEvents: [Event]
 
     /// The events of each node that a kept patch changed: the live events of the node plus the kept events, in the
     /// order of their ids.
@@ -183,12 +184,8 @@ struct WorkingCopy: Sendable {
             return
         }
         let event = stamp.makeEvent(of: change, at: time)
-        let log = NodeLog(folding: events + [event], for: ref)
-        nodeEvents[ref] = log.events
+        nodeEvents[ref] = graph.update(folding: events + [event], for: ref)
         kept.append(event)
-        if let node = log.node {
-            graph.update(with: node)
-        }
     }
 }
 

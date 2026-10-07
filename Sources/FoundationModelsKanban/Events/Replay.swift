@@ -60,6 +60,24 @@ struct NodeLog: Hashable, Sendable {
     }
 }
 
+extension Graph {
+    /// Folds the events of one node again, and puts the new state of the node in its slot. The working copy of a call
+    /// (plan.md §5.4 step 4) and the replay of `history` (plan.md §6.5) use it.
+    ///
+    /// - Parameters:
+    ///   - events: All events of the node, in any order. Each event must change the node, and each event id must be
+    ///     different.
+    ///   - ref: The local ref of the node.
+    /// - Returns: The events of the node, in the order of their ids.
+    mutating func update(folding events: [Event], for ref: LocalRef) -> [Event] {
+        let log = NodeLog(folding: events, for: ref)
+        if let node = log.node {
+            update(with: node)
+        }
+        return log.events
+    }
+}
+
 // MARK: - Parse
 
 /// One line of a node log that decodes to an event of the node.

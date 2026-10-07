@@ -147,6 +147,38 @@ struct SearchTasksArguments: Codable, Sendable {
     let first: Int?
 }
 
+/// The arguments of `Board.history`: the filters of the change feed, the start, and the page size (plan.md §4.1,
+/// §6.7).
+struct HistoryArguments: Codable, Sendable {
+    /// The number of changes when the call does not give `first`.
+    static let defaultPageSize = 20
+
+    /// The value of `derived` when the call does not give it: the list keeps the `DERIVED` updates.
+    static let includesDerivedByDefault = true
+
+    /// The node types to keep, or `nil` for all types.
+    let type: [NodeType]?
+
+    /// The node to keep: a full URI or a short form, or `nil` for all nodes.
+    let node: NodeID?
+
+    /// The actor of the transactions to keep: a full URI or a short form, or `nil` for all actors.
+    let actor: NodeID?
+
+    /// The filter of the tasks to keep, for example `#bug`, or `nil` for no filter.
+    let filter: String?
+
+    /// `false` to leave out the `DERIVED` updates. An explicit `null` keeps them.
+    let derived: Bool?
+
+    /// The transaction after which the list starts, or `nil` for all transactions.
+    let since: NodeID?
+
+    /// The maximum number of changes. A negative value gives no change. An explicit `null` gives
+    /// ``defaultPageSize``.
+    let first: Int?
+}
+
 /// The arguments of a task list that has only a filter: `Board.nextTask`, and the `tasks` fields of `Column`,
 /// `Actor`, and `Tag` (plan.md §6.3).
 struct FilterArguments: Codable, Sendable {
@@ -364,6 +396,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             .addNodeInterface()
             .addBoardTypes()
             .addTaskTypes()
+            .addChangeTypes()
             .addQuery {
                 Field("board", at: KanbanResolver.board) {
                     Argument("id", at: \.id)
@@ -422,6 +455,15 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                     Argument("first", at: \.first).defaultValue(TasksArguments.defaultPageSize)
                 }
                 Field("summary", at: \.summary)
+                Field("history", at: BoardObject.history) {
+                    Argument("type", at: \.type)
+                    Argument("node", at: \.node)
+                    Argument("actor", at: \.actor)
+                    Argument("filter", at: \.filter)
+                    Argument("derived", at: \.derived).defaultValue(HistoryArguments.includesDerivedByDefault)
+                    Argument("since", at: \.since)
+                    Argument("first", at: \.first).defaultValue(HistoryArguments.defaultPageSize)
+                }
             }
             Self.nodeType(ColumnObject.self, as: GraphQLTypeName.column) {
                 Field("name", at: \.name)
@@ -638,7 +680,6 @@ struct PublicSchema: API {
             .addTaskOperationMutations()
             .addCommentMutations()
             .addTagMutations()
-            .addChangeTypes()
             .build()
     }
 }

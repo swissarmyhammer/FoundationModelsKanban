@@ -433,9 +433,33 @@ struct ChangeBuilderTests {
     /// - Parameters:
     ///   - document: The GraphQL document.
     ///   - session: The commit session.
-    static func run(_ document: String, in session: inout CommitSession) async throws {
+    /// - Returns: The result of the document.
+    @discardableResult
+    static func run(_ document: String, in session: inout CommitSession) async throws -> GraphQLResult {
         let result = try await ColumnActorTests.result(of: document, in: &session)
         #expect(result.errors.isEmpty, "\(document) gave \(result.errors)")
+        return result
+    }
+
+    /// Writes the fixture logs of ``KanbanGraphTests`` to a repo, loads a new commit session of the board, and runs
+    /// ``baseSetup`` in it.
+    ///
+    /// - Parameters:
+    ///   - directory: The temporary repo directory.
+    ///   - events: The events to append to the logs after the fixture, before the session loads the board.
+    /// - Returns: The session, and the ULID of the fixture task.
+    static func baseSession(
+        inRepoAt directory: TemporaryDirectory,
+        writing events: [Event] = []
+    ) async throws -> (session: CommitSession, task: ULID) {
+        let task = try KanbanGraphTests.writeFixture(inRepoAt: directory.url).task
+        let log = EventLog(repositoryAt: directory.url)
+        for event in events {
+            try log.append(contentsOf: [event], toLogOf: event.patch.node)
+        }
+        var session = try await CommitTests.makeSession(of: log)
+        try await run(baseSetup, in: &session)
+        return (session, task)
     }
 
     /// Gives the refs of a case in the live graph of a session.
@@ -457,9 +481,9 @@ struct ChangeBuilderTests {
     /// - Returns: The transaction.
     static func record(_ mutationCase: MutationCase) async throws -> Recorded {
         let directory = try TemporaryDirectory()
-        let task = try KanbanGraphTests.writeFixture(inRepoAt: directory.url).task
-        var session = try await CommitTests.makeSession(of: EventLog(repositoryAt: directory.url))
-        try await run(baseSetup, in: &session)
+        let base = try await baseSession(inRepoAt: directory)
+        let task = base.task
+        var session = base.session
         for step in mutationCase.setup {
             try await run(AddUpdateTaskTests.mutation(of: step(refs(of: task, in: session))), in: &session)
         }

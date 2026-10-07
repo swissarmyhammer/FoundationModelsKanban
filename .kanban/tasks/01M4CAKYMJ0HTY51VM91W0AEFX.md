@@ -20,8 +20,24 @@ comments:
     - evidence: 2 files — Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift, Tests/FoundationModelsKanbanTests/GraphQL/NameRewriteTests.swift. `swift test --filter NameRewriteTests/sameKeyRootFieldsGiveMergedResult`: RED 2 issues, then GREEN 1 test (2 cases). `swift test --filter NameRewriteTests`: 25 tests passed. `swift test`: 795 tests in 46 suites passed; the only build warning is the accepted mlx "missing creator" kind.
     - next: /review
   timestamp: 2026-10-07T23:30:27.317816+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: wballard
+  id: 01m4cbdvgmfrkdzdpjts3y4zxf
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (c6ce363). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. 2 files reviewed. 4 .kanban files not reviewed (.reviewignore).
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T23:33:24.116921+00:00
+- actor: wballard
+  id: 01m4cbe0ypyp0pwp84882ct6bg
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 2 files (GraphQL/NameRewrite.swift, NameRewriteTests.swift)
+    - test: green — swift test, 795 passed; build warnings only the 2 accepted kinds
+    - commit: c6ce363
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T23:33:29.686300+00:00
+position_column: done
+position_ordinal: a680
 title: 'Root move: merge two moved root fields with the same response key'
 ---
 ## What

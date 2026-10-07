@@ -236,7 +236,8 @@ struct NameRewriteTests {
         "A root query field that only Board has moves into board",
         arguments: [("tasks", "tasks", " { totalCount }"), ("Tasks", "tasks", " { totalCount }"),
                     ("next_task", "nextTask", " { id }"), ("summaries", "summary", " { total }"),
-                    ("description", "body", ""), ("columnz", "columns", " { name }")]
+                    ("description", "body", ""), ("columnz", "columns", " { name }"),
+                    ("history", "history", " { txn }")]
     )
     func rootFieldMovesIntoBoard(written: String, canonical: String, selection: String) throws {
         let rewritten = try Self.rewritten(from: "{ \(written)\(selection) }")
