@@ -99,14 +99,30 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsKanbanTests/GraphQL/NameRewriteTests.swift. `swift test`: 794 tests in 46 suites passed. Suite "Name rewrite of a document" passed. The only build warning is the accepted mlx "missing creator" kind. 1/1 finding of "Review Findings (2026-10-07 18:21)" checked.
     - next: /review
   timestamp: 2026-10-07T23:25:04.258474+00:00
+- actor: wballard
+  id: 01m4cb3j9qny7zh3xk9sn0msh3
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (9ce282b). 0 findings, 0 confirmed, 0 refuted, 7 validator runs, 0 failed. All prior Review Findings items have a check mark.
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T23:27:46.999340+00:00
+- actor: wballard
+  id: 01m4cb3qfa5yw2660nwtb3tf27
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — 1 file (NameRewriteTests.swift); 1/1 finding checked
+    - test: green — swift test, 794 passed; build warnings only the 2 accepted kinds
+    - commit: 9ce282b
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T23:27:52.298779+00:00
 depends_on:
 - 01M4B40W9YCS7ZKYB43KFK6T3Z
 - 01M4B406Z7RVSBJKKJ8KJW0CY2
 - 01M4B40CFSF002B4DKM3T8J6GV
 - 01M4B4B57JFX8HA0B45MMDQ1SQ
 - 01M4B4B1G28KK1NVCXHK9GDAYR
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: a580
 title: 'Forgiving names: rewrite the document'
 ---
 ## What

@@ -18,7 +18,8 @@ struct NameRewrite: Encodable, Hashable, Sendable {
     let path: [String]
 }
 
-/// A root query field that the rewrite moved into a `board { … }` field that it added (plan.md §4.5).
+/// A response key of the root query fields that the rewrite moved into a `board { … }` field that it added (plan.md
+/// §4.5). All the moved fields with this key are in `board` fields with the same key.
 private struct RootMove: Sendable {
     /// The response key of the `board` field that the rewrite added.
     let boardKey: String
@@ -45,7 +46,7 @@ struct RewrittenDocument: Sendable {
     /// The text edits that change ``source`` to ``text``, in the order of their offsets.
     fileprivate let edits: [TextEdit]
 
-    /// The root query fields that the rewrite moved into `board`.
+    /// The root query fields that the rewrite moved into `board`: one move for each response key.
     fileprivate let rootMoves: [RootMove]
 
     /// Gives the result of the execution of ``text`` in the form of the document that the caller wrote.
@@ -233,7 +234,7 @@ private struct RewriteWalk {
     /// The name of the root query field that holds the fields of a board.
     static let boardField = "board"
 
-    /// The start of the response key of a `board` field that the rewrite adds. The number of the move follows it.
+    /// The start of the response key of a `board` field that the rewrite adds. The number of the root move follows it.
     static let rootMoveKeyPrefix = "_kanbanRoot"
 
     /// The start of the name of an introspection field, for example `__typename`. The rewrite does not change it.
@@ -251,7 +252,7 @@ private struct RewriteWalk {
     /// One error for each name with a tie.
     private(set) var ties: [GraphQLError] = []
 
-    /// The root query fields that the walk moved into `board`.
+    /// The root query fields that the walk moved into `board`: one move for each response key.
     private(set) var rootMoves: [RootMove] = []
 
     /// Makes an empty walk.
@@ -393,13 +394,28 @@ private struct RewriteWalk {
         }
         let fieldKey = field.alias?.value ?? name.text
         let fieldPath = path + [fieldKey]
-        let boardKey = Self.rootMoveKeyPrefix + String(rootMoves.count)
+        let boardKey = boardKey(forMoving: fieldKey)
         edits.append(TextEdit(range: start..<start, replacement: "\(boardKey): \(Self.boardField) { "))
         rename(field, to: canonical, recordingAs: "\(Self.boardField).\(canonical)", at: fieldPath)
         edits.append(TextEdit(range: end..<end, replacement: " }"))
-        rootMoves.append(RootMove(boardKey: boardKey, fieldKey: fieldKey))
         try visitBody(of: field, as: definition, at: fieldPath)
         return true
+    }
+
+    /// Gives the response key of the `board` field that holds a moved root query field.
+    ///
+    /// All the moved fields with the same response key get the same `board` key. Thus GraphQL merges the added
+    /// `board` fields, and then the moved fields in them, the same as it merges the fields that the caller wrote.
+    ///
+    /// - Parameter fieldKey: The response key of the moved field, as the caller wrote it.
+    /// - Returns: The `board` key of an earlier move of `fieldKey`, or a new key that the walk records.
+    private mutating func boardKey(forMoving fieldKey: String) -> String {
+        if let move = rootMoves.first(where: { move in move.fieldKey == fieldKey }) {
+            return move.boardKey
+        }
+        let boardKey = Self.rootMoveKeyPrefix + String(rootMoves.count)
+        rootMoves.append(RootMove(boardKey: boardKey, fieldKey: fieldKey))
+        return boardKey
     }
 
     /// Visits the arguments and the selection of a field.

@@ -271,6 +271,19 @@ struct NameRewriteTests {
         #expect(fragmentData.keys.sorted() == ["tasks"])
     }
 
+    @Test(
+        "Two moved root fields with one response key give the merged result of board { tasks }, under data.tasks",
+        arguments: ["{ tasks { totalCount } ... on Query { tasks { edges { node { id } } } } }",
+                    "{ tasks { totalCount } tasks { edges { node { id } } } }"]
+    )
+    func sameKeyRootFieldsGiveMergedResult(document: String) async throws {
+        try await Self.expectSameData(
+            of: document,
+            as: "{ board { tasks { totalCount edges { node { id } } } } }",
+            under: "board"
+        )
+    }
+
     @Test("A root field of the query type stays at the root")
     func queryFieldStaysAtRoot() throws {
         let rewritten = try Self.rewritten(from: "{ Board { name } }")
