@@ -41,6 +41,9 @@ struct CommitTests {
     /// The time of each change of a test call.
     static let callTime = ReplayTests.time(atStep: callStep)
 
+    /// The number of runs of a call that finds one changed file before its commit: the first run, and the run again.
+    static let runsAfterOneChange = 2
+
     // MARK: - Fixture
 
     /// Writes the board fixture of the loader tests, and gives the refs of its tasks.
@@ -83,6 +86,43 @@ struct CommitTests {
         }
     }
 
+    /// Runs one mutation field that sets the title of a task in the working copy.
+    ///
+    /// - Parameters:
+    ///   - title: The new title.
+    ///   - task: The local ref of the task.
+    ///   - operation: The name of the mutation field.
+    ///   - store: The store of the working copy of the call.
+    static func setTitle(
+        _ title: String,
+        of task: LocalRef,
+        as operation: String,
+        in store: BoardStore
+    ) async throws {
+        try await apply(ReplayTests.titlePatch(setting: title, of: task), as: operation, to: store)
+    }
+
+    /// Gives the two title patches of a task, in call order: the patch of ``callTitle``, then the patch of
+    /// ``laterCallTitle``.
+    ///
+    /// - Parameter task: The local ref of the task.
+    /// - Returns: The patches.
+    static func callTitlePatches(of task: LocalRef) throws -> [PatchInput] {
+        try [callTitle, laterCallTitle].map { title in try ReplayTests.titlePatch(setting: title, of: task) }
+    }
+
+    /// Adds one run to the run count of a call.
+    ///
+    /// - Parameter runs: The run count of the call.
+    /// - Returns: The number of the run that starts: 1 for the first run.
+    @discardableResult
+    static func countRun(in runs: borrowing Mutex<Int>) -> Int {
+        runs.withLock { count in
+            count += 1
+            return count
+        }
+    }
+
     /// Writes the title of a task as a different process: a direct append to the log file of the task.
     ///
     /// - Parameters:
@@ -122,11 +162,7 @@ struct CommitTests {
         let (log, tasks) = try Self.writeBoard(in: directory)
         var session = try await Self.makeSession(of: log)
         try await session.run { store in
-            try await Self.apply(
-                ReplayTests.titlePatch(setting: Self.callTitle, of: tasks[0]),
-                as: Self.firstOperation,
-                to: store
-            )
+            try await Self.setTitle(Self.callTitle, of: tasks[0], as: Self.firstOperation, in: store)
             await #expect(throws: Self.ruleFailure) {
                 try await store.runField(as: Self.secondOperation) { work in
                     try work.apply(ReplayTests.titlePatch(setting: Self.callTitle, of: tasks[1]), at: Self.callTime)
@@ -152,7 +188,10 @@ struct CommitTests {
                 try work.apply(ReplayTests.titlePatch(setting: Self.callTitle, of: tasks[0]), at: Self.callTime)
                 throw Self.ruleFailure
             }
-            #expect(await store.view.graph == before)
+            let work = await store.work
+            #expect(work.graph == before)
+            #expect(work.kept.isEmpty)
+            #expect(work.operations.isEmpty)
         }
         #expect(try Self.title(of: tasks[0], in: session) == tasks[0].description)
     }
@@ -162,20 +201,13 @@ struct CommitTests {
         let directory = try TemporaryDirectory()
         let (log, tasks) = try Self.writeBoard(in: directory)
         var session = try await Self.makeSession(of: log)
+        let written = [tasks[0], tasks[1]]
         try await session.run { store in
-            try await Self.apply(
-                ReplayTests.titlePatch(setting: Self.callTitle, of: tasks[0]),
-                as: Self.firstOperation,
-                to: store
-            )
-            try await Self.apply(
-                ReplayTests.titlePatch(setting: Self.callTitle, of: tasks[1]),
-                as: Self.secondOperation,
-                to: store
-            )
+            try await Self.setTitle(Self.callTitle, of: written[0], as: Self.firstOperation, in: store)
+            try await Self.setTitle(Self.callTitle, of: written[1], as: Self.secondOperation, in: store)
         }
-        let events = try Self.callEvents(of: tasks[0], in: log) + Self.callEvents(of: tasks[1], in: log)
-        #expect(events.count == 2)
+        let events = try written.flatMap { task in try Self.callEvents(of: task, in: log) }
+        #expect(events.count == written.count)
         #expect(Set(events.map(\.txn)).count == 1)
         for event in events {
             #expect(event.ops == [Self.firstOperation, Self.secondOperation])
@@ -188,10 +220,12 @@ struct CommitTests {
     func eventIDsIncrease() async throws {
         let directory = try TemporaryDirectory()
         let (log, tasks) = try Self.writeBoard(in: directory)
-        var session = try await Self.makeSession(of: log, mintingFrom: FallingULIDSource(fromStep: Self.callStep))
-        let patches = try [Self.callTitle, Self.laterCallTitle].map { title in
-            try ReplayTests.titlePatch(setting: title, of: tasks[0])
+        let patches = try Self.callTitlePatches(of: tasks[0])
+        // One id for the txn and one id for each patch. Each id is one step earlier than the id before it.
+        let fallingIDs = (0...patches.count).map { offset in
+            ULID(timestamp: ReplayTests.date(atStep: Self.callStep - offset))
         }
+        var session = try await Self.makeSession(of: log, mintingFrom: ScriptedULIDSource(candidates: fallingIDs))
         try await session.run { store in
             try await store.runField(as: Self.firstOperation) { work throws(EventError) in
                 for patch in patches {
@@ -199,7 +233,12 @@ struct CommitTests {
                 }
             }
         }
-        #expect(try Self.callEvents(of: tasks[0], in: log).map(\.patch) == patches)
+        let events = try Self.callEvents(of: tasks[0], in: log)
+        let idsInCallOrder = try patches.map { patch in
+            try #require(events.first { event in event.patch == patch }).id
+        }
+        #expect(zip(idsInCallOrder, idsInCallOrder.dropFirst()).allSatisfy { earlier, later in earlier < later })
+        #expect(events.map(\.patch) == patches)
         #expect(try Self.title(of: tasks[0], in: session) == Self.laterCallTitle)
         try await LiveGraphApplyTests.expectEqualToFreshLoad(session.live, of: log)
     }
@@ -252,11 +291,7 @@ struct CommitTests {
         let before = try log.nodeFileSignatures()
         var session = try await Self.makeSession(of: log)
         try await session.run { store in
-            try await Self.apply(
-                ReplayTests.titlePatch(setting: tasks[0].description, of: tasks[0]),
-                as: Self.firstOperation,
-                to: store
-            )
+            try await Self.setTitle(tasks[0].description, of: tasks[0], as: Self.firstOperation, in: store)
         }
         #expect(try log.nodeFileSignatures() == before)
         #expect(!FileManager.default.fileExists(atPath: log.lockFileURL.path))
@@ -271,20 +306,13 @@ struct CommitTests {
         var session = try await Self.makeSession(of: log)
         let runs = Mutex(0)
         try await session.run { store in
-            let run = runs.withLock { count in
-                count += 1
-                return count
-            }
-            try await Self.apply(
-                ReplayTests.titlePatch(setting: Self.callTitle, of: tasks[0]),
-                as: Self.firstOperation,
-                to: store
-            )
+            let run = Self.countRun(in: runs)
+            try await Self.setTitle(Self.callTitle, of: tasks[0], as: Self.firstOperation, in: store)
             if run == 1 {
                 try Self.writeAsOtherProcess(to: tasks[1], inRun: run, of: log)
             }
         }
-        #expect(runs.withLock { count in count } == 2)
+        #expect(runs.withLock { count in count } == Self.runsAfterOneChange)
         #expect(try Self.title(of: tasks[0], in: session) == Self.callTitle)
         #expect(try Self.title(of: tasks[1], in: session) == LiveGraphApplyTests.changedTitle)
         #expect(try Self.callEvents(of: tasks[0], in: log).count == 1)
@@ -299,15 +327,8 @@ struct CommitTests {
         let runs = Mutex(0)
         do {
             try await session.run { store in
-                let run = runs.withLock { count in
-                    count += 1
-                    return count
-                }
-                try await Self.apply(
-                    ReplayTests.titlePatch(setting: Self.callTitle, of: tasks[0]),
-                    as: Self.firstOperation,
-                    to: store
-                )
+                let run = Self.countRun(in: runs)
+                try await Self.setTitle(Self.callTitle, of: tasks[0], as: Self.firstOperation, in: store)
                 try Self.writeAsOtherProcess(to: tasks[1], inRun: run, of: log)
             }
             Issue.record("The call did not give BOARD_BUSY")
@@ -320,25 +341,42 @@ struct CommitTests {
         try await LiveGraphApplyTests.expectEqualToFreshLoad(session.live, of: log)
     }
 
-    @Test("A committed call records the new signatures, and the live graph equals a fresh load")
+    @Test("A committed call records the new signatures of the files that it wrote, also of a new file")
     func commitRecordsSignatures() async throws {
         let directory = try TemporaryDirectory()
         let (log, tasks) = try Self.writeBoard(in: directory)
         var session = try await Self.makeSession(of: log)
         let newTask = LocalRef.task(ULID(timestamp: ReplayTests.date(atStep: Self.callStep)))
+        let before = session.live.signatures
         try await session.run { store in
-            try await Self.apply(
-                ReplayTests.titlePatch(setting: Self.callTitle, of: tasks[0]),
-                as: Self.firstOperation,
-                to: store
-            )
-            try await Self.apply(
-                ReplayTests.titlePatch(setting: Self.callTitle, of: newTask),
-                as: Self.secondOperation,
-                to: store
-            )
+            try await Self.setTitle(Self.callTitle, of: tasks[0], as: Self.firstOperation, in: store)
+            try await Self.setTitle(Self.callTitle, of: newTask, as: Self.secondOperation, in: store)
         }
-        #expect(try Self.title(of: newTask, in: session) == Self.callTitle)
+        let onDisk = try log.nodeFileSignatures()
+        let recorded = session.live.signatures
+        for ref in [tasks[0], newTask] {
+            let signature = try #require(onDisk[ref])
+            #expect(recorded[ref] == signature)
+            #expect(before[ref] != signature)
+        }
+        #expect(recorded == onDisk)
+    }
+
+    @Test("A call after a committed call commits in its first run, because the commit recorded the signatures")
+    func callAfterCommitRunsOneTime() async throws {
+        let directory = try TemporaryDirectory()
+        let (log, tasks) = try Self.writeBoard(in: directory)
+        var session = try await Self.makeSession(of: log)
+        try await session.run { store in
+            try await Self.setTitle(Self.callTitle, of: tasks[0], as: Self.firstOperation, in: store)
+        }
+        let runs = Mutex(0)
+        try await session.run { store in
+            Self.countRun(in: runs)
+            try await Self.setTitle(Self.laterCallTitle, of: tasks[0], as: Self.firstOperation, in: store)
+        }
+        #expect(runs.withLock { count in count } == 1)
+        #expect(try Self.callEvents(of: tasks[0], in: log).map(\.patch) == Self.callTitlePatches(of: tasks[0]))
         try await LiveGraphApplyTests.expectEqualToFreshLoad(session.live, of: log)
     }
 
@@ -380,29 +418,5 @@ struct CommitTests {
         let boardEvents = try EventLog(repositoryAt: directory.url).readLog(of: .board).events
         #expect(boardEvents.last?.ops == ["updateBoard"])
         #expect(boardEvents.last?.actor == ReplayTests.actor)
-    }
-}
-
-// MARK: - Falling ULID source
-
-/// A ULID source whose ids go back in time: each id has a time one step before the time of the id before it. A test
-/// uses it to check that the event ids of one call still increase.
-struct FallingULIDSource: ULIDSource {
-    /// The step of the time of the next id.
-    private var step: Int
-
-    /// Makes a source whose first id has the time of a step.
-    ///
-    /// - Parameter step: The step of the time of the first id.
-    init(fromStep step: Int) {
-        self.step = step
-    }
-
-    /// Makes the next ULID: its time is one step before the time of the ULID before it.
-    ///
-    /// - Returns: A new ULID.
-    mutating func makeULID() -> ULID {
-        defer { step -= 1 }
-        return ULID(timestamp: ReplayTests.date(atStep: step))
     }
 }
