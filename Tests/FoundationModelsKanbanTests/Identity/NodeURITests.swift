@@ -73,6 +73,14 @@ struct NodeURITests {
         #expect(uri.description == "kanban://\(Self.currentKey)/column/doing")
     }
 
+    @Test("The scheme check finds the scheme at the start of a text, and ignores case")
+    func schemeCheckFindsSchemeAtStart() {
+        #expect(NodeURI.hasScheme(atStartOf: "kanban://\(Self.currentKey)/board"))
+        #expect(NodeURI.hasScheme(atStartOf: "KANBAN://\(Self.currentKey)/board"))
+        #expect(!NodeURI.hasScheme(atStartOf: "tag/kanban://"))
+        #expect(!NodeURI.hasScheme(atStartOf: ""))
+    }
+
     // MARK: - Malformed URIs
 
     @Test(

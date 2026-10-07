@@ -127,13 +127,13 @@ struct LocalRefTests {
     @Test("A URI with the current key is stored as a local ref")
     func uriWithCurrentKeyIsLocal() {
         let uri = NodeURI(boardKey: Self.currentKey, ref: .column(slug: "doing"))
-        #expect(StoredRef(uri, inBoard: Self.currentKey) == .local(.column(slug: "doing")))
+        #expect(StoredRef(uri: uri, inBoard: Self.currentKey) == .local(.column(slug: "doing")))
     }
 
     @Test("A URI with a different key is stored as a remote ref")
     func uriWithDifferentKeyIsRemote() {
         let uri = NodeURI(boardKey: Self.otherKey, ref: .column(slug: "doing"))
-        #expect(StoredRef(uri, inBoard: Self.currentKey) == .remote(uri))
+        #expect(StoredRef(uri: uri, inBoard: Self.currentKey) == .remote(uri))
     }
 
     @Test("A local stored ref gives a URI with the current key")
@@ -152,6 +152,6 @@ struct LocalRefTests {
     func storedRefRoundTripsThroughURI(text: String) throws {
         let stored = try StoredRef(parsing: text)
         let uri = stored.uri(inBoard: Self.currentKey)
-        #expect(StoredRef(uri, inBoard: Self.currentKey) == stored)
+        #expect(StoredRef(uri: uri, inBoard: Self.currentKey) == stored)
     }
 }

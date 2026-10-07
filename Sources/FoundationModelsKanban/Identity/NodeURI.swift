@@ -41,7 +41,7 @@ extension NodeURI {
     ///
     /// - Parameter text: The text, for example a stored ref.
     /// - Returns: `true` when the text starts with `kanban://`.
-    static func hasScheme(_ text: String) -> Bool {
+    static func hasScheme(atStartOf text: String) -> Bool {
         text.prefix(scheme.count).lowercased() == scheme
     }
 
@@ -56,7 +56,7 @@ extension NodeURI {
     ///   ``NodeRefError/invalidBoardKey(uri:)`` when the board key is empty or has an empty segment. An error of
     ///   ``LocalRef/init(parsing:)`` when the end of the URI is not a valid local ref.
     init(parsing text: String) throws(NodeRefError) {
-        guard Self.hasScheme(text) else {
+        guard Self.hasScheme(atStartOf: text) else {
             throw .missingScheme(uri: text)
         }
         let separator = String(LocalRef.separator)

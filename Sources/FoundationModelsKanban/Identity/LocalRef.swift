@@ -184,7 +184,7 @@ enum StoredRef: Hashable, Sendable, CustomStringConvertible {
     /// - Parameter text: The stored text, for example `tag/bug` or `kanban://<board-key>/task/01K6Z3…`.
     /// - Throws: A ``NodeRefError`` when the text is not a valid URI or local ref.
     init(parsing text: String) throws(NodeRefError) {
-        if NodeURI.hasScheme(text) {
+        if NodeURI.hasScheme(atStartOf: text) {
             self = .remote(try NodeURI(parsing: text))
         } else {
             self = .local(try LocalRef(parsing: text))
@@ -196,7 +196,7 @@ enum StoredRef: Hashable, Sendable, CustomStringConvertible {
     /// - Parameters:
     ///   - uri: The full URI of the node.
     ///   - currentBoardKey: The key of the board whose log stores the ref.
-    init(_ uri: NodeURI, inBoard currentBoardKey: String) {
+    init(uri: NodeURI, inBoard currentBoardKey: String) {
         if let ref = uri.localRef(inBoard: currentBoardKey) {
             self = .local(ref)
         } else {

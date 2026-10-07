@@ -28,6 +28,38 @@ comments:
     - evidence: 5 files. New: Sources/FoundationModelsKanban/Identity/NodeURI.swift, Sources/FoundationModelsKanban/Identity/LocalRef.swift, Tests/FoundationModelsKanbanTests/Identity/NodeURITests.swift, Tests/FoundationModelsKanbanTests/Identity/LocalRefTests.swift. Changed: Sources/FoundationModelsKanban/GraphQL/PatchSchema.swift (`CaseIterable` on `PatchNodeType`). `swift test --filter "NodeURITests|LocalRefTests"` gives 29 tests in 2 suites passed. `swift test` gives 121 tests in 8 suites passed, with 0 warnings.
     - next: /review
   timestamp: 2026-10-07T13:19:04.711950+00:00
+- actor: wballard
+  id: 01m4b8j8k07qc4rcfvzc4fnfcx
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD; 1 finding (1 confirmed, 0 refuted) — Sources/FoundationModelsKanban/Identity/LocalRef.swift:199 (swift/fluent-usage)
+    - next: Add the label `uri:` to the first argument of `StoredRef.init(_:inBoard:)`. Remove the same cause from all of LocalRef.swift. Then run the review again.
+  timestamp: 2026-10-07T13:24:08.416083+00:00
+- actor: wballard
+  id: 01m4b8jhfck9qyxcscp14mjerh
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 5 files (NodeURI.swift, LocalRef.swift, PatchSchema.swift, NodeURITests.swift, LocalRefTests.swift)
+    - test: green — swift test, 121 passed, 0 warnings
+    - commit: 8a49ded
+    - review: findings — Sources/FoundationModelsKanban/Identity/LocalRef.swift:199
+  timestamp: 2026-10-07T13:24:17.516440+00:00
+- actor: wballard
+  id: 01m4b8mxsr44621b5p9e0h552x
+  text: |-
+    Finding swift/fluent-usage is fixed (TDD).
+    - `StoredRef.init(_:inBoard:)` is now `StoredRef.init(uri:inBoard:)`. The three call sites in LocalRefTests.swift use the label.
+    - The same cause was in NodeURI.swift: `NodeURI.hasScheme(_:)` had an unlabeled first argument and is not a value-preserving conversion. It is now `NodeURI.hasScheme(atStartOf:)` ("has scheme at start of text"). The two callers (`NodeURI.init(parsing:)`, `StoredRef.init(parsing:)`) use the label. A new test `schemeCheckFindsSchemeAtStart` in NodeURITests.swift calls it directly.
+    - All other initializers and functions in LocalRef.swift and NodeURI.swift have a labeled first argument already (`init(parsing:)`, `init(type:localID:text:)`, `ulid(from:in:)`, `init?(pathSegment:)`, `uri(inBoard:)`, `localRef(inBoard:)`, `refSegmentCount(in:)`).
+    - RED: `swift build --build-tests` failed with "extraneous argument label 'atStartOf:'". GREEN: build has 0 warnings; `swift test` gives 122 tests in 8 suites passed.
+  timestamp: 2026-10-07T13:25:35.672740+00:00
+- actor: wballard
+  id: 01m4b8mzemc4f3ehpcmq455vgy
+  text: |-
+    ### implement — changed
+    - evidence: 4 files — Sources/FoundationModelsKanban/Identity/LocalRef.swift, Sources/FoundationModelsKanban/Identity/NodeURI.swift, Tests/FoundationModelsKanbanTests/Identity/LocalRefTests.swift, Tests/FoundationModelsKanbanTests/Identity/NodeURITests.swift. `swift build --build-tests` 0 warnings; `swift test` 122 tests in 8 suites passed.
+    - next: /review
+  timestamp: 2026-10-07T13:25:37.364331+00:00
 depends_on:
 - 01M4B3V22A3PCQRESESTYBQ2FH
 position_column: doing
@@ -52,3 +84,12 @@ The two forms of a node identifier. The basis is plan.md §3.2 and §12 item 18.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-07 08:19)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 5 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsKanban/Identity/LocalRef.swift:199` `swift/fluent-usage` — The first argument to `StoredRef.init` should be labeled. This is not a value-preserving conversion—the output depends on the `inBoard` parameter, making it a transformation based on context rather than a simple type change that preserves the semantic value. Change `init(_ uri: NodeURI, inBoard currentBoardKey: String)` to `init(uri: NodeURI, inBoard currentBoardKey: String)` to label the first argument consistently with other initializers in the codebase.
