@@ -13,6 +13,9 @@ struct TaskSelection {
     /// `true` when the list leaves out the done tasks.
     private let excludesDone: Bool
 
+    /// `true` when the list selects from the tombstoned tasks, not from the live tasks (plan.md §3.3, rule 3).
+    private let listsDeleted: Bool
+
     /// Makes the selection of a list that has only a `filter` argument.
     ///
     /// - Parameters:
@@ -23,6 +26,7 @@ struct TaskSelection {
     init(filtering text: String?, excludingDone excludesDone: Bool = false) throws(KanbanError) {
         filter = try Self.expression(parsing: text)
         self.excludesDone = excludesDone
+        listsDeleted = false
     }
 
     /// Makes the selection of `Board.tasks`.
@@ -31,7 +35,9 @@ struct TaskSelection {
     /// is `%x`. The atom goes into the parsed filter, not into its text. Thus `&&` does not bind to the last OR branch
     /// of the filter, and a value with a space or an operator does not add a second atom. As in Rust, `excludeDone`
     /// with no value is `true`, and `false` when the call names a column: a `column` argument, or a `%` atom or a
-    /// column URL anywhere in the filter (``FilterExpr/namesColumn``).
+    /// column URL anywhere in the filter (``FilterExpr/namesColumn``). For `deleted: true`, the filter and the scoping
+    /// arguments select from the tombstoned tasks, and `excludeDone` with no value is `false`, so that the list shows
+    /// each deleted task.
     ///
     /// - Parameter arguments: The arguments of `Board.tasks`.
     /// - Throws: ``KanbanError/invalidFilter(filter:position:detail:example:)`` when the filter is empty or does not
@@ -46,21 +52,24 @@ struct TaskSelection {
             filter = filter.map { expression in .and(expression, atom) } ?? atom
         }
         self.filter = filter
-        excludesDone = arguments.excludeDone ?? !(filter?.namesColumn ?? false)
+        excludesDone = arguments.excludeDone ?? !(arguments.listsDeleted || filter?.namesColumn ?? false)
+        listsDeleted = arguments.listsDeleted
     }
 
-    /// Gives the selected live tasks of a board, in board order.
+    /// Gives the selected tasks of a board, in board order: the live tasks, or the tombstoned tasks when the list
+    /// selects from them.
     ///
     /// - Parameters:
     ///   - view: The read view of the board.
     ///   - isIncluded: One more test that each task must pass, for example "the task shows in this column".
-    /// - Returns: The live tasks that pass `isIncluded`, are not done when the list leaves out the done tasks, and
-    ///   match the filter.
+    /// - Returns: The tasks that pass `isIncluded`, are not done when the list leaves out the done tasks, and match
+    ///   the filter.
     func tasks(in view: BoardView, where isIncluded: (TaskObject) -> Bool = { _ in true }) -> [TaskObject] {
         let evaluator = filter.map { expression in
             FilterEvaluator(evaluating: expression, over: view.readiness, inBoard: view.boardKey)
         }
-        return view.orderedTasks { task in
+        let candidates = listsDeleted ? view.deletedTasks : view.orderedTasks()
+        return candidates.filter { task in
             isIncluded(task)
                 && !(excludesDone && view.readiness.isDone(taskAt: task.slot))
                 && (evaluator?.matches(taskAt: task.slot) ?? true)

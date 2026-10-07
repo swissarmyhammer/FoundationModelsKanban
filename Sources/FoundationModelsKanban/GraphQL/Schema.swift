@@ -76,17 +76,30 @@ struct BoardArguments: Codable, Sendable {
     let id: String?
 }
 
-/// The arguments of `Board.task`.
-struct TaskArguments: Codable, Sendable {
-    /// The task: a full URI or a short form (plan.md §3.2).
+/// The arguments of a field that finds one node by its id: `Board.task` and `Query.node`.
+struct NodeArguments: Codable, Sendable {
+    /// The node: a full URI or a short form (plan.md §3.2).
     let id: NodeID
 }
 
-/// The arguments of `Board.tasks`: the filter and the scoping arguments of plan.md §6.3, and the cursor paging of
-/// plan.md §4.1.
+/// The arguments of `Query.nodes`.
+struct NodesArguments: Codable, Sendable {
+    /// The nodes, each by a full URI or a short form (plan.md §3.2).
+    let ids: [NodeID]
+}
+
+/// The arguments of `Board.tasks`: the list, the filter and the scoping arguments of plan.md §6.3, and the cursor
+/// paging of plan.md §4.1.
 struct TasksArguments: Codable, Sendable {
     /// The number of tasks of a page when the call does not give `first`.
     static let defaultPageSize = 10
+
+    /// The list when the call does not give `deleted`: the live tasks.
+    static let listsDeletedByDefault = false
+
+    /// `true` to list only the tombstoned tasks (plan.md §3.3, rule 3). `false` or an explicit `null` lists the live
+    /// tasks.
+    let deleted: Bool?
 
     /// The filter, for example `#bug && @alice`, or `nil` for no filter.
     let filter: String?
@@ -100,7 +113,8 @@ struct TasksArguments: Codable, Sendable {
     /// The actor that the tasks are assigned to: the same as the atom `@x` in the filter.
     let assignee: NodeID?
 
-    /// `true` to leave out the done tasks. No value is `true`, or `false` when the call names a column.
+    /// `true` to leave out the done tasks. No value is `true`, or `false` when the call names a column or lists the
+    /// tombstoned tasks.
     let excludeDone: Bool?
 
     /// The maximum number of tasks of the page. A negative value gives no task. An explicit `null` gives
@@ -110,6 +124,11 @@ struct TasksArguments: Codable, Sendable {
     /// The cursor of the task before the page, or `nil` for the first page. A cursor is the `id` of a task, and a
     /// short form of the task also works.
     let after: String?
+
+    /// `true` when the call lists the tombstoned tasks.
+    var listsDeleted: Bool {
+        deleted == true
+    }
 }
 
 /// The arguments of a task list that has only a filter: `Board.nextTask`, and the `tasks` fields of `Column`,
@@ -143,6 +162,37 @@ struct KanbanResolver: Sendable {
             _ = try view.resolver.storedRef(for: reference, ofType: .board)
         }
         return try BoardObject(in: view)
+    }
+
+    /// Resolves `Query.node`: one node of any type by its full URI or a short form, live or tombstoned (plan.md
+    /// §3.3, rule 3).
+    ///
+    /// - Parameters:
+    ///   - context: The context of the call.
+    ///   - arguments: The id of the node.
+    /// - Returns: The node, or `nil` when no node of the current board has the id.
+    /// - Throws: ``KanbanError/ambiguousID(reference:matches:)`` when the id is a prefix of more than one ULID. The
+    ///   field is then `null`, and `errors` has the matches.
+    func node(context: KanbanContext, arguments: NodeArguments) async throws(KanbanError) -> (any NodeObject)? {
+        try await context.store.view.node(for: arguments.id.text)
+    }
+
+    /// Resolves `Query.nodes`: the nodes of some ids, in the order of the ids, live or tombstoned (plan.md §4.1).
+    ///
+    /// The list has no `null` item: an id that names no node is not in the list. Thus a call where no id names a node
+    /// gives an empty list. The GraphQL field is nullable: an error gives `null` for the field and one item in
+    /// `errors`, and the other fields of the call keep their data.
+    ///
+    /// - Parameters:
+    ///   - context: The context of the call.
+    ///   - arguments: The ids of the nodes.
+    /// - Returns: The nodes of the ids that name a node, in the order of the ids. The value is never `nil`. The
+    ///   optional type makes the GraphQL field nullable.
+    /// - Throws: ``KanbanError/ambiguousID(reference:matches:)`` when an id is a prefix of more than one ULID, the same
+    ///   as `Query.node`.
+    func nodes(context: KanbanContext, arguments: NodesArguments) async throws(KanbanError) -> [any NodeObject]? {
+        let view = await context.store.view
+        return try arguments.ids.map { id throws(KanbanError) in try view.node(for: id.text) }.compactMap(\.self)
     }
 }
 
@@ -299,6 +349,12 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Field("board", at: KanbanResolver.board) {
                     Argument("id", at: \.id)
                 }
+                Field("node", at: KanbanResolver.node) {
+                    Argument("id", at: \.id)
+                }
+                Field("nodes", at: KanbanResolver.nodes) {
+                    Argument("ids", at: \.ids)
+                }
             }
     }
 
@@ -334,6 +390,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                     Argument("tag", at: \.tag)
                     Argument("assignee", at: \.assignee)
                     Argument("excludeDone", at: \.excludeDone)
+                    Argument("deleted", at: \.deleted).defaultValue(TasksArguments.listsDeletedByDefault)
                     Argument("first", at: \.first).defaultValue(TasksArguments.defaultPageSize)
                     Argument("after", at: \.after)
                 }

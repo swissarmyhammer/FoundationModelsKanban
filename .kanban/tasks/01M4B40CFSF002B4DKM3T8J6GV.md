@@ -30,10 +30,26 @@ comments:
     - evidence: `swift test --filter TagMutationTests` 27/27 pass; `swift test` 697 tests in 41 suites pass, no compiler warnings; periphery 3.8.0 (native build, --retain-public, tests excluded from report): no unused code. Files: Sources/FoundationModelsKanban/GraphQL/TagMutations.swift (new), GraphQL/ColumnActorMutations.swift, GraphQL/QueryResolvers.swift, GraphQL/Schema.swift, GraphQL/TaskMutations.swift, Tags/AutoColor.swift, Tests/FoundationModelsKanbanTests/Mutations/TagMutationTests.swift (new), Mutations/AddUpdateTaskTests.swift, Mutations/ColumnActorTests.swift, Mutations/CommentTests.swift.
     - next: /review
   timestamp: 2026-10-07T20:51:09.547595+00:00
+- actor: wballard
+  id: 01m4c2dk8hsby0wr1z3bwwjqqp
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (fec7aa0). 0 findings, 0 confirmed, 2 refuted. The engine examined 10 files. A .reviewignore rule excluded 4 .kanban/ files.
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T20:55:58.481368+00:00
+- actor: wballard
+  id: 01m4c2dsefxnka6nrbjfgdxchf
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 10 files (GraphQL/TagMutations.swift, ColumnActorMutations, QueryResolvers, Schema, TaskMutations, Tags/AutoColor, TagMutationTests, AddUpdateTaskTests, ColumnActorTests, CommentTests)
+    - test: green — swift test, 697 passed, 0 warnings
+    - commit: fec7aa0 (message amended from 91b4004 for accuracy; content unchanged)
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T20:56:04.815671+00:00
 depends_on:
 - 01M4B4002GZV6E43G5CQ74BJNZ
-position_column: doing
-position_ordinal: '8280'
+position_column: done
+position_ordinal: a080
 title: 'Mutations: tags and tag rename'
 ---
 ## What

@@ -45,6 +45,15 @@ comments:
     - commit: none on main. The work is kept on the local branch `wip/a9rehs7-search`, so that main stays free of warnings.
     - review: not run
   timestamp: 2026-10-07T19:10:26.423108+00:00
+- actor: wballard
+  id: 01m4c2qfnmmfrf455fw28fx1x7
+  text: |-
+    ### decision (person) — blocker resolved
+    - The user accepts the dependency build warnings as known: the SwiftPM `warning: missing creator for mutated node: (.../mlx-swift_Cmlx.bundle/Contents/MacOS)` and the `-Wc++17-extensions` warnings from the mlx-swift Metal sources in `.build/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/`.
+    - These are the ONLY accepted warnings. A warning from our own sources, or any other dependency warning, still fails the test step.
+    - The repo must record this note (for example a "Known build warnings" section in README.md), so that later readers know why the build output is not empty.
+    - Next: start from the parked branch `wip/a9rehs7-search` (commit e29af3f), bring it onto main, add the note, and run the finish loop again.
+  timestamp: 2026-10-07T21:01:22.484413+00:00
 depends_on:
 - 01M4B3Z67TC96REJGDHD2DFH0R
 - 01M4B3YYXT069TKADQ93CBAA93

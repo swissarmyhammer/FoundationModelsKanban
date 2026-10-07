@@ -25,7 +25,7 @@ struct BoardView: Sendable {
     init(of graph: Graph, inBoard boardKey: String) {
         readiness = Readiness(of: graph, inBoard: boardKey)
         self.boardKey = boardKey
-        taskOrder = Self.boardOrder(of: readiness)
+        taskOrder = Self.boardOrder(of: readiness, deleted: false)
     }
 
     /// The graph of the board.
@@ -46,15 +46,17 @@ struct BoardView: Sendable {
         NodeID(text: NodeURI(boardKey: boardKey, ref: ref).description)
     }
 
-    /// Sorts the live tasks of a board in board order.
+    /// Sorts the live tasks or the tombstoned tasks of a board in board order.
     ///
-    /// - Parameter readiness: The readiness of the tasks of the board.
-    /// - Returns: The slots of the live tasks, in board order.
-    private static func boardOrder(of readiness: Readiness) -> [Int] {
+    /// - Parameters:
+    ///   - readiness: The readiness of the tasks of the board.
+    ///   - deleted: `true` for the tombstoned tasks, `false` for the live tasks.
+    /// - Returns: The slots of the tasks, in board order.
+    private static func boardOrder(of readiness: Readiness, deleted: Bool) -> [Int] {
         let columnSlots = readiness.columnOrder.slots
         let positions = Dictionary(uniqueKeysWithValues: zip(columnSlots, columnSlots.indices))
         let tasks = readiness.graph.allSlots.compactMap { slot -> (slot: Int, position: Int, task: TaskNode)? in
-            guard let task = readiness.graph.node(at: slot, as: TaskNode.self), !task.fields.isDeleted else {
+            guard let task = readiness.graph.node(at: slot, as: TaskNode.self), task.fields.isDeleted == deleted else {
                 return nil
             }
             let position = readiness.column(ofTaskAt: slot).flatMap { column in positions[column] } ?? positions.count
@@ -184,21 +186,63 @@ extension BoardView {
         taskOrder.compactMap { slot in object(at: slot) }.filter(isIncluded)
     }
 
-    /// Finds the live task that a forgiving ref names.
+    /// The tombstoned tasks of the board in board order: the list of `tasks(deleted: true)` (plan.md §3.3, rule 3).
+    var deletedTasks: [TaskObject] {
+        Self.boardOrder(of: readiness, deleted: true).compactMap { slot in object(at: slot) }
+    }
+
+    /// Finds the task that a forgiving ref names.
     ///
-    /// - Parameter reference: The ref as the caller wrote it: a full URI or a short form.
+    /// - Parameters:
+    ///   - reference: The ref as the caller wrote it: a full URI or a short form.
+    ///   - includesTombstones: `true` when the ref can name a tombstoned task.
     /// - Returns: The task.
-    /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live task has the ref.
+    /// - Throws: ``KanbanError/notFound(type:reference:)`` when no task that the call accepts has the ref.
     ///   ``KanbanError/ambiguousID(reference:matches:)`` when the ref is a prefix of more than one ULID.
-    func task(for reference: String) throws(KanbanError) -> TaskObject {
+    func task(
+        for reference: String,
+        includingTombstones includesTombstones: Bool = false
+    ) throws(KanbanError) -> TaskObject {
+        let storedRef = try resolver.storedRef(
+            for: reference,
+            ofType: .task,
+            includingTombstones: includesTombstones
+        )
         guard
-            case .local(let ref) = try resolver.storedRef(for: reference, ofType: .task),
+            case .local(let ref) = storedRef,
             let slot = graph.slot(for: ref),
             let task: TaskObject = object(at: slot)
         else {
             throw .notFound(type: .task, reference: reference)
         }
         return task
+    }
+
+    /// Finds the node of any type that a forgiving ref names, live or tombstoned: `node(id:)` (plan.md §3.3, rule 3).
+    ///
+    /// - Parameter reference: The ref as the caller wrote it: a full URI or a short form.
+    /// - Returns: The object of the node, or `nil` when no node of this board has the ref.
+    /// - Throws: ``KanbanError/ambiguousID(reference:matches:)`` when the ref is a prefix of more than one ULID.
+    func node(for reference: String) throws(KanbanError) -> (any NodeObject)? {
+        try resolver.anyLocalRef(for: reference)
+            .flatMap { ref in graph.slot(for: ref) }
+            .flatMap { slot in nodeObject(at: slot) }
+    }
+
+    /// Gives the object of the node in a slot as a value of the `Node` interface, live or tombstoned.
+    ///
+    /// - Parameter slot: A slot of the graph.
+    /// - Returns: The object of the type of the node, or `nil` when the slot holds no node.
+    private func nodeObject(at slot: Int) -> (any NodeObject)? {
+        switch graph.node(at: slot) {
+        case .board(let board)?: BoardObject(view: self, state: board)
+        case .column(let column)?: ColumnObject(view: self, slot: slot, state: column)
+        case .actor(let actor)?: ActorObject(view: self, slot: slot, state: actor)
+        case .tag(let tag)?: TagObject(view: self, slot: slot, state: tag)
+        case .task(let task)?: TaskObject(view: self, slot: slot, state: task)
+        case .comment(let comment)?: CommentObject(view: self, slot: slot, state: comment)
+        case nil: nil
+        }
     }
 
     /// Gives the text of a stored edge for an error message: the full URI of its target.
@@ -279,7 +323,7 @@ extension BoardObject {
     /// - Returns: The task. The value is never `nil`. The optional type makes the GraphQL field nullable.
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live task has the ref.
     ///   ``KanbanError/ambiguousID(reference:matches:)`` when the ref is a prefix of more than one ULID.
-    func task(context _: KanbanContext, arguments: TaskArguments) throws(KanbanError) -> TaskObject? {
+    func task(context _: KanbanContext, arguments: NodeArguments) throws(KanbanError) -> TaskObject? {
         try view.task(for: arguments.id.text)
     }
 
@@ -296,8 +340,8 @@ extension BoardObject {
         try TaskSelection(filtering: arguments.filter, excludingDone: true).tasks(in: view, where: \.ready).first
     }
 
-    /// Resolves `Board.tasks`: one page of the live tasks that the filter and the scoping arguments select, in board
-    /// order (plan.md §6.3).
+    /// Resolves `Board.tasks`: one page of the live tasks, or of the tombstoned tasks, that the filter and the scoping
+    /// arguments select, in board order (plan.md §3.3 rule 3, §6.3).
     ///
     /// The GraphQL field is nullable: an error gives `null` for the field and one item in `errors`, and the other
     /// fields of the board keep their data.
@@ -314,7 +358,7 @@ extension BoardObject {
         let tasks = try TaskSelection(for: arguments).tasks(in: view)
         var start = tasks.startIndex
         if let cursor = arguments.after {
-            let after = try view.task(for: cursor)
+            let after = try view.task(for: cursor, includingTombstones: arguments.listsDeleted)
             guard let position = tasks.firstIndex(where: { task in task.slot == after.slot }) else {
                 throw .notFound(type: .task, reference: cursor)
             }

@@ -259,7 +259,9 @@ type Query {
                                       # or path (§6.6); null only together with a NOT_FOUND error
   boards(enabled: Boolean): [Board!]! # related boards that the scan found; filter by enabled state (§6.6)
   node(id: ID!): Node                 # direct access by URI, also in a different repo
-  nodes(ids: [ID!]!): [Node]!
+  nodes(ids: [ID!]!): [Node!]         # the nodes in the order of the ids; an id that names no node is dropped,
+                                      # so no id that matches gives []. null only together with an error (for
+                                      # example AMBIGUOUS_ID, the same rule as node); the other data stays
 }
 ```
 

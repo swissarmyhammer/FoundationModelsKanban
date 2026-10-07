@@ -18,7 +18,18 @@ import Foundation
 /// no node gives ``KanbanError/notFound(type:reference:)``. A URI that does not parse also gives that error, because
 /// the error catalog has no code for a ``NodeRefError``. A prefix of more than one ULID gives
 /// ``KanbanError/ambiguousID(reference:matches:)`` with the short ids of the matches.
+///
+/// ``anyLocalRef(for:)`` resolves a ref with no expected type, for `node(id:)` and `nodes(ids:)` (plan.md §4.1).
 struct RefResolver: Sendable {
+    /// The node types that a short form with no expected type can name, in the order of the tries. The first try
+    /// takes the tasks and the comments together (``ulidTypes``), so that a `^short` form never names a slug. A slug
+    /// of more than one type names the first type in this list; the full URI names each of the other nodes.
+    private static let shortFormTypes: [PatchNodeType] = [.task, .board, .column, .actor, .tag]
+
+    /// The node types whose local id is a ULID. A ULID form with no expected type resolves among all of them, so
+    /// that a prefix of a task and a comment is ambiguous, and a canonical form wins over a prefix.
+    private static let ulidTypes: Set<PatchNodeType> = [.task, .comment]
+
     /// The graph of the target board.
     let graph: Graph
 
@@ -51,8 +62,47 @@ struct RefResolver: Sendable {
         guard let ref = uri.localRef(inBoard: boardKey) else {
             return try remoteRef(to: uri, acceptingRemote: acceptsRemote, in: lookup)
         }
-        // The board ref has no local id. Its short form is the key of the board.
-        return .local(try localRef(forKey: ref.localID ?? boardKey, in: lookup))
+        return .local(try localRef(forKey: shortForm(of: ref), in: lookup))
+    }
+
+    /// Finds the node of any type that a forgiving ref names in this board, live or tombstoned (plan.md §3.3, rule 3).
+    ///
+    /// A full URI names the type of its node. A short form tries the node types of ``shortFormTypes`` in order, and
+    /// the first type with a match gives the node.
+    ///
+    /// - Parameter reference: The ref as the caller wrote it. White space at the two ends is ignored.
+    /// - Returns: The local ref of the node, or `nil` when no node has the ref, the URI does not parse, or the URI
+    ///   names a node of a different board.
+    /// - Throws: ``KanbanError/ambiguousID(reference:matches:)`` when the ref is a prefix of more than one ULID.
+    func anyLocalRef(for reference: String) throws(KanbanError) -> LocalRef? {
+        let text = reference.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard NodeURI.hasScheme(atStartOf: text) else {
+            return try anyLocalRef(forKey: text, writtenAs: reference)
+        }
+        guard let uri = try? NodeURI(parsing: text), let ref = uri.localRef(inBoard: boardKey) else {
+            return nil
+        }
+        let lookup = Lookup(reference: reference, type: ref.nodeType, includesTombstones: true)
+        return try candidateRef(forKey: shortForm(of: ref), in: lookup)
+    }
+
+    /// Finds the node of any type that a short form names, live or tombstoned.
+    ///
+    /// - Parameters:
+    ///   - key: The short form, without white space at the two ends.
+    ///   - reference: The ref as the caller wrote it, for the error message.
+    /// - Returns: The local ref of the node of the first type of ``shortFormTypes`` that has the short form, or `nil`
+    ///   when no node has it.
+    /// - Throws: ``KanbanError/ambiguousID(reference:matches:)`` when the short form is a prefix of more than one
+    ///   ULID.
+    private func anyLocalRef(forKey key: String, writtenAs reference: String) throws(KanbanError) -> LocalRef? {
+        for type in Self.shortFormTypes {
+            let lookup = Lookup(reference: reference, type: type, includesTombstones: true, ulidTypes: Self.ulidTypes)
+            if let ref = try candidateRef(forKey: key, in: lookup) {
+                return ref
+            }
+        }
+        return nil
     }
 }
 
@@ -70,10 +120,41 @@ extension RefResolver {
         /// `true` when the ref can name a tombstone.
         let includesTombstones: Bool
 
+        /// The node types of the candidates of a ULID form.
+        let ulidTypes: Set<PatchNodeType>
+
+        /// Makes a resolve.
+        ///
+        /// - Parameters:
+        ///   - reference: The ref as the caller wrote it.
+        ///   - type: The node type that the caller expects.
+        ///   - includesTombstones: `true` when the ref can name a tombstone.
+        ///   - ulidTypes: The node types of the candidates of a ULID form, or `nil` for the expected type only.
+        init(
+            reference: String,
+            type: PatchNodeType,
+            includesTombstones: Bool,
+            ulidTypes: Set<PatchNodeType>? = nil
+        ) {
+            self.reference = reference
+            self.type = type
+            self.includesTombstones = includesTombstones
+            self.ulidTypes = ulidTypes ?? [type]
+        }
+
         /// The `NOT_FOUND` error of the ref.
         var notFound: KanbanError {
             .notFound(type: type, reference: reference)
         }
+    }
+
+    /// Gives the short form of a local ref of this board: its local id. The board ref has no local id, so its short
+    /// form is the key of the board.
+    ///
+    /// - Parameter ref: The local ref.
+    /// - Returns: The short form.
+    private func shortForm(of ref: LocalRef) -> String {
+        ref.localID ?? boardKey
     }
 
     /// Reads a full URI, and checks that it names a node of the expected type.
@@ -179,8 +260,8 @@ extension RefResolver {
 
     /// Finds the task or the comment that a ULID form names.
     ///
-    /// The candidates are the nodes of the expected type that the lookup accepts, in slot order. Thus, a tombstone
-    /// does not make a prefix ambiguous, unless the lookup accepts tombstones.
+    /// The candidates are the nodes of the ULID types of the lookup that the lookup accepts, in slot order. Thus, a
+    /// tombstone does not make a prefix ambiguous, unless the lookup accepts tombstones.
     ///
     /// - Parameters:
     ///   - key: The full ULID, the short id, either of these with a leading ``ShortID/sigil``, or a ULID prefix.
@@ -190,7 +271,7 @@ extension RefResolver {
     private func ulidRef(for key: String, in lookup: Lookup) throws(KanbanError) -> LocalRef? {
         let candidates = graph.allSlots
             .compactMap { slot in ref(at: slot, in: lookup) }
-            .filter { candidate in candidate.nodeType == lookup.type }
+            .filter { candidate in lookup.ulidTypes.contains(candidate.nodeType) }
         switch ShortID.resolve(key, among: candidates.compactMap(\.localID)) {
         case .found(let ulid):
             return candidates.first { candidate in candidate.localID == ulid }

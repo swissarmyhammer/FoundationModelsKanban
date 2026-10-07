@@ -50,6 +50,34 @@ comments:
     - commit: none on main. The partial work is kept on the local branch `wip/ryf7rn1-nodes-null`, so that main stays green.
     - review: not run
   timestamp: 2026-10-07T17:09:56.102996+00:00
+- actor: wballard
+  id: 01m4c2psz4m7zh9999vzqdj6cm
+  text: |-
+    ### decision (person) — blocker resolved
+    - The user decided: `nodes(ids:)` returns an empty list, not null. An unknown id is dropped from the result, so a call where no id matches gives `[]`.
+    - Schema: `nodes(ids: [ID!]!): [Node!]`. The list has no null items. The field itself is nullable only so that an error (for example `AMBIGUOUS_ID`, the same rule as `node(id:)`) gives `null` for this field plus an item in `errors`, and does not drop all `data`.
+    - plan.md §4.1 must change to match.
+    - Next: start from the parked branch `wip/ryf7rn1-nodes-null` (commit 1b4a52c), apply this decision, and run the finish loop again.
+  timestamp: 2026-10-07T21:01:00.260669+00:00
+- actor: wballard
+  id: 01m4c312bdpxf90g5pjvxmahx7
+  text: |-
+    Picked up again after the decision. Work done:
+    - `git cherry-pick --no-commit 1b4a52c` onto `main`. RefResolver.swift and NodeQueryTests.swift merged clean. QueryResolvers.swift and Schema.swift had conflicts; I resolved them by hand. No commit was made (HEAD is still fec7aa0). The branch `wip/ryf7rn1-nodes-null` stays as it is.
+    - Conflict resolution: `main` moved `updateBoard` to MutationResolvers.swift, so the WIP copy of `updateBoard` in Schema.swift is dropped. `TasksArguments` keeps all the `main` arguments (`filter`, `column`, `tag`, `assignee`, `excludeDone`) and adds `deleted`. `TaskSelection` now selects from `BoardView.deletedTasks` when `deleted: true`, so the filter and the scoping arguments also apply to the deleted list.
+    - Discovery: with the plan rule "excludeDone with no value is true", `tasks(deleted: true)` hides a deleted task in the done column. The fixture's third task is in `done`, so the test "tasks(deleted: true) lists only the deleted tasks" failed (RED). I made `excludeDone` with no value `false` for `deleted: true`, so that the list shows each deleted task. plan.md does not state this rule yet; I added task ^d8wwdgy for it (I changed only §4.1 `nodes` in plan.md, as the order says).
+    - `nodes(ids:)`: the resolver is now `async throws(KanbanError) -> [any NodeObject]?`. SDL: `nodes(ids: [ID!]!): [Node!]`. `compactMap` does not support typed throws, so the code uses `map { id throws(KanbanError) in ... }.compactMap(\.self)`.
+    - TDD: the 4 new nodes tests and the deleted-list test failed on assertions first (the old GraphQLSwift MapError, and the excludeDone default). After the change they pass. The SDL test "The schema gives nodes(ids:) a nullable list with no null item" was added after the code and passed at its first run; it locks the schema contract.
+    - plan.md §4.1 now shows `nodes(ids: [ID!]!): [Node!]` and the drop rule.
+  timestamp: 2026-10-07T21:06:36.525326+00:00
+- actor: wballard
+  id: 01m4c3157d47eeptp6anc78b38
+  text: |-
+    ### implement — changed
+    - evidence: `swift test` — 712 tests in 42 suites pass, 0 failures, 0 compiler warnings. `swift test --filter NodeQueryTests` — 15 of 15 pass. Files: Sources/FoundationModelsKanban/GraphQL/Schema.swift, Sources/FoundationModelsKanban/GraphQL/QueryResolvers.swift, Sources/FoundationModelsKanban/GraphQL/TaskSelection.swift, Sources/FoundationModelsKanban/Identity/RefResolver.swift, Tests/FoundationModelsKanbanTests/GraphQL/NodeQueryTests.swift, plan.md.
+    - blocker: resolved by the decision; the card no longer shows it.
+    - next: `/review`. Not committed. Task ^d8wwdgy holds the plan.md text for the excludeDone default of `tasks(deleted: true)`.
+  timestamp: 2026-10-07T21:06:39.469801+00:00
 depends_on:
 - 01M4B3YQSXZCGCB08FVP8QCSF3
 position_column: doing
@@ -65,11 +93,11 @@ Direct access by id, and the read rules for deleted nodes. The basis is plan.md 
 ## Acceptance Criteria
 - [x] `node(id:)` returns each of the six node types by full URI and by short form.
 - [x] A deleted task is not in `tasks`, and `node(id:)` returns it with `deleted` set; `tasks(deleted: true)` lists it.
-- [ ] `nodes(ids:)` returns `null` at the position of an unknown id. BLOCKED: GraphQLSwift 4.3.0 cannot serialize a `null` item in a list (see the comments).
+- [x] `nodes(ids:)` drops an unknown id. The list has no `null` item, and a call where no id matches gives `[]`. The known ids keep the input order. An ambiguous id gives `AMBIGUOUS_ID` and `null` for the field only; the other fields keep their data. The schema is `nodes(ids: [ID!]!): [Node!]` (plan.md §4.1). The earlier blocker (GraphQLSwift 4.3.0 cannot serialize a `null` list item) is resolved: a person decided on this contract (see the comments).
 
 ## Tests
 - [x] `Tests/FoundationModelsKanbanTests/GraphQL/NodeQueryTests.swift`.
-- [ ] Run `swift test --filter NodeQueryTests`; expect all pass. 10 of 11 tests pass; the `nodes(ids:)` null test fails because of the blocker.
+- [x] Run `swift test --filter NodeQueryTests`; expect all pass. 15 of 15 tests pass.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
