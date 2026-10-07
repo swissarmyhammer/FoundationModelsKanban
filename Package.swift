@@ -36,6 +36,13 @@ let collectionsPackage = "swift-collections"
 // comment, each event and each transaction has a ULID (plan.md §3.2, §5.1).
 let ulidPackage = "ULID.swift"
 
+// The parser-combinator library of the filter language (plan.md §6.3, §12 item
+// 24). It is the Swift library that is most like `chumsky`, which the Rust
+// filter parser uses. The filter parser does not use the `CasePaths` trait,
+// which the package turns on by default, so the dependency turns off all traits.
+// Thus the build does not compile swift-syntax for the CasePaths macros.
+let parsingPackage = "swift-parsing"
+
 let package = Package(
     name: packageName,
     // Commit to macOS 27. FoundationModels v2 and the sibling packages need
@@ -65,6 +72,7 @@ let package = Package(
         .package(url: "https://github.com/GraphQLSwift/\(graphitiPackage).git", from: "3.1.0"),
         .package(url: "https://github.com/apple/\(collectionsPackage).git", from: "1.0.0"),
         .package(url: "https://github.com/yaslab/\(ulidPackage).git", from: "1.3.1"),
+        .package(url: "https://github.com/pointfreeco/\(parsingPackage).git", from: "0.15.2", traits: []),
     ],
     targets: [
         .target(
@@ -75,6 +83,7 @@ let package = Package(
                 .product(name: graphitiPackage, package: graphitiPackage),
                 .product(name: "OrderedCollections", package: collectionsPackage),
                 .product(name: "ULID", package: ulidPackage),
+                .product(name: "Parsing", package: parsingPackage),
             ],
             path: "Sources/\(packageName)"
         ),

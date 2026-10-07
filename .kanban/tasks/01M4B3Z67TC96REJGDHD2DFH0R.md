@@ -1,4 +1,9 @@
 ---
+comments:
+- actor: wballard
+  id: 01m4bb80dzm1x95qfb3a5sbnzk
+  text: 'Note from ^grhp82e (filter parser): `FilterExpr(parsing:)` already gives `INVALID_FILTER` for a URL of the wrong type for its sigil (the message gives the correct sigil and the full URL as the example), and for a board URL or a comment URL, bare or after a sigil. Thus each `.atom(kind, .uri(uri))` that the evaluator gets has `uri.ref.nodeType == kind.nodeType`. The evaluator still must resolve the key of the URL (current board, or a different board). The AST is in `Sources/FoundationModelsKanban/Filter/FilterExpr.swift`.'
+  timestamp: 2026-10-07T14:10:58.111262+00:00
 depends_on:
 - 01M4B3WBH8MREZBK6W0GRHP82E
 - 01M4B3Y4M87387J50EQCD36VB0

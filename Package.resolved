@@ -1,5 +1,5 @@
 {
-  "originHash" : "35b1f2a3a9a584e7fcd64d8bd36c4c2d2e1461e549e802ed6f9d0cd666d720d7",
+  "originHash" : "1dfbd9acbf771b5a410457c6761a19ee7672f7beae490725857c968288b0187a",
   "pins" : [
     {
       "identity" : "graphiti",
@@ -44,6 +44,15 @@
       "state" : {
         "revision" : "109c380c2371099eea84742cf9e6b73f3436105e",
         "version" : "1.16.0"
+      }
+    },
+    {
+      "identity" : "swift-parsing",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/pointfreeco/swift-parsing.git",
+      "state" : {
+        "revision" : "d3ca6f0f049606124d0f6a414e7fdb7b77f45452",
+        "version" : "0.15.2"
       }
     },
     {
