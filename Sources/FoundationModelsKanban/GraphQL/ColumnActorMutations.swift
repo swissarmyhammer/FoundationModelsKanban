@@ -32,7 +32,7 @@ extension MutationName {
 // MARK: - Arguments
 
 /// The arguments of a mutation whose `input` argument is required (plan.md §4.2).
-private struct InputArguments<Input: Codable & Sendable>: Codable, Sendable {
+struct InputArguments<Input: Decodable & Sendable>: Decodable, Sendable {
     /// The `input` object of the mutation.
     let input: Input
 }
@@ -52,19 +52,20 @@ private struct AddColumnInput: Codable, Sendable {
     let body: String?
 }
 
-/// The `input` object of `updateColumn` (plan.md §4.2). A field that is not set does not change.
-private struct UpdateColumnInput: Codable, Sendable {
+/// The `input` object of `updateColumn` (plan.md §4.2). A field that is not set does not change, and `null` clears
+/// the field.
+private struct UpdateColumnInput: Decodable, Sendable {
     /// The column: a full URI or the slug (plan.md §3.2).
     let id: NodeID
 
     /// The new name of the column.
-    let name: String?
+    let name: FieldUpdate<String>
 
     /// The new sort key of the column.
-    let order: Int?
+    let order: FieldUpdate<Int>
 
     /// The new Markdown body of the column: the full text. The mutation writes the diff from the current body.
-    let body: String?
+    let body: FieldUpdate<String>
 }
 
 /// The `input` object of `addActor` (plan.md §4.2).
@@ -86,19 +87,20 @@ private struct AddActorInput: Codable, Sendable {
     let ensure: Bool?
 }
 
-/// The `input` object of `updateActor` (plan.md §4.2). A field that is not set does not change.
-private struct UpdateActorInput: Codable, Sendable {
+/// The `input` object of `updateActor` (plan.md §4.2). A field that is not set does not change, and `null` clears
+/// the field.
+private struct UpdateActorInput: Decodable, Sendable {
     /// The actor: a full URI or the slug (plan.md §3.2).
     let id: NodeID
 
     /// The new name of the actor.
-    let name: String?
+    let name: FieldUpdate<String>
 
     /// The new color of the actor.
-    let color: String?
+    let color: FieldUpdate<String>
 
     /// The new Markdown body of the actor: the full text. The mutation writes the diff from the current body.
-    let body: String?
+    let body: FieldUpdate<String>
 }
 
 /// The `input` object of a mutation that names one node and has no other field: the delete and the undelete
@@ -151,13 +153,11 @@ extension KanbanResolver {
         let operation = MutationName.updateColumn
         return try await context.store.changeNode(named: operation, at: context.clock()) { work, resolver, time in
             let ref = try resolver.nodeRef(for: input.id, ofType: .column)
-            let values = [String: PatchValue](
-                givenValues: [
-                    PropertyName.name: input.name.map(PatchValue.string),
-                    PropertyName.order: input.order.map(PatchValue.integer),
-                ]
-            )
-            try work.updateNode(ref, setting: values, body: input.body, at: time)
+            let values = [
+                PropertyName.name: input.name.map(PatchValue.string),
+                PropertyName.order: input.order.map(PatchValue.integer),
+            ]
+            try work.updateNode(ref, updating: values, body: input.body, at: time)
             return ref
         }
     }
@@ -241,13 +241,11 @@ extension KanbanResolver {
         let operation = MutationName.updateActor
         return try await context.store.changeNode(named: operation, at: context.clock()) { work, resolver, time in
             let ref = try resolver.nodeRef(for: input.id, ofType: .actor)
-            let values = [String: PatchValue](
-                givenValues: [
-                    PropertyName.name: input.name.map(PatchValue.string),
-                    PropertyName.color: input.color.map(PatchValue.string),
-                ]
-            )
-            try work.updateNode(ref, setting: values, body: input.body, at: time)
+            let values = [
+                PropertyName.name: input.name.map(PatchValue.string),
+                PropertyName.color: input.color.map(PatchValue.string),
+            ]
+            try work.updateNode(ref, updating: values, body: input.body, at: time)
             return ref
         }
     }
@@ -322,7 +320,7 @@ extension BoardStore {
     ///     copy, a resolver of the forgiving refs of the working graph, and the time.
     /// - Returns: The object of the node, live or tombstoned.
     /// - Throws: The error of the body, or an ``EventError`` when a patch breaks a rule of the log.
-    fileprivate func changeNode<Object: SlotNodeObject>(
+    func changeNode<Object: SlotNodeObject>(
         named operation: String,
         at time: DateTime,
         _ body: (inout WorkingCopy, RefResolver, DateTime) throws -> LocalRef
@@ -361,22 +359,22 @@ extension WorkingCopy {
         try apply(PatchInput(changing: ref, setting: values, body: body, from: ""), at: time)
     }
 
-    /// Changes a node with one patch: a `set` of the values and an `edit` diff from the current body (plan.md §4.2).
-    /// A value that does not change is not written.
+    /// Changes a node with one patch: a `set` of each new value, an `unset` of each cleared property, and an `edit`
+    /// diff from the current body (plan.md §4.2, §6). A value that does not change is not written.
     ///
     /// - Parameters:
     ///   - ref: The local ref of the node.
-    ///   - values: The properties to write.
-    ///   - body: The new body, or `nil` for no change of the body.
+    ///   - values: The update of each property.
+    ///   - body: The update of the body.
     ///   - time: The time of the change.
     /// - Throws: An ``EventError`` when the patch breaks a rule of the log.
     fileprivate mutating func updateNode(
         _ ref: LocalRef,
-        setting values: [String: PatchValue],
-        body: String?,
+        updating values: [String: FieldUpdate<PatchValue>],
+        body: FieldUpdate<String>,
         at time: DateTime
     ) throws(EventError) {
-        try apply(PatchInput(changing: ref, setting: values, body: body, from: graph.body(of: ref)), at: time)
+        try apply(PatchInput(changing: ref, updating: values, body: body, from: graph.body(of: ref)), at: time)
     }
 
     /// Writes a `delete` patch on a node. A delete of a column obeys the graph rule of plan.md §3.3, rule 5.
@@ -440,7 +438,7 @@ extension RefResolver {
     ///   - includesTombstones: `true` when the ref can name a tombstone.
     /// - Returns: The local ref of the node.
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no node of the type has the ref.
-    fileprivate func nodeRef(
+    func nodeRef(
         for id: NodeID,
         ofType type: PatchNodeType,
         includingTombstones includesTombstones: Bool = false
@@ -458,7 +456,7 @@ extension PatchValue {
     ///
     /// - Parameter text: The text.
     /// - Returns: The JSON string value.
-    fileprivate static func string(_ text: String) -> PatchValue {
+    static func string(_ text: String) -> PatchValue {
         .json(.string(text))
     }
 
@@ -497,9 +495,9 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             }
             Input(UpdateColumnInput.self) {
                 InputField("id", at: \.id)
-                InputField("name", at: \.name)
-                InputField("order", at: \.order)
-                InputField("body", at: \.body)
+                InputField("name", at: \.name.value)
+                InputField("order", at: \.order.value)
+                InputField("body", at: \.body.value)
             }
             Input(AddActorInput.self) {
                 InputField("id", at: \.id)
@@ -510,9 +508,9 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             }
             Input(UpdateActorInput.self) {
                 InputField("id", at: \.id)
-                InputField("name", at: \.name)
-                InputField("color", at: \.color)
-                InputField("body", at: \.body)
+                InputField("name", at: \.name.value)
+                InputField("color", at: \.color.value)
+                InputField("body", at: \.body.value)
             }
             Input(NodeReferenceInput.self) {
                 InputField("id", at: \.id)

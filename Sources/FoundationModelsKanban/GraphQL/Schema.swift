@@ -19,6 +19,11 @@ actor BoardStore {
     /// there (plan.md §6).
     let sessionActor: SessionActor
 
+    /// The local ref of the session actor when it is a live actor of the board at the start of the run, else `nil`.
+    /// An `addTask` with no assignee assigns this actor (plan.md §6, "Assignees"). An actor that the call itself makes
+    /// is not known before the call, so it is not assigned.
+    let knownSessionActor: LocalRef?
+
     /// Makes a store that holds the working copy of a board.
     ///
     /// - Parameters:
@@ -29,6 +34,8 @@ actor BoardStore {
         self.work = work
         self.boardKey = boardKey
         self.sessionActor = sessionActor
+        let isKnown = work.graph.node(for: sessionActor.ref)?.state.fields.isDeleted == false
+        knownSessionActor = isKnown ? sessionActor.ref : nil
     }
 
     /// The read view of the working graph now.
@@ -535,6 +542,7 @@ struct PublicSchema: API {
         schema = try SchemaBuilder.makeKanbanBuilder()
             .addBoardMutations()
             .addColumnActorMutations()
+            .addTaskMutations()
             .build()
     }
 }

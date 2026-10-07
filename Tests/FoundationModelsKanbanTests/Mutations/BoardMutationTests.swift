@@ -211,6 +211,23 @@ struct BoardMutationTests {
         #expect(last.patch == expected)
     }
 
+    @Test("updateBoard with a null body writes the diff to the empty text, and a missing name does not change")
+    func nullBodyWritesDiffToEmptyText() async throws {
+        let directory = try TemporaryDirectory()
+        _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
+        let mutation = #"mutation { first: updateBoard(input: { body: "\#(Self.boardBody)" }) { body } "#
+            + "second: updateBoard(input: { body: null }) { name body } }"
+        let response = try await KanbanGraphTests.execute(mutation, on: KanbanGraphTests.makeGraph(at: directory.url))
+        let second = #"{"body":"","name":"\#(KanbanGraphTests.boardName)"}"#
+        #expect(response == #"{"data":{"first":{"body":"\#(Self.boardBody)"},"second":\#(second)}}"#)
+        let last = try #require(try Self.events(of: .board, inRepoAt: directory.url).last)
+        let expected = try PatchInput(
+            node: .board,
+            edit: PatchEdit(body: UnifiedDiff(from: Self.boardBody, to: "").text)
+        )
+        #expect(last.patch == expected)
+    }
+
     // MARK: - Session actor
 
     @Test("The session actor is the actor of KanbanGraph.init: each event names it, and the call makes it")

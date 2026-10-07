@@ -1,6 +1,7 @@
 import Foundation
 import GraphQL
 import Testing
+import ULID
 
 @testable import FoundationModelsKanban
 
@@ -88,17 +89,17 @@ struct ColumnActorTests {
     ///
     /// - Parameter ref: The local ref of the node.
     /// - Returns: The URI text.
-    private static func id(of ref: LocalRef) -> String {
+    static func id(of ref: LocalRef) -> String {
         NodeURI(boardKey: KanbanGraphTests.boardKey.description, ref: ref).description
     }
 
     /// Writes the fixture logs to a temporary repo, and makes a new engine for the repo.
     ///
     /// - Parameter directory: The temporary repo directory.
-    /// - Returns: The engine.
-    private static func makeFixtureGraph(in directory: TemporaryDirectory) throws -> KanbanGraph {
-        _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
-        return try KanbanGraphTests.makeGraph(at: directory.url)
+    /// - Returns: The engine, and the ULID of the fixture task.
+    static func makeFixtureGraph(in directory: TemporaryDirectory) throws -> (graph: KanbanGraph, task: ULID) {
+        let task = try KanbanGraphTests.writeFixture(inRepoAt: directory.url).task
+        return (try KanbanGraphTests.makeGraph(at: directory.url), task)
     }
 
     /// Runs one document on a new engine of the fixture repo.
@@ -108,12 +109,12 @@ struct ColumnActorTests {
     ///   - variables: The values of the variables of the document. The default is no variables.
     ///   - directory: The temporary repo directory.
     /// - Returns: The response JSON text.
-    private static func respond(
+    static func respond(
         to document: String,
         with variables: [String: Map] = [:],
         onFixtureIn directory: TemporaryDirectory
     ) async throws -> String {
-        try await KanbanGraphTests.execute(document, variables: variables, on: makeFixtureGraph(in: directory))
+        try await KanbanGraphTests.execute(document, variables: variables, on: makeFixtureGraph(in: directory).graph)
     }
 
     /// Runs a setup document on a new engine of the fixture repo, then runs a body, and expects that the body writes
@@ -122,20 +123,35 @@ struct ColumnActorTests {
     /// - Parameters:
     ///   - setup: A document that runs before the body, or `nil` for none.
     ///   - directory: The temporary repo directory.
-    ///   - body: Gets the engine and the event log of the board, and gives the result.
+    ///   - body: Gets the engine, the event log of the board, and the response of the setup document, and gives the
+    ///     result.
     /// - Returns: The result of the body.
     private static func runWritingNothing<Result>(
         after setup: String?,
         in directory: TemporaryDirectory,
-        _ body: (KanbanGraph, EventLog) async throws -> Result
+        _ body: (KanbanGraph, EventLog, String) async throws -> Result
     ) async throws -> Result {
-        let graph = try makeFixtureGraph(in: directory)
-        _ = try await KanbanGraphTests.execute(setup ?? KanbanGraphTests.nameQuery, on: graph)
+        let graph = try makeFixtureGraph(in: directory).graph
+        let setupResponse = try await KanbanGraphTests.execute(setup ?? KanbanGraphTests.nameQuery, on: graph)
         let log = EventLog(repositoryAt: directory.url)
         let before = try log.nodeFileSignatures()
-        let result = try await body(graph, log)
+        let result = try await body(graph, log, setupResponse)
         #expect(try log.nodeFileSignatures() == before)
         return result
+    }
+
+    /// Runs one document in a commit session of a board, so that a test can read the ``KanbanError`` that a resolver
+    /// threw.
+    ///
+    /// - Parameters:
+    ///   - document: The GraphQL document.
+    ///   - session: The commit session of the board.
+    /// - Returns: The result of the document.
+    static func result(of document: String, in session: inout CommitSession) async throws -> GraphQLResult {
+        try await session.run { store in
+            let context = KanbanContext(store: store, clock: { CommitTests.callTime })
+            return try await PublicSchema().execute(request: document, context: context)
+        }
     }
 
     /// Runs one mutation that fails on the fixture repo, and gives its error.
@@ -145,24 +161,37 @@ struct ColumnActorTests {
     /// log file.
     ///
     /// - Parameters:
+    ///   - setup: A document that runs before the mutation, or `nil` for none.
+    ///   - directory: The temporary repo directory.
+    ///   - makeMutation: Gives the GraphQL document that fails, from the response of the setup document.
+    /// - Returns: The error of the first GraphQL error of the response.
+    static func failure(
+        after setup: String?,
+        in directory: TemporaryDirectory,
+        of makeMutation: (String) throws -> String
+    ) async throws -> KanbanError {
+        let error = try await runWritingNothing(after: setup, in: directory) { _, log, setupResponse in
+            var session = try await CommitTests.makeSession(of: log)
+            let result = try await result(of: makeMutation(setupResponse), in: &session)
+            return result.errors.first?.originalError as? KanbanError
+        }
+        return try #require(error)
+    }
+
+    /// Runs one mutation that fails on the fixture repo, and gives its error. See
+    /// ``failure(after:in:of:)``.
+    ///
+    /// - Parameters:
     ///   - mutation: The GraphQL document that fails.
     ///   - setup: A document that runs before the mutation, or `nil` for none.
     ///   - directory: The temporary repo directory.
     /// - Returns: The error of the first GraphQL error of the response.
-    private static func failure(
+    static func failure(
         of mutation: String,
         after setup: String? = nil,
         in directory: TemporaryDirectory
     ) async throws -> KanbanError {
-        let error = try await runWritingNothing(after: setup, in: directory) { _, log in
-            var session = try await CommitTests.makeSession(of: log)
-            return try await session.run { store in
-                let context = KanbanContext(store: store, clock: { CommitTests.callTime })
-                let result = try await PublicSchema().execute(request: mutation, context: context)
-                return result.errors.first?.originalError as? KanbanError
-            }
-        }
-        return try #require(error)
+        try await failure(after: setup, in: directory) { _ in mutation }
     }
 
     /// Runs one document on the fixture repo, and expects that it writes no log file.
@@ -172,12 +201,12 @@ struct ColumnActorTests {
     ///   - setup: A document that runs before it, on the same engine, or `nil` for none.
     ///   - directory: The temporary repo directory.
     /// - Returns: The response JSON text of the document.
-    private static func respondWritingNothing(
+    static func respondWritingNothing(
         to document: String,
         after setup: String? = nil,
         in directory: TemporaryDirectory
     ) async throws -> String {
-        try await runWritingNothing(after: setup, in: directory) { graph, _ in
+        try await runWritingNothing(after: setup, in: directory) { graph, _, _ in
             try await KanbanGraphTests.execute(document, on: graph)
         }
     }
@@ -188,7 +217,7 @@ struct ColumnActorTests {
     ///   - ref: The local ref of the node.
     ///   - directory: The temporary repo directory.
     /// - Returns: The patches, in the order of their events.
-    private static func patches(of ref: LocalRef, in directory: TemporaryDirectory) throws -> [PatchInput] {
+    static func patches(of ref: LocalRef, in directory: TemporaryDirectory) throws -> [PatchInput] {
         try BoardMutationTests.events(of: ref, inRepoAt: directory.url).map(\.patch)
     }
 
@@ -321,6 +350,16 @@ struct ColumnActorTests {
         #expect(response == #"{"data":{"updateColumn":{"name":"\#(KanbanGraphTests.todoName)"}}}"#)
     }
 
+    @Test("updateColumn with a null name writes an unset of the name, and a missing order does not change")
+    func updateColumnNullNameUnsetsName() async throws {
+        let directory = try TemporaryDirectory()
+        let mutation = #"mutation { updateColumn(input: { id: "todo", name: null }) { name order } }"#
+        let response = try await Self.respond(to: mutation, onFixtureIn: directory)
+        #expect(response == #"{"data":{"updateColumn":{"name":"","order":0}}}"#)
+        let expected = try PatchInput(node: KanbanGraphTests.todoColumn, unset: [PropertyName.name])
+        #expect(try Self.patches(of: KanbanGraphTests.todoColumn, in: directory).last == expected)
+    }
+
     @Test("updateColumn with an id that names no column gives NOT_FOUND and writes nothing")
     func updateColumnNotFound() async throws {
         let directory = try TemporaryDirectory()
@@ -397,7 +436,7 @@ struct ColumnActorTests {
     @Test("An added actor is in the actors of the board")
     func addedActorIsListed() async throws {
         let directory = try TemporaryDirectory()
-        let graph = try Self.makeFixtureGraph(in: directory)
+        let graph = try Self.makeFixtureGraph(in: directory).graph
         _ = try await KanbanGraphTests.execute(Self.addAlice, on: graph)
         let response = try await KanbanGraphTests.execute("{ board { actors { id } } }", on: graph)
         #expect(response.contains(#"{"id":"\#(Self.id(of: Self.alice))"}"#))
@@ -457,6 +496,17 @@ struct ColumnActorTests {
         #expect(try Self.patches(of: Self.alice, in: directory).last == expected)
     }
 
+    @Test("updateActor with a null color writes an unset of the color, and a missing name does not change")
+    func updateActorNullColorUnsetsColor() async throws {
+        let directory = try TemporaryDirectory()
+        let update = #"updateActor(input: { id: "\#(Self.aliceSlug)", color: null }) { name color }"#
+        let mutation = "mutation { \(Self.addAliceField) \(update) }"
+        let response = try await Self.respond(to: mutation, onFixtureIn: directory)
+        #expect(response.hasSuffix(#""updateActor":{"color":null,"name":"\#(Self.aliceName)"}}}"#))
+        let expected = try PatchInput(node: Self.alice, unset: [PropertyName.color])
+        #expect(try Self.patches(of: Self.alice, in: directory).last == expected)
+    }
+
     @Test("deleteActor writes delete true and returns the tombstone")
     func deleteActor() async throws {
         let directory = try TemporaryDirectory()
@@ -469,7 +519,7 @@ struct ColumnActorTests {
     @Test("undeleteActor on a tombstone writes delete false and returns the live actor")
     func undeleteActor() async throws {
         let directory = try TemporaryDirectory()
-        let graph = try Self.makeFixtureGraph(in: directory)
+        let graph = try Self.makeFixtureGraph(in: directory).graph
         _ = try await KanbanGraphTests.execute(Self.addAlice, on: graph)
         _ = try await KanbanGraphTests.execute("mutation { deleteActor(\(Self.aliceReference)) { id } }", on: graph)
         #expect(try Self.lastPatch(of: Self.alice, isDelete: true, in: directory))

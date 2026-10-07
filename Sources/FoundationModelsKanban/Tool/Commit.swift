@@ -46,6 +46,14 @@ struct EventStamp: Sendable {
         Event(id: nextID(), txn: txn, ops: [], at: time, actor: actor, patch: patch)
     }
 
+    /// Mints the ULID of a new node from the source of the event ids (the mint rule of plan.md §3.2).
+    ///
+    /// - Parameter existing: The short ids that are already in the board.
+    /// - Returns: The first ULID of the source whose short id is not in `existing`.
+    mutating func mintULID(avoiding existing: Set<ShortID>) -> ULID {
+        ids.makeULID(avoiding: existing)
+    }
+
     /// Gives the next event id: the next id of the source, or the id after the last one when the source gives an id
     /// that is not larger.
     ///
@@ -136,6 +144,15 @@ struct WorkingCopy: Sendable {
         }
         self = field
         return value
+    }
+
+    /// Mints the ULID of a new task or comment: its short id is unique among the tasks and the comments of the graph,
+    /// live or tombstoned (plan.md §3.2, mint rule). A call that runs again after a changed log mints from the new
+    /// live graph, so a node that a different process wrote keeps its short id (plan.md §5.4 step 5.2).
+    ///
+    /// - Returns: The ULID.
+    mutating func mintULID() -> ULID {
+        stamp.mintULID(avoiding: graph.shortIDs)
     }
 
     /// Tells if the log has the node of a ref: a live event or a kept event changed it.
@@ -318,6 +335,15 @@ extension Event {
 }
 
 extension Graph {
+    /// The short ids of the tasks and the comments of the graph, live or tombstoned.
+    fileprivate var shortIDs: Set<ShortID> {
+        Set(
+            allSlots.compactMap { slot in
+                (node(at: slot)?.state as? any ULIDNodeState).map { state in ShortID(of: state.id) }
+            }
+        )
+    }
+
     /// Gives the graph with a board node. A graph that has no board node (a repo with no `.kanban/`, or no
     /// `board.jsonl`) gets an empty board in memory only. No file is written.
     ///

@@ -13,21 +13,114 @@ enum MutationName {
     static let updateBoard = "updateBoard"
 }
 
+// MARK: - Update input
+
+/// One field of the `input` object of a mutation that changes a node (plan.md §6, "Missing and `null` input").
+///
+/// A field that the input does not have does not change. A field with the value `null` is cleared. A field with a
+/// value gets the value. A `Decodable` type that holds this type reads the three forms with
+/// ``Swift/KeyedDecodingContainer/decode(_:forKey:)``.
+enum FieldUpdate<Value> {
+    /// The input does not have the field, so the field does not change.
+    case unchanged
+
+    /// The input gives `null`, so the field is cleared.
+    case cleared
+
+    /// The input gives a new value.
+    case changed(Value)
+
+    /// The new value, or `nil` when the input does not give a value. The schema reads the type of this property, so
+    /// that the GraphQL `input` field gets the nullable type of the value.
+    var value: Value? {
+        guard case .changed(let value) = self else {
+            return nil
+        }
+        return value
+    }
+
+    /// Changes the new value, and keeps a missing or a cleared field as it is.
+    ///
+    /// - Parameter transform: Gives the changed value from the new value.
+    /// - Returns: The field with the changed value.
+    func map<Changed>(_ transform: (Value) throws -> Changed) rethrows -> FieldUpdate<Changed> {
+        switch self {
+        case .unchanged: .unchanged
+        case .cleared: .cleared
+        case .changed(let value): .changed(try transform(value))
+        }
+    }
+
+    /// Gives the value after the update for a field whose clear gives an empty value, for example a body or a list.
+    ///
+    /// - Parameter empty: The value of a cleared field, for example `""` or `[]`.
+    /// - Returns: The new value, `empty` for a cleared field, or `nil` when the field does not change.
+    func value(clearingTo empty: Value) -> Value? {
+        switch self {
+        case .unchanged: nil
+        case .cleared: empty
+        case .changed(let value): value
+        }
+    }
+}
+
+extension FieldUpdate: Sendable where Value: Sendable {}
+
+extension FieldUpdate: Decodable where Value: Decodable {
+    /// Reads a field that the input has: `null` clears the field, and a value changes it.
+    ///
+    /// - Parameter decoder: The decoder that holds the value of the field.
+    /// - Throws: A `DecodingError` when the value is not `null` and not a `Value`.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        self = container.decodeNil() ? .cleared : .changed(try container.decode(Value.self))
+    }
+}
+
+extension KeyedDecodingContainer {
+    /// Reads one field of an update input. A missing key gives ``FieldUpdate/unchanged``. The synthesized
+    /// `Decodable` conformance of an input type calls this method for each ``FieldUpdate`` property, because a key
+    /// that the input does not have is not an error.
+    ///
+    /// - Parameters:
+    ///   - type: The type of the field.
+    ///   - key: The key of the field.
+    /// - Returns: The field.
+    /// - Throws: A `DecodingError` when the value is not `null` and not a `Value`.
+    // The synthesized `Decodable` code of each update input calls this method; periphery does not see that call.
+    // periphery:ignore
+    func decode<Value: Decodable>(_ type: FieldUpdate<Value>.Type, forKey key: Key) throws -> FieldUpdate<Value> {
+        guard contains(key) else {
+            return .unchanged
+        }
+        return try type.init(from: superDecoder(forKey: key))
+    }
+}
+
+extension FieldUpdate where Value == String {
+    /// The new Markdown body of a node: the full text, `""` for a cleared body, or `nil` when the body does not
+    /// change (plan.md §5.5: `body: null` writes a diff to the empty text).
+    var newBody: String? {
+        value(clearingTo: "")
+    }
+}
+
 // MARK: - Arguments
 
-/// The `input` object of `initBoard` and `updateBoard` (plan.md §4.2). A field that is not set does not change.
-private struct BoardInput: Codable, Sendable {
+/// The `input` object of `initBoard` and `updateBoard` (plan.md §4.2). A field that is not set does not change, and
+/// `null` clears the field.
+private struct BoardInput: Decodable, Sendable {
     /// The new name of the board.
-    let name: String?
+    let name: FieldUpdate<String>
 
     /// The new Markdown body of the board: the full text. The mutation writes the diff from the current body
     /// (plan.md §5.5).
-    let body: String?
+    let body: FieldUpdate<String>
 }
 
 /// The arguments of `initBoard` and `updateBoard`. The `input` argument is optional, because ``BoardInput`` has no
 /// required field (plan.md §4.2).
-private struct BoardMutationArguments: Codable, Sendable {
+private struct BoardMutationArguments: Decodable, Sendable {
     /// The changes to the board, or `nil` for no change.
     let input: BoardInput?
 }
@@ -147,11 +240,11 @@ extension BoardStore {
         }
     }
 
-    /// Changes the board with one patch: `set name` and an `edit` diff of the body (plan.md §4.2, §5.5). The patch
-    /// keeps only the parts that change the board, so a field that changes nothing writes nothing.
+    /// Changes the board with one patch: `set` or `unset` of the name, and an `edit` diff of the body (plan.md §4.2,
+    /// §5.5). The patch keeps only the parts that change the board, so a field that changes nothing writes nothing.
     ///
     /// - Parameters:
-    ///   - input: The changes. A field that is not set does not change.
+    ///   - input: The changes. A field that is not set does not change, and `null` clears the field.
     ///   - operation: The name of the public mutation.
     ///   - time: The time of the change.
     /// - Returns: The read view of the graph after the change.
@@ -164,8 +257,8 @@ extension BoardStore {
         try runMutation(named: operation, at: time) { work in
             let patch = try PatchInput(
                 changing: .board,
-                setting: input?.name.map { name in [PropertyName.name: .json(.string(name))] } ?? [:],
-                body: input?.body,
+                updating: [PropertyName.name: (input?.name ?? .unchanged).map(PatchValue.string)],
+                body: input?.body ?? .unchanged,
                 from: work.graph.body(of: .board)
             )
             try work.apply(patch, at: time)
@@ -225,7 +318,7 @@ extension WorkingCopy {
 }
 
 extension PatchInput {
-    /// Makes the patch of a mutation that changes one node: a `set` of the given values, and an `edit` diff from the
+    /// Makes the patch of a mutation that makes one node: a `set` of the given values, and an `edit` diff from the
     /// current body when the input has a body (plan.md §4.2, §5.5). The working copy keeps only the parts that change
     /// the node, so an equal value or an equal body writes nothing.
     ///
@@ -242,10 +335,52 @@ extension PatchInput {
         from body: String
     ) throws(EventError) {
         try self.init(
-            node: node,
-            set: values,
-            edit: newBody.map { newBody in PatchEdit(body: UnifiedDiff(from: body, to: newBody).text) }
+            changing: node,
+            updating: values.mapValues(FieldUpdate.changed),
+            body: newBody.map(FieldUpdate.changed) ?? .unchanged,
+            from: body
         )
+    }
+
+    /// Makes the patch of a mutation that changes one node: a `set` of each new value, an `unset` of each cleared
+    /// property, the `add` and `remove` parts of the set-valued properties, and an `edit` diff from the current body
+    /// when the input changes the body (plan.md §4.2, §5.5, §6). A cleared body gets the diff to the empty text. The
+    /// working copy keeps only the parts that change the node, so an equal value or an equal body writes nothing.
+    ///
+    /// - Parameters:
+    ///   - node: The local ref of the node.
+    ///   - values: The update of each property. A property that does not change can be left out.
+    ///   - add: The refs to add to set-valued properties.
+    ///   - remove: The refs to remove from set-valued properties.
+    ///   - newBody: The update of the body.
+    ///   - body: The current body of the node.
+    /// - Throws: An ``EventError`` when the patch breaks a rule of the log.
+    init(
+        changing node: LocalRef,
+        updating values: [String: FieldUpdate<PatchValue>],
+        adding add: [String: [StoredRef]] = [:],
+        removing remove: [String: [StoredRef]] = [:],
+        body newBody: FieldUpdate<String>,
+        from body: String
+    ) throws(EventError) {
+        try self.init(
+            node: node,
+            set: values.compactMapValues(\.value),
+            unset: values.filter { _, update in update.isCleared }.keys.sorted(),
+            add: add,
+            remove: remove,
+            edit: newBody.newBody.map { newBody in PatchEdit(body: UnifiedDiff(from: body, to: newBody).text) }
+        )
+    }
+}
+
+extension FieldUpdate {
+    /// `true` when the input gives `null`, so that the field is cleared.
+    fileprivate var isCleared: Bool {
+        guard case .cleared = self else {
+            return false
+        }
+        return true
     }
 }
 
@@ -284,8 +419,8 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     func addBoardMutations() -> Self {
         add {
             Input(BoardInput.self) {
-                InputField("name", at: \.name)
-                InputField("body", at: \.body)
+                InputField("name", at: \.name.value)
+                InputField("body", at: \.body.value)
             }
         }
         .addMutation {

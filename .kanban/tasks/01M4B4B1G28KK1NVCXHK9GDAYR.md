@@ -59,10 +59,26 @@ comments:
     - files: Tests/FoundationModelsKanbanTests/Mutations/ColumnActorTests.swift, Tests/FoundationModelsKanbanTests/Tool/KanbanGraphTests.swift
     - next: /review
   timestamp: 2026-10-07T19:47:21.030285+00:00
+- actor: wballard
+  id: 01m4bynhwbthv7cwpj23p8m7w7
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (3c79fb4). 0 findings, 0 confirmed, 1 refuted. All prior review items are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T19:50:24.907761+00:00
+- actor: wballard
+  id: 01m4bynr8htm6yddz14sj9ddkg
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 2 files (ColumnActorTests.swift, KanbanGraphTests.swift); 2/2 findings checked
+    - test: green — swift test, 616 passed, 0 warnings
+    - commit: 3c79fb4
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T19:50:31.441146+00:00
 depends_on:
 - 01M4B3ZQXZ1DKR1FVBDRCK1FP8
-position_column: doing
-position_ordinal: '8280'
+position_column: done
+position_ordinal: 9d80
 title: 'Mutations: column and actor create, update, delete'
 ---
 ## What
