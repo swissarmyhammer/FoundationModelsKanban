@@ -259,7 +259,7 @@ extension EventLog {
     /// - Parameter type: The node type.
     /// - Returns: The refs. The board type has no directory, so it gives no ref.
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when the directory is there and cannot be read.
-    private func nodeRefs(ofType type: PatchNodeType) throws(EventLogError) -> [LocalRef] {
+    func nodeRefs(ofType type: PatchNodeType) throws(EventLogError) -> [LocalRef] {
         guard let name = type.logDirectoryName else {
             return []
         }

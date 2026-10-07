@@ -28,7 +28,8 @@ let graphQLPackage = "GraphQL"
 let graphitiPackage = "Graphiti"
 
 // The ordered dictionary that a GraphQL `Map` object holds. The `JSON` scalar
-// sorts the keys of each object, so it names this type directly.
+// sorts the keys of each object, so it names this type directly. The loader
+// also uses its `Heap` for the k-way merge of the event lists (plan.md §5.3).
 let collectionsPackage = "swift-collections"
 
 // The time-sortable identifier package. It is the same package and the same
@@ -82,6 +83,7 @@ let package = Package(
                 .product(name: graphQLPackage, package: graphQLPackage),
                 .product(name: graphitiPackage, package: graphitiPackage),
                 .product(name: "OrderedCollections", package: collectionsPackage),
+                .product(name: "HeapModule", package: collectionsPackage),
                 .product(name: "ULID", package: ulidPackage),
                 .product(name: "Parsing", package: parsingPackage),
             ],

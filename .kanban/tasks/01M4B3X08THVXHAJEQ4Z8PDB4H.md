@@ -31,10 +31,26 @@ comments:
     - evidence: 3 files — Sources/FoundationModelsKanban/Events/EventLog.swift, Sources/FoundationModelsKanban/Events/BoardLock.swift, Tests/FoundationModelsKanbanTests/Events/EventLogTests.swift. `swift test --filter EventLogTests`: 16 tests passed. `swift test`: 293 tests in 17 suites passed, 0 compiler warnings. `periphery scan` (native build, --build-tests): no unused code.
     - next: /review
   timestamp: 2026-10-07T15:17:35.491075+00:00
+- actor: wballard
+  id: 01m4bf9e1q850r3svvsy0hbdjn
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (df75081). 3 files reviewed. 0 findings, 0 confirmed, 1 refuted. 4 files in .kanban/ not reviewed (.reviewignore).
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T15:21:39.127965+00:00
+- actor: wballard
+  id: 01m4bf9kdz2544a57bk6wt817x
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 3 files (Events/EventLog.swift, Events/BoardLock.swift, EventLogTests.swift)
+    - test: green — swift test, 293 passed, 0 warnings
+    - commit: df75081
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T15:21:44.639606+00:00
 depends_on:
 - 01M4B3WK197P3T3VZHX3JHWP3E
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '8e80'
 title: 'Event log: append, lock, and file signatures'
 ---
 ## What

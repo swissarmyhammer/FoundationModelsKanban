@@ -1,9 +1,41 @@
 ---
+comments:
+- actor: wballard
+  id: 01m4bfen3wyrpy9f0680yy8dy0
+  text: |-
+    Research:
+    - `Graph.update(with:)` already resolves each local edge to a slot when the target is there, and keeps a `waiting` index so that a target that comes later resolves the edge. Thus the join of a stage is: insert the nodes of the stage in a fixed order. Same-stage edges (tag `renamedTo`, task `dependsOn`) resolve through `waiting` at the end of the stage. A remote ref and a missing target stay unresolved.
+    - Slots depend on the insert order. For equal graphs with 1 and 8 workers, the loader sorts the nodes of each stage by the text of the local ref before the insert.
+    - `Graph` is not `Equatable`. The equality test needs a synthesized `Equatable` conformance (all stored properties are Equatable).
+    - `EventLog.nodeRefs(ofType:)` is private and gives the refs of a node directory (a missing directory gives none). The loader needs it, so it becomes internal. The board stage has the one ref `.board`; a missing `board.jsonl` gives a log with no node.
+    - The k-way merge uses `Heap` from swift-collections `HeapModule` (the package is already a dependency; only the product is new).
+    - `TemporaryDirectory` and `ReplayTests.line(atStep:patch:)` in the test target give the fixture helpers.
+  timestamp: 2026-10-07T15:24:30.204301+00:00
+- actor: wballard
+  id: 01m4bfm2bcf8b6mmpcc89k31r2
+  text: |-
+    Implementation landed (TDD: RED was a compile failure, `BoardLoader` not found; then GREEN).
+    - `Events/Loader.swift`: `BoardLoader(reading:withWorkers:reportingTo:)` with `load() async throws(EventLogError) -> LoadedBoard` (`graph`, `events`). `stageOrder` = board, actor, column, tag, task, comment. Each stage: a `WorkQueue` (a `Mutex<ArraySlice<LocalRef>>`), and `min(workerCount, files)` workers in a `withTaskGroup` that return `Result<[StagedLog], EventLogError>`. A worker that fails empties the queue. The join inserts the nodes of a stage in the sort order of the ref text, so slots do not depend on the worker count. `EventMerge` does the k-way merge with `Heap` (ties by list index).
+    - `LoaderWorkerObserver` protocol (`workerDidStart`/`workerDidFinish`): the test seam for the peak counter. The default is `nil`.
+    - `Graph` now conforms to `Equatable` (synthesized), for the equality criterion.
+    - `EventLog.nodeRefs(ofType:)` is now internal (was private).
+    - `Package.swift`: the target uses the `HeapModule` product of swift-collections (the package was already a dependency).
+    - Swift Testing does not allow `#require` inside `#require` ("recursive expansion of macro"); the test unwraps in steps.
+    - The peak test uses `min(4, activeProcessorCount)` workers, because workers can only run at the same time on different processors.
+    - Periphery (`periphery scan --retain-public -- --build-system native`) reports no finding in the changed files. Its 4 findings are in `GraphQL/Errors.swift` (assign-only properties `code`, `message`, `path`, `extensions`). That file existed before this task, and this task does not change it.
+  timestamp: 2026-10-07T15:27:27.596743+00:00
+- actor: wballard
+  id: 01m4bfm7hknkg5x8btwxr9713s
+  text: |-
+    ### implement — changed
+    - evidence: 5 files — Sources/FoundationModelsKanban/Events/Loader.swift (new), Tests/FoundationModelsKanbanTests/Events/LoaderTests.swift (new), Sources/FoundationModelsKanban/Model/Graph.swift, Sources/FoundationModelsKanban/Events/EventLog.swift, Package.swift. `swift test --filter LoaderTests`: 9 tests passed. `swift test`: 302 tests in 18 suites passed, 0 compiler warnings.
+    - next: /review
+  timestamp: 2026-10-07T15:27:32.915786+00:00
 depends_on:
 - 01M4B3XB2P4CK66JYADZWD88DR
 - 01M4B3X08THVXHAJEQ4Z8PDB4H
-position_column: todo
-position_ordinal: '8e80'
+position_column: doing
+position_ordinal: '80'
 title: 'Parallel loader: stages, work queue, join'
 ---
 ## What
@@ -15,13 +47,13 @@ Load one board from disk into a `Graph`. The basis is plan.md §5.3 (The paralle
 - A missing directory (for example no `comments/`) is an empty stage.
 
 ## Acceptance Criteria
-- [ ] A load with 1 worker and a load with 8 workers give equal graphs and equal global event lists.
-- [ ] After the load, each edge to a node in the board is a slot; a cross-board `dependsOn` stays unresolved.
-- [ ] With 2000 task files and N workers, the peak number of workers that run at the same time equals N (a test counter records the peak).
+- [x] A load with 1 worker and a load with 8 workers give equal graphs and equal global event lists.
+- [x] After the load, each edge to a node in the board is a slot; a cross-board `dependsOn` stays unresolved.
+- [x] With 2000 task files and N workers, the peak number of workers that run at the same time equals N (a test counter records the peak).
 
 ## Tests
-- [ ] `Tests/FoundationModelsKanbanTests/Events/LoaderTests.swift`: write fixture logs with `EventLog`, then load.
-- [ ] Run `swift test --filter LoaderTests`; expect all pass.
+- [x] `Tests/FoundationModelsKanbanTests/Events/LoaderTests.swift`: write fixture logs with `EventLog`, then load.
+- [x] Run `swift test --filter LoaderTests`; expect all pass.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.

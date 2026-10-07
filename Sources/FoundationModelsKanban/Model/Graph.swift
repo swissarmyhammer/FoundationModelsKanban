@@ -9,7 +9,10 @@ import Foundation
 ///
 /// The graph is a value type. Its storage is Swift arrays and dictionaries, so a copy is cheap (copy-on-write), and a
 /// change to a copy does not change the original. A mutation works on such a copy (plan.md §5.4).
-struct Graph: Sendable {
+///
+/// Two graphs are equal when they have the same slots, the same nodes, and the same unresolved edges that wait for a
+/// node.
+struct Graph: Equatable, Sendable {
     /// The node table. The index of a node is its slot. A slot whose node was removed holds `nil`.
     private var nodes: [Node?] = []
 
