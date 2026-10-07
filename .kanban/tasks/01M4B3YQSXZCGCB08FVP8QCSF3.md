@@ -29,6 +29,36 @@ comments:
     - files: Sources/FoundationModelsKanban/GraphQL/Schema.swift, Sources/FoundationModelsKanban/GraphQL/QueryResolvers.swift (new), Sources/FoundationModelsKanban/GraphQL/Scalars.swift, Tests/FoundationModelsKanbanTests/GraphQL/QueryResolverTests.swift (new), Tests/FoundationModelsKanbanTests/GraphQL/QueryFixture.swift (new), Tests/FoundationModelsKanbanTests/GraphQLEngineTests.swift
     - next: /review
   timestamp: 2026-10-07T16:50:02.566104+00:00
+- actor: wballard
+  id: 01m4bmk2zm4h1n8e5chm8chfeg
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD; 2 findings (2 confirmed, 0 refuted) — Sources/FoundationModelsKanban/GraphQL/Schema.swift:290, Sources/FoundationModelsKanban/GraphQL/Schema.swift:421
+    - next: Put the five Node interface Field declarations in one shared helper. Use that helper in the Interface definition and in nodeFields. Then review again.
+  timestamp: 2026-10-07T16:54:18.356124+00:00
+- actor: wballard
+  id: 01m4bmkd2gwx56jk9aetnwrxa6
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 6 files (GraphQL/Schema.swift, GraphQL/QueryResolvers.swift, GraphQL/Scalars.swift, QueryResolverTests.swift, QueryFixture.swift, GraphQLEngineTests.swift)
+    - test: green — swift test, 451 passed, 0 warnings
+    - commit: 6c5aa08
+    - review: findings — Sources/FoundationModelsKanban/GraphQL/Schema.swift:290, Sources/FoundationModelsKanban/GraphQL/Schema.swift:421
+  timestamp: 2026-10-07T16:54:28.688470+00:00
+- actor: wballard
+  id: 01m4bmsqnnhbdyh82msbz8vh8r
+  text: |-
+    Review findings fixed (duplication/duplication, Schema.swift Node fields).
+    - Research in Graphiti 3.1.0: `Interface<Resolver, Context, InterfaceType>` takes `[FieldComponent<InterfaceType, Context>]` and `Type` takes `[FieldComponent<ObjectType, Context>]`. For the interface, `InterfaceType` is the existential `any NodeObject`. The existential does not conform to `NodeObject`, so a helper with the constraint `Object: NodeObject` cannot serve the interface.
+    - Fix: `nodeFields<Object: Sendable>(of node: KeyPath<Object, any NodeObject>)` is the one list of the five Node fields. Each field reads `node.appending(path: \.id)` and so on. A new protocol extension property `NodeObject.nodeInterface: any NodeObject { self }` gives the key path for the interface and for each object type. `nodeType` and `addNodeInterface` both call the helper.
+    - Discovery: a builder closure with one explicit `return` statement does not get the result builder transform. Thus `Interface(...) { return Self.nodeFields(of: \.nodeInterface) }` passes the array as it is, with no warning. An array value in a builder closure without `return` does not type-check, because `FieldComponentBuilder.buildExpression` takes one component only. A function reference (`fields: Self.labelFields`) also skips the transform.
+    - Same cause in the file: `Actor` and `Tag` had the same three fields (`name`, `color`, `tasks`). New protocol `LabelObject` (associated type `Color`, because the actor color is `String?` and the tag color is `String`) and helper `labelFields()`. Both types now use `nodeType(..., fields: Self.labelFields)`.
+    - SDL check: a temporary test wrote the public and patch SDL before and after the change. `diff` gave no difference for both schemas. The temporary test file is deleted.
+
+    ### implement — changed
+    - evidence: Sources/FoundationModelsKanban/GraphQL/Schema.swift; `swift build --build-tests` 0 warnings; `swift test` 451 tests in 29 suites passed; SDL (public and patch) identical before and after.
+    - next: /review
+  timestamp: 2026-10-07T16:57:56.149001+00:00
 depends_on:
 - 01M4B3V9XKKT81TCZFJJT4PE6E
 - 01M4B3YC73VSKE9VEP29E3CZNQ
@@ -55,3 +85,13 @@ The read side of the public GraphQL schema. The basis is plan.md §4.1. `node`, 
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-07 11:51)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 6 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsKanban/GraphQL/Schema.swift:290` `duplication/duplication` — Identical Field declarations appear twice in the same file (lines 290–294 and 421–425), creating maintenance burden: a change to one list must be manually applied to the other, and the two can drift out of sync. Extract these five Field declarations into a shared helper function or constant, and call it from both the `Interface` definition (line 290 context) and the `nodeFields` function (line 421). This ensures a single source of truth for the Node interface fields.
+- [x] `Sources/FoundationModelsKanban/GraphQL/Schema.swift:421` `duplication/duplication` — Identical Field declarations appear twice in the same file (lines 290–294 and 421–425), creating maintenance burden: a change to one list must be manually applied to the other, and the two can drift out of sync. Extract these five Field declarations into a shared helper function or constant, and call it from both the `Interface` definition (line 290 context) and the `nodeFields` function (line 421). This ensures a single source of truth for the Node interface fields.

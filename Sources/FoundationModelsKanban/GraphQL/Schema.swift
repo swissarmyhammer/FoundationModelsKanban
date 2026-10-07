@@ -168,6 +168,31 @@ protocol NodeObject: Sendable {
     var deleted: DateTime? { get }
 }
 
+extension NodeObject {
+    /// The object as a value of the `Node` interface type.
+    ///
+    /// A key path to this property lets one list of field declarations serve the `Node` interface and each object
+    /// type that implements it.
+    var nodeInterface: any NodeObject {
+        self
+    }
+}
+
+/// A node that marks tasks, with a name and a color: an actor or a tag.
+protocol LabelObject: NodeObject {
+    /// The Swift type of the color. Its optionality sets the nullability of the GraphQL `color` field.
+    associatedtype Color: Sendable
+
+    /// The name of the node.
+    var name: String { get }
+
+    /// The color of the node.
+    var color: Color { get }
+
+    /// The live tasks that the node marks, in board order.
+    var tasks: [TaskObject] { get }
+}
+
 /// The board, as the GraphQL `Board` type: the root of the tree (plan.md §3.1).
 struct BoardObject: GraphNodeObject {
     /// The read view of the graph.
@@ -190,7 +215,7 @@ struct ColumnObject: SlotNodeObject {
 }
 
 /// An actor, as the GraphQL `Actor` type.
-struct ActorObject: SlotNodeObject {
+struct ActorObject: SlotNodeObject, LabelObject {
     /// The read view of the graph.
     let view: BoardView
 
@@ -202,7 +227,7 @@ struct ActorObject: SlotNodeObject {
 }
 
 /// A tag, as the GraphQL `Tag` type.
-struct TagObject: SlotNodeObject {
+struct TagObject: SlotNodeObject, LabelObject {
     /// The read view of the graph.
     let view: BoardView
 
@@ -287,11 +312,8 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     private func addNodeInterface() -> Self {
         add {
             Interface(NodeObject.self, as: GraphQLTypeName.node) {
-                Field("id", at: \.id)
-                Field("body", at: \.body)
-                Field("created", at: \.created)
-                Field("updated", at: \.updated)
-                Field("deleted", at: \.deleted)
+                // The explicit `return` turns off the result builder, so the closure gives the array as it is.
+                return Self.nodeFields(of: \.nodeInterface)
             }
         }
     }
@@ -321,16 +343,8 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Field("order", at: \.order)
                 Field("tasks", at: \.tasks)
             }
-            Self.nodeType(ActorObject.self, as: GraphQLTypeName.actor) {
-                Field("name", at: \.name)
-                Field("color", at: \.color)
-                Field("tasks", at: \.tasks)
-            }
-            Self.nodeType(TagObject.self, as: GraphQLTypeName.tag) {
-                Field("name", at: \.name)
-                Field("color", at: \.color)
-                Field("tasks", at: \.tasks)
-            }
+            Self.nodeType(ActorObject.self, as: GraphQLTypeName.actor, fields: Self.labelFields)
+            Self.nodeType(TagObject.self, as: GraphQLTypeName.tag, fields: Self.labelFields)
             Type(BoardSummary.self) {
                 Field("total", at: \.total)
                 Field("ready", at: \.ready)
@@ -409,20 +423,34 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             type,
             as: name,
             interfaces: [NodeObject.self],
-            fields: nodeFields() + fields()
+            fields: nodeFields(of: \.nodeInterface) + fields()
         )
     }
 
-    /// Gives the fields of the `Node` interface for one object type.
+    /// Gives the fields of the `Node` interface, for the interface and for each object type that implements it.
     ///
+    /// - Parameter node: The key path from the object to its value as the `Node` interface type. The interface
+    ///   and the object types have different Swift types, so each field reads through this key path.
     /// - Returns: The fields `id`, `body`, `created`, `updated`, and `deleted`.
     @FieldComponentBuilder<Object, KanbanContext>
-    private static func nodeFields<Object: NodeObject>() -> [FieldComponent<Object, KanbanContext>] {
-        Field("id", at: \.id)
-        Field("body", at: \.body)
-        Field("created", at: \.created)
-        Field("updated", at: \.updated)
-        Field("deleted", at: \.deleted)
+    private static func nodeFields<Object: Sendable>(
+        of node: KeyPath<Object, any NodeObject>
+    ) -> [FieldComponent<Object, KanbanContext>] {
+        Field("id", at: node.appending(path: \.id))
+        Field("body", at: node.appending(path: \.body))
+        Field("created", at: node.appending(path: \.created))
+        Field("updated", at: node.appending(path: \.updated))
+        Field("deleted", at: node.appending(path: \.deleted))
+    }
+
+    /// Gives the fields of an actor or a tag, after the fields of the `Node` interface.
+    ///
+    /// - Returns: The fields `name`, `color`, and `tasks`.
+    @FieldComponentBuilder<Object, KanbanContext>
+    private static func labelFields<Object: LabelObject>() -> [FieldComponent<Object, KanbanContext>] {
+        Field("name", at: \.name)
+        Field("color", at: \.color)
+        Field("tasks", at: \.tasks)
     }
 }
 
