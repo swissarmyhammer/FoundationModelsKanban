@@ -27,10 +27,26 @@ comments:
     - evidence: 2 files — Sources/FoundationModelsKanban/Identity/BoardKey.swift, Tests/FoundationModelsKanbanTests/Identity/BoardKeyTests.swift; `swift test --filter BoardKeyTests` 13 tests pass; `swift test` 135 tests in 9 suites pass, 0 warnings
     - next: /review
   timestamp: 2026-10-07T13:34:28.586398+00:00
+- actor: wballard
+  id: 01m4b9d41518hfx0eb7vdrertb
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (1e0bf67). 0 findings, 0 confirmed, 7 refuted. 2 files reviewed. 4 .kanban/ files are not reviewed because of .reviewignore.
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T13:38:48.485167+00:00
+- actor: wballard
+  id: 01m4b9dbrtbwknhfj8qwryvwnb
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 2 files (BoardKey.swift, BoardKeyTests.swift)
+    - test: green — swift test, 135 passed, 0 warnings
+    - commit: 1e0bf67
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T13:38:56.410088+00:00
 depends_on:
 - 01M4B3V22A3PCQRESESTYBQ2FH
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '8780'
 title: 'Identity: BoardKey from git origin'
 ---
 ## What
