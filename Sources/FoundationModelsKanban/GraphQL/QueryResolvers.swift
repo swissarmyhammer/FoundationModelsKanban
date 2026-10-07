@@ -340,6 +340,29 @@ extension BoardObject {
         try TaskSelection(filtering: arguments.filter, excludingDone: true).tasks(in: view, where: \.ready).first
     }
 
+    /// Resolves `Board.searchTasks` (plan.md §6.4): the live tasks that the search ranks for the query, highest score
+    /// first. The filter applies, and the done tasks are not hits unless the filter names a column, the same as in
+    /// `Board.tasks`.
+    ///
+    /// The GraphQL field is nullable: an error gives `null` for the field and one item in `errors`, and the other
+    /// fields of the board keep their data.
+    ///
+    /// - Parameters:
+    ///   - context: The context of the call. It holds the search of the board.
+    ///   - arguments: The query, the filter, and the largest number of hits.
+    /// - Returns: The hits. The value is never `nil`. The optional type makes the GraphQL field nullable.
+    /// - Throws: ``KanbanError/invalidFilter(filter:position:detail:example:)`` when the filter is empty or does not
+    ///   parse.
+    func searchTasks(context: KanbanContext, arguments: SearchTasksArguments) async throws -> [TaskHit]? {
+        let tasks = try TaskSelection(searchFiltering: arguments.filter).tasks(in: view)
+        return try await context.search.hits(
+            for: arguments.query,
+            in: view,
+            among: tasks,
+            first: arguments.first ?? TasksArguments.defaultPageSize
+        )
+    }
+
     /// Resolves `Board.tasks`: one page of the live tasks, or of the tombstoned tasks, that the filter and the scoping
     /// arguments select, in board order (plan.md §3.3 rule 3, §6.3).
     ///

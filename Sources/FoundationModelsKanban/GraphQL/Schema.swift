@@ -66,6 +66,9 @@ struct KanbanContext: Sendable {
     /// The clock that gives the time of a change. A test gives a fixed clock,
     /// so that the output is deterministic (plan.md §11).
     let clock: @Sendable () -> DateTime
+
+    /// The ranked search over the tasks of the board, for `Board.searchTasks` (plan.md §6.4).
+    let search: TaskSearch
 }
 
 // MARK: - Arguments
@@ -129,6 +132,19 @@ struct TasksArguments: Codable, Sendable {
     var listsDeleted: Bool {
         deleted == true
     }
+}
+
+/// The arguments of `Board.searchTasks` (plan.md §6.4).
+struct SearchTasksArguments: Codable, Sendable {
+    /// The search text.
+    let query: String
+
+    /// The filter, for example `#bug && @alice`, or `nil` for no filter.
+    let filter: String?
+
+    /// The largest number of hits. A negative value gives no hit. An explicit `null` gives
+    /// ``TasksArguments/defaultPageSize``.
+    let first: Int?
 }
 
 /// The arguments of a task list that has only a filter: `Board.nextTask`, and the `tasks` fields of `Column`,
@@ -397,6 +413,11 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Field("nextTask", at: BoardObject.nextTask) {
                     Argument("filter", at: \.filter)
                 }
+                Field("searchTasks", at: BoardObject.searchTasks) {
+                    Argument("query", at: \.query)
+                    Argument("filter", at: \.filter)
+                    Argument("first", at: \.first).defaultValue(TasksArguments.defaultPageSize)
+                }
                 Field("summary", at: \.summary)
             }
             Self.nodeType(ColumnObject.self, as: GraphQLTypeName.column) {
@@ -416,7 +437,8 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
         }
     }
 
-    /// Adds the `Task`, `Comment`, `Progress`, `TaskConnection`, `TaskEdge`, and `PageInfo` types.
+    /// Adds the `Task`, `Comment`, `Progress`, `TaskConnection`, `TaskEdge`, `PageInfo`, `TaskHit`, and
+    /// `SearchSignals` types.
     ///
     /// - Returns: This builder, for method chaining.
     private func addTaskTypes() -> Self {
@@ -462,6 +484,16 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Field("hasNextPage", at: \.hasNextPage)
                 Field("startCursor", at: \.startCursor)
                 Field("endCursor", at: \.endCursor)
+            }
+            Type(TaskHit.self) {
+                Field("task", at: \.task)
+                Field("score", at: \.score)
+                Field("signals", at: \.signals)
+            }
+            Type(SearchSignals.self) {
+                Field("bm25", at: \.bm25)
+                Field("trigram", at: \.trigram)
+                Field("cosine", at: \.cosine)
             }
         }
     }

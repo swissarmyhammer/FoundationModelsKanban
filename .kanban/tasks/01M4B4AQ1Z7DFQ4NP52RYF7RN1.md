@@ -78,10 +78,26 @@ comments:
     - blocker: resolved by the decision; the card no longer shows it.
     - next: `/review`. Not committed. Task ^d8wwdgy holds the plan.md text for the excludeDone default of `tasks(deleted: true)`.
   timestamp: 2026-10-07T21:06:39.469801+00:00
+- actor: wballard
+  id: 01m4c36er6djh2zpmzd38m5v2m
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (a897866). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. 5 files reviewed. Not reviewed: 8 files in .kanban/ (ignore rule) and plan.md (no validator matches this file).
+    - next: none. The task moved to done.
+  timestamp: 2026-10-07T21:09:33.062975+00:00
+- actor: wballard
+  id: 01m4c36pa0e3q9gjgaptvqgmkm
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 6 files (Schema.swift, QueryResolvers.swift, TaskSelection.swift, RefResolver.swift, NodeQueryTests.swift, plan.md); cherry-picked 1b4a52c, applied the person's decision (unknown ids dropped)
+    - test: green — swift test, 712 passed, 0 warnings
+    - commit: a897866
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T21:09:40.800733+00:00
 depends_on:
 - 01M4B3YQSXZCGCB08FVP8QCSF3
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: a180
 title: 'Queries: node, nodes, and tombstones'
 ---
 ## What

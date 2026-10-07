@@ -49,7 +49,8 @@ struct TaskQueryFixture {
     private var context: KanbanContext {
         KanbanContext(
             store: BoardStore.fixture(of: board.graph, inBoard: DependencyMarkersTests.boardKey),
-            clock: { DependencyMarkersTests.time }
+            clock: { DependencyMarkersTests.time },
+            search: TaskSearch(embeddingWith: nil)
         )
     }
 

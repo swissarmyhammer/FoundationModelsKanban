@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsMetadataRegistry
 import Testing
 
 @testable import FoundationModelsKanban
@@ -82,20 +83,39 @@ struct QueryFixture {
     }
 
     /// Makes a context that reads the board, with a fixed clock.
-    var context: KanbanContext {
+    ///
+    /// - Parameter search: The task search of the call. The default search has no task.
+    /// - Returns: The context.
+    func context(searchingWith search: TaskSearch = TaskSearch(embeddingWith: nil)) -> KanbanContext {
         KanbanContext(
             store: BoardStore.fixture(of: graph, inBoard: DependencyMarkersTests.boardKey),
-            clock: { DependencyMarkersTests.time }
+            clock: { DependencyMarkersTests.time },
+            search: search
         )
     }
 
     /// Runs one GraphQL document against the board through the public schema.
     ///
-    /// - Parameter document: The GraphQL document.
+    /// - Parameters:
+    ///   - document: The GraphQL document.
+    ///   - search: The task search of the call. The default search has no task.
     /// - Returns: The response as JSON text.
     /// - Throws: An error that is not a GraphQL error.
-    func respond(to document: String) async throws -> String {
-        try await PublicSchema().respond(to: document, context: context)
+    func respond(
+        to document: String,
+        searchingWith search: TaskSearch = TaskSearch(embeddingWith: nil)
+    ) async throws -> String {
+        try await PublicSchema().respond(to: document, context: context(searchingWith: search))
+    }
+
+    /// Makes a task search that indexes the live tasks of the board.
+    ///
+    /// - Parameter embedder: The embedder of the search, or `nil` for no embedder.
+    /// - Returns: The search.
+    func makeSearch(embeddingWith embedder: (any TextEmbedding)? = nil) async -> TaskSearch {
+        let search = TaskSearch(embeddingWith: embedder)
+        await search.update(from: BoardView(of: graph, inBoard: DependencyMarkersTests.boardKey))
+        return search
     }
 
     /// Gives the unresolved edge to a node of the board, as replay gives it.

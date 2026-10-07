@@ -222,6 +222,9 @@ struct CommitSession: Sendable {
     /// The clock that gives the time of an empty board.
     private let clock: @Sendable () -> DateTime
 
+    /// The ranked search over the tasks of the board. The session updates it after each change of the live graph.
+    private let search: TaskSearch
+
     /// Makes the session of a loaded board.
     ///
     /// - Parameters:
@@ -230,18 +233,27 @@ struct CommitSession: Sendable {
     ///   - actor: The session actor.
     ///   - ids: The source of the transaction ULIDs and the event ids.
     ///   - clock: The clock that gives the time of an empty board.
+    ///   - search: The ranked search over the tasks of the board.
     init(
         of live: LiveGraph,
         inBoard key: BoardKey,
         actingAs actor: SessionActor,
         mintingFrom ids: any ULIDSource,
-        timedBy clock: @escaping @Sendable () -> DateTime
+        timedBy clock: @escaping @Sendable () -> DateTime,
+        searchingWith search: TaskSearch
     ) {
         self.live = live
         self.key = key
         self.actor = actor
         self.ids = ids
         self.clock = clock
+        self.search = search
+    }
+
+    /// Gives the live tasks of the board to the search (plan.md §6.4, life of the searcher). The searcher embeds again
+    /// only the tasks that changed.
+    func updateSearch() async {
+        await search.update(from: BoardView(of: live.graph, inBoard: key.description))
     }
 
     /// Runs one call on a working copy of the live graph, and commits the patches that the call kept (plan.md §5.4).
@@ -265,7 +277,9 @@ struct CommitSession: Sendable {
             guard !work.kept.isEmpty else {
                 return response
             }
-            if try await commit(work) {
+            let isCommitted = try await commit(work)
+            await updateSearch()
+            if isCommitted {
                 return response
             }
         }

@@ -18,7 +18,7 @@ import ULID
 @Suite("addTask and updateTask")
 struct AddUpdateTaskTests {
     /// The title of a task that a test adds.
-    private static let title = "Write the guide"
+    static let title = "Write the guide"
 
     /// The new title of the fixture task in an update test.
     private static let newTitle = "Port the lexer"

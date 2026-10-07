@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsMetadataRegistry
 import GraphQL
 
 /// The engine of the kanban tool: one GraphQL endpoint over the board of a repo (plan.md §7.2).
@@ -41,6 +42,9 @@ public actor KanbanGraph {
     /// The gate that lets one call run at a time.
     private let gate = SerialGate()
 
+    /// The ranked search over the tasks of the current board, for the life of the engine (plan.md §6.4).
+    private let search: TaskSearch
+
     /// The live graph of the current board and its commit path, or `nil` until the first call loads the board.
     private var session: CommitSession?
 
@@ -58,19 +62,23 @@ public actor KanbanGraph {
     /// - Parameters:
     ///   - root: The root directory of the repo.
     ///   - actor: The name of the session actor of the mutations, or `nil` for the name of the OS user.
+    ///   - embedder: The embedder of `searchTasks`, for example a `PooledEmbedder`, or `nil` for a search with BM25
+    ///     and trigram only, which needs no model (plan.md §6.4).
     /// - Throws: An error from Graphiti when a type of the public schema is not valid.
     ///   ``KanbanError/invalidSlug(name:)`` when the actor name gives an empty slug.
-    public init(root: URL, actor: String?) throws {
+    public init(root: URL, actor: String?, embedder: (any TextEmbedding)? = nil) throws {
         try self.init(
             root: root,
             readingKeyWith: BoardKey.read(fromRepoAt:),
             timedBy: { DateTime(Date()) },
             actingAs: Self.sessionActor(named: actor),
-            mintingFrom: SystemULIDSource()
+            mintingFrom: SystemULIDSource(),
+            embeddingWith: embedder
         )
     }
 
-    /// Makes an engine with a key reader, a clock, a session actor, a ULID source, and an observer that a test gives.
+    /// Makes an engine with a key reader, a clock, a session actor, a ULID source, an embedder, and an observer that a
+    /// test gives.
     ///
     /// - Parameters:
     ///   - root: The root directory of the repo.
@@ -78,6 +86,7 @@ public actor KanbanGraph {
     ///   - clock: Gives the time of a change.
     ///   - actor: The session actor.
     ///   - ids: The source of the transaction ULIDs and the event ids.
+    ///   - embedder: The embedder of `searchTasks`, or `nil` for BM25 and trigram only.
     ///   - observer: Gets a call when each call starts and ends, or `nil` for no calls.
     /// - Throws: An error from Graphiti when a type of the public schema is not valid.
     init(
@@ -86,6 +95,7 @@ public actor KanbanGraph {
         timedBy clock: @escaping @Sendable () -> DateTime,
         actingAs actor: SessionActor,
         mintingFrom ids: any ULIDSource,
+        embeddingWith embedder: (any TextEmbedding)? = nil,
         reportingTo observer: (any KanbanCallObserver)? = nil
     ) throws {
         self.root = root
@@ -93,6 +103,7 @@ public actor KanbanGraph {
         self.clock = clock
         sessionActor = actor
         idSource = ids
+        search = TaskSearch(embeddingWith: embedder)
         self.observer = observer
         schema = try PublicSchema()
     }
@@ -145,6 +156,7 @@ public actor KanbanGraph {
         defer { self.session = session }
         let schema = schema
         let clock = clock
+        let search = search
         do {
             return try await session.run { store in
                 try await schema.respond(
@@ -152,7 +164,7 @@ public actor KanbanGraph {
                     variables: variables,
                     operationName: operationName,
                     formattedWith: .sortedKeys,
-                    context: KanbanContext(store: store, clock: clock)
+                    context: KanbanContext(store: store, clock: clock, search: search)
                 )
             }
         } catch let error as KanbanError {
@@ -160,7 +172,8 @@ public actor KanbanGraph {
         }
     }
 
-    /// Gives the session of the current board. The first call reads the board key and loads the board.
+    /// Gives the session of the current board. The first call reads the board key, loads the board, and gives its
+    /// tasks to the search.
     ///
     /// - Returns: The session of the board.
     /// - Throws: A ``BoardKeyError`` when git cannot give the key, or an ``EventLogError`` when a log file cannot be
@@ -171,7 +184,16 @@ public actor KanbanGraph {
         }
         let key = try keyReader(root)
         let live = try await LiveGraph.load(using: BoardLoader(reading: EventLog(repositoryAt: root)))
-        return CommitSession(of: live, inBoard: key, actingAs: sessionActor, mintingFrom: idSource, timedBy: clock)
+        let loaded = CommitSession(
+            of: live,
+            inBoard: key,
+            actingAs: sessionActor,
+            mintingFrom: idSource,
+            timedBy: clock,
+            searchingWith: search
+        )
+        await loaded.updateSearch()
+        return loaded
     }
 }
 

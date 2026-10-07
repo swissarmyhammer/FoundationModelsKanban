@@ -149,8 +149,7 @@ struct ColumnActorTests {
     /// - Returns: The result of the document.
     static func result(of document: String, in session: inout CommitSession) async throws -> GraphQLResult {
         try await session.run { store in
-            let context = KanbanContext(store: store, clock: { CommitTests.callTime })
-            return try await PublicSchema().execute(request: document, context: context)
+            try await PublicSchema().execute(request: document, context: CommitTests.callContext(of: store))
         }
     }
 

@@ -3,8 +3,9 @@ import Foundation
 /// The tasks that one task list of a query selects (plan.md §6.3): a filter, the atoms of the scoping arguments, and
 /// the `excludeDone` rule.
 ///
-/// The filter applies to `Board.tasks`, to `Board.nextTask`, and to the `tasks` fields of `Column`, `Actor`, and
-/// `Tag`. A filter that is empty or does not parse gives `INVALID_FILTER`. A value that names nothing gives no task.
+/// The filter applies to `Board.tasks`, to `Board.nextTask`, to `Board.searchTasks`, and to the `tasks` fields of
+/// `Column`, `Actor`, and `Tag`. A filter that is empty or does not parse gives `INVALID_FILTER`. A value that names
+/// nothing gives no task.
 struct TaskSelection {
     /// The full filter: the `filter` argument ANDed with the atom of each scoping argument, or `nil` when the list has
     /// no filter.
@@ -52,8 +53,30 @@ struct TaskSelection {
             filter = filter.map { expression in .and(expression, atom) } ?? atom
         }
         self.filter = filter
-        excludesDone = arguments.excludeDone ?? !(arguments.listsDeleted || filter?.namesColumn ?? false)
+        excludesDone = arguments.excludeDone ?? (!arguments.listsDeleted && Self.excludesDoneByDefault(for: filter))
         listsDeleted = arguments.listsDeleted
+    }
+
+    /// Makes the selection of `Board.searchTasks` (plan.md §6.4): a `filter` argument, with the `excludeDone` default
+    /// of `Board.tasks`. Thus the done tasks are left out, except when the filter names a column.
+    ///
+    /// - Parameter text: The `filter` argument, or `nil` when the call gives no filter.
+    /// - Throws: ``KanbanError/invalidFilter(filter:position:detail:example:)`` when the filter is empty or does not
+    ///   parse.
+    init(searchFiltering text: String?) throws(KanbanError) {
+        let filter = try Self.expression(parsing: text)
+        self.filter = filter
+        excludesDone = Self.excludesDoneByDefault(for: filter)
+        listsDeleted = false
+    }
+
+    /// Tells if a list with no `excludeDone` value leaves out the done tasks: `true`, or `false` when the filter
+    /// names a column (``FilterExpr/namesColumn``).
+    ///
+    /// - Parameter filter: The full filter of the list, or `nil` for no filter.
+    /// - Returns: `true` when the list leaves out the done tasks.
+    private static func excludesDoneByDefault(for filter: FilterExpr?) -> Bool {
+        !(filter?.namesColumn ?? false)
     }
 
     /// Gives the selected tasks of a board, in board order: the live tasks, or the tombstoned tasks when the list

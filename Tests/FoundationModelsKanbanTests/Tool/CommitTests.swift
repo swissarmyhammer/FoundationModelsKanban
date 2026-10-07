@@ -60,7 +60,7 @@ struct CommitTests {
     /// - Parameters:
     ///   - log: The event log of the board.
     ///   - ids: The ULID source of the calls. The default gives ids after each event of the fixture.
-    /// - Returns: The commit session.
+    /// - Returns: The commit session. Its task search has no embedder.
     static func makeSession(
         of log: EventLog,
         mintingFrom ids: any ULIDSource = FixedULIDSource(at: ReplayTests.date(atStep: callStep))
@@ -70,8 +70,18 @@ struct CommitTests {
             inBoard: KanbanGraphTests.boardKey,
             actingAs: KanbanGraphTests.sessionActor,
             mintingFrom: ids,
-            timedBy: { callTime }
+            timedBy: { callTime },
+            searchingWith: TaskSearch(embeddingWith: nil)
         )
+    }
+
+    /// Makes the context of one call in a commit session: the store of the working copy, the fixed clock
+    /// ``callTime``, and a task search with no embedder.
+    ///
+    /// - Parameter store: The store of the working copy of the call.
+    /// - Returns: The context.
+    static func callContext(of store: BoardStore) -> KanbanContext {
+        KanbanContext(store: store, clock: { callTime }, search: TaskSearch(embeddingWith: nil))
     }
 
     /// Runs one mutation field that applies one patch to the working copy.
@@ -392,7 +402,7 @@ struct CommitTests {
             let response = try await PatchSchema().respond(
                 to: Event.patchQuery,
                 variables: ["p": patch.map],
-                context: KanbanContext(store: store, clock: { Self.callTime })
+                context: Self.callContext(of: store)
             )
             #expect(!response.contains("errors"))
             #expect(try LiveGraphApplyTests.task(tasks[0], in: await store.view.graph).title == Self.callTitle)

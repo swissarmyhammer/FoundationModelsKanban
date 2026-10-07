@@ -44,6 +44,15 @@ let ulidPackage = "ULID.swift"
 // Thus the build does not compile swift-syntax for the CasePaths macros.
 let parsingPackage = "swift-parsing"
 
+// The ranked search of `searchTasks` (plan.md §6.4, §12 item 6). The package
+// also brings FoundationModelsRanker (BM25, trigram, cosine, and RRF) and its
+// `TextEmbedding` protocol, which it re-exports.
+let metadataRegistryPackage = "FoundationModelsMetadataRegistry"
+
+// The URL base of the sibling packages of the swissarmyhammer family. The same
+// base as FoundationModelsCodeContext uses.
+let swissArmyHammerOrg = "git@github.com:swissarmyhammer/"
+
 let package = Package(
     name: packageName,
     // Commit to macOS 27. FoundationModels v2 and the sibling packages need
@@ -74,6 +83,7 @@ let package = Package(
         .package(url: "https://github.com/apple/\(collectionsPackage).git", from: "1.0.0"),
         .package(url: "https://github.com/yaslab/\(ulidPackage).git", from: "1.3.1"),
         .package(url: "https://github.com/pointfreeco/\(parsingPackage).git", from: "0.15.2", traits: []),
+        .package(url: "\(swissArmyHammerOrg)\(metadataRegistryPackage).git", branch: "main"),
     ],
     targets: [
         .target(
@@ -86,6 +96,7 @@ let package = Package(
                 .product(name: "HeapModule", package: collectionsPackage),
                 .product(name: "ULID", package: ulidPackage),
                 .product(name: "Parsing", package: parsingPackage),
+                .product(name: metadataRegistryPackage, package: metadataRegistryPackage),
             ],
             path: "Sources/\(packageName)"
         ),
@@ -110,6 +121,8 @@ let package = Package(
                 .product(name: graphQLPackage, package: graphQLPackage),
                 // The identity tests make and read `ULID` values.
                 .product(name: "ULID", package: ulidPackage),
+                // The search tests give a fake `TextEmbedding` to the engine.
+                .product(name: metadataRegistryPackage, package: metadataRegistryPackage),
             ],
             path: "Tests/\(packageName)Tests"
         ),

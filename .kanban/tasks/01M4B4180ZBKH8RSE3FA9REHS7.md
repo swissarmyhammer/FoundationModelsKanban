@@ -54,12 +54,31 @@ comments:
     - The repo must record this note (for example a "Known build warnings" section in README.md), so that later readers know why the build output is not empty.
     - Next: start from the parked branch `wip/a9rehs7-search` (commit e29af3f), bring it onto main, add the note, and run the finish loop again.
   timestamp: 2026-10-07T21:01:22.484413+00:00
+- actor: wballard
+  id: 01m4c3k0y1z1nma1q59gt36xjm
+  text: |-
+    Rebase of the parked work onto main (no commit).
+    - `git cherry-pick --no-commit e29af3f` on main a897866. Conflicts in QueryResolvers.swift and TaskSelection.swift only. Kept all of main: the `tasks(deleted:)` doc and `listsDeleted`. `TaskSelection.init(for:)` now uses `arguments.excludeDone ?? (!arguments.listsDeleted && excludesDoneByDefault(for: filter))`; `init(searchFiltering:)` sets `listsDeleted = false`. `swift package resolve` kept Package.resolved. Then `git cherry-pick --quit` to clear the cherry-pick state; HEAD is still a897866.
+    - New main tests needed the `search` field of `KanbanContext`: ColumnActorTests.result(of:in:) and NodeQueryTests (`fixture.context`). New helper `CommitTests.callContext(of:)`; `QueryFixture.context(searchingWith:)` is internal with a default.
+    - Index coverage: each public mutation (addTask, updateTask, tag, comment, delete paths) runs in `KanbanGraph.respond` -> `CommitSession.run`, and `run` calls `updateSearch()` after each commit attempt. No other code path changes the live graph (only `commit` calls `live.apply` and `live.adopt`). Tag rename changes the tag names in the render block; the searcher hash-guard embeds the changed tasks again. A delete removes the task from `orderedTasks()`, so it leaves the catalog.
+    - Test: the raw-patch test `commitUpdatesSearch` is replaced by `addTaskUpdatesSearch`, which uses the real `addTask` mutation on an engine. RED seen with the post-commit `updateSearch()` removed (hits `[]`), GREEN after restore. The parked helpers `CommitTests.makeSession(searchingWith:)` and `KanbanGraphTests.taskPatch(of:titled:)` are removed again (no caller). `AddUpdateTaskTests.title` is now internal (the search test reuses it).
+  timestamp: 2026-10-07T21:16:24.897270+00:00
+- actor: wballard
+  id: 01m4c3x1ktpv7aqs5gcw5kdjvv
+  text: |-
+    ### implement — changed
+    - evidence: `swift package clean && swift build --build-tests`: build complete; 77 warning lines = 1 SwiftPM `missing creator for mutated node: (.../mlx-swift_Cmlx.bundle/Contents/MacOS)` + 76 `-Wc++17-extensions` lines from `.build/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/`; no other warning. `swift test`: 723 tests in 43 suites passed. TDD: `TaskSearchTests/addTaskUpdatesSearch` failed on its assertion (hits `[]`) with the post-commit `updateSearch()` removed, and passed after restore.
+    - files: Package.swift, Package.resolved, README.md, Sources/.../Search/TaskSearch.swift (new), Sources/.../Search/TaskSearchItem.swift (new), GraphQL/Schema.swift, GraphQL/QueryResolvers.swift, GraphQL/TaskSelection.swift, Tool/Commit.swift, Tool/KanbanGraph.swift, Tests: Search/TaskSearchTests.swift (new), GraphQL/QueryFixture.swift, GraphQL/NodeQueryTests.swift, Filter/TaskQueryFixture.swift, GraphQLEngineTests.swift, Mutations/AddUpdateTaskTests.swift, Mutations/ColumnActorTests.swift, Tool/CommitTests.swift.
+    - periphery: `periphery scan --retain-public --report-exclude 'Tests/**' -- --build-system native --build-tests` reports 5 assign-only properties in GraphQL/Errors.swift. This change does not touch that file. New task ^3p88txm records them.
+    - no commit; branch `wip/a9rehs7-search` is kept; nothing pushed.
+    - next: /review
+  timestamp: 2026-10-07T21:21:53.274928+00:00
 depends_on:
 - 01M4B3Z67TC96REJGDHD2DFH0R
 - 01M4B3YYXT069TKADQ93CBAA93
 - 01M4B3ZDK527CRVKQQRT87RGHJ
 position_column: doing
-position_ordinal: '8180'
+position_ordinal: '80'
 title: 'Search: searchTasks with MetadataSearcher'
 ---
 ## What
@@ -71,6 +90,9 @@ Ranked search over tasks. The basis is plan.md §6.4 and §12 item 6.
 - `Board.searchTasks(query!, filter, first)`: search with `limit` = the number of tasks, then remove tasks that do not pass `filter`, deleted tasks, and done tasks (the same defaults as `tasks`), and keep `first`. Result `TaskHit { task, score, signals { bm25, trigram, cosine } }`.
 - An embedder failure falls back to BM25 + trigram, is logged with swift-log, and gives no error.
 
+## Blocker
+Resolved. The person accepts the two dependency build warnings as known (see the decision comment and the "Known build warnings" section of README.md). All other warnings still fail the build check.
+
 ## Acceptance Criteria
 - [x] With no embedder, a search for a word in the title ranks that task first, and `cosine` is null.
 - [x] With a fake embedder, `cosine` is set; with a failing embedder, the search still returns results.
@@ -79,6 +101,13 @@ Ranked search over tasks. The basis is plan.md §6.4 and §12 item 6.
 ## Tests
 - [x] `Tests/FoundationModelsKanbanTests/Search/TaskSearchTests.swift`.
 - [x] Run `swift test --filter TaskSearchTests`; expect all pass.
+
+## Bring the work onto main
+- [x] `git cherry-pick --no-commit e29af3f` onto main; resolve the conflicts by hand and keep all of main; `swift package resolve`; no commit made.
+- [x] The index update after each commit covers `addTask`, `updateTask`, and the tag, comment, and delete paths (all go through `CommitSession.run`).
+- [x] Test: a task made with the real `addTask` mutation is found by `searchTasks` (replaces the raw-patch test).
+- [x] README.md: "Known build warnings" section in ASD-STE100.
+- [x] Clean `swift build --build-tests`: only the two accepted warning kinds. `swift test`: all pass.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
