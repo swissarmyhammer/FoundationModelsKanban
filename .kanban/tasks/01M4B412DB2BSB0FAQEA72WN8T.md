@@ -58,6 +58,22 @@ comments:
     - evidence: `swift test` 770 tests in 45 suites passed (ChangeBuilderTests suite passed, 2 tests with 31 cases each). The only build warning is the accepted SwiftPM "missing creator" warning from mlx-swift. Files: Sources/FoundationModelsKanban/Observe/ChangeBuilder.swift, Tests/FoundationModelsKanbanTests/Observe/ChangeBuilderTests.swift
     - next: /review
   timestamp: 2026-10-07T22:47:50.199124+00:00
+- actor: wballard
+  id: 01m4c8zxvkcjnn2j8nf8r2bbzz
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (652f12e). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. 2 files reviewed. All 3 items in the prior Review Findings section are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T22:50:50.611170+00:00
+- actor: wballard
+  id: 01m4c903m8n2jre3traxbsd0nf
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 2 files (Observe/ChangeBuilder.swift, ChangeBuilderTests.swift); 3/3 findings checked
+    - test: green — swift test, 770 passed; build warnings only the 2 accepted kinds
+    - commit: 652f12e
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T22:50:56.520520+00:00
 depends_on:
 - 01M4B3ZDK527CRVKQQRT87RGHJ
 - 01M4B4AJGSQDJ4PCBP2W5XQJKR
@@ -65,8 +81,8 @@ depends_on:
 - 01M4B40CFSF002B4DKM3T8J6GV
 - 01M4B4B57JFX8HA0B45MMDQ1SQ
 - 01M4B4B1G28KK1NVCXHK9GDAYR
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: a480
 title: 'Change model: NodeUpdate and FieldChange'
 ---
 ## What

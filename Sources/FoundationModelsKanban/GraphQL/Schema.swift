@@ -658,6 +658,11 @@ extension API {
     /// are in the order of the selection. A `/` is not escaped, so a ref such
     /// as `tag/bug` stays easy to read.
     ///
+    /// The name rewrite of plan.md §4.5 changes the document before
+    /// validation, and the response has each change in
+    /// `extensions.rewrites`. A name that matches two or more names gives an
+    /// error, and the document does not run.
+    ///
     /// - Parameters:
     ///   - document: The GraphQL document.
     ///   - variables: The values of the variables of the document.
@@ -676,19 +681,99 @@ extension API {
         formattedWith formatting: GraphQLJSONEncoder.OutputFormatting = [],
         context: ContextType
     ) async throws -> String {
-        let result: GraphQLResult
+        let response: RewriteResponse
         do {
-            result = try await execute(
-                request: document,
-                context: context,
+            let rewritten = try DocumentRewriter(for: schema.schema).rewrittenDocument(from: document)
+            let result = try await result(
+                of: rewritten,
                 variables: variables,
-                operationName: operationName
+                operationName: operationName,
+                context: context
             )
+            response = RewriteResponse(result: result, rewrites: rewritten.rewrites)
         } catch let error as GraphQLError {
-            result = GraphQLResult(errors: [error])
+            response = RewriteResponse(result: GraphQLResult(errors: [error]), rewrites: [])
         }
         let encoder = GraphQLJSONEncoder()
         encoder.outputFormatting = formatting.union(.withoutEscapingSlashes)
-        return try String(decoding: encoder.encode(result), as: UTF8.self)
+        return try String(decoding: encoder.encode(response), as: UTF8.self)
+    }
+
+    /// Runs a rewritten document, and gives the result in the form of the
+    /// document that the caller wrote.
+    ///
+    /// - Parameters:
+    ///   - rewritten: The document after the name rewrite.
+    ///   - variables: The values of the variables of the document.
+    ///   - operationName: The operation of the document to run, or `nil`.
+    ///   - context: The context of each resolver.
+    /// - Returns: The result, or the tie errors and no `data` when a name of
+    ///   the document has a tie.
+    /// - Throws: A `GraphQLError` when the rewritten text does not parse, or
+    ///   an error that is not a GraphQL error.
+    private func result(
+        of rewritten: RewrittenDocument,
+        variables: [String: Map],
+        operationName: String?,
+        context: ContextType
+    ) async throws -> GraphQLResult {
+        guard rewritten.ties.isEmpty else {
+            return GraphQLResult(errors: rewritten.ties)
+        }
+        let result = try await execute(
+            request: rewritten.text,
+            context: context,
+            variables: variables,
+            operationName: operationName
+        )
+        return rewritten.callerResult(from: result)
+    }
+}
+
+/// A GraphQL response, with the changes of the name rewrite in
+/// `extensions.rewrites` (plan.md §4.5).
+///
+/// `GraphQLResult` encodes only `data` and `errors`, so this type encodes the
+/// same two keys in the same way, and adds `extensions` when the rewrite
+/// changed a name.
+private struct RewriteResponse: Encodable {
+    /// The keys of the response object.
+    private enum CodingKeys: String, CodingKey {
+        /// The result of the execution.
+        case data
+
+        /// The errors of the call.
+        case errors
+
+        /// The extensions of the response.
+        case extensions
+    }
+
+    /// The `extensions` object of the response.
+    private struct Extensions: Encodable {
+        /// The changes of the name rewrite.
+        let rewrites: [NameRewrite]
+    }
+
+    /// The result of the document.
+    let result: GraphQLResult
+
+    /// The changes of the name rewrite.
+    let rewrites: [NameRewrite]
+
+    /// Writes `data` when the result has it, `errors` when there is an error,
+    /// and `extensions` when the rewrite changed a name.
+    ///
+    /// - Parameter encoder: The encoder.
+    /// - Throws: An error from the encoder.
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(result.data, forKey: .data)
+        if !result.errors.isEmpty {
+            try container.encode(result.errors, forKey: .errors)
+        }
+        if !rewrites.isEmpty {
+            try container.encode(Extensions(rewrites: rewrites), forKey: .extensions)
+        }
     }
 }
