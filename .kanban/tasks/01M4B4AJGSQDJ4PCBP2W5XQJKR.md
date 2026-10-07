@@ -71,10 +71,26 @@ comments:
     - evidence: 8 files — Sources/FoundationModelsKanban/Model/Graph.swift, Derived/Readiness.swift, Derived/Timeline.swift, Derived/BrokenMergeDisplay.swift, Derived/ColumnOrder.swift, Derived/VirtualTags.swift, Tags/TagMarkers.swift; Tests/FoundationModelsKanbanTests/Model/GraphTests.swift. `swift test`: 420 tests in 27 suites passed, 0 warnings.
     - next: /review
   timestamp: 2026-10-07T16:24:27.858150+00:00
+- actor: wballard
+  id: 01m4bk13edgjdqb2dsrpx6fz5c
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 0a90de2). 8 files reviewed. 7 validators attempted, 0 failed. 0 findings. All items in the prior Review Findings section are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T16:27:00.429419+00:00
+- actor: wballard
+  id: 01m4bk19jxqgz0a24215cjx2sb
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 8 files (Model/Graph.swift, Derived/Readiness, Timeline, BrokenMergeDisplay, ColumnOrder, VirtualTags, Tags/TagMarkers, GraphTests); 1/1 findings checked
+    - test: green — swift test, 420 passed, 0 warnings
+    - commit: 0a90de2
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T16:27:06.717278+00:00
 depends_on:
 - 01M4B3YC73VSKE9VEP29E3CZNQ
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '9380'
 title: 'Derived: progress, timeline, summary, broken-merge display'
 ---
 ## What
