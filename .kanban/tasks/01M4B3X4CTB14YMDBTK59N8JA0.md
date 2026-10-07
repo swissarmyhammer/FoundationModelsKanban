@@ -26,6 +26,40 @@ comments:
     - evidence: 2 new files — Sources/FoundationModelsKanban/Body/DiffApply.swift, Tests/FoundationModelsKanbanTests/Body/DiffApplyTests.swift. `swift test --filter DiffApplyTests`: 13 tests passed. `swift test`: 47 tests in 4 suites passed. `swift build --build-tests`: 0 warnings. swiftlint (no_magic_numbers, missing_docs, function_body_length) on the 2 files: 0 findings.
     - next: /review
   timestamp: 2026-10-07T12:49:50.096031+00:00
+- actor: wballard
+  id: 01m4b6wx6mxng1zcatk8c1wpdj
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD; 1 finding (1 confirmed, 0 refuted) — Sources/FoundationModelsKanban/Body/DiffApply.swift:36 (swift/fluent-usage)
+    - next: change the argument label `conflictLabel` to `withConflictLabel` at the declaration and at all call sites, then review again.
+  timestamp: 2026-10-07T12:55:00.052455+00:00
+- actor: wballard
+  id: 01m4b6x60kq5z9c6mx8cmvbttp
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 2 files (DiffApply.swift, DiffApplyTests.swift)
+    - test: green — swift test, 47 passed, 0 warnings
+    - commit: 3d545b0
+    - review: findings — Sources/FoundationModelsKanban/Body/DiffApply.swift:36
+  timestamp: 2026-10-07T12:55:09.075162+00:00
+- actor: wballard
+  id: 01m4b70erkz7agp4vrcn7qtjkb
+  text: |-
+    Finding fix landed.
+    - `applied(to:conflictLabel:)` is now `applied(to text: String, withConflictLabel conflictLabel: String)`. All 23 call sites in DiffApplyTests.swift use `withConflictLabel:`.
+    - Same cause in the file: `ConflictBlock.lines(current:wanted:label:)` had noun labels with no preposition. It is now `lines(between current:, and wanted:, withLabel label:)`. Its only caller is `HunkApplier.insertConflict`. The doc `- Parameters` keys keep the internal names (current, wanted, label, conflictLabel), as the doc-comment rule requires.
+    - Other labels in the file (`nearestMatch(of:near:)`, `insertConflict(for:near:)`, `replace(_:with:)`, `isPresent(in:)`, memberwise init labels) already have a preposition or are init labels. I did not change them.
+    - TDD: RED was the test build that failed with "incorrect argument label (have 'to:withConflictLabel:', expected 'to:conflictLabel:')". Then GREEN.
+    - The longer label made the line in `partialBlockIsNoConflict` 124 characters (swiftlint line_length 120). I split it into a `diff` constant and an apply line.
+    - Tool note: the `files` tool `edit file` with `replace_all: true` replaced only one match per call. I wrote the full test file instead, and `git diff --word-diff` showed only label changes.
+  timestamp: 2026-10-07T12:56:56.339656+00:00
+- actor: wballard
+  id: 01m4b70gn6g79w08hrbjyydh3h
+  text: |-
+    ### implement — changed
+    - evidence: 2 files — Sources/FoundationModelsKanban/Body/DiffApply.swift, Tests/FoundationModelsKanbanTests/Body/DiffApplyTests.swift. `swift build --build-tests`: 0 warnings, 0 errors. `swift test`: 47 tests in 4 suites passed. swiftlint on the 2 files: 0 findings. Finding DiffApply.swift:36 swift/fluent-usage is checked.
+    - next: /review
+  timestamp: 2026-10-07T12:56:58.278646+00:00
 depends_on:
 - 01M4B3W5TJ921MJFG9AQ8B0QQR
 position_column: doing
@@ -50,3 +84,12 @@ Apply a stored diff to a body during replay. The basis is plan.md §5.5.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-07 07:50)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 2 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsKanban/Body/DiffApply.swift:36` `swift/fluent-usage` — The argument label `conflictLabel` is a noun instead of a preposition or descriptor, violating the fluent-usage rule. The call site reads `diff.applied(to: text, conflictLabel: label)`, which reads ungrammatically as 'applied to text, conflictLabel label' rather than forming a fluent phrase. Change the argument label from a noun to a preposition-based descriptor: `func applied(to text: String, withConflictLabel conflictLabel: String) -> AppliedBody`. This makes the call site read fluently as 'applied to text, with conflict label'. Update all call sites in the test file to use `withConflictLabel:` instead of `conflictLabel:`.

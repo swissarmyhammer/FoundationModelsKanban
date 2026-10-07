@@ -31,14 +31,14 @@ struct DiffApplyTests {
     @Test("A diff applies to the text that it was made from")
     func exactApply() {
         let new = Self.base(changing: 5, to: "five")
-        let applied = UnifiedDiff(from: Self.base, to: new).applied(to: Self.base, conflictLabel: Self.label)
+        let applied = UnifiedDiff(from: Self.base, to: new).applied(to: Self.base, withConflictLabel: Self.label)
         #expect(applied.text == new)
         #expect(!applied.hasConflict)
     }
 
     @Test("A diff with no hunks gives the same text")
     func emptyDiffKeepsTheText() {
-        let applied = UnifiedDiff(from: Self.base, to: Self.base).applied(to: Self.base, conflictLabel: Self.label)
+        let applied = UnifiedDiff(from: Self.base, to: Self.base).applied(to: Self.base, withConflictLabel: Self.label)
         #expect(applied.text == Self.base)
         #expect(!applied.hasConflict)
     }
@@ -47,7 +47,7 @@ struct DiffApplyTests {
     func shiftedApply() {
         let diff = UnifiedDiff(from: Self.base, to: Self.base(changing: 15, to: "fifteen"))
         let shifted = "new a\nnew b\n" + Self.base
-        let applied = diff.applied(to: shifted, conflictLabel: Self.label)
+        let applied = diff.applied(to: shifted, withConflictLabel: Self.label)
         #expect(applied.text == "new a\nnew b\n" + Self.base(changing: 15, to: "fifteen"))
         #expect(!applied.hasConflict)
     }
@@ -56,7 +56,7 @@ struct DiffApplyTests {
     func shiftedApplyAfterRemoval() {
         let diff = UnifiedDiff(from: Self.base, to: Self.base(changing: 15, to: "fifteen"))
         let shorter = Self.base.replacingOccurrences(of: "\n2\n3\n", with: "\n")
-        let applied = diff.applied(to: shorter, conflictLabel: Self.label)
+        let applied = diff.applied(to: shorter, withConflictLabel: Self.label)
         #expect(applied.text == Self.base(changing: 15, to: "fifteen").replacingOccurrences(of: "\n2\n3\n", with: "\n"))
         #expect(!applied.hasConflict)
     }
@@ -65,14 +65,14 @@ struct DiffApplyTests {
     func nearestMatchWins() {
         let diff = UnifiedDiff(from: "a\nb\n", to: "a\nc\n")
         let current = "z\nz\na\nb\nz\nz\nz\nz\na\nb\n"
-        let applied = diff.applied(to: current, conflictLabel: Self.label)
+        let applied = diff.applied(to: current, withConflictLabel: Self.label)
         #expect(applied.text == "z\nz\na\nc\nz\nz\nz\nz\na\nb\n")
         #expect(!applied.hasConflict)
     }
 
     @Test("A diff from the empty text applies to the empty text")
     func diffFromEmptyText() {
-        let applied = UnifiedDiff(from: "", to: "a\nb\n").applied(to: "", conflictLabel: Self.label)
+        let applied = UnifiedDiff(from: "", to: "a\nb\n").applied(to: "", withConflictLabel: Self.label)
         #expect(applied.text == "a\nb\n")
         #expect(!applied.hasConflict)
     }
@@ -84,12 +84,12 @@ struct DiffApplyTests {
         let first = UnifiedDiff(from: Self.base, to: Self.base(changing: 2, to: "two"))
         let second = UnifiedDiff(from: Self.base, to: Self.base(changing: 18, to: "eighteen"))
         let firstThenSecond = second.applied(
-            to: first.applied(to: Self.base, conflictLabel: "A").text,
-            conflictLabel: "B"
+            to: first.applied(to: Self.base, withConflictLabel: "A").text,
+            withConflictLabel: "B"
         )
         let secondThenFirst = first.applied(
-            to: second.applied(to: Self.base, conflictLabel: "B").text,
-            conflictLabel: "A"
+            to: second.applied(to: Self.base, withConflictLabel: "B").text,
+            withConflictLabel: "A"
         )
         let both = Self.base(changing: 2, to: "two").replacingOccurrences(of: "\n18\n", with: "\neighteen\n")
         #expect(firstThenSecond.text == both)
@@ -104,8 +104,8 @@ struct DiffApplyTests {
     func sameLineGivesOneConflictBlock() {
         let first = UnifiedDiff(from: Self.base, to: Self.base(changing: 5, to: "five"))
         let second = UnifiedDiff(from: Self.base, to: Self.base(changing: 5, to: "FIVE"))
-        let current = first.applied(to: Self.base, conflictLabel: "A").text
-        let applied = second.applied(to: current, conflictLabel: Self.label)
+        let current = first.applied(to: Self.base, withConflictLabel: "A").text
+        let applied = second.applied(to: current, withConflictLabel: Self.label)
         let block = "<<<<<<< current\n2\n3\n4\nfive\n6\n7\n8\n=======\n2\n3\n4\nFIVE\n6\n7\n8\n>>>>>>> \(Self.label)\n"
         #expect(applied.text == "1\n" + block + (9...Self.baseLineCount).map { "\($0)\n" }.joined())
         #expect(applied.text.components(separatedBy: "<<<<<<< current\n").count == 2)
@@ -115,7 +115,7 @@ struct DiffApplyTests {
     @Test("Each line of a conflict block ends with a newline, also at the end of a text with no final newline")
     func conflictBlockAtTheEndHasNewlines() {
         let diff = UnifiedDiff(from: "a", to: "b")
-        let applied = diff.applied(to: "c", conflictLabel: Self.label)
+        let applied = diff.applied(to: "c", withConflictLabel: Self.label)
         #expect(applied.text == "<<<<<<< current\nc\n=======\nb\n>>>>>>> \(Self.label)\n")
         #expect(applied.hasConflict)
     }
@@ -128,7 +128,7 @@ struct DiffApplyTests {
         ))
         #expect(diff.hunks.count == 2)
         let current = Self.base.replacingOccurrences(of: "\n2\n", with: "\nTWO\n")
-        let applied = diff.applied(to: current, conflictLabel: Self.label)
+        let applied = diff.applied(to: current, withConflictLabel: Self.label)
         #expect(applied.hasConflict)
         #expect(applied.text.contains("\neighteen\n"))
         #expect(!applied.text.contains("\n18\n"))
@@ -136,15 +136,16 @@ struct DiffApplyTests {
 
     @Test("A body update that removes the block clears the conflict")
     func removingTheBlockClearsTheConflict() {
-        let conflicted = UnifiedDiff(from: "a\n", to: "b\n").applied(to: "c\n", conflictLabel: Self.label).text
-        let resolved = UnifiedDiff(from: conflicted, to: "b\n").applied(to: conflicted, conflictLabel: Self.label)
+        let conflicted = UnifiedDiff(from: "a\n", to: "b\n").applied(to: "c\n", withConflictLabel: Self.label).text
+        let resolved = UnifiedDiff(from: conflicted, to: "b\n").applied(to: conflicted, withConflictLabel: Self.label)
         #expect(resolved.text == "b\n")
         #expect(!resolved.hasConflict)
     }
 
     @Test("A text with only a part of a conflict block has no conflict")
     func partialBlockIsNoConflict() {
-        let applied = UnifiedDiff(from: "", to: "<<<<<<< current\n=======\n").applied(to: "", conflictLabel: Self.label)
+        let diff = UnifiedDiff(from: "", to: "<<<<<<< current\n=======\n")
+        let applied = diff.applied(to: "", withConflictLabel: Self.label)
         #expect(!applied.hasConflict)
     }
 
@@ -158,9 +159,9 @@ struct DiffApplyTests {
             let oursText = RandomText.make(using: &generator)
             let ours = UnifiedDiff(from: base, to: oursText)
             let theirs = UnifiedDiff(from: base, to: RandomText.make(using: &generator))
-            let applied = ours.applied(to: base, conflictLabel: "A")
-            let merged = theirs.applied(to: applied.text, conflictLabel: "B")
-            let again = theirs.applied(to: ours.applied(to: base, conflictLabel: "A").text, conflictLabel: "B")
+            let applied = ours.applied(to: base, withConflictLabel: "A")
+            let merged = theirs.applied(to: applied.text, withConflictLabel: "B")
+            let again = theirs.applied(to: ours.applied(to: base, withConflictLabel: "A").text, withConflictLabel: "B")
             let pair = Comment(rawValue: "base: \(base.debugDescription) ours: \(oursText.debugDescription)")
             #expect(applied == AppliedBody(text: oursText, hasConflict: false), pair)
             #expect(merged == again, pair)

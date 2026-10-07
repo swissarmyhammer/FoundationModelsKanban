@@ -33,7 +33,7 @@ extension UnifiedDiff {
     ///   - conflictLabel: The text after the end marker of a conflict block:
     ///     the id of the event that holds the diff.
     /// - Returns: The body after the diff, and its conflict state.
-    func applied(to text: String, conflictLabel: String) -> AppliedBody {
+    func applied(to text: String, withConflictLabel conflictLabel: String) -> AppliedBody {
         let initial = HunkApplier(lines: TextLine.lines(in: text), conflictLabel: conflictLabel)
         let lines = hunks.reduce(into: initial) { $0.apply($1) }.finishedLines
         return AppliedBody(text: TextLine.text(joining: lines), hasConflict: ConflictBlock.isPresent(in: lines))
@@ -106,9 +106,9 @@ extension UnifiedDiff {
             let start = min(max(expected, cursor), lines.count)
             let end = min(start + hunk.oldCount, lines.count)
             let block = ConflictBlock.lines(
-                current: Array(lines[start..<end]),
-                wanted: hunk.newLines,
-                label: conflictLabel
+                between: Array(lines[start..<end]),
+                and: hunk.newLines,
+                withLabel: conflictLabel
             )
             replace(start..<end, with: block)
         }
@@ -171,7 +171,7 @@ extension UnifiedDiff {
         ///   - wanted: The lines that the hunk wanted.
         ///   - label: The text after the end marker.
         /// - Returns: The lines of the block.
-        static func lines(current: [TextLine], wanted: [TextLine], label: String) -> [TextLine] {
+        static func lines(between current: [TextLine], and wanted: [TextLine], withLabel label: String) -> [TextLine] {
             let contents = [startMarker] + current.map(\.content) + [separator] + wanted.map(\.content)
             return (contents + [endPrefix + label]).map { TextLine(content: $0, hasNewline: true) }
         }
