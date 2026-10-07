@@ -4,7 +4,8 @@ import GraphQL
 // MARK: - Names
 
 /// The names of the public mutations (plan.md §4.2). Each name is also the operation name in the `ops` of the events
-/// of the mutation. The names of the column and the actor mutations are in `ColumnActorMutations.swift`.
+/// of the mutation. The names of the other mutations are in the file of their node type, for example
+/// `CommentMutations.swift`.
 enum MutationName {
     /// The mutation that makes the board, or changes the given fields of a board that exists.
     static let initBoard = "initBoard"

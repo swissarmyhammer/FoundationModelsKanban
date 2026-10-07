@@ -104,8 +104,9 @@ private struct UpdateActorInput: Decodable, Sendable {
 }
 
 /// The `input` object of a mutation that names one node and has no other field: the delete and the undelete
-/// mutations (plan.md §4.2).
-private struct NodeReferenceInput: Codable, Sendable {
+/// mutations (plan.md §4.2). ``SchemaBuilder/addColumnActorMutations()`` adds its `input` type, and the comment
+/// mutations use it too.
+struct NodeReferenceInput: Codable, Sendable {
     /// The node: a full URI or a short form (plan.md §3.2).
     let id: NodeID
 }
@@ -290,7 +291,7 @@ extension KanbanResolver {
     /// - Returns: The node after the change.
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no node of the type has the id.
     ///   ``KanbanError/columnNotEmpty(column:liveTaskCount:)`` when a deleted column shows live tasks.
-    private func changeDeleted<Object: SlotNodeObject>(
+    func changeDeleted<Object: SlotNodeObject>(
         to isDeleted: Bool,
         ofType type: PatchNodeType,
         as operation: String,
@@ -347,7 +348,7 @@ extension WorkingCopy {
     /// - Throws: ``KanbanError/duplicateID(type:id:)`` when the graph has the node, live or tombstoned. A patch on a
     ///   tombstone does not make it live, so the caller must undelete it. An ``EventError`` when the patch breaks a
     ///   rule of the log.
-    fileprivate mutating func addNode(
+    mutating func addNode(
         _ ref: LocalRef,
         setting values: [String: PatchValue],
         body: String?,
@@ -368,7 +369,7 @@ extension WorkingCopy {
     ///   - body: The update of the body.
     ///   - time: The time of the change.
     /// - Throws: An ``EventError`` when the patch breaks a rule of the log.
-    fileprivate mutating func updateNode(
+    mutating func updateNode(
         _ ref: LocalRef,
         updating values: [String: FieldUpdate<PatchValue>],
         body: FieldUpdate<String>,

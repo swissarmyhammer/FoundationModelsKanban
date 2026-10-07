@@ -109,7 +109,7 @@ struct AddUpdateTaskTests {
     ///
     /// - Parameter fields: The mutation fields, each with its selection.
     /// - Returns: The document.
-    private static func mutation(of fields: String...) -> String {
+    static func mutation(of fields: String...) -> String {
         "mutation { \(fields.joined(separator: " ")) }"
     }
 
@@ -154,11 +154,11 @@ struct AddUpdateTaskTests {
         #"dependsOn: ["\#(sigilRef(of: task))"]"#
     }
 
-    /// Gives the `^` short id ref of a task.
+    /// Gives the `^` short id ref of a task or a comment.
     ///
-    /// - Parameter task: The ULID of the task.
+    /// - Parameter task: The ULID of the task or the comment.
     /// - Returns: The ref, for example `^ajv8v4t`.
-    private static func sigilRef(of task: ULID) -> String {
+    static func sigilRef(of task: ULID) -> String {
         QueryFixture.sigilRef(of: task.ulidString)
     }
 
@@ -192,7 +192,7 @@ struct AddUpdateTaskTests {
     /// the same ULID as the fixture of each test.
     ///
     /// - Returns: The ULID.
-    private static func fixtureTask() throws -> ULID {
+    static func fixtureTask() throws -> ULID {
         try KanbanGraphTests.writeFixture(inRepoAt: TemporaryDirectory().url).task
     }
 

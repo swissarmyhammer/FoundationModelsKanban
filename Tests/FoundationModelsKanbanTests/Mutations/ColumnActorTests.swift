@@ -228,7 +228,7 @@ struct ColumnActorTests {
     ///   - isDeleted: The `delete` value: `true` for a delete, `false` for an undelete.
     ///   - directory: The temporary repo directory.
     /// - Returns: `true` when the last patch of the node is only the `delete` part with the value.
-    private static func lastPatch(
+    static func lastPatch(
         of ref: LocalRef,
         isDelete isDeleted: Bool,
         in directory: TemporaryDirectory

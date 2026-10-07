@@ -161,12 +161,24 @@ extension RefResolver {
     /// - Returns: The stored refs.
     /// - Throws: ``KanbanError/actorNotFound(reference:)`` when a ref names no live actor.
     fileprivate func actorRefs(for ids: [NodeID]) throws -> [StoredRef] {
-        try ids.map { id in
-            do {
-                return .local(try nodeRef(for: id, ofType: .actor))
-            } catch {
-                throw KanbanError.actorNotFound(reference: id.text)
-            }
+        try ids.map { id in .local(try actorRef(for: id)) }
+    }
+
+    /// Changes the forgiving ref of one actor to the local ref of the actor.
+    ///
+    /// - Parameters:
+    ///   - id: The ref as the caller wrote it: a full URI or the slug.
+    ///   - includesTombstones: `true` when the ref can name a tombstoned actor.
+    /// - Returns: The local ref of the actor.
+    /// - Throws: ``KanbanError/actorNotFound(reference:)`` when the ref names no actor that the lookup accepts.
+    func actorRef(
+        for id: NodeID,
+        includingTombstones includesTombstones: Bool = false
+    ) throws(KanbanError) -> LocalRef {
+        do {
+            return try nodeRef(for: id, ofType: .actor, includingTombstones: includesTombstones)
+        } catch {
+            throw .actorNotFound(reference: id.text)
         }
     }
 
