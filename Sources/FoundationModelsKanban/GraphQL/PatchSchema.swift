@@ -2,7 +2,7 @@ import Graphiti
 import GraphQL
 
 /// The type of the node that a patch changes (plan.md §5.1).
-enum PatchNodeType: String, Codable, Sendable {
+enum PatchNodeType: String, Codable, Sendable, CaseIterable {
     /// The board.
     case board = "Board"
 
