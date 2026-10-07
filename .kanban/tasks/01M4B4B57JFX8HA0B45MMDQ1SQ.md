@@ -27,10 +27,26 @@ comments:
     - evidence: 7 files — Sources/FoundationModelsKanban/GraphQL/CommentMutations.swift (new), ColumnActorMutations.swift, TaskMutations.swift, MutationResolvers.swift, Schema.swift; Tests/FoundationModelsKanbanTests/Mutations/CommentTests.swift (new), AddUpdateTaskTests.swift, ColumnActorTests.swift. `swift test --filter CommentTests`: 12 tests (14 cases) pass. `swift test`: 670 tests in 40 suites pass. `swift build --build-tests`: 0 warnings. periphery: no new warnings.
     - next: /review
   timestamp: 2026-10-07T20:32:49.449075+00:00
+- actor: wballard
+  id: 01m4c1ahmmz86tqp5s23s8vbdd
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (6e15e90). 0 findings, 0 confirmed, 2 refuted. 14 attempts, 0 failed. 8 files reviewed. 4 .kanban files not reviewed (.reviewignore).
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T20:36:49.940648+00:00
+- actor: wballard
+  id: 01m4c1aqz5cy3vbt77zqtz1gwn
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 8 files (GraphQL/CommentMutations.swift, ColumnActorMutations, TaskMutations, MutationResolvers, Schema, CommentTests, AddUpdateTaskTests, ColumnActorTests)
+    - test: green — swift test, 670 passed, 0 warnings
+    - commit: 6e15e90
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T20:36:56.421196+00:00
 depends_on:
 - 01M4B4002GZV6E43G5CQ74BJNZ
-position_column: doing
-position_ordinal: '8280'
+position_column: done
+position_ordinal: 9f80
 title: 'Mutations: comments'
 ---
 ## What

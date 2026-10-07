@@ -88,7 +88,7 @@ struct AddUpdateTaskTests {
     private static let unknownTask = "^zzzzzzz"
 
     /// The selection of a mutation field that gives only the id.
-    private static let idSelection = "{ id }"
+    static let idSelection = "{ id }"
 
     /// The number of extra ULIDs that the scripted source of the mint test gives for the event ids.
     private static let spareULIDCount = 8
@@ -117,7 +117,7 @@ struct AddUpdateTaskTests {
     ///
     /// - Parameter fields: The mutation fields, each with its selection.
     /// - Returns: The document.
-    private static func bodyMutation(of fields: String...) -> String {
+    static func bodyMutation(of fields: String...) -> String {
         "mutation($body: String) { \(fields.joined(separator: " ")) }"
     }
 
@@ -127,7 +127,7 @@ struct AddUpdateTaskTests {
     ///   - input: The other fields of the `input` object, or `""` for none.
     ///   - selection: The selection of the field.
     /// - Returns: The field.
-    private static func addTask(with input: String, selecting selection: String = idSelection) -> String {
+    static func addTask(with input: String, selecting selection: String = idSelection) -> String {
         #"addTask(input: { title: "\#(title)", \#(input) }) \#(selection)"#
     }
 
@@ -184,7 +184,7 @@ struct AddUpdateTaskTests {
     ///
     /// - Parameter response: The response JSON text.
     /// - Returns: The ULID.
-    private static func firstTask(in response: String) throws -> ULID {
+    static func firstTask(in response: String) throws -> ULID {
         try #require(try taskULIDs(in: response).first)
     }
 

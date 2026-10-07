@@ -475,7 +475,7 @@ extension [String: PatchValue] {
     /// not in the part, so the property does not change.
     ///
     /// - Parameter values: The value of each property, or `nil` when the input does not give it.
-    fileprivate init(givenValues values: [String: PatchValue?]) {
+    init(givenValues values: [String: PatchValue?]) {
         self = values.compactMapValues { value in value }
     }
 }

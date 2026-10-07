@@ -61,3 +61,10 @@ extension Slug {
         AutoColor.color(forText: value)
     }
 }
+
+extension TagNode {
+    /// The color that the tag shows: the color that a patch set, else the auto color of the slug (plan.md §6).
+    var resolvedColor: String {
+        color ?? AutoColor.color(forText: slug)
+    }
+}

@@ -368,23 +368,15 @@ extension WorkingCopy {
         }
     }
 
-    /// Makes a tag live: a `set` patch with the name for an unknown tag, and a `delete: false` patch for a tag whose
-    /// rename chain ends at a tombstone. A live tag gets no patch.
+    /// Makes a tag live with ``ensureLiveTag(_:setting:body:at:)``. An unknown tag gets a `set` patch with the name.
     ///
     /// - Parameters:
     ///   - name: The tag name.
     ///   - time: The time of the change.
     /// - Returns: The local ref of the tag at the end of the rename chain.
     /// - Throws: An ``EventError`` when a patch breaks a rule of the log.
-    private mutating func addTag(_ name: TagName, at time: DateTime) throws(EventError) -> LocalRef {
-        let ref = LocalRef.tag(slug: name.slug.value)
-        guard graph.hasNode(ref), let slot = graph.slot(for: ref) else {
-            try apply(PatchInput(node: ref, set: [PropertyName.name: .string(name.name)]), at: time)
-            return ref
-        }
-        let target = graph.renameTarget(ofTagAt: slot).flatMap(graph.node(at:))?.ref ?? ref
-        try apply(PatchInput(node: target, delete: false), at: time)
-        return target
+    private mutating func addTag(_ name: TagName, at time: DateTime) throws -> LocalRef {
+        try ensureLiveTag(.tag(slug: name.slug.value), setting: [PropertyName.name: .string(name.name)], at: time)
     }
 }
 

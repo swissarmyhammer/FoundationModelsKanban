@@ -76,21 +76,21 @@ struct CommentTests {
         return addComment(to: task, with: input, selecting: selection)
     }
 
-    /// Makes a field of a comment mutation whose `input` names one comment.
+    /// Makes a field of a mutation whose `input` names one node, for example a comment or a tag.
     ///
     /// - Parameters:
     ///   - name: The name of the mutation, for example `deleteComment`.
-    ///   - comment: The comment ref as the field writes it.
+    ///   - node: The node ref as the field writes it.
     ///   - input: The other fields of the `input` object, or `""` for none.
     ///   - selection: The selection of the field.
     /// - Returns: The field.
-    private static func commentField(
+    static func nodeField(
         _ name: String,
-        naming comment: String,
+        naming node: String,
         with input: String = "",
         selecting selection: String = "{ id }"
     ) -> String {
-        #"\#(name)(input: { id: "\#(comment)" \#(input) }) \#(selection)"#
+        #"\#(name)(input: { id: "\#(node)" \#(input) }) \#(selection)"#
     }
 
     /// Runs a mutation document with one field on an engine.
@@ -99,7 +99,7 @@ struct CommentTests {
     ///   - field: The mutation field, with its selection.
     ///   - graph: The engine.
     /// - Returns: The response JSON text.
-    private static func run(_ field: String, on graph: KanbanGraph) async throws -> String {
+    static func run(_ field: String, on graph: KanbanGraph) async throws -> String {
         try await KanbanGraphTests.execute(AddUpdateTaskTests.mutation(of: field), on: graph)
     }
 
@@ -109,8 +109,24 @@ struct CommentTests {
     ///   - field: The mutation field, with its selection.
     ///   - directory: The temporary repo directory.
     /// - Returns: The error of the first GraphQL error of the response.
-    private static func failure(of field: String, in directory: TemporaryDirectory) async throws -> KanbanError {
+    static func failure(of field: String, in directory: TemporaryDirectory) async throws -> KanbanError {
         try await ColumnActorTests.failure(of: AddUpdateTaskTests.mutation(of: field), in: directory)
+    }
+
+    /// Runs a query of one task of the board, `Board.task`.
+    ///
+    /// - Parameters:
+    ///   - task: The ULID of the task. The query names it by `^` and the short id.
+    ///   - selection: The selection of the task field.
+    ///   - graph: The engine.
+    /// - Returns: The response JSON text.
+    static func respond(
+        toQueryOf task: ULID,
+        selecting selection: String,
+        on graph: KanbanGraph
+    ) async throws -> String {
+        let query = #"{ board { task(id: "\#(AddUpdateTaskTests.sigilRef(of: task))") \#(selection) } }"#
+        return try await KanbanGraphTests.execute(query, on: graph)
     }
 
     /// Gives the bodies of the comments of a task, as `Task.comments` lists them.
@@ -120,8 +136,7 @@ struct CommentTests {
     ///   - graph: The engine.
     /// - Returns: The response JSON text.
     private static func commentBodies(of task: ULID, on graph: KanbanGraph) async throws -> String {
-        let query = #"{ board { task(id: "\#(AddUpdateTaskTests.sigilRef(of: task))") \#(commentsSelection) } }"#
-        return try await KanbanGraphTests.execute(query, on: graph)
+        try await respond(toQueryOf: task, selecting: commentsSelection, on: graph)
     }
 
     /// Gives the response of ``commentBodies(of:on:)`` for some comment bodies.
@@ -270,7 +285,7 @@ struct CommentTests {
     func updateCommentByIDOnly() async throws {
         let directory = try TemporaryDirectory()
         let added = try await Self.addedComment(in: directory)
-        let update = Self.commentField(
+        let update = Self.nodeField(
             MutationName.updateComment,
             naming: AddUpdateTaskTests.sigilRef(of: added.comment),
             with: #"body: "\#(Self.editedBody)""#,
@@ -291,7 +306,7 @@ struct CommentTests {
     )
     func commentMutationNotFound(name: String) async throws {
         let directory = try TemporaryDirectory()
-        let error = try await Self.failure(of: Self.commentField(name, naming: Self.unknownRef), in: directory)
+        let error = try await Self.failure(of: Self.nodeField(name, naming: Self.unknownRef), in: directory)
         #expect(error == .notFound(type: .comment, reference: Self.unknownRef))
     }
 
@@ -302,7 +317,7 @@ struct CommentTests {
         let directory = try TemporaryDirectory()
         let added = try await Self.addedComment(in: directory)
         let comment = ColumnActorTests.id(of: .comment(added.comment))
-        let delete = Self.commentField(MutationName.deleteComment, naming: comment, selecting: "{ deleted }")
+        let delete = Self.nodeField(MutationName.deleteComment, naming: comment, selecting: "{ deleted }")
         let response = try await Self.run(delete, on: added.graph)
         #expect(response == #"{"data":{"deleteComment":{"deleted":"\#(KanbanGraphTests.time.rfc3339)"}}}"#)
         #expect(try ColumnActorTests.lastPatch(of: .comment(added.comment), isDelete: true, in: directory))
@@ -315,8 +330,8 @@ struct CommentTests {
         let directory = try TemporaryDirectory()
         let added = try await Self.addedComment(in: directory)
         let comment = AddUpdateTaskTests.sigilRef(of: added.comment)
-        _ = try await Self.run(Self.commentField(MutationName.deleteComment, naming: comment), on: added.graph)
-        let undelete = Self.commentField(MutationName.undeleteComment, naming: comment, selecting: "{ body deleted }")
+        _ = try await Self.run(Self.nodeField(MutationName.deleteComment, naming: comment), on: added.graph)
+        let undelete = Self.nodeField(MutationName.undeleteComment, naming: comment, selecting: "{ body deleted }")
         let response = try await Self.run(undelete, on: added.graph)
         #expect(response == #"{"data":{"undeleteComment":{"body":"\#(Self.body)","deleted":null}}}"#)
         #expect(try ColumnActorTests.lastPatch(of: .comment(added.comment), isDelete: false, in: directory))

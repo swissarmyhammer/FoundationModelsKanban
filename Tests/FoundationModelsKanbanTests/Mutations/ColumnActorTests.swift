@@ -32,16 +32,16 @@ struct ColumnActorTests {
     private static let backlogName = "Backlog"
 
     /// The body that a test gives to a column or an actor.
-    private static let body = "Tasks that wait for a check.\n"
+    static let body = "Tasks that wait for a check.\n"
 
     /// ``body`` as a JSON string value shows it, with the line end escaped.
-    private static let bodyJSON = body.replacingOccurrences(of: "\n", with: "\\n")
+    static let bodyJSON = body.replacingOccurrences(of: "\n", with: "\\n")
 
     /// The variables that give ``body`` to the variable `$body`.
-    private static let bodyVariables: [String: Map] = ["body": .string(body)]
+    static let bodyVariables: [String: Map] = ["body": .string(body)]
 
     /// The name that gives an empty slug.
-    private static let emptySlugName = "---"
+    static let emptySlugName = "---"
 
     /// The slug of the actor that a test adds.
     private static let aliceSlug = "alice"
@@ -53,10 +53,10 @@ struct ColumnActorTests {
     private static let renamedAlice = "Alice Jones"
 
     /// The color of the actor that a test adds.
-    private static let red = "ff0000"
+    static let red = "ff0000"
 
     /// The color of the actor after the update test.
-    private static let green = "00ff00"
+    static let green = "00ff00"
 
     /// The number of live tasks in `todo` in the fixture.
     private static let fixtureTaskCount = 1
@@ -242,7 +242,7 @@ struct ColumnActorTests {
     ///   - ref: The local ref of the node.
     ///   - values: The `set` part of the patch.
     /// - Returns: The patch, with the body diff in its `edit` part.
-    private static func bodyPatch(of ref: LocalRef, setting values: [String: PatchValue]) throws -> PatchInput {
+    static func bodyPatch(of ref: LocalRef, setting values: [String: PatchValue]) throws -> PatchInput {
         try PatchInput(node: ref, set: values, edit: PatchEdit(body: ReplayTests.diff(from: "", to: body)))
     }
 
@@ -262,7 +262,7 @@ struct ColumnActorTests {
     ///   - name: The name.
     ///   - color: The color.
     /// - Returns: The `set` part.
-    private static func setting(name: String, color: String) -> [String: PatchValue] {
+    static func setting(name: String, color: String) -> [String: PatchValue] {
         [PropertyName.name: .json(.string(name)), PropertyName.color: .json(.string(color))]
     }
 

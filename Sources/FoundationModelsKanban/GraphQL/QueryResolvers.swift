@@ -411,7 +411,7 @@ extension TagObject {
 
     /// The color of the tag: the color that a patch set, else the auto color of the slug.
     var color: String {
-        state.color ?? AutoColor.color(forText: state.slug)
+        state.resolvedColor
     }
 
     /// Tells if a task has the tag, from an edge or a marker (plan.md §6.1).
