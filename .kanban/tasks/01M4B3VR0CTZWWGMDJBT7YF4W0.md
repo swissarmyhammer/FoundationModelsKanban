@@ -18,10 +18,26 @@ comments:
     - Note for ^cd36vb0 (RefResolver): use `ShortID.resolve(_:among:)` for the ULID forms, so the resolve logic is not copied.
     - next: /review
   timestamp: 2026-10-07T13:04:00.525355+00:00
+- actor: wballard
+  id: 01m4b7kfhhazg581vn831vw1b2
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (3105a0d). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. Ignore rule (.reviewignore) excluded the 4 .kanban files. No validator matched Package.resolved.
+    - next: none. The task moved to done.
+  timestamp: 2026-10-07T13:07:19.729045+00:00
+- actor: wballard
+  id: 01m4b7kqp5edtp9pgj5n37dapp
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 5 files (Package.swift, Package.resolved, ShortID.swift, ULIDSource.swift, ShortIDTests.swift)
+    - test: green — swift test, 71 passed, 0 warnings
+    - commit: 3105a0d
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T13:07:28.069635+00:00
 depends_on:
 - 01M4B3V22A3PCQRESESTYBQ2FH
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '8480'
 title: 'Identity: ULID minting and short ids'
 ---
 ## What
