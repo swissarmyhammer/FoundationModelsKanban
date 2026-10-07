@@ -128,7 +128,7 @@ extension KanbanResolver {
         arguments: InputArguments<AddColumnInput>
     ) async throws -> ColumnObject? {
         let input = arguments.input
-        return try await context.store.changeNode(named: MutationName.addColumn, at: context.clock()) { work, _, time in
+        return try await context.changeNode(named: MutationName.addColumn) { work, _, time in
             let ref = LocalRef.column(slug: try Slug(columnOrActorName: input.id?.text ?? input.name).value)
             let order = input.order ?? work.graph.nextColumnOrder
             let values = [String: PatchValue](
@@ -151,8 +151,7 @@ extension KanbanResolver {
         arguments: InputArguments<UpdateColumnInput>
     ) async throws -> ColumnObject? {
         let input = arguments.input
-        let operation = MutationName.updateColumn
-        return try await context.store.changeNode(named: operation, at: context.clock()) { work, resolver, time in
+        return try await context.changeNode(named: MutationName.updateColumn) { work, resolver, time in
             let ref = try resolver.nodeRef(for: input.id, ofType: .column)
             let values = [
                 PropertyName.name: input.name.map(PatchValue.string),
@@ -211,7 +210,7 @@ extension KanbanResolver {
         arguments: InputArguments<AddActorInput>
     ) async throws -> ActorObject? {
         let input = arguments.input
-        return try await context.store.changeNode(named: MutationName.addActor, at: context.clock()) { work, _, time in
+        return try await context.changeNode(named: MutationName.addActor) { work, _, time in
             let ref = LocalRef.actor(slug: try Slug(columnOrActorName: input.id?.text ?? input.name).value)
             if input.ensure == true, work.graph.hasNode(ref) {
                 return ref
@@ -239,8 +238,7 @@ extension KanbanResolver {
         arguments: InputArguments<UpdateActorInput>
     ) async throws -> ActorObject? {
         let input = arguments.input
-        let operation = MutationName.updateActor
-        return try await context.store.changeNode(named: operation, at: context.clock()) { work, resolver, time in
+        return try await context.changeNode(named: MutationName.updateActor) { work, resolver, time in
             let ref = try resolver.nodeRef(for: input.id, ofType: .actor)
             let values = [
                 PropertyName.name: input.name.map(PatchValue.string),
@@ -299,7 +297,7 @@ extension KanbanResolver {
         _ arguments: InputArguments<NodeReferenceInput>
     ) async throws -> Object? {
         let id = arguments.input.id
-        return try await context.store.changeNode(named: operation, at: context.clock()) { work, resolver, time in
+        return try await context.changeNode(named: operation) { work, resolver, time in
             let ref = try resolver.nodeRef(for: id, ofType: type, includingTombstones: !isDeleted)
             try work.setDeleted(isDeleted, of: ref, inBoard: resolver.boardKey, at: time)
             return ref
@@ -332,6 +330,24 @@ extension BoardStore {
         }
         let view = view
         return view.graph.slot(for: ref).flatMap { slot in view.object(at: slot) }
+    }
+}
+
+extension KanbanContext {
+    /// Runs one public mutation field that changes one node at the time of ``clock``, and gives the object of the node
+    /// after the field. The field obeys the rules of ``BoardStore/changeNode(named:at:_:)``.
+    ///
+    /// - Parameters:
+    ///   - operation: The name of the public mutation of the field.
+    ///   - body: Makes and applies the patches of the field, and gives the local ref of the node. It gets the working
+    ///     copy, a resolver of the forgiving refs of the working graph, and the time.
+    /// - Returns: The object of the node, live or tombstoned.
+    /// - Throws: The error of the body, or an ``EventError`` when a patch breaks a rule of the log.
+    func changeNode<Object: SlotNodeObject>(
+        named operation: String,
+        _ body: sending (inout WorkingCopy, RefResolver, DateTime) throws -> LocalRef
+    ) async throws -> Object? {
+        try await store.changeNode(named: operation, at: clock(), body)
     }
 }
 

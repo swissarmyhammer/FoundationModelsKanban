@@ -68,16 +68,22 @@ private struct TagTaskInput: Decodable, Sendable {
     let tags: [String]
 }
 
+/// The side of a neighbor task where a moved task goes.
+private enum NeighborSide {
+    /// Before the neighbor.
+    case before
+
+    /// After the neighbor.
+    case after
+}
+
 /// The place of a moved task in its column (plan.md §6, "moveTask").
 private enum TaskPlacement {
     /// After the last task of the column.
     case end
 
-    /// Before a neighbor task. A neighbor that is not in the column puts the task at the end.
-    case before(LocalRef)
-
-    /// After a neighbor task. A neighbor that is not in the column puts the task at the end.
-    case after(LocalRef)
+    /// Next to a neighbor task, on one side. A neighbor that is not in the column puts the task at the end.
+    case beside(LocalRef, side: NeighborSide)
 
     /// Makes the placement that the input of a move gives. `before` comes before `after`.
     ///
@@ -88,9 +94,9 @@ private enum TaskPlacement {
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when a neighbor names no live task.
     init(before: NodeID?, after: NodeID?, resolvingWith resolver: RefResolver) throws(KanbanError) {
         if let before {
-            self = .before(try resolver.nodeRef(for: before, ofType: .task))
+            self = .beside(try resolver.nodeRef(for: before, ofType: .task), side: .before)
         } else if let after {
-            self = .after(try resolver.nodeRef(for: after, ofType: .task))
+            self = .beside(try resolver.nodeRef(for: after, ofType: .task), side: .after)
         } else {
             self = .end
         }
@@ -116,8 +122,7 @@ extension KanbanResolver {
         arguments: InputArguments<MoveTaskInput>
     ) async throws -> TaskObject? {
         let input = arguments.input
-        let (store, now, operation) = (context.store, context.clock(), MutationName.moveTask)
-        return try await store.changeTask(input.id, named: operation, at: now) { work, resolver, ref, time in
+        return try await context.changeTask(input.id, named: MutationName.moveTask) { work, resolver, ref, time in
             let column = try work.columnRef(forMoveTo: input.column, resolvingWith: resolver, at: time)
             let ordinal = try input.ordinal.map(Ordinal.init(parsing:))
                 ?? work.graph.ordinal(
@@ -142,8 +147,8 @@ extension KanbanResolver {
         context: KanbanContext,
         arguments: InputArguments<NodeReferenceInput>
     ) async throws -> TaskObject? {
-        let (store, now, operation) = (context.store, context.clock(), MutationName.completeTask)
-        return try await store.changeTask(arguments.input.id, named: operation, at: now) { work, _, ref, time in
+        let input = arguments.input
+        return try await context.changeTask(input.id, named: MutationName.completeTask) { work, _, ref, time in
             let column = try work.graph.columnRef(atSlot: ColumnOrder(of: work.graph).terminal)
             let ordinal = work.graph.nextOrdinal(inColumn: column, excluding: ref)
             try work.move(ref, to: column, placingAt: ordinal, at: time)
@@ -199,8 +204,7 @@ extension KanbanResolver {
         _ arguments: InputArguments<AssignTaskInput>
     ) async throws -> TaskObject? {
         let input = arguments.input
-        let (store, now) = (context.store, context.clock())
-        return try await store.changeTask(input.id, named: operation, at: now) { work, resolver, ref, time in
+        return try await context.changeTask(input.id, named: operation) { work, resolver, ref, time in
             let actor = try resolver.actorRef(for: input.actor, includingTombstones: !isAssigned)
             let edges = [PropertyName.assignees: [StoredRef.local(actor)]]
             let patch = try isAssigned ? PatchInput(node: ref, add: edges) : PatchInput(node: ref, remove: edges)
@@ -222,8 +226,7 @@ extension KanbanResolver {
         arguments: InputArguments<TagTaskInput>
     ) async throws -> TaskObject? {
         let input = arguments.input
-        let (store, now, operation) = (context.store, context.clock(), MutationName.tagTask)
-        return try await store.changeTask(input.id, named: operation, at: now) { work, resolver, ref, time in
+        return try await context.changeTask(input.id, named: MutationName.tagTask) { work, resolver, ref, time in
             let tags = try work.tagRefs(named: input.tags, resolvingWith: resolver, at: time)
             try work.apply(PatchInput(node: ref, add: [PropertyName.tags: tags]), at: time)
         }
@@ -243,8 +246,7 @@ extension KanbanResolver {
         arguments: InputArguments<TagTaskInput>
     ) async throws -> TaskObject? {
         let input = arguments.input
-        let (store, now, operation) = (context.store, context.clock(), MutationName.untagTask)
-        return try await store.changeTask(input.id, named: operation, at: now) { work, resolver, ref, time in
+        return try await context.changeTask(input.id, named: MutationName.untagTask) { work, resolver, ref, time in
             try work.untag(ref, removing: input.tags, resolvingWith: resolver, at: time)
         }
     }
@@ -279,15 +281,15 @@ extension KanbanResolver {
     }
 }
 
-// MARK: - Store
+// MARK: - Context
 
-extension BoardStore {
-    /// Runs one public mutation field that changes a live task, and gives the task after the field.
+extension KanbanContext {
+    /// Runs one public mutation field that changes a live task at the time of ``clock``, and gives the task after the
+    /// field. The field obeys the rules of ``changeNode(named:_:)``.
     ///
     /// - Parameters:
     ///   - id: The task: a full URI or a short form.
     ///   - operation: The name of the public mutation of the field.
-    ///   - time: The time of the change.
     ///   - body: Makes and applies the patches of the field. It gets the working copy, a resolver of the forgiving
     ///     refs of the working graph, the local ref of the task, and the time.
     /// - Returns: The task object.
@@ -295,10 +297,9 @@ extension BoardStore {
     fileprivate func changeTask(
         _ id: NodeID,
         named operation: String,
-        at time: DateTime,
-        _ body: (inout WorkingCopy, RefResolver, LocalRef, DateTime) throws -> Void
-    ) throws -> TaskObject? {
-        try changeNode(named: operation, at: time) { work, resolver, time in
+        _ body: sending (inout WorkingCopy, RefResolver, LocalRef, DateTime) throws -> Void
+    ) async throws -> TaskObject? {
+        try await changeNode(named: operation) { work, resolver, time in
             let ref = try resolver.nodeRef(for: id, ofType: .task)
             try body(&work, resolver, ref, time)
             return ref
@@ -378,7 +379,11 @@ extension WorkingCopy {
         resolvingWith resolver: RefResolver,
         at time: DateTime
     ) throws {
-        let targets = Set(try names.map { name in try graph.tagRef(redirectedFrom: resolver.tagRef(named: name)) })
+        let targets = Set(
+            try names.map { name in
+                try graph.tagRef(redirectedFrom: resolver.tag(named: name, includingTombstones: true).ref)
+            }
+        )
         guard let task = graph.node(for: ref)?.state as? TaskNode else {
             throw KanbanError.notFound(type: .task, reference: ref.description)
         }
@@ -403,24 +408,6 @@ extension WorkingCopy {
     }
 }
 
-// MARK: - Refs
-
-extension RefResolver {
-    /// Changes the forgiving ref of a tag to a local ref, for a remove. A name or a slug gives the local ref of its
-    /// slug, also when the board has no tag with that slug. A URI must name a tag, live or tombstoned.
-    ///
-    /// - Parameter name: The tag name, the slug, or the tag URI.
-    /// - Returns: The local ref of the tag.
-    /// - Throws: ``KanbanError/notFound(type:reference:)`` when a URI names no tag.
-    ///   ``KanbanError/invalidTagName(name:)`` when a name gives an empty slug.
-    fileprivate func tagRef(named name: String) throws(KanbanError) -> LocalRef {
-        guard NodeURI.hasScheme(atStartOf: name) else {
-            return .tag(slug: try TagName(normalizing: name).slug.value)
-        }
-        return try nodeRef(for: NodeID(text: name), ofType: .tag, includingTombstones: true)
-    }
-}
-
 // MARK: - Graph
 
 extension Graph {
@@ -438,29 +425,25 @@ extension Graph {
         moving task: LocalRef
     ) -> Ordinal {
         let tasks = tasks(inColumn: column, excluding: task)
-        let end = nextOrdinal(inColumn: column, excluding: task)
-        switch placement {
-        case .end:
-            return end
-        case .before(let neighbor):
-            guard let index = tasks.firstIndex(where: { shown in shown.ref == neighbor }) else {
-                return end
-            }
-            let upper = tasks[index].ordinal
+        guard
+            case .beside(let neighbor, let side) = placement,
+            let index = tasks.firstIndex(where: { shown in shown.ref == neighbor })
+        else {
+            return nextOrdinal(inColumn: column, excluding: task)
+        }
+        let neighborOrdinal = tasks[index].ordinal
+        switch side {
+        case .before:
             guard index > tasks.startIndex else {
-                return Ordinal(before: upper)
+                return Ordinal(before: neighborOrdinal)
             }
-            return Ordinal(between: tasks[tasks.index(before: index)].ordinal, and: upper)
-        case .after(let neighbor):
-            guard let index = tasks.firstIndex(where: { shown in shown.ref == neighbor }) else {
-                return end
-            }
-            let lower = tasks[index].ordinal
+            return Ordinal(between: tasks[tasks.index(before: index)].ordinal, and: neighborOrdinal)
+        case .after:
             let next = tasks.index(after: index)
             guard next < tasks.endIndex else {
-                return Ordinal(after: lower)
+                return Ordinal(after: neighborOrdinal)
             }
-            return Ordinal(between: lower, and: tasks[next].ordinal)
+            return Ordinal(between: neighborOrdinal, and: tasks[next].ordinal)
         }
     }
 }

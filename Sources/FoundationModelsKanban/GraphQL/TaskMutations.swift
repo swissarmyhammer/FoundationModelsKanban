@@ -94,8 +94,7 @@ extension KanbanResolver {
     ) async throws -> TaskObject? {
         let input = arguments.input
         let knownActor = context.store.knownSessionActor.map { actor in [StoredRef.local(actor)] }
-        let operation = MutationName.addTask
-        return try await context.store.changeNode(named: operation, at: context.clock()) { work, resolver, time in
+        return try await context.changeNode(named: MutationName.addTask) { work, resolver, time in
             let ref = LocalRef.task(work.mintULID())
             let column = try work.graph.columnRef(for: input.column, resolvingWith: resolver)
             let ordinal = try input.ordinal.map(Ordinal.init(parsing:)) ?? work.graph.nextOrdinal(inColumn: column)
@@ -134,8 +133,7 @@ extension KanbanResolver {
         arguments: InputArguments<UpdateTaskInput>
     ) async throws -> TaskObject? {
         let input = arguments.input
-        let operation = MutationName.updateTask
-        return try await context.store.changeNode(named: operation, at: context.clock()) { work, resolver, time in
+        return try await context.changeNode(named: MutationName.updateTask) { work, resolver, time in
             let ref = try resolver.nodeRef(for: input.id, ofType: .task)
             let edges = try work.edges(
                 assignees: input.assignees.value(clearingTo: []),
@@ -191,6 +189,39 @@ extension RefResolver {
     ///   ``KanbanError/ambiguousID(reference:matches:)`` when a ref is a prefix of more than one ULID.
     fileprivate func dependencyRefs(for ids: [NodeID]) throws -> [StoredRef] {
         try ids.map { id in try storedRef(for: id.text, ofType: .task, acceptingRemote: true) }
+    }
+
+    /// Changes the forgiving ref of one tag to the tag that it names (plan.md §6.1). A URI must name a tag of the
+    /// graph. A name or a slug gives its tag name, also when the board has no tag with that slug.
+    ///
+    /// - Parameters:
+    ///   - name: The tag name, the slug, or the tag URI.
+    ///   - includesTombstones: `true` when a URI can name a tombstoned tag.
+    /// - Returns: The tag node that a URI names, or the tag name of a name or a slug.
+    /// - Throws: ``KanbanError/notFound(type:reference:)`` when a URI names no tag that the lookup accepts.
+    ///   ``KanbanError/invalidTagName(name:)`` when a name gives an empty slug.
+    func tag(named name: String, includingTombstones includesTombstones: Bool) throws(KanbanError) -> TagReference {
+        guard NodeURI.hasScheme(atStartOf: name) else {
+            return .name(try TagName(normalizing: name))
+        }
+        return .node(try nodeRef(for: NodeID(text: name), ofType: .tag, includingTombstones: includesTombstones))
+    }
+}
+
+/// The tag that one forgiving tag ref names: a tag name, a slug, or a tag URI (plan.md §6.1).
+enum TagReference {
+    /// A tag node of the graph, that a URI names.
+    case node(LocalRef)
+
+    /// A tag name. The board can have no tag with its slug.
+    case name(TagName)
+
+    /// The local ref of the tag: the node, or the tag with the slug of the name.
+    var ref: LocalRef {
+        switch self {
+        case .node(let ref): ref
+        case .name(let name): .tag(slug: name.slug.value)
+        }
     }
 }
 
@@ -346,10 +377,12 @@ extension WorkingCopy {
         at time: DateTime
     ) throws -> [StoredRef] {
         try names.map { name in
-            guard !NodeURI.hasScheme(atStartOf: name) else {
-                return .local(try resolver.nodeRef(for: NodeID(text: name), ofType: .tag))
+            switch try resolver.tag(named: name, includingTombstones: false) {
+            case .node(let ref):
+                return .local(ref)
+            case .name(let tagName):
+                return .local(try addTag(tagName, at: time))
             }
-            return .local(try addTag(TagName(normalizing: name), at: time))
         }
     }
 

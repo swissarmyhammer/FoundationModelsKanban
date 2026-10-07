@@ -82,7 +82,7 @@ extension KanbanResolver {
         arguments: InputArguments<AddTagInput>
     ) async throws -> TagObject? {
         let input = arguments.input
-        return try await context.store.changeNode(named: MutationName.addTag, at: context.clock()) { work, _, time in
+        return try await context.changeNode(named: MutationName.addTag) { work, _, time in
             let name = try TagName(normalizing: input.name ?? input.id?.text ?? "")
             let slug = try input.id.map { id in try TagName(normalizing: id.text).slug } ?? name.slug
             let values = [
@@ -107,8 +107,7 @@ extension KanbanResolver {
         arguments: InputArguments<UpdateTagInput>
     ) async throws -> TagObject? {
         let input = arguments.input
-        let operation = MutationName.updateTag
-        return try await context.store.changeNode(named: operation, at: context.clock()) { work, resolver, time in
+        return try await context.changeNode(named: MutationName.updateTag) { work, resolver, time in
             let ref = try resolver.nodeRef(for: input.id, ofType: .tag)
             let name = try input.name.map { name in try TagName(normalizing: name).name }
             let values = [
@@ -163,8 +162,7 @@ extension KanbanResolver {
         arguments: InputArguments<RenameTagInput>
     ) async throws -> TagObject? {
         let input = arguments.input
-        let operation = MutationName.renameTag
-        return try await context.store.changeNode(named: operation, at: context.clock()) { work, resolver, time in
+        return try await context.changeNode(named: MutationName.renameTag) { work, resolver, time in
             let source = try resolver.nodeRef(for: input.from, ofType: .tag)
             return try work.renameTag(source, to: TagName(normalizing: input.to), at: time)
         }
