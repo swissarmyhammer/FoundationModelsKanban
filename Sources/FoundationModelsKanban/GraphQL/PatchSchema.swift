@@ -22,60 +22,10 @@ enum PatchNodeType: String, Codable, Sendable, CaseIterable {
     case comment = "Comment"
 }
 
-/// The `input` of the internal `patch` mutation: one property patch on one
-/// node (plan.md §5.1).
-///
-/// Each part is optional, except `node` and `type`. The parts that hold
-/// property values are `JSON` values.
-struct PatchInput: Codable, Sendable {
-    /// The local ref of the node that the patch changes.
-    let node: String
-
-    /// The type of the node.
-    let type: PatchNodeType
-
-    /// The properties to write. A value replaces the old value.
-    let set: Map?
-
-    /// The names of the properties to clear.
-    let unset: [String]?
-
-    /// The values to add to set-valued properties.
-    let add: Map?
-
-    /// The values to remove from set-valued properties.
-    let remove: Map?
-
-    /// `true` makes a tombstone. `false` removes the tombstone.
-    let delete: Bool?
-
-    /// A unified diff for the Markdown body: `{"body": "<unified diff>"}`.
-    let edit: Map?
-}
-
 /// The arguments of the internal `patch` mutation.
 struct PatchArguments: Codable, Sendable {
     /// The patch.
     let input: PatchInput
-}
-
-extension PatchInput {
-    /// The patch as a `JSON` value. A part that is not set is not in the value.
-    ///
-    /// The value is made directly, not with `MapEncoder`, because
-    /// `MapEncoder` changes each `Bool` to a number.
-    var map: Map {
-        [
-            "node": .string(node),
-            "type": .string(type.rawValue),
-            "set": set ?? .undefined,
-            "unset": unset.map { .array($0.map(Map.string)) } ?? .undefined,
-            "add": add ?? .undefined,
-            "remove": remove ?? .undefined,
-            "delete": delete.map(Map.bool) ?? .undefined,
-            "edit": edit ?? .undefined,
-        ]
-    }
 }
 
 extension KanbanResolver {
@@ -120,15 +70,18 @@ struct PatchSchema: API {
                     Value(.tag)
                     Value(.comment)
                 }
+                // Graphiti reads only the type of each key path, for the
+                // SDL. The `Decodable` form of `PatchInput` reads the
+                // argument, so each ref is checked when the engine decodes it.
                 Input(PatchInput.self) {
-                    InputField("node", at: \.node)
+                    InputField("node", at: \.nodeText)
                     InputField("type", at: \.type)
-                    InputField("set", at: \.set)
-                    InputField("unset", at: \.unset)
-                    InputField("add", at: \.add)
-                    InputField("remove", at: \.remove)
+                    InputField("set", at: \.setMap)
+                    InputField("unset", at: \.unsetList)
+                    InputField("add", at: \.addMap)
+                    InputField("remove", at: \.removeMap)
                     InputField("delete", at: \.delete)
-                    InputField("edit", at: \.edit)
+                    InputField("edit", at: \.editMap)
                 }
             }
             .addMutation {

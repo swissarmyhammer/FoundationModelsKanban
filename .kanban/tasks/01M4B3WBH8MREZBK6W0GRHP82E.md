@@ -29,11 +29,27 @@ comments:
     - evidence: 6 files — Package.swift, Package.resolved, Sources/FoundationModelsKanban/Filter/FilterExpr.swift, Sources/FoundationModelsKanban/Filter/FilterParser.swift, Sources/FoundationModelsKanban/Filter/FilterSyntaxError.swift, Tests/FoundationModelsKanbanTests/Filter/FilterParserTests.swift. `swift test --filter FilterParserTests`: 45 tests pass. `swift test`: 218 tests in 13 suites pass. Clean `swift build --build-tests` (new scratch path): 0 warnings.
     - next: /review
   timestamp: 2026-10-07T14:11:02.634588+00:00
+- actor: wballard
+  id: 01m4bbdhc6z3x3cz2na6cns1ny
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (e397510). 0 findings, 0 confirmed, 0 refuted. 5 files reviewed. 6 .kanban files ignored by .reviewignore. No validator for Package.resolved.
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T14:13:59.302501+00:00
+- actor: wballard
+  id: 01m4bbdr4kn458yvx47e6qt4nj
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 6 files (Package.swift, Package.resolved, FilterExpr.swift, FilterParser.swift, FilterSyntaxError.swift, FilterParserTests.swift)
+    - test: green — swift test, 218 passed, 0 warnings
+    - commit: e397510
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T14:14:06.227714+00:00
 depends_on:
 - 01M4B3V22A3PCQRESESTYBQ2FH
 - 01M4B4A8735GAP57Q8ZVDP5HY2
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: 8a80
 title: Filter DSL parser with swift-parsing
 ---
 ## What

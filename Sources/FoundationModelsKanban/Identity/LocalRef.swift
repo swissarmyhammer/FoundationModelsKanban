@@ -216,6 +216,41 @@ enum StoredRef: Hashable, Sendable, CustomStringConvertible {
     }
 }
 
+// MARK: - Codable
+
+/// A ref that a log line holds as its text: the ``CustomStringConvertible/description`` writes the text, and
+/// ``init(parsing:)`` reads it.
+protocol TextCodable: Codable, CustomStringConvertible {
+    /// Reads the ref from its text.
+    ///
+    /// - Parameter text: The text of the ref.
+    /// - Throws: A ``NodeRefError`` when the text is not a valid ref.
+    init(parsing text: String) throws(NodeRefError)
+}
+
+extension TextCodable {
+    /// Reads the ref from its text in a log line.
+    ///
+    /// - Parameter decoder: The decoder that holds the text.
+    /// - Throws: A `DecodingError` when the value is not text. A ``NodeRefError`` when the text is not a valid ref.
+    init(from decoder: any Decoder) throws {
+        try self.init(parsing: decoder.singleValueContainer().decode(String.self))
+    }
+
+    /// Writes the ref as its text.
+    ///
+    /// - Parameter encoder: The encoder that gets the text.
+    /// - Throws: An error from the encoder.
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(description)
+    }
+}
+
+extension LocalRef: TextCodable {}
+
+extension StoredRef: TextCodable {}
+
 // MARK: - Errors
 
 /// An error from the parse of a ``NodeURI``, a ``LocalRef``, or a ``StoredRef``.

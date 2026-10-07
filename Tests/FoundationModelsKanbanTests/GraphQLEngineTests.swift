@@ -95,7 +95,7 @@ struct GraphQLEngineTests {
     @Test("A JSON value in the variables round-trips through the patch mutation")
     func jsonRoundTripsFromVariables() async throws {
         let patch: Map = [
-            "node": "task/01K6Z3",
+            "node": "task/01K6Z3ABCDEFGHJKMNPQRSTVWX",
             "type": "Task",
             "set": ["title": "Port the filter DSL", "ordinal": "80", "points": 3, "open": true],
             "add": ["tags": ["tag/kanban"]],
@@ -108,7 +108,7 @@ struct GraphQLEngineTests {
         )
         #expect(
             response
-                == #"{"data":{"patch":{"add":{"tags":["tag/kanban"]},"delete":false,"node":"task/01K6Z3","set":{"open":true,"ordinal":"80","points":3,"title":"Port the filter DSL"},"type":"Task"}}}"#
+                == #"{"data":{"patch":{"add":{"tags":["tag/kanban"]},"delete":false,"node":"task/01K6Z3ABCDEFGHJKMNPQRSTVWX","set":{"open":true,"ordinal":"80","points":3,"title":"Port the filter DSL"},"type":"Task"}}}"#
         )
     }
 
@@ -121,6 +121,18 @@ struct GraphQLEngineTests {
         #expect(
             response
                 == #"{"data":{"patch":{"delete":true,"node":"tag/bug","set":{"list":[1,"two",null,true],"name":"bug","rank":2},"type":"Tag","unset":["color"]}}}"#
+        )
+    }
+
+    @Test("A patch mutation whose node is not a local ref gives an error and no data")
+    func patchRefusesANodeThatIsNotALocalRef() async throws {
+        let response = try await PatchSchema().respond(
+            to: #"mutation { patch(input: { node: "task/01K6Z3", type: Task }) }"#,
+            context: Self.makeContext()
+        )
+        #expect(
+            response
+                == #"{"errors":[{"message":"invalidULID(ref: \"task/01K6Z3\")","locations":[{"line":1,"column":12}],"path":["patch"]}]}"#
         )
     }
 
