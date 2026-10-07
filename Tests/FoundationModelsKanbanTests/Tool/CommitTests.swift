@@ -75,13 +75,19 @@ struct CommitTests {
         )
     }
 
-    /// Makes the context of one call in a commit session: the store of the working copy, the fixed clock
-    /// ``callTime``, and a task search with no embedder.
+    /// Makes the context of one call. All test code that makes a ``KanbanContext`` uses this function.
     ///
-    /// - Parameter store: The store of the working copy of the call.
+    /// - Parameters:
+    ///   - store: The store of the call, for example the store of the working copy of a commit session.
+    ///   - clock: The fixed clock of the call. The default clock gives ``callTime``.
+    ///   - search: The task search of the call. The default search has no embedder and no task.
     /// - Returns: The context.
-    static func callContext(of store: BoardStore) -> KanbanContext {
-        KanbanContext(store: store, clock: { callTime }, search: TaskSearch(embeddingWith: nil))
+    static func callContext(
+        of store: BoardStore,
+        timedBy clock: @escaping @Sendable () -> DateTime = { CommitTests.callTime },
+        searchingWith search: TaskSearch = TaskSearch(embeddingWith: nil)
+    ) -> KanbanContext {
+        KanbanContext(store: store, clock: clock, search: search)
     }
 
     /// Runs one mutation field that applies one patch to the working copy.

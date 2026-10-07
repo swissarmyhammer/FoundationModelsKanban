@@ -82,15 +82,21 @@ struct QueryFixture {
         }
     }
 
-    /// Makes a context that reads the board, with a fixed clock.
+    /// Makes a context that reads a fixture graph in the board of ``DependencyMarkersTests``, with the fixed clock
+    /// ``DependencyMarkersTests/time``.
     ///
-    /// - Parameter search: The task search of the call. The default search has no task.
+    /// - Parameters:
+    ///   - graph: The fixture graph.
+    ///   - search: The task search of the call. The default search has no task.
     /// - Returns: The context.
-    func context(searchingWith search: TaskSearch = TaskSearch(embeddingWith: nil)) -> KanbanContext {
-        KanbanContext(
-            store: BoardStore.fixture(of: graph, inBoard: DependencyMarkersTests.boardKey),
-            clock: { DependencyMarkersTests.time },
-            search: search
+    static func context(
+        reading graph: Graph,
+        searchingWith search: TaskSearch = TaskSearch(embeddingWith: nil)
+    ) -> KanbanContext {
+        CommitTests.callContext(
+            of: BoardStore.fixture(of: graph, inBoard: DependencyMarkersTests.boardKey),
+            timedBy: { DependencyMarkersTests.time },
+            searchingWith: search
         )
     }
 
@@ -105,7 +111,7 @@ struct QueryFixture {
         to document: String,
         searchingWith search: TaskSearch = TaskSearch(embeddingWith: nil)
     ) async throws -> String {
-        try await PublicSchema().respond(to: document, context: context(searchingWith: search))
+        try await PublicSchema().respond(to: document, context: Self.context(reading: graph, searchingWith: search))
     }
 
     /// Makes a task search that indexes the live tasks of the board.

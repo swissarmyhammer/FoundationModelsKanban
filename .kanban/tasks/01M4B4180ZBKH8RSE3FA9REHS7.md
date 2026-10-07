@@ -73,6 +73,40 @@ comments:
     - no commit; branch `wip/a9rehs7-search` is kept; nothing pushed.
     - next: /review
   timestamp: 2026-10-07T21:21:53.274928+00:00
+- actor: wballard
+  id: 01m4c4b0pzzkbnn5kqj568przp
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (e0b544b): 1 finding (1 confirmed, 1 refuted) — Tests/FoundationModelsKanbanTests/GraphQLEngineTests.swift:27 `reuse/reuse`.
+    - next: Make one helper with a clock parameter from `CommitTests.callContext(of:)`, and use it in `makeContext`. Then review again.
+  timestamp: 2026-10-07T21:29:31.103361+00:00
+- actor: wballard
+  id: 01m4c4baqm1c3brg6r8zcj7jyv
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 19 code and doc files (cherry-picked e29af3f onto main, README.md "Known build warnings", addTask search test)
+    - test: green — swift test, 723 passed; build warnings only the 2 accepted kinds (1 SwiftPM missing creator + 76 mlx-swift Metal -Wc++17-extensions), 0 other
+    - commit: e0b544b
+    - review: findings — Tests/FoundationModelsKanbanTests/GraphQLEngineTests.swift:27
+  timestamp: 2026-10-07T21:29:41.364067+00:00
+- actor: wballard
+  id: 01m4c4f887kdzvq57g3bj320gt
+  text: |-
+    Finding `reuse/reuse` (GraphQLEngineTests.swift `makeContext`) is fixed. One helper now makes each test `KanbanContext`.
+    - `CommitTests.callContext(of:timedBy:searchingWith:)`: new `timedBy` clock parameter (default `{ CommitTests.callTime }`) and new `searchingWith` search parameter (default `TaskSearch(embeddingWith: nil)`). The existing callers (`CommitTests.patchMutationAppliesToWorkingGraph`, `ColumnActorTests.result(of:in:)`) do not change.
+    - `GraphQLEngineTests.makeContext` calls `CommitTests.callContext(of:timedBy:)`.
+    - `QueryFixture.context(searchingWith:)` (instance) is replaced by `static QueryFixture.context(reading:searchingWith:)`. It calls `CommitTests.callContext` with the store of the graph in the `DependencyMarkersTests` board and the clock `DependencyMarkersTests.time`. `QueryFixture.respond` and `NodeQueryTests.nodesWithAmbiguousIDIsNull` use it.
+    - `TaskQueryFixture.context` calls `QueryFixture.context(reading: board.graph)`. Thus the store-and-clock pair of the two query fixtures is in one place too.
+    - A search of `Tests/` for `KanbanContext(` now finds one match only: the body of `CommitTests.callContext`.
+    - Note: `dump validators` wrote a rules file of 754K characters, too large to read in one pass. I used the rule list that the caller gave (magic numbers, case binding, fluent labels, first-argument labels, doc comments, 120-character lines, narrowest access, dead code, duplication, test integrity).
+  timestamp: 2026-10-07T21:31:49.895600+00:00
+- actor: wballard
+  id: 01m4c4faqdh54drmj2vhfmxkpc
+  text: |-
+    ### implement — changed
+    - evidence: `swift test`: 723 tests in 43 suites passed, exit 0. Build warnings: 1 line only, the accepted SwiftPM `missing creator for mutated node: (.../mlx-swift_Cmlx.bundle/Contents/MacOS)`; no warning from our sources. Files: Tests/FoundationModelsKanbanTests/Tool/CommitTests.swift, Tests/FoundationModelsKanbanTests/GraphQLEngineTests.swift, Tests/FoundationModelsKanbanTests/GraphQL/QueryFixture.swift, Tests/FoundationModelsKanbanTests/GraphQL/NodeQueryTests.swift, Tests/FoundationModelsKanbanTests/Filter/TaskQueryFixture.swift. Finding marked `- [x]`. No commit.
+    - next: /review
+  timestamp: 2026-10-07T21:31:52.429442+00:00
 depends_on:
 - 01M4B3Z67TC96REJGDHD2DFH0R
 - 01M4B3YYXT069TKADQ93CBAA93
@@ -111,3 +145,16 @@ Resolved. The person accepts the two dependency build warnings as known (see the
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-07 16:25)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 16 file(s) reviewed, 8 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+> 2 file(s) not reviewed — no validator matched:
+> - `Package.resolved` — no validator matches this file
+> - `README.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsKanbanTests/GraphQLEngineTests.swift:27` `reuse/reuse` — `makeContext` builds a `KanbanContext` with a no-embedder `TaskSearch` and a fixed clock inline. `CommitTests.callContext(of:)` already builds the same shape (same `KanbanContext` init, same `TaskSearch(embeddingWith: nil)`) with a different clock. The two copies can drift apart, for example if the context gains a field. Give `CommitTests.callContext` a clock parameter (for example `callContext(of store: BoardStore, clock: @escaping @Sendable () -> DateTime = { callTime })`) and have `makeContext` call it. Otherwise, keep the two helpers but note that they must stay in step. The fixed-clock argument is the only difference, so one parameterized helper is enough.

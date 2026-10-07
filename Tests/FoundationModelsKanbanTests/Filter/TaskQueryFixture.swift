@@ -47,11 +47,7 @@ struct TaskQueryFixture {
 
     /// Makes a context that reads the board, with a fixed clock.
     private var context: KanbanContext {
-        KanbanContext(
-            store: BoardStore.fixture(of: board.graph, inBoard: DependencyMarkersTests.boardKey),
-            clock: { DependencyMarkersTests.time },
-            search: TaskSearch(embeddingWith: nil)
-        )
+        QueryFixture.context(reading: board.graph)
     }
 
     /// Runs one GraphQL document against the board through the public schema.

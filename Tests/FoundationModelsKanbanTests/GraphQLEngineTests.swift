@@ -24,11 +24,7 @@ struct GraphQLEngineTests {
         let now = try DateTime(rfc3339: clockText)
         var graph = Graph()
         graph.update(with: .board(BoardNode(fields: NodeFields(created: created, updated: created), name: "Kanban")))
-        return KanbanContext(
-            store: BoardStore.fixture(of: graph, inBoard: boardKey),
-            clock: { now },
-            search: TaskSearch(embeddingWith: nil)
-        )
+        return CommitTests.callContext(of: BoardStore.fixture(of: graph, inBoard: boardKey), timedBy: { now })
     }
 
     @Test("A query runs end to end and returns the expected JSON")

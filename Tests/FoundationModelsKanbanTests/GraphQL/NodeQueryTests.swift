@@ -204,7 +204,8 @@ struct NodeQueryTests {
         let data = #"{"data":{"board":{"name":"\#(QueryFixture.boardName)"},"nodes":null},"#
         #expect(response.hasPrefix(data + #""errors":["#))
         #expect(response.contains(#""path":["nodes"]"#))
-        let result = try await PublicSchema().execute(request: document, context: fixture.context())
+        let context = QueryFixture.context(reading: fixture.graph)
+        let result = try await PublicSchema().execute(request: document, context: context)
         let matches = [
             ReadinessFixture.first, ReadinessFixture.second, ReadinessFixture.third, ReadinessFixture.firstComment,
         ].map(ShortID.init(ofULIDString:))
