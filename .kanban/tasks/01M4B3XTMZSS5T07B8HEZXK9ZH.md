@@ -63,11 +63,27 @@ comments:
     - evidence: 1 file — Sources/FoundationModelsKanban/Tags/TagMarkers.swift. `swift test`: 336 tests in 21 suites passed, build complete with 0 compiler warnings.
     - next: /review
   timestamp: 2026-10-07T15:53:57.037249+00:00
+- actor: wballard
+  id: 01m4bh7y9912b5qhbja6x4gyfe
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (0642dad). 0 findings, 7 validator runs, 0 failed. All prior Review Findings items are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T15:55:47.369606+00:00
+- actor: wballard
+  id: 01m4bh84q5yfhe7tk6nkw8rmjn
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 file (Tags/TagMarkers.swift); 1/1 findings checked
+    - test: green — swift test, 336 passed, 0 warnings
+    - commit: 0642dad
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T15:55:53.957543+00:00
 depends_on:
 - 01M4B3XHRVFA2YDCJC76MAFQR5
 - 01M4B3VX4HPNXHC77F2RKYE37K
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '9180'
 title: 'Tags at read time: markers and rename redirect'
 ---
 ## What

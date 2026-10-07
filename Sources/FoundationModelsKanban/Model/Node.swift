@@ -11,6 +11,14 @@ enum EdgeTarget: Hashable, Sendable {
 
     /// The stored ref of a target that the graph does not have.
     case unresolved(StoredRef)
+
+    /// The slot of the target, or `nil` when the edge is unresolved.
+    var resolvedSlot: Int? {
+        guard case .slot(let slot) = self else {
+            return nil
+        }
+        return slot
+    }
 }
 
 /// The fields that all six node types have: the Markdown body and the time values (plan.md §4.1, §5.3).
