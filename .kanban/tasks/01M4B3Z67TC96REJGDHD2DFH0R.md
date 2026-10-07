@@ -35,12 +35,28 @@ comments:
   id: 01m4bqgrzaks8wnfqnz8jb6y71
   text: 'Correction to the comment above: the task that connects the evaluator to the queries is ^eb7w39n ("Filter: connect to queries, nextTask, compatibility corpus"). The reference `^wmczz5z` in that comment is wrong.'
   timestamp: 2026-10-07T17:45:28.298340+00:00
+- actor: wballard
+  id: 01m4bqqb5f3t0f3tk8d5tg62xw
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (f2a58c5). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. The ignore rule (.reviewignore) excluded 4 .kanban/ files.
+    - next: none. The task moved to done.
+  timestamp: 2026-10-07T17:49:03.535649+00:00
+- actor: wballard
+  id: 01m4bqqgm0nvdrv2g4zpjwwsc7
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 4 files (Filter/FilterEvaluator.swift, Derived/Readiness.swift, FilterEvaluatorTests.swift, ReadinessFixture.swift)
+    - test: green — swift test, 525 passed, 0 warnings
+    - commit: f2a58c5
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T17:49:09.120943+00:00
 depends_on:
 - 01M4B3WBH8MREZBK6W0GRHP82E
 - 01M4B3Y4M87387J50EQCD36VB0
 - 01M4B3YC73VSKE9VEP29E3CZNQ
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: '9880'
 title: Filter evaluator
 ---
 ## What

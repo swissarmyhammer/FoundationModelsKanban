@@ -70,7 +70,7 @@ struct QueryResolverTests {
         let data: DataObject
     }
 
-    /// Reads one page of tasks.
+    /// Reads one page of tasks. The query gives `excludeDone: false`, so that the page can hold the done task.
     ///
     /// - Parameters:
     ///   - fixture: The board.
@@ -80,7 +80,7 @@ struct QueryResolverTests {
     static func page(of fixture: QueryFixture, after cursor: String?) async throws -> TasksResponse.Connection {
         let afterArgument = cursor.map { #", after: "\#($0)""# } ?? ""
         let response = try await fixture.respond(
-            to: "{ board { tasks(first: \(pageSize)\(afterArgument)) "
+            to: "{ board { tasks(first: \(pageSize), excludeDone: false\(afterArgument)) "
                 + "{ totalCount edges { node { id } } pageInfo { hasNextPage endCursor } } } }"
         )
         return try JSONDecoder().decode(TasksResponse.self, from: Data(response.utf8)).data.board.tasks
@@ -150,7 +150,9 @@ struct QueryResolverTests {
             ordinal: Ordinal(before: .first)
         )
         fixture.graph.update(with: .task(fourth))
-        let response = try await fixture.respond(to: "{ board { tasks { edges { node { title } } } } }")
+        let response = try await fixture.respond(
+            to: "{ board { tasks(excludeDone: false) { edges { node { title } } } } }"
+        )
         let titles = [
             QueryFixture.secondTitle, ReadinessFixture.fourth, QueryFixture.firstTitle, QueryFixture.thirdTitle,
         ]
@@ -243,12 +245,12 @@ struct QueryResolverTests {
         #expect(response.contains(#""path":["board","task"]"#))
     }
 
-    @Test("Board.tasks with an after cursor that names no task returns an error")
+    @Test("Board.tasks with an after cursor that names no task returns null and an error")
     func unknownCursorGivesAnError() async throws {
         let response = try await QueryFixture().respond(
             to: #"{ board { tasks(after: "\#(ReadinessFixture.ghost)") { totalCount } } }"#
         )
-        #expect(response.hasPrefix(#"{"data":{"board":null},"errors":["#))
+        #expect(response.hasPrefix(#"{"data":{"board":{"tasks":null}},"errors":["#))
         #expect(response.contains(#""path":["board","tasks"]"#))
     }
 }

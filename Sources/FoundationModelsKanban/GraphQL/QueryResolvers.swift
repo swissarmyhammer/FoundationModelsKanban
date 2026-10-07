@@ -283,16 +283,35 @@ extension BoardObject {
         try view.task(for: arguments.id.text)
     }
 
-    /// Resolves `Board.tasks`: one page of the live tasks, in board order.
+    /// Resolves `Board.nextTask` (plan.md §6): the first task in board order that is not done, is ready, and matches
+    /// the filter.
     ///
     /// - Parameters:
     ///   - context: The context of the call. The field does not read it.
-    ///   - arguments: The page size and the cursor before the page.
-    /// - Returns: The page, the page info, and the number of all tasks.
-    /// - Throws: ``KanbanError/notFound(type:reference:)`` when the cursor names no task of the list.
+    ///   - arguments: The filter.
+    /// - Returns: The next task, or `nil` when no task is next.
+    /// - Throws: ``KanbanError/invalidFilter(filter:position:detail:example:)`` when the filter is empty or does not
+    ///   parse.
+    func nextTask(context _: KanbanContext, arguments: FilterArguments) throws(KanbanError) -> TaskObject? {
+        try TaskSelection(filtering: arguments.filter, excludingDone: true).tasks(in: view, where: \.ready).first
+    }
+
+    /// Resolves `Board.tasks`: one page of the live tasks that the filter and the scoping arguments select, in board
+    /// order (plan.md §6.3).
+    ///
+    /// The GraphQL field is nullable: an error gives `null` for the field and one item in `errors`, and the other
+    /// fields of the board keep their data.
+    ///
+    /// - Parameters:
+    ///   - context: The context of the call. The field does not read it.
+    ///   - arguments: The filter, the scoping arguments, the page size, and the cursor before the page.
+    /// - Returns: The page, the page info, and the number of all selected tasks. The value is never `nil`. The
+    ///   optional type makes the GraphQL field nullable.
+    /// - Throws: ``KanbanError/invalidFilter(filter:position:detail:example:)`` when the filter or a scoping value is
+    ///   not valid. ``KanbanError/notFound(type:reference:)`` when the cursor names no task of the list.
     ///   ``KanbanError/ambiguousID(reference:matches:)`` when the cursor is a prefix of more than one ULID.
-    func tasks(context _: KanbanContext, arguments: TasksArguments) throws(KanbanError) -> TaskConnection {
-        let tasks = view.orderedTasks()
+    func tasks(context _: KanbanContext, arguments: TasksArguments) throws(KanbanError) -> TaskConnection? {
+        let tasks = try TaskSelection(for: arguments).tasks(in: view)
         var start = tasks.startIndex
         if let cursor = arguments.after {
             let after = try view.task(for: cursor)
@@ -316,7 +335,35 @@ extension BoardObject {
 
 // MARK: - Column, actor, and tag
 
-extension ColumnObject {
+/// A GraphQL object of a node that lists the tasks that it holds in a `tasks(filter:)` field: a column, an actor, or
+/// a tag.
+protocol TaskHolderObject: GraphNodeObject {
+    /// Tells if the node holds a task.
+    ///
+    /// - Parameter task: A live task of the board.
+    /// - Returns: `true` when the node holds the task.
+    func isHolder(of task: TaskObject) -> Bool
+}
+
+extension TaskHolderObject {
+    /// Resolves the `tasks` field: the live tasks that the node holds and that match the filter, in board order. The
+    /// list keeps the done tasks.
+    ///
+    /// The GraphQL field is nullable: an error gives `null` for the field and one item in `errors`, and the other
+    /// fields keep their data.
+    ///
+    /// - Parameters:
+    ///   - context: The context of the call. The field does not read it.
+    ///   - arguments: The filter.
+    /// - Returns: The tasks. The value is never `nil`. The optional type makes the GraphQL field nullable.
+    /// - Throws: ``KanbanError/invalidFilter(filter:position:detail:example:)`` when the filter is empty or does not
+    ///   parse.
+    func tasks(context _: KanbanContext, arguments: FilterArguments) throws(KanbanError) -> [TaskObject]? {
+        try TaskSelection(filtering: arguments.filter).tasks(in: view, where: isHolder(of:))
+    }
+}
+
+extension ColumnObject: TaskHolderObject {
     /// The name of the column.
     var name: String {
         state.name
@@ -327,9 +374,12 @@ extension ColumnObject {
         state.order
     }
 
-    /// The live tasks that show in the column, in ordinal order.
-    var tasks: [TaskObject] {
-        view.orderedTasks { task in view.readiness.column(ofTaskAt: task.slot) == slot }
+    /// Tells if a task shows in the column.
+    ///
+    /// - Parameter task: A live task of the board.
+    /// - Returns: `true` when the task shows in the column.
+    func isHolder(of task: TaskObject) -> Bool {
+        view.readiness.column(ofTaskAt: task.slot) == slot
     }
 }
 
@@ -344,9 +394,12 @@ extension ActorObject {
         state.color
     }
 
-    /// The live tasks that have the actor as assignee, in board order.
-    var tasks: [TaskObject] {
-        view.orderedTasks { task in task.state.assignees.contains(.slot(slot)) }
+    /// Tells if a task has the actor as assignee.
+    ///
+    /// - Parameter task: A live task of the board.
+    /// - Returns: `true` when an `assignees` edge of the task has the actor as its target.
+    func isHolder(of task: TaskObject) -> Bool {
+        task.state.assignees.contains(.slot(slot))
     }
 }
 
@@ -361,9 +414,12 @@ extension TagObject {
         state.color ?? AutoColor.color(forText: state.slug)
     }
 
-    /// The live tasks that have the tag, from an edge or a marker (plan.md §6.1), in board order.
-    var tasks: [TaskObject] {
-        view.orderedTasks { task in view.graph.tagSlots(of: task.state).contains(slot) }
+    /// Tells if a task has the tag, from an edge or a marker (plan.md §6.1).
+    ///
+    /// - Parameter task: A live task of the board.
+    /// - Returns: `true` when the tags of the task hold the tag.
+    func isHolder(of task: TaskObject) -> Bool {
+        view.graph.tagSlots(of: task.state).contains(slot)
     }
 }
 

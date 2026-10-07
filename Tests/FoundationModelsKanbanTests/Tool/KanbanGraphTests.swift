@@ -42,9 +42,11 @@ struct KanbanGraphTests {
     /// in this time.
     static let firstCallDelay = Duration.milliseconds(100)
 
-    /// A query that reads the board, its tasks, and the column of each task.
+    /// A query that reads the board, its tasks, and the column of each task. The one column of the fixture is the
+    /// terminal column, so its tasks are done, and the query gives `excludeDone: false` to list them.
     static let boardQuery = """
-        { board { name key tasks { totalCount edges { node { id shortId title column { name } } } } } }
+        { board { name key tasks(excludeDone: false) {
+            totalCount edges { node { id shortId title column { name } } } } } }
         """
 
     /// A query that reads the name of the board.
@@ -226,7 +228,9 @@ struct KanbanGraphTests {
         _ = try Self.writeFixture(inRepoAt: directory.url)
         let document = """
             query Names { board { name } }
-            query Page($first: Int) { board { tasks(first: $first) { edges { node { title } } totalCount } } }
+            query Page($first: Int) {
+                board { tasks(first: $first, excludeDone: false) { edges { node { title } } totalCount } }
+            }
             """
         let response = try await Self.makeGraph(at: directory.url).execute(
             query: document,

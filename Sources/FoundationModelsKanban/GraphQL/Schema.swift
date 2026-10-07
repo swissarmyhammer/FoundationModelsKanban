@@ -92,10 +92,26 @@ struct TaskArguments: Codable, Sendable {
     let id: NodeID
 }
 
-/// The arguments of `Board.tasks`: the cursor paging of plan.md §4.1.
+/// The arguments of `Board.tasks`: the filter and the scoping arguments of plan.md §6.3, and the cursor paging of
+/// plan.md §4.1.
 struct TasksArguments: Codable, Sendable {
     /// The number of tasks of a page when the call does not give `first`.
     static let defaultPageSize = 10
+
+    /// The filter, for example `#bug && @alice`, or `nil` for no filter.
+    let filter: String?
+
+    /// The column that the tasks show in: the same as the atom `%x` in the filter.
+    let column: NodeID?
+
+    /// The tag that the tasks have: the same as the atom `#x` in the filter.
+    let tag: NodeID?
+
+    /// The actor that the tasks are assigned to: the same as the atom `@x` in the filter.
+    let assignee: NodeID?
+
+    /// `true` to leave out the done tasks. No value is `true`, or `false` when the call names a column.
+    let excludeDone: Bool?
 
     /// The maximum number of tasks of the page. A negative value gives no task. An explicit `null` gives
     /// ``defaultPageSize``.
@@ -104,6 +120,13 @@ struct TasksArguments: Codable, Sendable {
     /// The cursor of the task before the page, or `nil` for the first page. A cursor is the `id` of a task, and a
     /// short form of the task also works.
     let after: String?
+}
+
+/// The arguments of a task list that has only a filter: `Board.nextTask`, and the `tasks` fields of `Column`,
+/// `Actor`, and `Tag` (plan.md §6.3).
+struct FilterArguments: Codable, Sendable {
+    /// The filter, for example `#bug && @alice`, or `nil` for no filter.
+    let filter: String?
 }
 
 // MARK: - Root resolver
@@ -179,7 +202,7 @@ extension NodeObject {
 }
 
 /// A node that marks tasks, with a name and a color: an actor or a tag.
-protocol LabelObject: NodeObject {
+protocol LabelObject: TaskHolderObject {
     /// The Swift type of the color. Its optionality sets the nullability of the GraphQL `color` field.
     associatedtype Color: Sendable
 
@@ -188,9 +211,6 @@ protocol LabelObject: NodeObject {
 
     /// The color of the node.
     var color: Color { get }
-
-    /// The live tasks that the node marks, in board order.
-    var tasks: [TaskObject] { get }
 }
 
 /// The board, as the GraphQL `Board` type: the root of the tree (plan.md §3.1).
@@ -333,15 +353,23 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                     Argument("id", at: \.id)
                 }
                 Field("tasks", at: BoardObject.tasks) {
+                    Argument("filter", at: \.filter)
+                    Argument("column", at: \.column)
+                    Argument("tag", at: \.tag)
+                    Argument("assignee", at: \.assignee)
+                    Argument("excludeDone", at: \.excludeDone)
                     Argument("first", at: \.first).defaultValue(TasksArguments.defaultPageSize)
                     Argument("after", at: \.after)
+                }
+                Field("nextTask", at: BoardObject.nextTask) {
+                    Argument("filter", at: \.filter)
                 }
                 Field("summary", at: \.summary)
             }
             Self.nodeType(ColumnObject.self, as: GraphQLTypeName.column) {
                 Field("name", at: \.name)
                 Field("order", at: \.order)
-                Field("tasks", at: \.tasks)
+                Self.taskListField()
             }
             Self.nodeType(ActorObject.self, as: GraphQLTypeName.actor, fields: Self.labelFields)
             Self.nodeType(TagObject.self, as: GraphQLTypeName.tag, fields: Self.labelFields)
@@ -450,7 +478,17 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     private static func labelFields<Object: LabelObject>() -> [FieldComponent<Object, KanbanContext>] {
         Field("name", at: \.name)
         Field("color", at: \.color)
-        Field("tasks", at: \.tasks)
+        taskListField()
+    }
+
+    /// Gives the `tasks(filter:)` field of a column, an actor, or a tag.
+    ///
+    /// - Returns: The field. Its type is nullable, so that a filter that does not parse gives `null` for the field
+    ///   only, and the other fields keep their data.
+    private static func taskListField<Object: TaskHolderObject>() -> FieldComponent<Object, KanbanContext> {
+        Field("tasks", at: Object.tasks) {
+            Argument("filter", at: \.filter)
+        }
     }
 }
 
