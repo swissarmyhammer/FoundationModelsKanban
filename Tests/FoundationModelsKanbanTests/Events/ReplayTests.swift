@@ -145,12 +145,14 @@ struct ReplayTests {
         UnifiedDiff(from: old, to: new).text
     }
 
-    /// Makes a patch that sets the title of the test task.
+    /// Makes a patch that sets the title of a task.
     ///
-    /// - Parameter title: The new title.
+    /// - Parameters:
+    ///   - title: The new title.
+    ///   - ref: The local ref of the task. With no ref, the patch changes the test task.
     /// - Returns: The patch.
-    static func titlePatch(setting title: String) throws -> PatchInput {
-        try PatchInput(node: taskRef(), set: ["title": .json(.string(title))])
+    static func titlePatch(setting title: String, of ref: LocalRef? = nil) throws -> PatchInput {
+        try PatchInput(node: ref ?? taskRef(), set: ["title": .json(.string(title))])
     }
 
     /// Makes a patch of the test task with an edit of its body.

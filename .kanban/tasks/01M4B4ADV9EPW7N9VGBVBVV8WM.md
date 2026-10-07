@@ -27,6 +27,40 @@ comments:
     - evidence: 4 files — Sources/FoundationModelsKanban/Observe/LiveGraph.swift (new), Sources/FoundationModelsKanban/Events/Loader.swift, Sources/FoundationModelsKanban/Events/EventLog.swift, Tests/FoundationModelsKanbanTests/Observe/LiveGraphApplyTests.swift (new). `swift test --filter LiveGraphApplyTests`: 7 tests passed. `swift test`: 566 tests in 35 suites passed, 0 compiler warnings. `periphery scan --retain-public -- --build-system native`: no unused code.
     - next: /review
   timestamp: 2026-10-07T18:11:51.188313+00:00
+- actor: wballard
+  id: 01m4bsaq936y6rbsanx744y5ep
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD; 1 finding (1 confirmed, 0 refuted) — Tests/FoundationModelsKanbanTests/Observe/LiveGraphApplyTests.swift:30 (reuse/reuse)
+    - next: Remove the duplicate `write` helper. Use one shared test helper with `LoaderTests.append`. Then review again.
+  timestamp: 2026-10-07T18:17:07.107092+00:00
+- actor: wballard
+  id: 01m4bsazb98rf3mkp60zza5qd8
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 4 files (Observe/LiveGraph.swift, Events/Loader.swift, Events/EventLog.swift, LiveGraphApplyTests.swift)
+    - test: green — swift test, 566 passed, 0 warnings
+    - commit: 7d61f08
+    - review: findings — Tests/FoundationModelsKanbanTests/Observe/LiveGraphApplyTests.swift:30
+  timestamp: 2026-10-07T18:17:15.369556+00:00
+- actor: wballard
+  id: 01m4bsecc4f92jesgwh79jpbet
+  text: |-
+    Fix of the reuse/reuse finding. The same cause is removed from all of the fixture section of LiveGraphApplyTests.swift.
+    - `LoaderTests.append` now gives the `Event` (`@discardableResult`). The existing callers do not change. The `write` copy is deleted.
+    - `ReplayTests.titlePatch(setting:of:)` gets an optional `ref` (the default is the test task). `writeTitle` now uses it with `LoaderTests.append`, so it does not make its own title patch. `writeTitle` is `@discardableResult`, so the `_ =` uses are gone.
+    - The local `writeTask(_:dependingOn:atStep:in:)` was a near-copy of `LoaderTests.writeTask`. It is deleted, and the tests call `LoaderTests.writeTask`. That task also has a remote `dependsOn` edge, so the edge checks now use `dependsOn.first` (the same form as `LoaderTests.joinGivesTargetSlots`).
+    - `.unresolved(.local(target))` is changed to the existing `ReplayTests.edge(to:)`.
+    - Kept: `writeBoard` (a filter on `LoaderTests.writeBoard`), `load` (makes a `LiveGraph`; no other helper does), `canonicalNodes`, `expectEqualToFreshLoad`, and `task(_:in:)` (it uses `LoaderTests.node`). ReadinessFixture, QueryFixture, TaskQueryFixture, and EventLogTests have no helper that does this work.
+    - The dump of the validator rules is 750K characters, so I used the rule list that the caller gave.
+  timestamp: 2026-10-07T18:19:07.012752+00:00
+- actor: wballard
+  id: 01m4bsedxcadpzkrnct868f7ma
+  text: |-
+    ### implement — changed
+    - evidence: 3 files — Tests/FoundationModelsKanbanTests/Observe/LiveGraphApplyTests.swift, Tests/FoundationModelsKanbanTests/Events/LoaderTests.swift, Tests/FoundationModelsKanbanTests/Events/ReplayTests.swift. `swift test`: 566 tests in 35 suites passed, 0 compiler warnings.
+    - next: /review
+  timestamp: 2026-10-07T18:19:08.588939+00:00
 depends_on:
 - 01M4B3XHRVFA2YDCJC76MAFQR5
 - 01M4B3X08THVXHAJEQ4Z8PDB4H
@@ -54,3 +88,12 @@ Update a loaded `Graph` from a list of changed log files. The commit check and t
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-07 13:12)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Tests/FoundationModelsKanbanTests/Observe/LiveGraphApplyTests.swift:30` `reuse/reuse` — The `write` function reimplements functionality already present in `LoaderTests.append` with only a return-value difference. A near-match should be extended or generalized rather than duplicated across test files. Extend `LoaderTests.append` to return the Event (existing callers can ignore it), or extract a shared test helper that both test suites can reuse. This keeps one canonical implementation.

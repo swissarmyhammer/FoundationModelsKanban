@@ -20,44 +20,16 @@ struct LiveGraphApplyTests {
 
     // MARK: - Fixture
 
-    /// Writes one patch to the log of its node, and gives the event.
+    /// Writes the changed title to a task.
     ///
     /// - Parameters:
-    ///   - patch: The patch.
-    ///   - step: The step of the event. A larger step gives a later event id.
-    ///   - log: The event log of the board.
-    /// - Returns: The event that the log holds.
-    static func write(_ patch: PatchInput, atStep step: Int, to log: EventLog) throws -> Event {
-        let event = try Event(parsing: ReplayTests.line(atStep: step, patch: patch))
-        try log.append(contentsOf: [event], toLogOf: patch.node)
-        return event
-    }
-
-    /// Writes a new title to a node.
-    ///
-    /// - Parameters:
-    ///   - ref: The local ref of the node.
+    ///   - ref: The local ref of the task.
     ///   - step: The step of the event.
     ///   - log: The event log of the board.
     /// - Returns: The event of the title.
+    @discardableResult
     static func writeTitle(to ref: LocalRef, atStep step: Int, in log: EventLog) throws -> Event {
-        try write(PatchInput(node: ref, set: ["title": .json(.string(changedTitle))]), atStep: step, to: log)
-    }
-
-    /// Writes a task that waits for a different task.
-    ///
-    /// - Parameters:
-    ///   - task: The ref of the task.
-    ///   - dependency: The ref of the task that it waits for.
-    ///   - step: The step of the event.
-    ///   - log: The event log of the board.
-    static func writeTask(
-        _ task: LocalRef,
-        dependingOn dependency: LocalRef,
-        atStep step: Int,
-        in log: EventLog
-    ) throws {
-        _ = try write(PatchInput(node: task, add: ["dependsOn": [.local(dependency)]]), atStep: step, to: log)
+        try LoaderTests.append(ReplayTests.titlePatch(setting: changedTitle, of: ref), atStep: step, to: log)
     }
 
     /// Writes the board fixture of the loader tests, and gives the refs of its tasks.
@@ -142,14 +114,14 @@ struct LiveGraphApplyTests {
         _ = try Self.writeBoard(to: log)
         let waiter = LocalRef.task(ULID())
         let target = LocalRef.task(ULID())
-        try Self.writeTask(waiter, dependingOn: target, atStep: Self.laterStep, in: log)
+        try LoaderTests.writeTask(waiter, dependingOn: target, atStep: Self.laterStep, to: log)
         var live = try await Self.load(log)
-        #expect(try Self.task(waiter, in: live.graph).dependsOn == [.unresolved(.local(target))])
+        #expect(try Self.task(waiter, in: live.graph).dependsOn.first == ReplayTests.edge(to: target))
         let event = try Self.writeTitle(to: target, atStep: Self.laterStep + 1, in: log)
         let newIDs = try await live.apply(changedPaths: [log.fileURL(for: target)])
         #expect(newIDs == [event.id])
         let targetSlot = try #require(live.graph.slot(for: target))
-        #expect(try Self.task(waiter, in: live.graph).dependsOn == [.slot(targetSlot)])
+        #expect(try Self.task(waiter, in: live.graph).dependsOn.first == .slot(targetSlot))
         try await Self.expectEqualToFreshLoad(live, of: log)
     }
 
@@ -160,15 +132,15 @@ struct LiveGraphApplyTests {
         _ = try Self.writeBoard(to: log)
         let waiter = LocalRef.task(ULID())
         let target = LocalRef.task(ULID())
-        try Self.writeTask(waiter, dependingOn: target, atStep: Self.laterStep, in: log)
-        _ = try Self.writeTitle(to: target, atStep: Self.laterStep + 1, in: log)
+        try LoaderTests.writeTask(waiter, dependingOn: target, atStep: Self.laterStep, to: log)
+        try Self.writeTitle(to: target, atStep: Self.laterStep + 1, in: log)
         var live = try await Self.load(log)
         try FileManager.default.removeItem(at: log.fileURL(for: target))
         let newIDs = try await live.apply(changedPaths: [log.fileURL(for: target)])
         #expect(newIDs.isEmpty)
         let targetSlot = try #require(live.graph.slot(for: target))
         #expect(live.graph.node(at: targetSlot) == nil)
-        #expect(try Self.task(waiter, in: live.graph).dependsOn == [.unresolved(.local(target))])
+        #expect(try Self.task(waiter, in: live.graph).dependsOn.first == ReplayTests.edge(to: target))
         try await Self.expectEqualToFreshLoad(live, of: log)
     }
 
@@ -195,7 +167,7 @@ struct LiveGraphApplyTests {
         let unnamed = try #require(tasks.last)
         let named = tasks.dropLast()
         for (offset, task) in tasks.enumerated() {
-            _ = try Self.writeTitle(to: task, atStep: Self.laterStep + offset, in: log)
+            try Self.writeTitle(to: task, atStep: Self.laterStep + offset, in: log)
         }
         _ = try await live.apply(changedPaths: named.map(log.fileURL(for:)))
         #expect(try Self.task(unnamed, in: live.graph).title == Self.changedTitle)

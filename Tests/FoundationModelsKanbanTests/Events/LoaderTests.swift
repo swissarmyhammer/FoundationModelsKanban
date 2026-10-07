@@ -41,15 +41,18 @@ struct LoaderTests {
 
     // MARK: - Fixture
 
-    /// Appends one patch to the log of its node.
+    /// Appends one patch to the log of its node, and gives the event.
     ///
     /// - Parameters:
     ///   - patch: The patch.
-    ///   - step: The step of the event. A larger step gives a later time.
+    ///   - step: The step of the event. A larger step gives a later time and a later event id.
     ///   - log: The event log of the board.
-    static func append(_ patch: PatchInput, atStep step: Int, to log: EventLog) throws {
+    /// - Returns: The event that the log holds.
+    @discardableResult
+    static func append(_ patch: PatchInput, atStep step: Int, to log: EventLog) throws -> Event {
         let event = try Event(parsing: ReplayTests.line(atStep: step, patch: patch))
         try log.append(contentsOf: [event], toLogOf: patch.node)
+        return event
     }
 
     /// Gives the cross-board ref to a task of a different board.
