@@ -1,4 +1,5 @@
 import Foundation
+import GraphQL
 import Synchronization
 import Testing
 import ULID
@@ -119,14 +120,19 @@ struct KanbanGraphTests {
         return SessionActor(ref: .actor(slug: try Slug(columnOrActorName: userName).value), name: userName)
     }
 
-    /// Runs one document with no variables and no operation name.
+    /// Runs one document with no operation name.
     ///
     /// - Parameters:
     ///   - query: The GraphQL document.
+    ///   - variables: The values of the variables of the document. The default is no variables.
     ///   - graph: The engine.
     /// - Returns: The response JSON text.
-    static func execute(_ query: String, on graph: KanbanGraph) async throws -> String {
-        try await graph.execute(query: query, variables: [:], operationName: nil)
+    static func execute(
+        _ query: String,
+        variables: [String: Map] = [:],
+        on graph: KanbanGraph
+    ) async throws -> String {
+        try await graph.execute(query: query, variables: variables, operationName: nil)
     }
 
     /// Writes one patch as an event to the log of its node. The event ids come from the ULID source.

@@ -16,71 +16,71 @@ import Testing
 @Suite("Column and actor mutations")
 struct ColumnActorTests {
     /// The slug of the column that a test adds.
-    static let qaSlug = "qa"
+    private static let qaSlug = "qa"
 
     /// The name of the column that a test adds.
-    static let qaName = "QA"
+    private static let qaName = "QA"
 
     /// The order of the added column when the call gives no order: one after the order 0 of `todo`.
-    static let nextOrder = 1
+    private static let nextOrder = 1
 
     /// An order that a test gives.
-    static let givenOrder = 5
+    private static let givenOrder = 5
 
     /// The new name of `todo` in the update test.
-    static let backlogName = "Backlog"
+    private static let backlogName = "Backlog"
 
     /// The body that a test gives to a column or an actor.
-    static let body = "Tasks that wait for a check.\n"
+    private static let body = "Tasks that wait for a check.\n"
 
     /// ``body`` as a JSON string value shows it, with the line end escaped.
-    static let bodyJSON = body.replacingOccurrences(of: "\n", with: "\\n")
+    private static let bodyJSON = body.replacingOccurrences(of: "\n", with: "\\n")
 
     /// The variables that give ``body`` to the variable `$body`.
-    static let bodyVariables: [String: Map] = ["body": .string(body)]
+    private static let bodyVariables: [String: Map] = ["body": .string(body)]
 
     /// The name that gives an empty slug.
-    static let emptySlugName = "---"
+    private static let emptySlugName = "---"
 
     /// The slug of the actor that a test adds.
-    static let aliceSlug = "alice"
+    private static let aliceSlug = "alice"
 
     /// The name of the actor that a test adds.
-    static let aliceName = "Alice Smith"
+    private static let aliceName = "Alice Smith"
 
     /// The new name of the actor in the update test.
-    static let renamedAlice = "Alice Jones"
+    private static let renamedAlice = "Alice Jones"
 
     /// The color of the actor that a test adds.
-    static let red = "ff0000"
+    private static let red = "ff0000"
 
     /// The color of the actor after the update test.
-    static let green = "00ff00"
+    private static let green = "00ff00"
 
     /// The number of live tasks in `todo` in the fixture.
-    static let fixtureTaskCount = 1
+    private static let fixtureTaskCount = 1
 
     /// The local ref of the added column.
-    static let qaColumn = LocalRef.column(slug: qaSlug)
+    private static let qaColumn = LocalRef.column(slug: qaSlug)
 
     /// The local ref of the added actor.
-    static let alice = LocalRef.actor(slug: aliceSlug)
+    private static let alice = LocalRef.actor(slug: aliceSlug)
 
     /// The mutation field that adds the column ``qaName`` with no order.
-    static let addQA = #"addColumn(input: { name: "\#(qaName)" }) { id }"#
+    private static let addQA = #"addColumn(input: { name: "\#(qaName)" }) { id }"#
 
     /// The mutation field that adds the actor ``aliceName`` with the color ``red``.
-    static let addAliceField = #"addActor(input: { id: "\#(aliceSlug)", name: "\#(aliceName)", "#
+    private static let addAliceField = #"addActor(input: { id: "\#(aliceSlug)", name: "\#(aliceName)", "#
         + #"color: "\#(red)" }) { id name color }"#
 
     /// The mutation that adds the actor ``aliceName`` with the color ``red``.
-    static let addAlice = "mutation { \(addAliceField) }"
+    private static let addAlice = "mutation { \(addAliceField) }"
 
     /// The `input` argument that names the added column.
-    static let qaReference = #"input: { id: "\#(qaSlug)" }"#
+    private static let qaReference = #"input: { id: "\#(qaSlug)" }"#
 
     /// The `input` argument that names the added actor.
-    static let aliceReference = #"input: { id: "\#(aliceSlug)" }"#
+    private static let aliceReference = #"input: { id: "\#(aliceSlug)" }"#
 
     // MARK: - Helpers
 
@@ -88,25 +88,54 @@ struct ColumnActorTests {
     ///
     /// - Parameter ref: The local ref of the node.
     /// - Returns: The URI text.
-    static func id(of ref: LocalRef) -> String {
+    private static func id(of ref: LocalRef) -> String {
         NodeURI(boardKey: KanbanGraphTests.boardKey.description, ref: ref).description
     }
 
-    /// Writes the fixture logs to a temporary repo, and runs one document on a new engine.
+    /// Writes the fixture logs to a temporary repo, and makes a new engine for the repo.
+    ///
+    /// - Parameter directory: The temporary repo directory.
+    /// - Returns: The engine.
+    private static func makeFixtureGraph(in directory: TemporaryDirectory) throws -> KanbanGraph {
+        _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
+        return try KanbanGraphTests.makeGraph(at: directory.url)
+    }
+
+    /// Runs one document on a new engine of the fixture repo.
     ///
     /// - Parameters:
     ///   - document: The GraphQL document.
-    ///   - variables: The values of the variables of the document.
+    ///   - variables: The values of the variables of the document. The default is no variables.
     ///   - directory: The temporary repo directory.
     /// - Returns: The response JSON text.
-    static func execute(
-        _ document: String,
-        variables: [String: Map] = [:],
+    private static func respond(
+        to document: String,
+        with variables: [String: Map] = [:],
         onFixtureIn directory: TemporaryDirectory
     ) async throws -> String {
-        _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
-        let graph = try KanbanGraphTests.makeGraph(at: directory.url)
-        return try await graph.execute(query: document, variables: variables, operationName: nil)
+        try await KanbanGraphTests.execute(document, variables: variables, on: makeFixtureGraph(in: directory))
+    }
+
+    /// Runs a setup document on a new engine of the fixture repo, then runs a body, and expects that the body writes
+    /// no log file.
+    ///
+    /// - Parameters:
+    ///   - setup: A document that runs before the body, or `nil` for none.
+    ///   - directory: The temporary repo directory.
+    ///   - body: Gets the engine and the event log of the board, and gives the result.
+    /// - Returns: The result of the body.
+    private static func runWritingNothing<Result>(
+        after setup: String?,
+        in directory: TemporaryDirectory,
+        _ body: (KanbanGraph, EventLog) async throws -> Result
+    ) async throws -> Result {
+        let graph = try makeFixtureGraph(in: directory)
+        _ = try await KanbanGraphTests.execute(setup ?? KanbanGraphTests.nameQuery, on: graph)
+        let log = EventLog(repositoryAt: directory.url)
+        let before = try log.nodeFileSignatures()
+        let result = try await body(graph, log)
+        #expect(try log.nodeFileSignatures() == before)
+        return result
     }
 
     /// Runs one mutation that fails on the fixture repo, and gives its error.
@@ -120,21 +149,19 @@ struct ColumnActorTests {
     ///   - setup: A document that runs before the mutation, or `nil` for none.
     ///   - directory: The temporary repo directory.
     /// - Returns: The error of the first GraphQL error of the response.
-    static func failure(
+    private static func failure(
         of mutation: String,
         after setup: String? = nil,
         in directory: TemporaryDirectory
     ) async throws -> KanbanError {
-        _ = try await execute(setup ?? KanbanGraphTests.nameQuery, onFixtureIn: directory)
-        let log = EventLog(repositoryAt: directory.url)
-        let before = try log.nodeFileSignatures()
-        var session = try await CommitTests.makeSession(of: log)
-        let error = try await session.run { store in
-            let context = KanbanContext(store: store, clock: { CommitTests.callTime })
-            let result = try await PublicSchema().execute(request: mutation, context: context)
-            return result.errors.first?.originalError as? KanbanError
+        let error = try await runWritingNothing(after: setup, in: directory) { _, log in
+            var session = try await CommitTests.makeSession(of: log)
+            return try await session.run { store in
+                let context = KanbanContext(store: store, clock: { CommitTests.callTime })
+                let result = try await PublicSchema().execute(request: mutation, context: context)
+                return result.errors.first?.originalError as? KanbanError
+            }
         }
-        #expect(try log.nodeFileSignatures() == before)
         return try #require(error)
     }
 
@@ -145,19 +172,14 @@ struct ColumnActorTests {
     ///   - setup: A document that runs before it, on the same engine, or `nil` for none.
     ///   - directory: The temporary repo directory.
     /// - Returns: The response JSON text of the document.
-    static func executeWritingNothing(
-        _ document: String,
+    private static func respondWritingNothing(
+        to document: String,
         after setup: String? = nil,
         in directory: TemporaryDirectory
     ) async throws -> String {
-        _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
-        let graph = try KanbanGraphTests.makeGraph(at: directory.url)
-        _ = try await KanbanGraphTests.execute(setup ?? KanbanGraphTests.nameQuery, on: graph)
-        let log = EventLog(repositoryAt: directory.url)
-        let before = try log.nodeFileSignatures()
-        let response = try await KanbanGraphTests.execute(document, on: graph)
-        #expect(try log.nodeFileSignatures() == before)
-        return response
+        try await runWritingNothing(after: setup, in: directory) { graph, _ in
+            try await KanbanGraphTests.execute(document, on: graph)
+        }
     }
 
     /// Gives the patches of the log of a node in the repo of a temporary directory.
@@ -166,7 +188,7 @@ struct ColumnActorTests {
     ///   - ref: The local ref of the node.
     ///   - directory: The temporary repo directory.
     /// - Returns: The patches, in the order of their events.
-    static func patches(of ref: LocalRef, in directory: TemporaryDirectory) throws -> [PatchInput] {
+    private static func patches(of ref: LocalRef, in directory: TemporaryDirectory) throws -> [PatchInput] {
         try BoardMutationTests.events(of: ref, inRepoAt: directory.url).map(\.patch)
     }
 
@@ -177,12 +199,22 @@ struct ColumnActorTests {
     ///   - isDeleted: The `delete` value: `true` for a delete, `false` for an undelete.
     ///   - directory: The temporary repo directory.
     /// - Returns: `true` when the last patch of the node is only the `delete` part with the value.
-    static func lastPatch(
+    private static func lastPatch(
         of ref: LocalRef,
         isDelete isDeleted: Bool,
         in directory: TemporaryDirectory
     ) throws -> Bool {
         try patches(of: ref, in: directory).last == PatchInput(node: ref, delete: isDeleted)
+    }
+
+    /// Gives a patch that sets some values of a node, and gives ``body`` to the node in place of an empty body.
+    ///
+    /// - Parameters:
+    ///   - ref: The local ref of the node.
+    ///   - values: The `set` part of the patch.
+    /// - Returns: The patch, with the body diff in its `edit` part.
+    private static func bodyPatch(of ref: LocalRef, setting values: [String: PatchValue]) throws -> PatchInput {
+        try PatchInput(node: ref, set: values, edit: PatchEdit(body: ReplayTests.diff(from: "", to: body)))
     }
 
     /// Gives the `set` part of a patch that sets a name and an order.
@@ -191,7 +223,7 @@ struct ColumnActorTests {
     ///   - name: The name.
     ///   - order: The order.
     /// - Returns: The `set` part.
-    static func nameAndOrder(_ name: String, order: Int) -> [String: PatchValue] {
+    private static func setting(name: String, order: Int) -> [String: PatchValue] {
         [PropertyName.name: .json(.string(name)), PropertyName.order: .json(.number(Number(order)))]
     }
 
@@ -201,7 +233,7 @@ struct ColumnActorTests {
     ///   - name: The name.
     ///   - color: The color.
     /// - Returns: The `set` part.
-    static func nameAndColor(_ name: String, color: String) -> [String: PatchValue] {
+    private static func setting(name: String, color: String) -> [String: PatchValue] {
         [PropertyName.name: .json(.string(name)), PropertyName.color: .json(.string(color))]
     }
 
@@ -212,11 +244,11 @@ struct ColumnActorTests {
         let directory = try TemporaryDirectory()
         let mutation = #"mutation { addColumn(input: { id: "\#(Self.qaSlug)", name: "\#(Self.qaName)" }) "#
             + "{ id name order } }"
-        let response = try await Self.execute(mutation, onFixtureIn: directory)
+        let response = try await Self.respond(to: mutation, onFixtureIn: directory)
         let column = #"{"id":"\#(Self.id(of: Self.qaColumn))","name":"\#(Self.qaName)","#
             + #""order":\#(Self.nextOrder)}"#
         #expect(response == #"{"data":{"addColumn":\#(column)}}"#)
-        let set = Self.nameAndOrder(Self.qaName, order: Self.nextOrder)
+        let set = Self.setting(name: Self.qaName, order: Self.nextOrder)
         #expect(try Self.patches(of: Self.qaColumn, in: directory) == [PatchInput(node: Self.qaColumn, set: set)])
     }
 
@@ -226,14 +258,11 @@ struct ColumnActorTests {
         let mutation = "mutation($body: String) { addColumn(input: "
             + #"{ id: "\#(Self.qaSlug)", name: "\#(Self.qaName)", order: \#(Self.givenOrder), body: $body }) "#
             + "{ order body } }"
-        let response = try await Self.execute(mutation, variables: Self.bodyVariables, onFixtureIn: directory)
+        let response = try await Self.respond(to: mutation, with: Self.bodyVariables, onFixtureIn: directory)
         let column = #"{"body":"\#(Self.bodyJSON)","order":\#(Self.givenOrder)}"#
         #expect(response == #"{"data":{"addColumn":\#(column)}}"#)
-        let expected = try PatchInput(
-            node: Self.qaColumn,
-            set: Self.nameAndOrder(Self.qaName, order: Self.givenOrder),
-            edit: PatchEdit(body: UnifiedDiff(from: "", to: Self.body).text)
-        )
+        let set = Self.setting(name: Self.qaName, order: Self.givenOrder)
+        let expected = try Self.bodyPatch(of: Self.qaColumn, setting: set)
         #expect(try Self.patches(of: Self.qaColumn, in: directory) == [expected])
     }
 
@@ -241,7 +270,7 @@ struct ColumnActorTests {
     func addColumnSlugsName() async throws {
         let directory = try TemporaryDirectory()
         let mutation = #"mutation { addColumn(input: { name: "In QA" }) { id } }"#
-        let response = try await Self.execute(mutation, onFixtureIn: directory)
+        let response = try await Self.respond(to: mutation, onFixtureIn: directory)
         #expect(response == #"{"data":{"addColumn":{"id":"\#(Self.id(of: .column(slug: "in-qa")))"}}}"#)
     }
 
@@ -272,13 +301,13 @@ struct ColumnActorTests {
         let directory = try TemporaryDirectory()
         let mutation = #"mutation { updateColumn(input: { id: "todo", name: "\#(Self.backlogName)", "#
             + "order: \(Self.givenOrder) }) { id name order } }"
-        let response = try await Self.execute(mutation, onFixtureIn: directory)
+        let response = try await Self.respond(to: mutation, onFixtureIn: directory)
         let todo = Self.id(of: KanbanGraphTests.todoColumn)
         let column = #"{"id":"\#(todo)","name":"\#(Self.backlogName)","order":\#(Self.givenOrder)}"#
         #expect(response == #"{"data":{"updateColumn":\#(column)}}"#)
         let expected = try PatchInput(
             node: KanbanGraphTests.todoColumn,
-            set: Self.nameAndOrder(Self.backlogName, order: Self.givenOrder)
+            set: Self.setting(name: Self.backlogName, order: Self.givenOrder)
         )
         #expect(try Self.patches(of: KanbanGraphTests.todoColumn, in: directory).last == expected)
     }
@@ -288,7 +317,7 @@ struct ColumnActorTests {
         let directory = try TemporaryDirectory()
         let mutation = #"mutation { updateColumn(input: { id: "todo", name: "\#(KanbanGraphTests.todoName)", "#
             + #"body: "" }) { name } }"#
-        let response = try await Self.executeWritingNothing(mutation, in: directory)
+        let response = try await Self.respondWritingNothing(to: mutation, in: directory)
         #expect(response == #"{"data":{"updateColumn":{"name":"\#(KanbanGraphTests.todoName)"}}}"#)
     }
 
@@ -308,7 +337,7 @@ struct ColumnActorTests {
     func deleteEmptyColumn() async throws {
         let directory = try TemporaryDirectory()
         let mutation = "mutation { \(Self.addQA) deleteColumn(\(Self.qaReference)) { id deleted } }"
-        let response = try await Self.execute(mutation, onFixtureIn: directory)
+        let response = try await Self.respond(to: mutation, onFixtureIn: directory)
         let qa = Self.id(of: Self.qaColumn)
         let deleted = #"{"deleted":"\#(KanbanGraphTests.time.rfc3339)","id":"\#(qa)"}"#
         #expect(response == #"{"data":{"addColumn":{"id":"\#(qa)"},"deleteColumn":\#(deleted)}}"#)
@@ -337,7 +366,7 @@ struct ColumnActorTests {
         let directory = try TemporaryDirectory()
         let mutation = "mutation { \(Self.addQA) deleteColumn(\(Self.qaReference)) { id } "
             + "undeleteColumn(\(Self.qaReference)) { name deleted } }"
-        let response = try await Self.execute(mutation, onFixtureIn: directory)
+        let response = try await Self.respond(to: mutation, onFixtureIn: directory)
         #expect(response.hasSuffix(#""undeleteColumn":{"deleted":null,"name":"\#(Self.qaName)"}}}"#))
         #expect(try Self.lastPatch(of: Self.qaColumn, isDelete: false, in: directory))
     }
@@ -345,8 +374,8 @@ struct ColumnActorTests {
     @Test("undeleteColumn on a live column writes nothing and returns the column")
     func undeleteLiveColumn() async throws {
         let directory = try TemporaryDirectory()
-        let response = try await Self.executeWritingNothing(
-            #"mutation { undeleteColumn(input: { id: "todo" }) { name deleted } }"#,
+        let response = try await Self.respondWritingNothing(
+            to: #"mutation { undeleteColumn(input: { id: "todo" }) { name deleted } }"#,
             in: directory
         )
         let column = #"{"deleted":null,"name":"\#(KanbanGraphTests.todoName)"}"#
@@ -358,18 +387,17 @@ struct ColumnActorTests {
     @Test("addActor makes the actor with its name and color, and returns it")
     func addActor() async throws {
         let directory = try TemporaryDirectory()
-        let response = try await Self.execute(Self.addAlice, onFixtureIn: directory)
+        let response = try await Self.respond(to: Self.addAlice, onFixtureIn: directory)
         let actor = #"{"color":"\#(Self.red)","id":"\#(Self.id(of: Self.alice))","name":"\#(Self.aliceName)"}"#
         #expect(response == #"{"data":{"addActor":\#(actor)}}"#)
-        let expected = try PatchInput(node: Self.alice, set: Self.nameAndColor(Self.aliceName, color: Self.red))
+        let expected = try PatchInput(node: Self.alice, set: Self.setting(name: Self.aliceName, color: Self.red))
         #expect(try Self.patches(of: Self.alice, in: directory) == [expected])
     }
 
     @Test("An added actor is in the actors of the board")
     func addedActorIsListed() async throws {
         let directory = try TemporaryDirectory()
-        _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
-        let graph = try KanbanGraphTests.makeGraph(at: directory.url)
+        let graph = try Self.makeFixtureGraph(in: directory)
         _ = try await KanbanGraphTests.execute(Self.addAlice, on: graph)
         let response = try await KanbanGraphTests.execute("{ board { actors { id } } }", on: graph)
         #expect(response.contains(#"{"id":"\#(Self.id(of: Self.alice))"}"#))
@@ -389,7 +417,7 @@ struct ColumnActorTests {
         let directory = try TemporaryDirectory()
         let mutation = #"mutation { addActor(input: { id: "\#(Self.aliceSlug)", name: "\#(Self.renamedAlice)", "#
             + "ensure: true }) { name } }"
-        let response = try await Self.executeWritingNothing(mutation, after: Self.addAlice, in: directory)
+        let response = try await Self.respondWritingNothing(to: mutation, after: Self.addAlice, in: directory)
         #expect(response == #"{"data":{"addActor":{"name":"\#(Self.aliceName)"}}}"#)
     }
 
@@ -397,7 +425,7 @@ struct ColumnActorTests {
     func addActorEnsureNew() async throws {
         let directory = try TemporaryDirectory()
         let mutation = #"mutation { addActor(input: { name: "\#(Self.aliceName)", ensure: true }) { id name } }"#
-        let response = try await Self.execute(mutation, onFixtureIn: directory)
+        let response = try await Self.respond(to: mutation, onFixtureIn: directory)
         let actor = #"{"id":"\#(Self.id(of: .actor(slug: "alice-smith")))","name":"\#(Self.aliceName)"}"#
         #expect(response == #"{"data":{"addActor":\#(actor)}}"#)
     }
@@ -420,15 +448,12 @@ struct ColumnActorTests {
         let update = #"updateActor(input: { id: "\#(Self.aliceSlug)", name: "\#(Self.renamedAlice)", "#
             + #"color: "\#(Self.green)", body: $body }) { id name color body }"#
         let mutation = "mutation($body: String) { \(Self.addAliceField) \(update) }"
-        let response = try await Self.execute(mutation, variables: Self.bodyVariables, onFixtureIn: directory)
+        let response = try await Self.respond(to: mutation, with: Self.bodyVariables, onFixtureIn: directory)
         let actor = #"{"body":"\#(Self.bodyJSON)","color":"\#(Self.green)","id":"\#(Self.id(of: Self.alice))","#
             + #""name":"\#(Self.renamedAlice)"}"#
         #expect(response.hasSuffix(#""updateActor":\#(actor)}}"#))
-        let expected = try PatchInput(
-            node: Self.alice,
-            set: Self.nameAndColor(Self.renamedAlice, color: Self.green),
-            edit: PatchEdit(body: UnifiedDiff(from: "", to: Self.body).text)
-        )
+        let set = Self.setting(name: Self.renamedAlice, color: Self.green)
+        let expected = try Self.bodyPatch(of: Self.alice, setting: set)
         #expect(try Self.patches(of: Self.alice, in: directory).last == expected)
     }
 
@@ -436,7 +461,7 @@ struct ColumnActorTests {
     func deleteActor() async throws {
         let directory = try TemporaryDirectory()
         let mutation = "mutation { \(Self.addAliceField) deleteActor(\(Self.aliceReference)) { deleted } }"
-        let response = try await Self.execute(mutation, onFixtureIn: directory)
+        let response = try await Self.respond(to: mutation, onFixtureIn: directory)
         #expect(response.hasSuffix(#""deleteActor":{"deleted":"\#(KanbanGraphTests.time.rfc3339)"}}}"#))
         #expect(try Self.lastPatch(of: Self.alice, isDelete: true, in: directory))
     }
@@ -444,8 +469,7 @@ struct ColumnActorTests {
     @Test("undeleteActor on a tombstone writes delete false and returns the live actor")
     func undeleteActor() async throws {
         let directory = try TemporaryDirectory()
-        _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
-        let graph = try KanbanGraphTests.makeGraph(at: directory.url)
+        let graph = try Self.makeFixtureGraph(in: directory)
         _ = try await KanbanGraphTests.execute(Self.addAlice, on: graph)
         _ = try await KanbanGraphTests.execute("mutation { deleteActor(\(Self.aliceReference)) { id } }", on: graph)
         #expect(try Self.lastPatch(of: Self.alice, isDelete: true, in: directory))

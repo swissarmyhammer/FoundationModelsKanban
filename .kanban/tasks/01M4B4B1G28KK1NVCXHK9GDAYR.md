@@ -27,6 +27,38 @@ comments:
     - files: Sources/FoundationModelsKanban/GraphQL/ColumnActorMutations.swift (new), Sources/FoundationModelsKanban/GraphQL/MutationResolvers.swift, Sources/FoundationModelsKanban/GraphQL/Schema.swift, Tests/FoundationModelsKanbanTests/Mutations/ColumnActorTests.swift (new)
     - next: /review
   timestamp: 2026-10-07T19:38:53.749732+00:00
+- actor: wballard
+  id: 01m4by90pjgxfsh83dthnvaby2
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD; 2 findings (2 confirmed, 2 refuted) — Tests/FoundationModelsKanbanTests/Mutations/ColumnActorTests.swift:102, Tests/FoundationModelsKanbanTests/Mutations/ColumnActorTests.swift:153
+    - next: Correct the 2 findings in the Review Findings (2026-10-07 14:40) section. Then run the review again.
+  timestamp: 2026-10-07T19:43:34.098318+00:00
+- actor: wballard
+  id: 01m4by9a6v1bs72d5tz9s2dtr6
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 4 files (GraphQL/ColumnActorMutations.swift, MutationResolvers.swift, Schema.swift, ColumnActorTests.swift)
+    - test: green — swift test, 616 passed, 0 warnings
+    - commit: 36a507e
+    - review: findings — Tests/FoundationModelsKanbanTests/Mutations/ColumnActorTests.swift:102, Tests/FoundationModelsKanbanTests/Mutations/ColumnActorTests.swift:153
+  timestamp: 2026-10-07T19:43:43.835859+00:00
+- actor: wballard
+  id: 01m4byfya6www199y8stz95p4e
+  text: |-
+    Review findings (2026-10-07 14:40) corrected.
+    - Finding 1: KanbanGraphTests.execute(_:variables:on:) now has `variables: [String: Map] = [:]`. Its 14 existing callers do not change. KanbanGraphTests.swift now imports GraphQL for Map. The ColumnActorTests helper (now respond(to:with:onFixtureIn:)) calls it after makeFixtureGraph.
+    - Finding 2: new private helper makeFixtureGraph(in:) writes the fixture and makes the engine. respond, the no-write path, addedActorIsListed, and undeleteActor call it.
+    - Same cause, other places in the file: failure(of:after:in:) and respondWritingNothing(to:after:in:) both had the same setup, signature snapshot, and no-write check. That is now one private helper runWritingNothing(after:in:_:).
+    - Reuse: the body diff now comes from ReplayTests.diff(from:to:). The two copies of the "set + body edit" patch are now one helper, bodyPatch(of:setting:).
+    - Other rules: the first argument of each helper now has a label (respond(to:), respondWritingNothing(to:), setting(name:order:), setting(name:color:)). Each member that only this file uses is now private. No line is longer than 120 characters.
+    - Did not change: id(of:). QueryFixture.id(of:) uses DependencyMarkersTests.boardKey, not KanbanGraphTests.boardKey, so it is not the same work.
+
+    ### implement — changed
+    - evidence: swift test --filter 'ColumnActorTests|KanbanGraphTests': 32 tests in 2 suites pass. Full swift test: 616 tests in 38 suites pass, 0 compiler warnings.
+    - files: Tests/FoundationModelsKanbanTests/Mutations/ColumnActorTests.swift, Tests/FoundationModelsKanbanTests/Tool/KanbanGraphTests.swift
+    - next: /review
+  timestamp: 2026-10-07T19:47:21.030285+00:00
 depends_on:
 - 01M4B3ZQXZ1DKR1FVBDRCK1FP8
 position_column: doing
@@ -51,3 +83,13 @@ Column and actor mutations. The basis is plan.md §4.2 and §6.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-07 14:40)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Tests/FoundationModelsKanbanTests/Mutations/ColumnActorTests.swift:102` `reuse/reuse` — The new helper `execute(_:variables:onFixtureIn:)` repeats the body of the existing `KanbanGraphTests.execute(_:on:)`. That helper runs `graph.execute(query:variables:operationName:nil)` with fixed empty variables. The new helper is a near-match that was not extended. A parameter for the variables would let one helper serve both. Two parallel copies can drift apart. Give `KanbanGraphTests.execute(_:on:)` a `variables: [String: Map] = [:]` parameter, and call it from the new helper after `makeGraph`. Or keep only the fixture setup in `ColumnActorTests` and call the extended `KanbanGraphTests.execute` directly.
+- [x] `Tests/FoundationModelsKanbanTests/Mutations/ColumnActorTests.swift:153` `reuse/reuse` — The new helper `executeWritingNothing` repeats the fixture setup of the helper that sits beside it. Lines 153-154 write the fixture and make the graph, the same two steps as `execute` at lines 107-108. Two copies of the setup can drift apart. Move the fixture write and the graph creation into one private helper, such as `makeFixtureGraph(in:)`. Call it from `execute`, `executeWritingNothing`, and the other tests that need the same setup.
