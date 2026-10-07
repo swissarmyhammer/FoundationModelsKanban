@@ -22,10 +22,6 @@ enum DependencyMarkers {
     /// The punctuation at the end of a sentence. A URL does not end with it, so the marker stops before it.
     static let trailingPunctuation: Set<Character> = [".", ",", ";", ":", "!", "?"]
 
-    /// The number of lines that a remove replaces when it empties the last line: the empty last line, and the line
-    /// before it, which loses its line break.
-    private static let emptiedLineCount = 2
-
     /// Finds each dependency marker in a body, in text order.
     ///
     /// The scheme ignores case. The URL text ends at a whitespace or a ``delimiters`` character, and the
@@ -44,24 +40,18 @@ enum DependencyMarkers {
     /// The `updateTask(dependsOn:)` mutation uses it when it removes a dependency whose URL is also in the text. A
     /// line with no marker of the task stays the same, byte for byte. A line that loses a marker loses its trailing
     /// whitespace. When the last line has no line break and the remove makes it empty, the line break before it also
-    /// goes away. These are the rules of the Rust `remove_tag` for a `#tag` marker.
+    /// goes away. These are the ``BodyLines`` rules.
     ///
     /// - Parameters:
     ///   - uri: The URI of the task whose markers to remove.
     ///   - body: The Markdown body of a task.
     /// - Returns: The body without the markers of the task.
     static func removing(markersOf uri: NodeURI, from body: String) -> String {
-        let lines = Array(lines(of: body))
+        let lines = BodyLines.lines(of: body)
         let edits = lines.map { line in
             editedLine(line, removingMarkersOf: uri)
         }
-        let result = zip(lines, edits).map { line, edit in
-            edit ?? String(line)
-        }
-        guard edits.last == .some(""), let previous = result.dropLast().last else {
-            return result.joined()
-        }
-        return result.dropLast(Self.emptiedLineCount).joined() + content(of: previous)
+        return BodyLines.body(joining: lines, with: edits)
     }
 }
 
@@ -119,29 +109,6 @@ extension DependencyMarkers {
 // MARK: - Remove
 
 extension DependencyMarkers {
-    /// Splits a body into its lines. Each line keeps its line break, so the joined lines give the same body.
-    ///
-    /// - Parameter body: The body to split.
-    /// - Returns: The lines, in text order.
-    private static func lines(of body: String) -> some Sequence<Substring> {
-        sequence(state: body.startIndex) { start -> Substring? in
-            guard start < body.endIndex else {
-                return nil
-            }
-            let line = body.lineRange(for: start..<start)
-            start = line.upperBound
-            return body[line]
-        }
-    }
-
-    /// Gives the text of a line without its line break.
-    ///
-    /// - Parameter line: The line, with or without a line break.
-    /// - Returns: The characters before the line break.
-    private static func content(of line: some StringProtocol) -> Substring {
-        Substring(line.prefix { character in !character.isNewline })
-    }
-
     /// Removes the markers of one task from one line.
     ///
     /// - Parameters:
@@ -149,15 +116,14 @@ extension DependencyMarkers {
     ///   - uri: The URI of the task whose markers to remove.
     /// - Returns: The changed line with its line break, or `nil` when the line has no marker of the task.
     private static func editedLine(_ line: Substring, removingMarkersOf uri: NodeURI) -> String? {
-        let text = String(content(of: line))
+        let text = String(BodyLines.content(of: line))
         let ranges = all(in: text).filter { marker in marker.uri == uri }.map(\.range)
         guard !ranges.isEmpty else {
             return nil
         }
         var kept = text
         kept.removeSubranges(RangeSet(ranges))
-        let trimmed = String(kept.reversed().drop(while: \.isWhitespace).reversed())
-        return trimmed + line.dropFirst(text.count)
+        return BodyLines.editedLine(withText: kept, replacing: line)
     }
 }
 

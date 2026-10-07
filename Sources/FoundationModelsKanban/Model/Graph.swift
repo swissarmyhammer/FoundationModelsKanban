@@ -39,6 +39,11 @@ struct Graph: Equatable, Sendable {
         nodes[slot]
     }
 
+    /// Each slot that this graph gave, in slot order. A slot whose node was removed is also in the range.
+    var allSlots: Range<Int> {
+        nodes.indices
+    }
+
     /// Inserts a node, or replaces the state of the node with the same local ref.
     ///
     /// The graph resolves each unresolved local edge of the node to the slot of its target, when the graph has the

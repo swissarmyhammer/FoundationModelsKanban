@@ -77,7 +77,7 @@ struct Slug: Hashable, Sendable, CustomStringConvertible {
 extension Unicode.Scalar {
     /// `true` when the scalar is an ASCII letter or an ASCII digit: a scalar that a slug keeps. This is the same
     /// test as `char::is_ascii_alphanumeric` in Rust.
-    fileprivate var isASCIIAlphanumeric: Bool {
+    var isASCIIAlphanumeric: Bool {
         isASCII && (properties.isAlphabetic || properties.numericType != nil)
     }
 }

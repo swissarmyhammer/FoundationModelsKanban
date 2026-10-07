@@ -27,10 +27,26 @@ comments:
     - evidence: 2 files — Sources/FoundationModelsKanban/Derived/DependencyMarkers.swift, Tests/FoundationModelsKanbanTests/Derived/DependencyMarkersTests.swift. `swift test --filter DependencyMarkersTests`: 11 tests in 1 suite pass. `swift test`: 313 tests in 19 suites pass, with no compiler warnings. `periphery scan --retain-public -- --build-system native`: no reports in the new files.
     - next: /review
   timestamp: 2026-10-07T15:35:14.747289+00:00
+- actor: wballard
+  id: 01m4bgbjc2297sb2w1mmf30wd9
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 171abe1). 0 findings, 0 confirmed, 1 refuted. 3 files reviewed. 4 files in .kanban/ not reviewed because of .reviewignore.
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T15:40:17.666873+00:00
+- actor: wballard
+  id: 01m4bgbqkdz7km7gzex38fa8pk
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 2 files (Derived/DependencyMarkers.swift, DependencyMarkersTests.swift)
+    - test: green — swift test, 313 passed, 0 warnings (test step also fixed a lock-probe flake in EventLogTests.swift)
+    - commit: 171abe1
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T15:40:23.021575+00:00
 depends_on:
 - 01M4B3XHRVFA2YDCJC76MAFQR5
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '9080'
 title: 'Dependencies at read time: kanban:// URL markers'
 ---
 ## What
