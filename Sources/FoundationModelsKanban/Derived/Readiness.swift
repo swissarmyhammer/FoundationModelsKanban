@@ -52,7 +52,7 @@ struct Readiness {
     /// - Parameter slot: The slot of the task.
     /// - Returns: The slot of the column. A slot that holds no task, and a board with no live column, give `nil`.
     func column(ofTaskAt slot: Int) -> Int? {
-        graph.task(at: slot).flatMap { task in
+        graph.node(at: slot, as: TaskNode.self).flatMap { task in
             columnOrder.displaySlot(of: task.column)
         }
     }
@@ -146,23 +146,12 @@ extension Readiness {
 // MARK: - Graph
 
 extension Graph {
-    /// Gives the task in a slot, live or tombstoned.
-    ///
-    /// - Parameter slot: A slot that this graph gave.
-    /// - Returns: The task, or `nil` when the slot holds no node or a node that is not a task.
-    func task(at slot: Int) -> TaskNode? {
-        guard case .task(let task) = node(at: slot) else {
-            return nil
-        }
-        return task
-    }
-
     /// Tells if a slot holds a live task.
     ///
     /// - Parameter slot: A slot that this graph gave.
     /// - Returns: `true` when the slot holds a task that is not a tombstone.
     func isLiveTask(at slot: Int) -> Bool {
-        task(at: slot)?.fields.isDeleted == false
+        node(at: slot, as: TaskNode.self)?.fields.isDeleted == false
     }
 
     /// Gives the dependencies of a task, without the dependencies on tombstoned nodes (plan.md §3.3, rule 3).
@@ -172,7 +161,7 @@ extension Graph {
     ///   - currentBoardKey: The current key of the board.
     /// - Returns: The dependencies, or `nil` when the slot holds no task.
     fileprivate func liveDependencies(ofTaskAt slot: Int, inBoard currentBoardKey: String) -> [EdgeTarget]? {
-        task(at: slot).map { task in
+        node(at: slot, as: TaskNode.self).map { task in
             dependencies(of: task, inBoard: currentBoardKey).filter { target in
                 target.resolvedSlot.flatMap(node(at:))?.state.fields.isDeleted != true
             }

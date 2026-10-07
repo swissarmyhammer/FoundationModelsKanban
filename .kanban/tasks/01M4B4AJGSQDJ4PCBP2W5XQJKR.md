@@ -32,6 +32,45 @@ comments:
     - evidence: 12 files — new: Sources/FoundationModelsKanban/Derived/ColumnOrder.swift, Progress.swift, Timeline.swift, Summary.swift, BrokenMergeDisplay.swift; Tests/FoundationModelsKanbanTests/Derived/ProgressTests.swift, TimelineTests.swift, SummaryTests.swift, BrokenMergeDisplayTests.swift. Changed: Sources/FoundationModelsKanban/Derived/Readiness.swift, Tests/FoundationModelsKanbanTests/Derived/ReadinessFixture.swift, ReadinessTests.swift. `swift test --filter 'ProgressTests|TimelineTests|SummaryTests|BrokenMergeDisplayTests|ReadinessTests|VirtualTagsTests|DependencyMarkersTests'`: 92 tests in 7 suites passed. `swift test`: 417 tests in 27 suites passed. `swift build --build-tests`: 0 warnings.
     - next: /review
   timestamp: 2026-10-07T16:16:31.108500+00:00
+- actor: wballard
+  id: 01m4bjqc73r3h5d2eg1ghfgbkr
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD; 1 finding (1 confirmed, 1 refuted) — Sources/FoundationModelsKanban/Derived/Readiness.swift:153 (duplication/duplication)
+    - next: Apply the finding. Make one shared generic helper for `task(at:)` and `actor(at:)`. Then do the review again.
+  timestamp: 2026-10-07T16:21:41.731371+00:00
+- actor: wballard
+  id: 01m4bjqn72a4r5pys73a6vj71e
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 12 files (Derived/ColumnOrder, Progress, Timeline, Summary, BrokenMergeDisplay, Readiness; 4 new test files; ReadinessFixture, ReadinessTests)
+    - test: green — swift test, 417 passed, 0 warnings
+    - commit: e55d6d3
+    - review: findings — Sources/FoundationModelsKanban/Derived/Readiness.swift:153
+  timestamp: 2026-10-07T16:21:50.946592+00:00
+- actor: wballard
+  id: 01m4bjwbpcqrhxknmq5t91b634
+  text: |-
+    Finding applied: Readiness.swift:153 duplication/duplication.
+    - New generic helper `Graph.node(at:as:)` in Model/Graph.swift: `func node<State: NodeState>(at slot: Int, as type: State.Type) -> State?`, body `node(at: slot)?.state as? State`. It uses the existing `Node.state: any NodeState`, so no node type needs its own case match.
+    - TDD: 3 new tests in Tests/.../Model/GraphTests.swift ("Typed lookup"). RED: the build failed with "extra argument 'as' in call". GREEN: 16 tests in GraphTests passed.
+    - Removed each per-kind guard-and-return lookup in Sources and used the helper in its place:
+      - Derived/Readiness.swift: removed `Graph.task(at:)`; `column(ofTaskAt:)`, `isLiveTask(at:)`, `liveDependencies(ofTaskAt:inBoard:)` use the helper.
+      - Derived/Timeline.swift: the two `graph.task(at:)?.columnMoves` reads go through one private `columnMoves(ofTaskAt:)`.
+      - Derived/BrokenMergeDisplay.swift: `comments(ofTaskAt:)` and `author(ofCommentAt:)` use the helper for the comment. The old `actor(at: Int)` with its case match is gone; a private `actor(at: Int?)` takes the optional slot from `slot(for:)` or the author edge and calls the helper, so `author(ofCommentAt:)` and `actor(for:)` share one path.
+      - Tags/TagMarkers.swift: removed private `tag(at:)`; `renameTarget(ofTagAt:)` and `liveTagSlot(redirectedFrom:)` use the helper.
+      - Derived/ColumnOrder.swift: the column case match uses the helper.
+      - Derived/VirtualTags.swift: the `guard case .task = graph.node(at:)` kind test uses the helper.
+    - A search of Sources for `case .<kind>(let x) = ...node(at:` and for `task(at:`/`tag(at:`/`column(at:`/`comment(at:` gives no match now. The existing tests that use `node(at:)?.state as? X` stay as they are (tests that existed before are not refactored).
+    - `swift test`: 420 tests in 27 suites passed, 0 compiler warnings. swiftlint on the 7 changed source files: no finding.
+  timestamp: 2026-10-07T16:24:25.036211+00:00
+- actor: wballard
+  id: 01m4bjweej67nk3gaqxynfhnwq
+  text: |-
+    ### implement — changed
+    - evidence: 8 files — Sources/FoundationModelsKanban/Model/Graph.swift, Derived/Readiness.swift, Derived/Timeline.swift, Derived/BrokenMergeDisplay.swift, Derived/ColumnOrder.swift, Derived/VirtualTags.swift, Tags/TagMarkers.swift; Tests/FoundationModelsKanbanTests/Model/GraphTests.swift. `swift test`: 420 tests in 27 suites passed, 0 warnings.
+    - next: /review
+  timestamp: 2026-10-07T16:24:27.858150+00:00
 depends_on:
 - 01M4B3YC73VSKE9VEP29E3CZNQ
 position_column: doing
@@ -56,3 +95,12 @@ The other read-time fields. The basis is plan.md §5.3 steps 4 and 5, and §6 (P
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-07 11:17)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 12 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsKanban/Derived/Readiness.swift:153` `duplication/duplication` — The `task(at:)` function is a near-verbatim copy of `actor(at:)` in BrokenMergeDisplay.swift, differing only in type names and variable binding. Both perform identical pattern matching and extraction logic; they should be unified into a single parameterized helper to prevent future drift. Extract a shared generic helper function that retrieves a node of any type from a slot (e.g. `func node<T>(at slot: Int, as type: (Node) -> T?) -> T?`), call it from both `task(at:)` and `actor(at:)`, and remove the duplicate guard-and-return implementations.

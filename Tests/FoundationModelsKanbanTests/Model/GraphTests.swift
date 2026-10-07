@@ -96,6 +96,33 @@ struct GraphTests {
         #expect(graph.slot(for: Self.columnRef) == nil)
     }
 
+    // MARK: - Typed lookup
+
+    @Test("A typed lookup gives the node in a slot when the node has that type")
+    func typedLookupGivesNodeOfThatType() {
+        var graph = Graph()
+        let columnSlot = graph.update(with: .column(Self.column))
+        let tagSlot = graph.update(with: .tag(Self.tag))
+        #expect(graph.node(at: columnSlot, as: ColumnNode.self) == Self.column)
+        #expect(graph.node(at: tagSlot, as: TagNode.self) == Self.tag)
+    }
+
+    @Test("A typed lookup gives nil for a node of a different type")
+    func typedLookupGivesNilForOtherType() {
+        var graph = Graph()
+        let columnSlot = graph.update(with: .column(Self.column))
+        #expect(graph.node(at: columnSlot, as: TaskNode.self) == nil)
+        #expect(graph.node(at: columnSlot, as: ActorNode.self) == nil)
+    }
+
+    @Test("A typed lookup gives nil for a slot whose node was removed")
+    func typedLookupGivesNilForRemovedNode() {
+        var graph = Graph()
+        let columnSlot = graph.update(with: .column(Self.column))
+        graph.remove(nodeAt: Self.columnRef)
+        #expect(graph.node(at: columnSlot, as: ColumnNode.self) == nil)
+    }
+
     // MARK: - Join
 
     @Test("An edge to a node in the graph resolves to the slot of that node")

@@ -18,7 +18,7 @@ extension Graph {
             return []
         }
         let comments = allSlots.compactMap { commentSlot -> (slot: Int, comment: CommentNode)? in
-            guard case .comment(let comment) = node(at: commentSlot),
+            guard let comment = node(at: commentSlot, as: CommentNode.self),
                 !comment.fields.isDeleted,
                 comment.task == .slot(slot)
             else {
@@ -35,10 +35,7 @@ extension Graph {
     /// - Returns: The actor, live or tombstoned, or `nil` when the graph does not have the actor, or when the slot
     ///   holds no comment.
     func author(ofCommentAt slot: Int) -> ActorNode? {
-        guard case .comment(let comment) = node(at: slot) else {
-            return nil
-        }
-        return comment.author?.resolvedSlot.flatMap(actor(at:))
+        actor(at: node(at: slot, as: CommentNode.self)?.author?.resolvedSlot)
     }
 
     /// Gives the actor of a local ref, for example the envelope actor of a `Change`. A tombstoned actor is found too.
@@ -46,17 +43,16 @@ extension Graph {
     /// - Parameter ref: The local ref of the actor.
     /// - Returns: The actor, live or tombstoned, or `nil` when the graph does not have an actor with this ref.
     func actor(for ref: LocalRef) -> ActorNode? {
-        slot(for: ref).flatMap(actor(at:))
+        actor(at: slot(for: ref))
     }
 
-    /// Gives the actor in a slot, live or tombstoned.
+    /// Gives the actor in a slot that a lookup found, live or tombstoned.
     ///
-    /// - Parameter slot: A slot that this graph gave.
-    /// - Returns: The actor, or `nil` when the slot holds no node or a node that is not an actor.
-    private func actor(at slot: Int) -> ActorNode? {
-        guard case .actor(let actor) = node(at: slot) else {
-            return nil
+    /// - Parameter slot: The slot, or `nil` when the lookup found no slot.
+    /// - Returns: The actor, or `nil` when there is no slot, or the slot holds no actor.
+    private func actor(at slot: Int?) -> ActorNode? {
+        slot.flatMap { actorSlot in
+            node(at: actorSlot, as: ActorNode.self)
         }
-        return actor
     }
 }

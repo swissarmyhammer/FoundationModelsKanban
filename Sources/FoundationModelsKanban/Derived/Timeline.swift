@@ -11,7 +11,7 @@ extension Readiness {
     /// - Returns: The time of the move, or `nil` when the task never left the first column. A slot that holds no task
     ///   gives `nil`.
     func started(ofTaskAt slot: Int) -> DateTime? {
-        let start = graph.task(at: slot)?.columnMoves.first { move in
+        let start = columnMoves(ofTaskAt: slot).first { move in
             columnOrder.displaySlot(of: move.column) != columnOrder.first
         }
         return start?.at
@@ -28,6 +28,14 @@ extension Readiness {
         guard isDone(taskAt: slot) else {
             return nil
         }
-        return graph.task(at: slot)?.columnMoves.last?.at
+        return columnMoves(ofTaskAt: slot).last?.at
+    }
+
+    /// Gives the column moves of a task, in the order that replay recorded them.
+    ///
+    /// - Parameter slot: The slot of the task.
+    /// - Returns: The moves. A slot that holds no task gives no moves.
+    private func columnMoves(ofTaskAt slot: Int) -> [ColumnMove] {
+        graph.node(at: slot, as: TaskNode.self)?.columnMoves ?? []
     }
 }

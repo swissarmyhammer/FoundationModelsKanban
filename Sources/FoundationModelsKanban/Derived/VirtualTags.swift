@@ -26,7 +26,7 @@ extension Readiness {
     /// - Returns: The virtual tags that apply to the task, in the order of ``VirtualTag/allCases``. A slot that holds
     ///   no task gives no tags, because the other node types do not have virtual tags.
     func virtualTags(ofTaskAt slot: Int) -> [VirtualTag] {
-        guard case .task = graph.node(at: slot) else {
+        guard graph.node(at: slot, as: TaskNode.self) != nil else {
             return []
         }
         return VirtualTag.allCases.filter { tag in

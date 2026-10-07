@@ -39,6 +39,16 @@ struct Graph: Equatable, Sendable {
         nodes[slot]
     }
 
+    /// Gives the node in a slot when the node has one node type, live or tombstoned.
+    ///
+    /// - Parameters:
+    ///   - slot: A slot that this graph gave.
+    ///   - type: The node type to find, for example `TaskNode.self`.
+    /// - Returns: The state of the node, or `nil` when the slot holds no node or a node of a different type.
+    func node<State: NodeState>(at slot: Int, as type: State.Type) -> State? {
+        node(at: slot)?.state as? State
+    }
+
     /// Each slot that this graph gave, in slot order. A slot whose node was removed is also in the range.
     var allSlots: Range<Int> {
         nodes.indices

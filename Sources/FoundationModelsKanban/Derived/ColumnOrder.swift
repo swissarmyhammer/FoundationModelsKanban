@@ -21,7 +21,7 @@ struct ColumnOrder {
     /// - Parameter graph: The graph of the board.
     init(of graph: Graph) {
         let columns = graph.allSlots.compactMap { slot -> (slot: Int, column: ColumnNode)? in
-            guard case .column(let column) = graph.node(at: slot), !column.fields.isDeleted else {
+            guard let column = graph.node(at: slot, as: ColumnNode.self), !column.fields.isDeleted else {
                 return nil
             }
             return (slot, column)

@@ -308,7 +308,7 @@ extension Graph {
         var visited: Set<Int> = []
         var current = start
         while visited.insert(current).inserted {
-            guard let currentTag = tag(at: current) else {
+            guard let currentTag = node(at: current, as: TagNode.self) else {
                 return nil
             }
             switch currentTag.renamedTo {
@@ -329,20 +329,11 @@ extension Graph {
     /// - Returns: The slot of the live tag at the end of the walk, or `nil` when the walk ends at a tombstone or
     ///   ends with no tag.
     private func liveTagSlot(redirectedFrom slot: Int) -> Int? {
-        guard let target = renameTarget(ofTagAt: slot), tag(at: target)?.fields.isDeleted == false else {
+        guard let target = renameTarget(ofTagAt: slot),
+            node(at: target, as: TagNode.self)?.fields.isDeleted == false
+        else {
             return nil
         }
         return target
-    }
-
-    /// Gives the tag in a slot.
-    ///
-    /// - Parameter slot: A slot that this graph gave.
-    /// - Returns: The tag, or `nil` when the slot holds no node or a node that is not a tag.
-    private func tag(at slot: Int) -> TagNode? {
-        guard case .tag(let tag) = node(at: slot) else {
-            return nil
-        }
-        return tag
     }
 }
