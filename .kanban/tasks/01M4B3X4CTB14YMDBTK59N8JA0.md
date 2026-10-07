@@ -60,10 +60,26 @@ comments:
     - evidence: 2 files — Sources/FoundationModelsKanban/Body/DiffApply.swift, Tests/FoundationModelsKanbanTests/Body/DiffApplyTests.swift. `swift build --build-tests`: 0 warnings, 0 errors. `swift test`: 47 tests in 4 suites passed. swiftlint on the 2 files: 0 findings. Finding DiffApply.swift:36 swift/fluent-usage is checked.
     - next: /review
   timestamp: 2026-10-07T12:56:58.278646+00:00
+- actor: wballard
+  id: 01m4b73zfj57cw0enycypaskv1
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (4283171) — 0 findings, 7 validator runs, 0 failed. The prior finding at DiffApply.swift (swift/fluent-usage) is checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T12:58:51.762028+00:00
+- actor: wballard
+  id: 01m4b747rej3sq0zcvn5jdm8bv
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 2 files (DiffApply.swift, DiffApplyTests.swift), 1/1 finding fixed
+    - test: green — swift test, 47 passed, 0 warnings
+    - commit: 4283171
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T12:59:00.238258+00:00
 depends_on:
 - 01M4B3W5TJ921MJFG9AQ8B0QQR
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '8380'
 title: 'Body diff: apply with nearest match and conflict block'
 ---
 ## What

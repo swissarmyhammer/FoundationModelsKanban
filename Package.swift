@@ -31,6 +31,11 @@ let graphitiPackage = "Graphiti"
 // sorts the keys of each object, so it names this type directly.
 let collectionsPackage = "swift-collections"
 
+// The time-sortable identifier package. It is the same package and the same
+// version floor as FoundationModelsMultitool (plan.md §8). Each task, each
+// comment, each event and each transaction has a ULID (plan.md §3.2, §5.1).
+let ulidPackage = "ULID.swift"
+
 let package = Package(
     name: packageName,
     // Commit to macOS 27. FoundationModels v2 and the sibling packages need
@@ -59,6 +64,7 @@ let package = Package(
         .package(url: "https://github.com/GraphQLSwift/\(graphQLPackage).git", from: "4.3.0"),
         .package(url: "https://github.com/GraphQLSwift/\(graphitiPackage).git", from: "3.1.0"),
         .package(url: "https://github.com/apple/\(collectionsPackage).git", from: "1.0.0"),
+        .package(url: "https://github.com/yaslab/\(ulidPackage).git", from: "1.3.1"),
     ],
     targets: [
         .target(
@@ -68,6 +74,7 @@ let package = Package(
                 .product(name: graphQLPackage, package: graphQLPackage),
                 .product(name: graphitiPackage, package: graphitiPackage),
                 .product(name: "OrderedCollections", package: collectionsPackage),
+                .product(name: "ULID", package: ulidPackage),
             ],
             path: "Sources/\(packageName)"
         ),
@@ -90,6 +97,8 @@ let package = Package(
                 // The tests give variables to the engine as GraphQL `Map`
                 // values, and they call the scalar types of the schema.
                 .product(name: graphQLPackage, package: graphQLPackage),
+                // The identity tests make and read `ULID` values.
+                .product(name: "ULID", package: ulidPackage),
             ],
             path: "Tests/\(packageName)Tests"
         ),
