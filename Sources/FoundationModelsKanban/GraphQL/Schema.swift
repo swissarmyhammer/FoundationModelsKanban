@@ -522,13 +522,18 @@ extension API {
     ///
     /// The response follows the GraphQL specification: `{"data": …}`, and
     /// `"errors"` when the document has an error. A GraphQL error does not
-    /// throw (plan.md §4.4). The keys of `data` are in the order of the
-    /// selection. A `/` is not escaped, so a ref such as `tag/bug` stays
-    /// easy to read.
+    /// throw (plan.md §4.4): a document that does not parse gives a response
+    /// with one error and no `data`. With no formatting, the keys of `data`
+    /// are in the order of the selection. A `/` is not escaped, so a ref such
+    /// as `tag/bug` stays easy to read.
     ///
     /// - Parameters:
     ///   - document: The GraphQL document.
     ///   - variables: The values of the variables of the document.
+    ///   - operationName: The operation of the document to run, or `nil` when
+    ///     the document has one operation.
+    ///   - formatting: The formatting of the JSON text, for example
+    ///     `.sortedKeys`. Slashes are never escaped.
     ///   - context: The context of each resolver.
     /// - Returns: The response as JSON text.
     /// - Throws: An error that is not a GraphQL error, for example an error
@@ -536,11 +541,23 @@ extension API {
     func respond(
         to document: String,
         variables: [String: Map] = [:],
+        operationName: String? = nil,
+        formattedWith formatting: GraphQLJSONEncoder.OutputFormatting = [],
         context: ContextType
     ) async throws -> String {
-        let result = try await execute(request: document, context: context, variables: variables)
+        let result: GraphQLResult
+        do {
+            result = try await execute(
+                request: document,
+                context: context,
+                variables: variables,
+                operationName: operationName
+            )
+        } catch let error as GraphQLError {
+            result = GraphQLResult(errors: [error])
+        }
         let encoder = GraphQLJSONEncoder()
-        encoder.outputFormatting = .withoutEscapingSlashes
+        encoder.outputFormatting = formatting.union(.withoutEscapingSlashes)
         return try String(decoding: encoder.encode(result), as: UTF8.self)
     }
 }
