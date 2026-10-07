@@ -66,12 +66,28 @@ comments:
     - evidence: 5 files — Sources/FoundationModelsKanban/GraphQL/TaskOperationMutations.swift, TaskMutations.swift, TagMutations.swift, CommentMutations.swift, ColumnActorMutations.swift. `swift build --build-tests` has no errors. `swift test` gives 758 tests in 44 suites, all pass. The only build warning is README.md kind 1 (`missing creator for mutated node ... mlx-swift_Cmlx.bundle`). No line is longer than 120 characters.
     - next: review
   timestamp: 2026-10-07T22:12:07.359430+00:00
+- actor: wballard
+  id: 01m4c73bgrwmkfv9mdrcnm9n3y
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (66d9111). 0 findings, 0 confirmed, 0 refuted. 5 files reviewed. 2 files not reviewed (.kanban/, from .reviewignore). All items in the prior Review Findings section are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T22:17:45.752547+00:00
+- actor: wballard
+  id: 01m4c73httbhydt9d4q49mdc0t
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 5 files (TaskOperationMutations, TaskMutations, TagMutations, CommentMutations, ColumnActorMutations); 3/3 findings checked
+    - test: green — swift test, 758 passed; build warnings only the 2 accepted kinds
+    - commit: 66d9111
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T22:17:52.218999+00:00
 depends_on:
 - 01M4B4002GZV6E43G5CQ74BJNZ
 - 01M4B3W0VAAWGYQ8F9621807Z9
 - 01M4B4AQ1Z7DFQ4NP52RYF7RN1
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: a380
 title: 'Mutations: move, complete, assign, tag, delete tasks'
 ---
 ## What

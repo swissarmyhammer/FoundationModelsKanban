@@ -18,10 +18,10 @@ import ULID
 @Suite("Tag mutations")
 struct TagMutationTests {
     /// The slug of the first tag of a test.
-    private static let bug = "bug"
+    static let bug = "bug"
 
     /// The slug of the rename target of ``bug``.
-    private static let defect = "defect"
+    static let defect = "defect"
 
     /// The slug of the end of a rename chain.
     private static let issue = "issue"
@@ -48,10 +48,10 @@ struct TagMutationTests {
     private static let markedBody = "Login broken #bug please fix"
 
     /// The selection of a tag field that gives the id, the name, and the color.
-    private static let tagSelection = "{ id name color }"
+    static let tagSelection = "{ id name color }"
 
     /// The `input` field that gives the color ``ColumnActorTests/green``.
-    private static let greenInput = #"color: "\#(ColumnActorTests.green)""#
+    static let greenInput = #"color: "\#(ColumnActorTests.green)""#
 
     /// The mutation document that adds ``bug`` and renames it to ``defect``.
     private static let renameBugToDefect = AddUpdateTaskTests.mutation(
@@ -88,7 +88,7 @@ struct TagMutationTests {
     ///
     /// - Parameter name: The tag name.
     /// - Returns: The field.
-    private static func addTag(named name: String) -> String {
+    static func addTag(named name: String) -> String {
         addTag(with: #"name: "\#(name)""#)
     }
 
@@ -114,7 +114,7 @@ struct TagMutationTests {
     ///   - target: The new tag name.
     ///   - selection: The selection of the field.
     /// - Returns: The field.
-    private static func renameTag(
+    static func renameTag(
         from source: String,
         to target: String,
         selecting selection: String = tagSelection

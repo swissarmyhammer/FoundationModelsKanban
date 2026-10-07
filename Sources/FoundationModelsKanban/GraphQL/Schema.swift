@@ -231,6 +231,9 @@ protocol NodeObject: Sendable {
 
     /// The time of the delete, only on a tombstone (plan.md §3.3).
     var deleted: DateTime? { get }
+
+    /// The values of the public fields that a `Change` compares before and after a transaction (plan.md §6.7).
+    var trackedFields: TrackedFields { get }
 }
 
 extension NodeObject {
@@ -635,6 +638,7 @@ struct PublicSchema: API {
             .addTaskOperationMutations()
             .addCommentMutations()
             .addTagMutations()
+            .addChangeTypes()
             .build()
     }
 }

@@ -68,7 +68,7 @@ struct ColumnActorTests {
     private static let alice = LocalRef.actor(slug: aliceSlug)
 
     /// The mutation field that adds the column ``qaName`` with no order.
-    private static let addQA = #"addColumn(input: { name: "\#(qaName)" }) { id }"#
+    static let addQA = #"addColumn(input: { name: "\#(qaName)" }) { id }"#
 
     /// The mutation field that adds the actor ``aliceName`` with the color ``red``.
     private static let addAliceField = #"addActor(input: { id: "\#(aliceSlug)", name: "\#(aliceName)", "#

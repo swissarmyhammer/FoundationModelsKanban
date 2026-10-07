@@ -22,10 +22,10 @@ import ULID
 @Suite("Task operation mutations")
 struct TaskOperationTests {
     /// The slug of the fixture column.
-    private static let todoSlug = "todo"
+    static let todoSlug = "todo"
 
     /// The slug of a column that only a `moveTask` names.
-    private static let newColumnSlug = "in-review"
+    static let newColumnSlug = "in-review"
 
     /// The name that `moveTask` gives to the column ``newColumnSlug``: the words of the slug in title case.
     private static let newColumnName = "In Review"
@@ -34,7 +34,7 @@ struct TaskOperationTests {
     private static let nextColumnOrder = 1
 
     /// The slug of the column that ``AddUpdateTaskTests/doneColumn`` adds.
-    private static let doneSlug = "done"
+    static let doneSlug = "done"
 
     /// The name of the column that ``AddUpdateTaskTests/doneColumn`` adds.
     private static let doneName = "Done"
@@ -43,7 +43,7 @@ struct TaskOperationTests {
     private static let deletedColumnSlug = "qa"
 
     /// The slug of a tag that a test adds.
-    private static let feature = "feature"
+    static let feature = "feature"
 
     /// The slug of a second tag that a test adds.
     private static let bug = "bug"
@@ -83,7 +83,7 @@ struct TaskOperationTests {
         "{ board { tasks(deleted: true, excludeDone: false) { edges { node { id } } } } }"
 
     /// The `input` field that names the actor ``AddUpdateTaskTests/alice``.
-    private static let aliceInput = #"actor: "\#(AddUpdateTaskTests.alice)""#
+    static let aliceInput = #"actor: "\#(AddUpdateTaskTests.alice)""#
 
     /// Each mutation of this suite, with the other fields of its `input` object, for the not-found test.
     private static let mutationInputs = [
@@ -107,7 +107,7 @@ struct TaskOperationTests {
     ///   - input: The other fields of the `input` object, or `""` for none.
     ///   - selection: The selection of the field.
     /// - Returns: The field.
-    private static func taskField(
+    static func taskField(
         _ name: String,
         of task: ULID,
         with input: String = "",
@@ -137,7 +137,7 @@ struct TaskOperationTests {
     ///   - column: The column ref.
     ///   - placement: The other fields of the `input` object, or `""` for none.
     /// - Returns: The `input` fields.
-    private static func moveInput(to column: String = todoSlug, placing placement: String = "") -> String {
+    static func moveInput(to column: String = todoSlug, placing placement: String = "") -> String {
         #"column: "\#(column)" \#(placement)"#
     }
 
@@ -165,7 +165,7 @@ struct TaskOperationTests {
     ///
     /// - Parameter tags: The tag refs.
     /// - Returns: The `input` field.
-    private static func tagsInput(_ tags: String...) -> String {
+    static func tagsInput(_ tags: String...) -> String {
         "tags: \(AddUpdateTaskTests.list(of: tags))"
     }
 

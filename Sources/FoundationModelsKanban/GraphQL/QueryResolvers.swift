@@ -233,7 +233,7 @@ extension BoardView {
     ///
     /// - Parameter slot: A slot of the graph.
     /// - Returns: The object of the type of the node, or `nil` when the slot holds no node.
-    private func nodeObject(at slot: Int) -> (any NodeObject)? {
+    func nodeObject(at slot: Int) -> (any NodeObject)? {
         switch graph.node(at: slot) {
         case .board(let board)?: BoardObject(view: self, state: board)
         case .column(let column)?: ColumnObject(view: self, slot: slot, state: column)
@@ -594,7 +594,12 @@ extension CommentObject {
     /// - Returns: The actor.
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when the graph does not have the actor.
     func author(context _: KanbanContext, arguments _: NoArguments) throws(KanbanError) -> ActorObject {
-        let authorSlot = view.graph.author(ofCommentAt: slot).flatMap { actor in view.graph.slot(for: actor.ref) }
-        return try view.requiredObject(at: authorSlot, forEdge: state.author, ofType: .actor)
+        try view.requiredObject(at: authorSlot, forEdge: state.author, ofType: .actor)
+    }
+
+    /// The slot of the author of the comment, live or tombstoned (``Graph/author(ofCommentAt:)``), or `nil` when the
+    /// graph does not have the actor.
+    var authorSlot: Int? {
+        view.graph.author(ofCommentAt: slot).flatMap { actor in view.graph.slot(for: actor.ref) }
     }
 }

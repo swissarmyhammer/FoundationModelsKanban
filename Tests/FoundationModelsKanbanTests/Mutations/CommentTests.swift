@@ -17,13 +17,13 @@ import ULID
 @Suite("Comment mutations")
 struct CommentTests {
     /// The body of a comment that a test adds.
-    private static let body = QueryFixture.commentBody
+    static let body = QueryFixture.commentBody
 
     /// The body of a second comment that a test adds.
     private static let laterBody = "Ship it."
 
     /// The new body of a comment in an update test.
-    private static let editedBody = "Edited."
+    static let editedBody = "Edited."
 
     /// The slug of an actor that a test adds before the comment.
     private static let alice = "alice"
@@ -53,7 +53,7 @@ struct CommentTests {
     ///   - input: The other fields of the `input` object, or `""` for none.
     ///   - selection: The selection of the field.
     /// - Returns: The field.
-    private static func addComment(
+    static func addComment(
         to task: String,
         saying body: String = body,
         with input: String = "",
