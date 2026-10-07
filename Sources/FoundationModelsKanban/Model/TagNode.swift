@@ -6,11 +6,14 @@ struct TagNode: NodeState {
     let slug: String
 
     /// The body and the time values of the tag.
-    ///
-    /// The synthesized `Hashable` `==` and `hash(into:)` read it; periphery sees no caller. The projection and the
-    /// queries read it later (plan.md §5.3).
-    // periphery:ignore
     var fields: NodeFields
+
+    /// The name of the tag. It is empty when no patch set it.
+    var name = ""
+
+    /// The color that a patch set, or `nil` when no patch set one. The projection then gives the auto color of the
+    /// slug (``AutoColor``).
+    var color: String?
 
     /// The `renamedTo` edge: the tag that a rename made this tag point to, or `nil` when the tag is not renamed.
     var renamedTo: EdgeTarget?

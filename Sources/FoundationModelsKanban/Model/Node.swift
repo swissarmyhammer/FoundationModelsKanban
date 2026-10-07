@@ -21,21 +21,20 @@ struct NodeFields: Hashable, Sendable {
     var body = ""
 
     /// The time of the first patch of the node.
-    ///
-    /// The synthesized `Hashable` `==` and `hash(into:)` read it; periphery sees no caller. The projection and the
-    /// queries read it later (plan.md §5.3).
-    // periphery:ignore
     var created: DateTime
 
     /// The time of the last patch of the node.
-    ///
-    /// The synthesized `Hashable` `==` and `hash(into:)` read it; periphery sees no caller. The projection and the
-    /// queries read it later (plan.md §5.3).
-    // periphery:ignore
     var updated: DateTime
 
     /// The time of the last `delete: true` patch, only while the node is a tombstone.
     var deleted: DateTime?
+
+    /// `true` when the body has a full conflict block from an `edit` that could not apply (plan.md §5.5).
+    var hasConflict = false
+
+    /// The properties that the patches wrote and that the node type does not know. Replay keeps them, and no
+    /// resolver reads them (plan.md §5.3, schema changes).
+    var unknownProperties = PropertyBag()
 
     /// The tombstone flag: `true` when the node is deleted (plan.md §3.3, rule 2).
     var isDeleted: Bool {
@@ -43,10 +42,25 @@ struct NodeFields: Hashable, Sendable {
     }
 }
 
+/// The properties of a node as the `set`, `unset`, `add`, and `remove` parts of its patches leave them (plan.md
+/// §5.1).
+struct PropertyBag: Hashable, Sendable {
+    /// The single values: each `set` writes one, and each `unset` clears one.
+    var values: [String: PatchValue] = [:]
+
+    /// The members of the set-valued properties, in the order of their first `add`. A property with no members has
+    /// no entry.
+    var members: [String: [StoredRef]] = [:]
+}
+
 /// The state of one node type, as replay folds it and as the ``Graph`` stores it.
 protocol NodeState: Hashable, Sendable {
     /// The local ref of the node. The graph gives one slot to each local ref.
     var ref: LocalRef { get }
+
+    /// The body, the time values, and the unknown properties of the node. Replay writes the unknown properties
+    /// through this requirement for each node type.
+    var fields: NodeFields { get set }
 
     /// The node, as a case of the ``Node`` enum.
     var node: Node { get }

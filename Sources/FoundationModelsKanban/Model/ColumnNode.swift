@@ -6,11 +6,14 @@ struct ColumnNode: NodeState {
     let slug: String
 
     /// The body and the time values of the column.
-    ///
-    /// The synthesized `Hashable` `==` and `hash(into:)` read it; periphery sees no caller. The projection and the
-    /// queries read it later (plan.md §5.3).
-    // periphery:ignore
     var fields: NodeFields
+
+    /// The name of the column. It is empty when no patch set it.
+    var name = ""
+
+    /// The sort key of the column on the board. Two columns with the same order sort by slug (plan.md §5.3). It is 0
+    /// when no patch set it.
+    var order = 0
 
     /// The local ref of the column.
     var ref: LocalRef {

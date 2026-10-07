@@ -7,10 +7,6 @@ struct CommentNode: NodeState {
     let id: ULID
 
     /// The body and the time values of the comment. The body is the comment text.
-    ///
-    /// The synthesized `Hashable` `==` and `hash(into:)` read it; periphery sees no caller. The projection and the
-    /// queries read it later (plan.md §5.3).
-    // periphery:ignore
     var fields: NodeFields
 
     /// The `task` edge: the task of the comment, or `nil` when no patch set it.

@@ -6,11 +6,13 @@ struct ActorNode: NodeState {
     let slug: String
 
     /// The body and the time values of the actor.
-    ///
-    /// The synthesized `Hashable` `==` and `hash(into:)` read it; periphery sees no caller. The projection and the
-    /// queries read it later (plan.md §5.3).
-    // periphery:ignore
     var fields: NodeFields
+
+    /// The name of the actor. It is empty when no patch set it.
+    var name = ""
+
+    /// The color of the actor, or `nil` when the actor has no color.
+    var color: String?
 
     /// The local ref of the actor.
     var ref: LocalRef {

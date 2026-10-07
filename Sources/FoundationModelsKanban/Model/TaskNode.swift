@@ -19,14 +19,16 @@ struct TaskNode: NodeState {
     let id: ULID
 
     /// The body and the time values of the task.
-    ///
-    /// The synthesized `Hashable` `==` and `hash(into:)` read it; periphery sees no caller. The projection and the
-    /// queries read it later (plan.md §5.3).
-    // periphery:ignore
     var fields: NodeFields
+
+    /// The title of the task. It is empty when no patch set it.
+    var title = ""
 
     /// The `column` edge, or `nil` when no patch set a column.
     var column: EdgeTarget?
+
+    /// The position of the task in its column (plan.md §3.2). It is ``Ordinal/first`` when no patch set it.
+    var ordinal = Ordinal.first
 
     /// The `assignees` edges: the actors of the task.
     var assignees: [EdgeTarget] = []

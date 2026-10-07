@@ -69,10 +69,26 @@ comments:
     - discovery: periphery also reports items that this task did not change: assignOnlyProperty `code`, `message`, `path`, `extensions` in GraphQL/Errors.swift, and an unused `import ULID` in Tests/.../Filter/FilterParserTests.swift. The native build gives only the SwiftPM deprecation notice for `--build-system native`.
     - next: /review
   timestamp: 2026-10-07T14:49:27.792914+00:00
+- actor: wballard
+  id: 01m4bdkefn2mvnqfxwm0tesny1
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 16d3362). 7 files reviewed. 0 findings, 0 confirmed, 0 refuted. All 10 prior items in "Review Findings (2026-10-07 09:37)" are checked.
+    - next: The task moved to done. No more work is necessary.
+  timestamp: 2026-10-07T14:52:10.101917+00:00
+- actor: wballard
+  id: 01m4bdkmv1zhz8nfzb37j33yby
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 7 files (Model/Node, ActorNode, BoardNode, ColumnNode, TagNode, TaskNode, CommentNode); 10/10 findings checked
+    - test: green — swift test, 251 passed, 0 warnings
+    - commit: 16d3362
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T14:52:16.609217+00:00
 depends_on:
 - 01M4B3VF41P7FCKEC4MFT9GWA0
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: 8c80
 title: 'Graph store: node table with stable slots'
 ---
 ## What
