@@ -81,15 +81,43 @@ struct BoardLoader: Sendable {
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a directory or a file is there and cannot be read.
     func load() async throws(EventLogError) -> LoadedBoard {
         var graph = Graph()
+        let eventLists = try await readStages(
+            listingFilesWith: { type throws(EventLogError) in try stageRefs(of: type) },
+            joiningInto: &graph
+        )
+        return LoadedBoard(graph: graph, events: EventMerge.merged(eventLists))
+    }
+
+    /// Reads some node files, stage by stage in ``stageOrder``, and joins each node into a graph (plan.md §5.3,
+    /// §5.6).
+    ///
+    /// The full load and the apply of changed files both use this call. A file that gives a node inserts the node,
+    /// or replaces the state in the slot of the node. A file that gives no node (a removed file, or a file with no
+    /// valid line) removes the node from its slot, and each edge to it becomes unresolved. A ref that the graph does
+    /// not have changes nothing.
+    ///
+    /// - Parameters:
+    ///   - fileList: Gives the refs of the files of the stage of one node type.
+    ///   - graph: The graph that gets the nodes.
+    /// - Returns: The event list of each file, each in the order of its event ids.
+    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a directory or a file cannot be read.
+    func readStages(
+        listingFilesWith fileList: (PatchNodeType) throws(EventLogError) -> [LocalRef],
+        joiningInto graph: inout Graph
+    ) async throws(EventLogError) -> [[Event]] {
         var eventLists: [[Event]] = []
         for type in Self.stageOrder {
-            let stage = try await readStage(of: type)
-            for node in stage.compactMap(\.log.node) {
-                graph.update(with: node)
+            let stage = try await readStage(of: fileList(type))
+            for staged in stage {
+                if let node = staged.log.node {
+                    graph.update(with: node)
+                } else {
+                    graph.remove(nodeAt: staged.ref)
+                }
             }
             eventLists.append(contentsOf: stage.map(\.log.events))
         }
-        return LoadedBoard(graph: graph, events: EventMerge.merged(eventLists))
+        return eventLists
     }
 }
 
@@ -98,11 +126,10 @@ struct BoardLoader: Sendable {
 extension BoardLoader {
     /// Reads the files of one stage with the workers. The call returns when all workers are done.
     ///
-    /// - Parameter type: The node type of the stage.
+    /// - Parameter refs: The local refs of the files of the stage.
     /// - Returns: The folded log of each file, in the sort order of the local refs.
-    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when the directory or a file cannot be read.
-    private func readStage(of type: PatchNodeType) async throws(EventLogError) -> [StagedLog] {
-        let refs = try stageRefs(of: type)
+    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a file cannot be read.
+    private func readStage(of refs: [LocalRef]) async throws(EventLogError) -> [StagedLog] {
         let queue = WorkQueue(holding: refs)
         let results = await withTaskGroup(of: Result<[StagedLog], EventLogError>.self) { group in
             for _ in 0..<min(workerCount, refs.count) {
@@ -200,10 +227,11 @@ private final class WorkQueue: Sendable {
 
 // MARK: - Global order
 
-/// The k-way merge of the sorted event lists of all files into one list (plan.md §5.3, global order).
-private enum EventMerge {
+/// The k-way merge of the sorted event lists of all files into one list (plan.md §5.3, global order). The loader and
+/// the live graph (plan.md §5.6) use it.
+enum EventMerge {
     /// The position of the next event of one list in the merge.
-    struct Cursor: Comparable {
+    private struct Cursor: Comparable {
         /// The id of the next event of the list.
         let id: ULID
 
@@ -241,7 +269,7 @@ private enum EventMerge {
     ///   - heap: The cursor of the next event of each list that has events left.
     ///   - lists: The event lists.
     /// - Returns: The event, or `nil` when no list has events left.
-    static func nextEvent(takingFrom heap: inout Heap<Cursor>, in lists: [[Event]]) -> Event? {
+    private static func nextEvent(takingFrom heap: inout Heap<Cursor>, in lists: [[Event]]) -> Event? {
         guard let cursor = heap.popMin() else {
             return nil
         }
@@ -258,7 +286,7 @@ private enum EventMerge {
     ///   - list: The index of the list.
     ///   - lists: The event lists.
     /// - Returns: The cursor, or `nil` when the list has no event at the position.
-    static func cursor(at position: Int, inList list: Int, of lists: [[Event]]) -> Cursor? {
+    private static func cursor(at position: Int, inList list: Int, of lists: [[Event]]) -> Cursor? {
         guard lists[list].indices.contains(position) else {
             return nil
         }

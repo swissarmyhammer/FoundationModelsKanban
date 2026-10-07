@@ -29,11 +29,28 @@ comments:
     - evidence: `swift test` 559 tests in 34 suites passed; `swift build --build-tests` 0 warnings; `swift test --filter FilterCompatibilityTests` 22 tests passed; `swift test --filter NextTaskTests` 12 tests passed; periphery 3.8.0 (`-- --build-system native --build-tests`) no unused code; swiftlint no_magic_numbers/line_length/force rules 0 violations. Files: Sources/FoundationModelsKanban/GraphQL/TaskSelection.swift (new), Sources/FoundationModelsKanban/GraphQL/QueryResolvers.swift, Sources/FoundationModelsKanban/GraphQL/Schema.swift, Tests/FoundationModelsKanbanTests/Filter/TaskQueryFixture.swift (new), Tests/FoundationModelsKanbanTests/Filter/FilterCompatibilityTests.swift (new), Tests/FoundationModelsKanbanTests/Filter/NextTaskTests.swift (new), Tests/FoundationModelsKanbanTests/GraphQL/QueryResolverTests.swift, Tests/FoundationModelsKanbanTests/Tool/KanbanGraphTests.swift
     - next: /review
   timestamp: 2026-10-07T18:01:19.275480+00:00
+- actor: wballard
+  id: 01m4brkwtmd6bdj0tjz4msdak1
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (07214fa). 0 findings, 0 confirmed, 0 refuted. 7 of 7 validators completed, 0 failed. 8 files reviewed. 4 .kanban files not reviewed (.reviewignore).
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T18:04:39.124550+00:00
+- actor: wballard
+  id: 01m4brm3d7h6w62gdkezznyszb
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 8 files (GraphQL/TaskSelection.swift, QueryResolvers.swift, Schema.swift; TaskQueryFixture, FilterCompatibilityTests, NextTaskTests, QueryResolverTests, KanbanGraphTests)
+    - test: green — swift test, 559 passed, 0 warnings
+    - commit: 07214fa
+    - review: clean — 0 findings
+    - note for a person: `Board.tasks` and the node `tasks(filter:)` fields are nullable, against the plan.md §4.1 sketch (non-null), because GraphQLSwift drops all `data` when a non-null field throws. plan.md §4.1 needs an update to match.
+  timestamp: 2026-10-07T18:04:45.863771+00:00
 depends_on:
 - 01M4B3Z67TC96REJGDHD2DFH0R
 - 01M4B3YQSXZCGCB08FVP8QCSF3
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: '9980'
 title: 'Filter: connect to queries, nextTask, compatibility corpus'
 ---
 ## What

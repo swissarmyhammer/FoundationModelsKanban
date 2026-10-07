@@ -272,6 +272,38 @@ extension EventLog {
             .compactMap { file in Self.ref(ofFile: file, type: type) }
     }
 
+    /// Finds the node of a changed file of the board, for example a path that the file watcher reports (plan.md
+    /// §5.6).
+    ///
+    /// The file does not have to exist, because a removed file is also a change. The compare of the directories
+    /// resolves symbolic links, so `/var/…` and `/private/var/…` give the same board.
+    ///
+    /// - Parameter file: The changed file.
+    /// - Returns: The local ref of the node of the file, or `nil` when the file is not a node log of this board (for
+    ///   example the lock file, a file in a different directory, or a name that is not a valid local id).
+    func ref(ofFileAt file: URL) -> LocalRef? {
+        guard file.pathExtension == Self.logExtension else {
+            return nil
+        }
+        let folder = file.deletingLastPathComponent()
+        if file.lastPathComponent == Self.boardFileName, isBoardDirectory(at: folder) {
+            return .board
+        }
+        let type = PatchNodeType.allCases.first { type in type.logDirectoryName == folder.lastPathComponent }
+        guard let type, isBoardDirectory(at: folder.deletingLastPathComponent()) else {
+            return nil
+        }
+        return Self.ref(ofFile: file, type: type)
+    }
+
+    /// Tells if a directory is the `.kanban/` directory of this board.
+    ///
+    /// - Parameter folder: The directory.
+    /// - Returns: `true` when the two paths are the same after the symbolic links resolve.
+    private func isBoardDirectory(at folder: URL) -> Bool {
+        folder.resolvingSymlinksInPath().path == directory.resolvingSymlinksInPath().path
+    }
+
     /// Reads the local ref of a log file from its name.
     ///
     /// - Parameters:
