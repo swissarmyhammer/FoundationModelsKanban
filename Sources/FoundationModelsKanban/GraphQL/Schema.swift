@@ -534,6 +534,7 @@ struct PublicSchema: API {
     init() throws {
         schema = try SchemaBuilder.makeKanbanBuilder()
             .addBoardMutations()
+            .addColumnActorMutations()
             .build()
     }
 }

@@ -41,12 +41,28 @@ comments:
   id: 01m4bx3d60kq4pdmc5n182x7p4
   text: 'Correction to the comment above: the column and actor mutations card is ^k9gdayr, not ^b4b1g28.'
   timestamp: 2026-10-07T19:23:01.696328+00:00
+- actor: wballard
+  id: 01m4bx9wf7bc3cfe9wbyj0p5ad
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (27fc864). 8 files reviewed. 0 findings, 0 confirmed, 1 refuted, 0 failed. The .kanban/ files are excluded by .reviewignore.
+    - next: None. The task is in done.
+  timestamp: 2026-10-07T19:26:33.959496+00:00
+- actor: wballard
+  id: 01m4bxa2th525t9t2tcbg16y52
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 2 new + 6 changed files (GraphQL/MutationResolvers.swift, BoardMutationTests.swift, Schema, Commit, KanbanGraph, KanbanGraphTests, CommitTests, QueryFixture)
+    - test: green — swift test, 594 passed, 0 warnings
+    - commit: 27fc864
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T19:26:40.465588+00:00
 depends_on:
 - 01M4B3ZDK527CRVKQQRT87RGHJ
 - 01M4B3Y4M87387J50EQCD36VB0
 - 01M4B4A8735GAP57Q8ZVDP5HY2
-position_column: doing
-position_ordinal: '8280'
+position_column: done
+position_ordinal: 9c80
 title: 'Mutations: board, auto-init, session actor'
 ---
 ## What

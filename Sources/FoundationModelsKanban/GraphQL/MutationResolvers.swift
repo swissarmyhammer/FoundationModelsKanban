@@ -4,8 +4,8 @@ import GraphQL
 // MARK: - Names
 
 /// The names of the public mutations (plan.md §4.2). Each name is also the operation name in the `ops` of the events
-/// of the mutation.
-private enum MutationName {
+/// of the mutation. The names of the column and the actor mutations are in `ColumnActorMutations.swift`.
+enum MutationName {
     /// The mutation that makes the board, or changes the given fields of a board that exists.
     static let initBoard = "initBoard"
 
@@ -123,7 +123,7 @@ extension BoardStore {
     /// - Returns: The value of the body.
     /// - Throws: The error of the body, or an ``EventError`` when a patch breaks a rule of the log. Then the field
     ///   keeps none of its patches.
-    fileprivate func runMutation<Value: Sendable>(
+    func runMutation<Value: Sendable>(
         named operation: String,
         at time: DateTime,
         _ body: (inout WorkingCopy) throws -> Value
@@ -162,8 +162,13 @@ extension BoardStore {
         at time: DateTime
     ) throws -> BoardView {
         try runMutation(named: operation, at: time) { work in
-            let body = work.graph.boardNode?.fields.body ?? ""
-            try work.apply(PatchInput(changingBoardWith: input, from: body), at: time)
+            let patch = try PatchInput(
+                changing: .board,
+                setting: input?.name.map { name in [PropertyName.name: .json(.string(name))] } ?? [:],
+                body: input?.body,
+                from: work.graph.body(of: .board)
+            )
+            try work.apply(patch, at: time)
         }
         return view
     }
@@ -212,7 +217,7 @@ extension WorkingCopy {
     ///   - time: The time of the change.
     /// - Throws: An ``EventError`` when the patch breaks a rule of the log.
     fileprivate mutating func addActor(_ actor: SessionActor, at time: DateTime) throws(EventError) {
-        guard graph.slot(for: actor.ref).flatMap(graph.node(at:)) == nil else {
+        guard !graph.hasNode(actor.ref) else {
             return
         }
         try apply(PatchInput(node: actor.ref, set: [PropertyName.name: .json(.string(actor.name))]), at: time)
@@ -220,19 +225,53 @@ extension WorkingCopy {
 }
 
 extension PatchInput {
-    /// Makes the board patch of a board mutation: `set name` when the input has a name, and an `edit` diff from the
-    /// current body when the input has a body (plan.md §5.5).
+    /// Makes the patch of a mutation that changes one node: a `set` of the given values, and an `edit` diff from the
+    /// current body when the input has a body (plan.md §4.2, §5.5). The working copy keeps only the parts that change
+    /// the node, so an equal value or an equal body writes nothing.
     ///
     /// - Parameters:
-    ///   - input: The changes. A field that is not set does not change.
-    ///   - body: The current body of the board.
+    ///   - node: The local ref of the node.
+    ///   - values: The properties to write.
+    ///   - newBody: The new body: the full text, or `nil` for no change of the body.
+    ///   - body: The current body of the node.
     /// - Throws: An ``EventError`` when the patch breaks a rule of the log.
-    fileprivate init(changingBoardWith input: BoardInput?, from body: String) throws(EventError) {
+    init(
+        changing node: LocalRef,
+        setting values: [String: PatchValue],
+        body newBody: String?,
+        from body: String
+    ) throws(EventError) {
         try self.init(
-            node: .board,
-            set: input?.name.map { name in [PropertyName.name: .json(.string(name))] } ?? [:],
-            edit: input?.body.map { newBody in PatchEdit(body: UnifiedDiff(from: body, to: newBody).text) }
+            node: node,
+            set: values,
+            edit: newBody.map { newBody in PatchEdit(body: UnifiedDiff(from: body, to: newBody).text) }
         )
+    }
+}
+
+extension Graph {
+    /// Gives the node of a ref, live or tombstoned.
+    ///
+    /// - Parameter ref: The local ref of the node.
+    /// - Returns: The node, or `nil` when no slot of the graph holds the node.
+    func node(for ref: LocalRef) -> Node? {
+        slot(for: ref).flatMap(node(at:))
+    }
+
+    /// Tells if the graph has the node of a ref, live or tombstoned.
+    ///
+    /// - Parameter ref: The local ref of the node.
+    /// - Returns: `true` when a slot of the graph holds the node.
+    func hasNode(_ ref: LocalRef) -> Bool {
+        node(for: ref) != nil
+    }
+
+    /// Gives the body of the node of a ref.
+    ///
+    /// - Parameter ref: The local ref of the node.
+    /// - Returns: The Markdown body, or `""` when the graph does not have the node.
+    func body(of ref: LocalRef) -> String {
+        node(for: ref)?.state.fields.body ?? ""
     }
 }
 
