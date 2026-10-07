@@ -31,6 +31,44 @@ comments:
     - evidence: 9 files — Sources/FoundationModelsKanban/Model/{Graph,Node,BoardNode,ColumnNode,ActorNode,TagNode,TaskNode,CommentNode}.swift, Tests/FoundationModelsKanbanTests/Model/GraphTests.swift; `swift test --filter GraphTests` 13/13 pass; `swift test` 251 tests in 15 suites pass, 0 warnings.
     - next: /review
   timestamp: 2026-10-07T14:36:23.973362+00:00
+- actor: wballard
+  id: 01m4bcytyc9ht3m6escv2qp0aa
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD; 10 findings (10 confirmed, 1 refuted). ActorNode.swift:9, BoardNode.swift:6, BoardNode.swift:21, ColumnNode.swift:9, ColumnNode.swift:24, CommentNode.swift:10, Node.swift:24, Node.swift:27, TagNode.swift:9, TaskNode.swift:22 (all in Sources/FoundationModelsKanban/Model/).
+    - next: Correct all 10 items in the "Review Findings (2026-10-07 09:37)" section. Then do the review again.
+  timestamp: 2026-10-07T14:40:54.732888+00:00
+- actor: wballard
+  id: 01m4bczatd3md8kx6tkd7zzye3
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 9 files (Model/Graph, Node, BoardNode, ColumnNode, ActorNode, TagNode, TaskNode, CommentNode, GraphTests)
+    - test: green — swift test, 251 passed, 0 warnings
+    - commit: aba8fa7
+    - review: findings — Model/ActorNode.swift:9, Model/BoardNode.swift:6, Model/BoardNode.swift:21, Model/ColumnNode.swift:9, Model/ColumnNode.swift:24, Model/CommentNode.swift:10, Model/Node.swift:24, Model/Node.swift:27, Model/TagNode.swift:9, Model/TaskNode.swift:22
+  timestamp: 2026-10-07T14:41:10.989589+00:00
+- actor: wballard
+  id: 01m4bdb6151gr4tfztqht1e62z
+  text: |-
+    Duplication findings done. Node.swift has one default `updateEdges(using:)` in an `extension NodeState`. The empty copies in ActorNode, BoardNode, and ColumnNode are deleted (no other node type had an empty copy).
+
+    BLOCKER RESOLVED. The 8 `code-hygiene/dead-code-swift` assignOnlyProperty findings had a possible conflict: the card text, the `dead-code-swift` rule, and a dispatch line. The coordinator decided option A: the written `dead-code-swift` rule governs this case (section "assignOnlyProperty and the reads periphery cannot see"). The properties stay, because the card requires them. Each of the 8 named properties has a reason line in its doc comment and `// periphery:ignore` above it.
+  timestamp: 2026-10-07T14:47:39.301170+00:00
+- actor: wballard
+  id: 01m4bdb8y8nn1e9ngvhsbvrhjj
+  text: |-
+    ### implement — stuck
+    - evidence: 4 files — Sources/FoundationModelsKanban/Model/{Node,ActorNode,BoardNode,ColumnNode}.swift; `swift test` 251 tests in 15 suites pass, 0 warnings. 2 of 10 findings checked (duplication). 8 dead-code-swift findings open: a conflict (see the BLOCKER comment).
+    - next: a person picks option A, B, or C for the assignOnlyProperty findings. Then /implement again.
+  timestamp: 2026-10-07T14:47:42.280250+00:00
+- actor: wballard
+  id: 01m4bdefzgjt6sd2w26ffwv88v
+  text: |-
+    ### implement — changed
+    - evidence: 7 files — Sources/FoundationModelsKanban/Model/{Node,ActorNode,BoardNode,ColumnNode,TagNode,TaskNode,CommentNode}.swift; all 10 findings checked. periphery 3.8.0 `--retain-public` on a native build (`swift build --build-tests --build-system native --scratch-path <dir>`, then `--skip-build --index-store-path <dir>/arm64-apple-macosx/debug/index/store`): 0 reports in Sources/FoundationModelsKanban/Model/. `swift test`: 251 tests in 15 suites pass, 0 warnings.
+    - discovery: periphery also reports items that this task did not change: assignOnlyProperty `code`, `message`, `path`, `extensions` in GraphQL/Errors.swift, and an unused `import ULID` in Tests/.../Filter/FilterParserTests.swift. The native build gives only the SwiftPM deprecation notice for `--build-system native`.
+    - next: /review
+  timestamp: 2026-10-07T14:49:27.792914+00:00
 depends_on:
 - 01M4B3VF41P7FCKEC4MFT9GWA0
 position_column: doing
@@ -55,3 +93,21 @@ The in-memory graph. The basis is plan.md §3.1, §3.3, and §5.3 (Join).
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-07 09:37)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 9 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsKanban/Model/ActorNode.swift:9` `code-hygiene/dead-code-swift` — var.instance `fields` is assignOnlyProperty.
+- [x] `Sources/FoundationModelsKanban/Model/BoardNode.swift:6` `code-hygiene/dead-code-swift` — var.instance `fields` is assignOnlyProperty.
+- [x] `Sources/FoundationModelsKanban/Model/BoardNode.swift:21` `duplication/duplication` — Empty `updateEdges` method is a verbatim copy of ActorNode's; consolidate to protocol extension default. Delete lines 18-21 from this file. Add a default implementation to NodeState protocol extension in Node.swift after line 50: `extension NodeState { mutating func updateEdges(using transform: (EdgeTarget) -> EdgeTarget) {} }`.
+- [x] `Sources/FoundationModelsKanban/Model/ColumnNode.swift:9` `code-hygiene/dead-code-swift` — var.instance `fields` is assignOnlyProperty.
+- [x] `Sources/FoundationModelsKanban/Model/ColumnNode.swift:24` `duplication/duplication` — Empty `updateEdges` method is a verbatim copy of ActorNode's; consolidate to protocol extension default. Delete lines 21-24 from this file. Add a default implementation to NodeState protocol extension in Node.swift after line 50: `extension NodeState { mutating func updateEdges(using transform: (EdgeTarget) -> EdgeTarget) {} }`.
+- [x] `Sources/FoundationModelsKanban/Model/CommentNode.swift:10` `code-hygiene/dead-code-swift` — var.instance `fields` is assignOnlyProperty.
+- [x] `Sources/FoundationModelsKanban/Model/Node.swift:24` `code-hygiene/dead-code-swift` — var.instance `created` is assignOnlyProperty.
+- [x] `Sources/FoundationModelsKanban/Model/Node.swift:27` `code-hygiene/dead-code-swift` — var.instance `updated` is assignOnlyProperty.
+- [x] `Sources/FoundationModelsKanban/Model/TagNode.swift:9` `code-hygiene/dead-code-swift` — var.instance `fields` is assignOnlyProperty.
+- [x] `Sources/FoundationModelsKanban/Model/TaskNode.swift:22` `code-hygiene/dead-code-swift` — var.instance `fields` is assignOnlyProperty.

@@ -6,6 +6,10 @@ struct ActorNode: NodeState {
     let slug: String
 
     /// The body and the time values of the actor.
+    ///
+    /// The synthesized `Hashable` `==` and `hash(into:)` read it; periphery sees no caller. The projection and the
+    /// queries read it later (plan.md §5.3).
+    // periphery:ignore
     var fields: NodeFields
 
     /// The local ref of the actor.
@@ -17,9 +21,4 @@ struct ActorNode: NodeState {
     var node: Node {
         .actor(self)
     }
-
-    /// Does nothing, because an actor has no stored edges.
-    ///
-    /// - Parameter transform: Not used.
-    func updateEdges(using transform: (EdgeTarget) -> EdgeTarget) {}
 }

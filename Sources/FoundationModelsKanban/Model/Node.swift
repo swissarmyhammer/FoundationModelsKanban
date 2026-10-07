@@ -21,9 +21,17 @@ struct NodeFields: Hashable, Sendable {
     var body = ""
 
     /// The time of the first patch of the node.
+    ///
+    /// The synthesized `Hashable` `==` and `hash(into:)` read it; periphery sees no caller. The projection and the
+    /// queries read it later (plan.md §5.3).
+    // periphery:ignore
     var created: DateTime
 
     /// The time of the last patch of the node.
+    ///
+    /// The synthesized `Hashable` `==` and `hash(into:)` read it; periphery sees no caller. The projection and the
+    /// queries read it later (plan.md §5.3).
+    // periphery:ignore
     var updated: DateTime
 
     /// The time of the last `delete: true` patch, only while the node is a tombstone.
@@ -47,6 +55,14 @@ protocol NodeState: Hashable, Sendable {
     ///
     /// - Parameter transform: Gives the new target of an edge from its current target.
     mutating func updateEdges(using transform: (EdgeTarget) -> EdgeTarget)
+}
+
+extension NodeState {
+    /// Does nothing. This is the default for a node type that has no stored edges: the board, a column, and an
+    /// actor.
+    ///
+    /// - Parameter transform: Not used, because the node has no edges to change.
+    mutating func updateEdges(using transform: (EdgeTarget) -> EdgeTarget) {}
 }
 
 /// One node of the graph: the state of one of the six node types (plan.md §2.1, §3.1).

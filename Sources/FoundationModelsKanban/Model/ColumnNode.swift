@@ -6,6 +6,10 @@ struct ColumnNode: NodeState {
     let slug: String
 
     /// The body and the time values of the column.
+    ///
+    /// The synthesized `Hashable` `==` and `hash(into:)` read it; periphery sees no caller. The projection and the
+    /// queries read it later (plan.md §5.3).
+    // periphery:ignore
     var fields: NodeFields
 
     /// The local ref of the column.
@@ -17,9 +21,4 @@ struct ColumnNode: NodeState {
     var node: Node {
         .column(self)
     }
-
-    /// Does nothing, because a column has no stored edges.
-    ///
-    /// - Parameter transform: Not used.
-    func updateEdges(using transform: (EdgeTarget) -> EdgeTarget) {}
 }

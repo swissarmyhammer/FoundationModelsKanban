@@ -19,6 +19,10 @@ struct TaskNode: NodeState {
     let id: ULID
 
     /// The body and the time values of the task.
+    ///
+    /// The synthesized `Hashable` `==` and `hash(into:)` read it; periphery sees no caller. The projection and the
+    /// queries read it later (plan.md §5.3).
+    // periphery:ignore
     var fields: NodeFields
 
     /// The `column` edge, or `nil` when no patch set a column.
