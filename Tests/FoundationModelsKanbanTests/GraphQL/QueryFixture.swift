@@ -147,6 +147,10 @@ extension BoardStore {
             actingAs: ReplayTests.actor,
             mintingFrom: FixedULIDSource(at: ReplayTests.date(atStep: .zero))
         )
-        return BoardStore(working: WorkingCopy(graph: graph, events: [], stamp: stamp), boardKey: key)
+        return BoardStore(
+            working: WorkingCopy(graph: graph, events: [], stamp: stamp),
+            boardKey: key,
+            actingAs: KanbanGraphTests.sessionActor
+        )
     }
 }

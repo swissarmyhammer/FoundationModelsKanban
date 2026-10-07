@@ -68,7 +68,7 @@ struct CommitTests {
         CommitSession(
             of: try await LiveGraphApplyTests.load(log),
             inBoard: KanbanGraphTests.boardKey,
-            actingAs: ReplayTests.actor,
+            actingAs: KanbanGraphTests.sessionActor,
             mintingFrom: ids,
             timedBy: { callTime }
         )

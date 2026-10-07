@@ -15,14 +15,20 @@ actor BoardStore {
     /// the output starts with `kanban://` and this key (plan.md §3.2).
     let boardKey: String
 
+    /// The session actor of the call. A mutation field that writes to the board makes sure that this actor exists
+    /// there (plan.md §6).
+    let sessionActor: SessionActor
+
     /// Makes a store that holds the working copy of a board.
     ///
     /// - Parameters:
     ///   - work: The working copy at the start of the run.
     ///   - boardKey: The current key of the board.
-    init(working work: WorkingCopy, boardKey: String) {
+    ///   - sessionActor: The session actor of the call.
+    init(working work: WorkingCopy, boardKey: String, actingAs sessionActor: SessionActor) {
         self.work = work
         self.boardKey = boardKey
+        self.sessionActor = sessionActor
     }
 
     /// The read view of the working graph now.
@@ -43,30 +49,6 @@ actor BoardStore {
     ) throws(Failure) -> Value {
         try work.runField(as: operation, body)
     }
-
-    /// Changes the board node with one patch: `set name` and an `edit` diff of the body (plan.md §5.5). The commit
-    /// writes the patch at the end of the call.
-    ///
-    /// - Parameters:
-    ///   - input: The changes. A field that is not set does not change.
-    ///   - time: The time of the change. It becomes the `updated` value.
-    /// - Returns: The read view of the graph after the change.
-    /// - Throws: ``KanbanError/notFound(type:reference:)`` when the graph has no board node. An ``EventError`` when
-    ///   the patch breaks a rule of the log.
-    func update(with input: UpdateBoardInput?, at time: DateTime) throws -> BoardView {
-        guard let board = work.graph.boardNode else {
-            throw KanbanError.notFound(type: .board, reference: boardKey)
-        }
-        let patch = try PatchInput(
-            node: .board,
-            set: input?.name.map { name in [PropertyName.name: .json(.string(name))] } ?? [:],
-            edit: input?.body.map { body in PatchEdit(body: UnifiedDiff(from: board.fields.body, to: body).text) }
-        )
-        try runField(as: PublicSchema.updateBoardField) { work throws(EventError) in
-            try work.apply(patch, at: time)
-        }
-        return view
-    }
 }
 
 /// The context of each resolver of the kanban schemas.
@@ -80,23 +62,6 @@ struct KanbanContext: Sendable {
 }
 
 // MARK: - Arguments
-
-/// The `input` object of the `updateBoard` mutation. A field that is not set
-/// does not change.
-struct UpdateBoardInput: Codable, Sendable {
-    /// The new name of the board.
-    let name: String?
-
-    /// The new Markdown body of the board.
-    let body: String?
-}
-
-/// The arguments of the `updateBoard` mutation. The `input` argument is
-/// optional, because `UpdateBoardInput` has no required field (plan.md §4.2).
-struct UpdateBoardArguments: Codable, Sendable {
-    /// The changes to the board.
-    let input: UpdateBoardInput?
-}
 
 /// The arguments of `Query.board`.
 struct BoardArguments: Codable, Sendable {
@@ -171,21 +136,6 @@ struct KanbanResolver: Sendable {
             _ = try view.resolver.storedRef(for: reference, ofType: .board)
         }
         return try BoardObject(in: view)
-    }
-
-    /// Resolves `Mutation.updateBoard`.
-    ///
-    /// - Parameters:
-    ///   - context: The context of the call.
-    ///   - arguments: The changes to the board.
-    /// - Returns: The board after the change.
-    /// - Throws: ``KanbanError/notFound(type:reference:)`` when the graph has no board node. An ``EventError`` when
-    ///   the patch breaks a rule of the log.
-    func updateBoard(
-        context: KanbanContext,
-        arguments: UpdateBoardArguments
-    ) async throws -> BoardObject {
-        try await BoardObject(in: context.store.update(with: arguments.input, at: context.clock()))
     }
 }
 
@@ -572,9 +522,6 @@ extension CanonicalName {
 /// The schema does not have the internal `patch` mutation (plan.md §12,
 /// item 9). ``PatchSchema`` has it.
 struct PublicSchema: API {
-    /// The name of the `updateBoard` mutation. It is also the operation name in the `ops` of its events.
-    static let updateBoardField = "updateBoard"
-
     /// The root resolver.
     let resolver = KanbanResolver()
 
@@ -586,17 +533,7 @@ struct PublicSchema: API {
     /// - Throws: An error from Graphiti when a type of the schema is not valid.
     init() throws {
         schema = try SchemaBuilder.makeKanbanBuilder()
-            .add {
-                Input(UpdateBoardInput.self) {
-                    InputField("name", at: \.name)
-                    InputField("body", at: \.body)
-                }
-            }
-            .addMutation {
-                Field(Self.updateBoardField, at: KanbanResolver.updateBoard) {
-                    Argument("input", at: \.input)
-                }
-            }
+            .addBoardMutations()
             .build()
     }
 }

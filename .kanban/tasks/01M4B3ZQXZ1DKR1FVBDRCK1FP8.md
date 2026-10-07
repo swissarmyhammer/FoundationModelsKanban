@@ -1,10 +1,52 @@
 ---
+comments:
+- actor: wballard
+  id: 01m4bwnt6qx8mw6emt9qxww3r0
+  text: |-
+    Research done. Findings:
+    - `CommitSession.makeWorkingCopy` puts an in-memory board (name = repo directory name) into a graph with no board node. Thus "the board exists" must be read from the events (live events of `board`, or a kept event), not from the graph.
+    - `WorkingCopy.apply` keeps only the parts that change, and drops an empty `edit` diff. Thus a body that does not change writes no `edit`, and a `set name` to the same name writes nothing.
+    - `KanbanGraph.sessionActor(named:)` gives only the local ref. The actor `set` patch needs a name, so the engine must keep the name too. Plan: a `SessionActor` value (ref + name) that goes from `KanbanGraph` through `CommitSession` into `BoardStore`.
+    - Plan for `GraphQL/MutationResolvers.swift`: `BoardStore.runMutation(named:at:_:)` wraps `runField(as:)` for each public mutation: when the log has no board, it writes the 4 default columns before the body and the board `set name` after the body (so that `initBoard(name:)` writes one board patch); when the field kept a patch and the graph has no session actor node, it writes the actor `set name`. `initBoard` and `updateBoard` then share one body: `set` the given name and `edit` the body diff. Both fields return `Board` (nullable).
+    - The internal `patch` mutation and the CommitTests test fields do not use `runMutation`, so they keep their behavior.
+    - Rust tests to port: `test_operations_auto_init_without_explicit_init` and `test_operation_without_board_auto_inits` (default name is the repo directory name here, not "Untitled Board"), `dispatch_init_board`, `dispatch_init_board_with_description`, `dispatch_update_board`, `dispatch_with_actor_sets_processor`, and `test_ensure_os_user_actor_is_idempotent`.
+  timestamp: 2026-10-07T19:15:36.279477+00:00
+- actor: wballard
+  id: 01m4bx3788qa8511vd3ffre3ds
+  text: |-
+    Implementation landed (TDD: BoardMutationTests and the changed KanbanGraphTests failed to compile on the missing `SessionActor` type, then 1 test failed on a real bug, then all pass).
+
+    What is where:
+    - GraphQL/MutationResolvers.swift (new): `initBoard` and `updateBoard` resolvers (nullable `Board`), the one `BoardInput` type, the `DefaultColumn` table (order = index), `BoardStore.runMutation(named:at:_:)` (auto-init + session actor rule for each public mutation field), `BoardStore.changeBoard`, and `SchemaBuilder.addBoardMutations()`.
+    - Tool/KanbanGraph.swift: new `SessionActor` (ref + name). `KanbanGraph.sessionActor(named:)` now gives it; the name is the given actor name, else `NSUserName()`. The internal init takes `actingAs: SessionActor`.
+    - Tool/Commit.swift: `CommitSession` keeps the `SessionActor` and gives it to `BoardStore`; `WorkingCopy.hasEvents(of:)` tells if the log has a node.
+    - GraphQL/Schema.swift: `BoardStore.sessionActor`; the old `updateBoard` stub, `UpdateBoardInput`, `UpdateBoardArguments`, and `PublicSchema.updateBoardField` are removed (moved to MutationResolvers.swift).
+    - Tests: KanbanGraphTests gets `sessionActor`, `makeEmptyRepo(in:)`, `osUserActor()`, and an `actingAs:` parameter on `makeGraph`. CommitTests and QueryFixture pass the `SessionActor`.
+
+    Bug found by the tests: on a new board, a body-only patch folds the board from its events, so the in-memory board name (the repo directory) was lost. The auto-init now reads the directory name before the body, and writes `set name` after the body only when no kept patch wrote a name. Thus `initBoard(name: X)` still writes one board patch.
+
+    Notes for the next cards (^b4b1g28 columns/actors, addTask, ...):
+    - `runMutation` and the `MutationName`/`BoardInput` types are `fileprivate`/`private` now. A mutation in another file must widen `runMutation` to internal.
+    - Auto-init triggers on each public mutation field when the log has no `board` events (also for the fixture graphs of QueryFixture, which have no events).
+    - The actor check reads the graph (a node in the slot), not the log, so fixture actors count as existing.
+  timestamp: 2026-10-07T19:22:55.624546+00:00
+- actor: wballard
+  id: 01m4bx39zjm5antr6jw8bzj891
+  text: |-
+    ### implement — changed
+    - evidence: 2 new files (Sources/FoundationModelsKanban/GraphQL/MutationResolvers.swift, Tests/FoundationModelsKanbanTests/Mutations/BoardMutationTests.swift), 6 changed (GraphQL/Schema.swift, Tool/Commit.swift, Tool/KanbanGraph.swift, Tests: KanbanGraphTests.swift, CommitTests.swift, QueryFixture.swift). `swift test --filter BoardMutationTests`: 12 tests in 1 suite passed. `swift test`: 594 tests in 37 suites passed, 0 compiler warnings in the build. `periphery scan --retain-public --retain-codable-properties --report-exclude 'Tests/**' -- --build-tests --build-system native`: no unused code. swiftlint (no_magic_numbers, line_length 120, force_unwrapping, missing_docs) on the 8 files: 0 violations.
+    - next: /review
+  timestamp: 2026-10-07T19:22:58.418616+00:00
+- actor: wballard
+  id: 01m4bx3d60kq4pdmc5n182x7p4
+  text: 'Correction to the comment above: the column and actor mutations card is ^k9gdayr, not ^b4b1g28.'
+  timestamp: 2026-10-07T19:23:01.696328+00:00
 depends_on:
 - 01M4B3ZDK527CRVKQQRT87RGHJ
 - 01M4B3Y4M87387J50EQCD36VB0
 - 01M4B4A8735GAP57Q8ZVDP5HY2
-position_column: todo
-position_ordinal: '9780'
+position_column: doing
+position_ordinal: '8280'
 title: 'Mutations: board, auto-init, session actor'
 ---
 ## What
@@ -15,13 +57,13 @@ The first public mutations and the rules that all later mutations use. The basis
 - Session actor: the `actor` of `KanbanGraph.init`, else the OS user. A call that writes to a board makes sure that the session actor exists there (an actor `set` patch if it is new).
 
 ## Acceptance Criteria
-- [ ] The first mutation in an empty repo makes the board, the 4 columns, and the session actor.
-- [ ] `mutation { initBoard { name } }` (no `input`) works; a no-op mutation writes no patch.
-- [ ] No log line holds the key of its own board.
+- [x] The first mutation in an empty repo makes the board, the 4 columns, and the session actor.
+- [x] `mutation { initBoard { name } }` (no `input`) works; a no-op mutation writes no patch.
+- [x] No log line holds the key of its own board.
 
 ## Tests
-- [ ] `Tests/FoundationModelsKanbanTests/Mutations/BoardMutationTests.swift`: port the Rust auto-init and session actor fallback dispatch tests as GraphQL documents.
-- [ ] Run `swift test --filter BoardMutationTests`; expect all pass.
+- [x] `Tests/FoundationModelsKanbanTests/Mutations/BoardMutationTests.swift`: port the Rust auto-init and session actor fallback dispatch tests as GraphQL documents.
+- [x] Run `swift test --filter BoardMutationTests`; expect all pass.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.

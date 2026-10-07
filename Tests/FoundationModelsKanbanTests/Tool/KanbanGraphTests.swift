@@ -49,6 +49,9 @@ struct KanbanGraphTests {
     /// The actor name of the session actor test.
     static let actorName = "Claude Code"
 
+    /// The session actor of a test engine: the test actor, with ``actorName``.
+    static let sessionActor = SessionActor(ref: ReplayTests.actor, name: actorName)
+
     /// A query that reads the board, its tasks, and the column of each task. The one column of the fixture is the
     /// terminal column, so its tasks are done, and the query gives `excludeDone: false` to list them.
     static let boardQuery = """
@@ -73,26 +76,47 @@ struct KanbanGraphTests {
         boardKey
     }
 
-    /// Makes an engine for a repo, with the fixed clock, the test actor, and the fixed ULID source.
+    /// Makes an engine for a repo, with the fixed clock, a session actor, and the fixed ULID source.
     ///
     /// - Parameters:
     ///   - root: The root directory of the repo.
     ///   - keyReader: Gives the key of the board. The default is ``fakeKey(ofRepoAt:)``.
+    ///   - actor: The session actor. The default is ``sessionActor``.
     ///   - observer: Gets a call when each call starts and ends, or `nil` for no calls.
     /// - Returns: The engine.
     static func makeGraph(
         at root: URL,
         readingKeyWith keyReader: @escaping @Sendable (URL) throws(BoardKeyError) -> BoardKey = fakeKey,
+        actingAs actor: SessionActor = sessionActor,
         reportingTo observer: (any KanbanCallObserver)? = nil
     ) throws -> KanbanGraph {
         try KanbanGraph(
             root: root,
             readingKeyWith: keyReader,
             timedBy: { time },
-            actingAs: ReplayTests.actor,
+            actingAs: actor,
             mintingFrom: mutationIDs,
             reportingTo: observer
         )
+    }
+
+    /// Makes an empty repo directory with the name ``emptyRepoName`` in a temporary directory.
+    ///
+    /// - Parameter directory: The temporary directory.
+    /// - Returns: The root directory of the repo. It has no `.kanban/` directory.
+    static func makeEmptyRepo(in directory: TemporaryDirectory) throws -> URL {
+        let root = directory.url.appending(path: emptyRepoName, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        return root
+    }
+
+    /// Gives the actor of the OS user: the slug and the name of the OS user name.
+    ///
+    /// - Returns: The actor.
+    /// - Throws: ``KanbanError/invalidSlug(name:)`` when the OS user name gives an empty slug.
+    static func osUserActor() throws -> SessionActor {
+        let userName = NSUserName()
+        return SessionActor(ref: .actor(slug: try Slug(columnOrActorName: userName).value), name: userName)
     }
 
     /// Runs one document with no variables and no operation name.
@@ -193,8 +217,7 @@ struct KanbanGraphTests {
     @Test("A query on a repo with no .kanban/ returns an empty board with the repo directory name and writes no file")
     func queryOnEmptyRepo() async throws {
         let directory = try TemporaryDirectory()
-        let root = directory.url.appending(path: Self.emptyRepoName, directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let root = try Self.makeEmptyRepo(in: directory)
         let query = "{ board { name created tasks { totalCount } } }"
         let response = try await Self.execute(query, on: Self.makeGraph(at: root))
         let board = #"{"created":"\#(Self.time.rfc3339)","name":"\#(Self.emptyRepoName)","tasks":{"totalCount":0}}"#
@@ -268,15 +291,15 @@ struct KanbanGraphTests {
         #expect(try await Self.execute(Self.nameQuery, on: graph) == Self.nameResponse)
     }
 
-    @Test("The session actor is the actor with the slug of the actor name")
+    @Test("The session actor is the actor with the slug of the actor name, and it keeps the name")
     func sessionActorIsSlugOfName() throws {
-        #expect(try KanbanGraph.sessionActor(named: Self.actorName) == .actor(slug: "claude-code"))
+        let expected = SessionActor(ref: .actor(slug: "claude-code"), name: Self.actorName)
+        #expect(try KanbanGraph.sessionActor(named: Self.actorName) == expected)
     }
 
-    @Test("With no actor name, the session actor is the actor with the slug of the OS user name")
+    @Test("With no actor name, the session actor is the actor with the slug and the name of the OS user")
     func sessionActorFallsBackToUserName() throws {
-        let userSlug = try Slug(columnOrActorName: NSUserName()).value
-        #expect(try KanbanGraph.sessionActor(named: nil) == .actor(slug: userSlug))
+        #expect(try KanbanGraph.sessionActor(named: nil) == Self.osUserActor())
     }
 
     @Test("The schema SDL has the board query and no patch mutation")

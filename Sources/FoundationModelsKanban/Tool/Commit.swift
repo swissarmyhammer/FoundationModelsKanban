@@ -138,6 +138,16 @@ struct WorkingCopy: Sendable {
         return value
     }
 
+    /// Tells if the log has the node of a ref: a live event or a kept event changed it.
+    ///
+    /// The graph alone does not tell this. The graph of a repo with no board log holds an empty board in memory.
+    ///
+    /// - Parameter ref: The local ref of the node.
+    /// - Returns: `true` when an event changed the node.
+    func hasEvents(of ref: LocalRef) -> Bool {
+        nodeEvents[ref] != nil || liveEvents.contains { event in event.patch.node == ref }
+    }
+
     /// Applies one patch to the working copy (plan.md §5.4 steps 4.2 and 4.3).
     ///
     /// The patch keeps only the parts that change the node (``PatchInput/changes(afterFolding:)``). A patch that
@@ -186,8 +196,8 @@ struct CommitSession: Sendable {
     /// The key of the board. It orders the locks (plan.md §5.4 step 5.1).
     private let key: BoardKey
 
-    /// The local ref of the session actor: the actor of each event.
-    private let actor: LocalRef
+    /// The session actor: the actor of each event.
+    private let actor: SessionActor
 
     /// The source of the transaction ULIDs and the event ids.
     private var ids: any ULIDSource
@@ -200,13 +210,13 @@ struct CommitSession: Sendable {
     /// - Parameters:
     ///   - live: The live graph of the board.
     ///   - key: The key of the board.
-    ///   - actor: The local ref of the session actor.
+    ///   - actor: The session actor.
     ///   - ids: The source of the transaction ULIDs and the event ids.
     ///   - clock: The clock that gives the time of an empty board.
     init(
         of live: LiveGraph,
         inBoard key: BoardKey,
-        actingAs actor: LocalRef,
+        actingAs actor: SessionActor,
         mintingFrom ids: any ULIDSource,
         timedBy clock: @escaping @Sendable () -> DateTime
     ) {
@@ -231,7 +241,7 @@ struct CommitSession: Sendable {
         _ call: @Sendable (BoardStore) async throws -> Response
     ) async throws -> Response {
         for _ in 1...Self.maximumRuns {
-            let store = BoardStore(working: makeWorkingCopy(), boardKey: key.description)
+            let store = BoardStore(working: makeWorkingCopy(), boardKey: key.description, actingAs: actor)
             let response = try await call(store)
             let work = await store.work
             ids = work.stamp.ids
@@ -254,7 +264,7 @@ struct CommitSession: Sendable {
         return WorkingCopy(
             graph: live.graph.withBoard(named: repositoryName, at: clock()),
             events: live.events,
-            stamp: EventStamp(actingAs: actor, mintingFrom: ids)
+            stamp: EventStamp(actingAs: actor.ref, mintingFrom: ids)
         )
     }
 

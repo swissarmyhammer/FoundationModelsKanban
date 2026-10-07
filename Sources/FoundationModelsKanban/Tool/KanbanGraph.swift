@@ -25,8 +25,8 @@ public actor KanbanGraph {
     /// The clock that gives the time of a change. A test gives a fixed clock (plan.md §11).
     private let clock: @Sendable () -> DateTime
 
-    /// The local ref of the session actor: the actor of each event that a call writes.
-    private let sessionActor: LocalRef
+    /// The session actor: the actor of each event that a call writes.
+    private let sessionActor: SessionActor
 
     /// The source of the transaction ULIDs and the event ids, until the first call loads the board. The session of
     /// the board then continues it.
@@ -76,7 +76,7 @@ public actor KanbanGraph {
     ///   - root: The root directory of the repo.
     ///   - keyReader: Reads the key of the board from the repo.
     ///   - clock: Gives the time of a change.
-    ///   - actor: The local ref of the session actor.
+    ///   - actor: The session actor.
     ///   - ids: The source of the transaction ULIDs and the event ids.
     ///   - observer: Gets a call when each call starts and ends, or `nil` for no calls.
     /// - Throws: An error from Graphiti when a type of the public schema is not valid.
@@ -84,7 +84,7 @@ public actor KanbanGraph {
         root: URL,
         readingKeyWith keyReader: @escaping @Sendable (URL) throws(BoardKeyError) -> BoardKey,
         timedBy clock: @escaping @Sendable () -> DateTime,
-        actingAs actor: LocalRef,
+        actingAs actor: SessionActor,
         mintingFrom ids: any ULIDSource,
         reportingTo observer: (any KanbanCallObserver)? = nil
     ) throws {
@@ -97,13 +97,14 @@ public actor KanbanGraph {
         schema = try PublicSchema()
     }
 
-    /// Gives the session actor of a name: the actor whose slug is the slug of the name (plan.md §6).
+    /// Gives the session actor of a name: the actor whose slug is the slug of the name, with the name (plan.md §6).
     ///
     /// - Parameter name: The name of the actor, or `nil` for the name of the OS user.
-    /// - Returns: The local ref of the actor.
+    /// - Returns: The session actor.
     /// - Throws: ``KanbanError/invalidSlug(name:)`` when the name gives an empty slug.
-    static func sessionActor(named name: String?) throws(KanbanError) -> LocalRef {
-        .actor(slug: try Slug(columnOrActorName: name ?? NSUserName()).value)
+    static func sessionActor(named name: String?) throws(KanbanError) -> SessionActor {
+        let actorName = name ?? NSUserName()
+        return SessionActor(ref: .actor(slug: try Slug(columnOrActorName: actorName).value), name: actorName)
     }
 
     /// Runs one GraphQL document against the board (plan.md §5.4).
@@ -172,6 +173,20 @@ public actor KanbanGraph {
         let live = try await LiveGraph.load(using: BoardLoader(reading: EventLog(repositoryAt: root)))
         return CommitSession(of: live, inBoard: key, actingAs: sessionActor, mintingFrom: idSource, timedBy: clock)
     }
+}
+
+// MARK: - Session actor
+
+/// The session actor of an engine: the actor of each event that a call writes (plan.md §6).
+///
+/// A call that writes to a board makes sure that the actor exists in that board. When the actor is new, the call
+/// writes an actor `set` patch with ``name``.
+struct SessionActor: Equatable, Sendable {
+    /// The local ref of the actor, for example `actor/claude-code`.
+    let ref: LocalRef
+
+    /// The name of the actor, for example `Claude Code`.
+    let name: String
 }
 
 // MARK: - Serial gate
