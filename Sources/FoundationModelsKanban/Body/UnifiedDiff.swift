@@ -15,8 +15,10 @@ struct UnifiedDiff: Hashable, Sendable {
 
     /// The largest number of unchanged lines between two changes that keeps
     /// the two changes in one hunk. At this gap, the context lines of the two
-    /// changes touch, and git also writes one hunk.
-    static let largestMergedGap = contextLineCount * 2
+    /// changes touch, and git also writes one hunk. The gap holds the context
+    /// lines after the first change and the context lines before the second
+    /// change.
+    static let largestMergedGap = contextLineCount + contextLineCount
 
     /// The hunks of the diff, in line order. A diff of two equal texts has no
     /// hunks.
@@ -352,8 +354,8 @@ extension UnifiedDiff {
         ///   and in the new text for an insertion.
         private static func offset(of change: CollectionDifference<TextLine>.Change) -> Int {
             switch change {
-            case let .insert(offset, _, _): offset
-            case let .remove(offset, _, _): offset
+            case .insert(let offset, _, _): offset
+            case .remove(let offset, _, _): offset
             }
         }
     }
