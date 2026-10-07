@@ -35,7 +35,23 @@ comments:
     - evidence: local commit made, subject "feat: add the Swift package scaffold"
     - next: review
   timestamp: 2026-10-07T12:17:44.768787+00:00
-position_column: doing
+- actor: wballard
+  id: 01m4b4v1zrwh8fc3njshf1acvm
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings (0 confirmed, 0 refuted, 7 attempted, 0 failed). The engine reviewed 4 files. No validator matched .gitignore, Package.resolved, or README.md. The .reviewignore file excluded the .kanban/ files.
+    - next: The task is in done. No more work is necessary.
+  timestamp: 2026-10-07T12:19:02.264267+00:00
+- actor: wballard
+  id: 01m4b4vbadcm8w79392v08dxak
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 6 files (Package.swift, Log.swift, KanbanMain.swift, ScaffoldTests.swift, README.md, .gitignore)
+    - test: green — swift test, 1 passed, 0 warnings
+    - commit: 3274bbc
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T12:19:11.821707+00:00
+position_column: done
 position_ordinal: '80'
 title: Package scaffold
 ---

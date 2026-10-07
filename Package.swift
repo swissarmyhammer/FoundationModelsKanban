@@ -19,6 +19,18 @@ let loggingPackage = "swift-log"
 // The command-line parser of the `kanban` executable.
 let argumentParserPackage = "swift-argument-parser"
 
+// The GraphQL engine: the parser, the validator, and the executor (plan.md
+// §12, item 9).
+let graphQLPackage = "GraphQL"
+
+// The schema builder. It makes the GraphQL schema from Swift types, so that
+// the Swift types are the one source of truth (plan.md §12, item 9).
+let graphitiPackage = "Graphiti"
+
+// The ordered dictionary that a GraphQL `Map` object holds. The `JSON` scalar
+// sorts the keys of each object, so it names this type directly.
+let collectionsPackage = "swift-collections"
+
 let package = Package(
     name: packageName,
     // Commit to macOS 27. FoundationModels v2 and the sibling packages need
@@ -44,12 +56,18 @@ let package = Package(
         // for the CI reason that FoundationModelsCodeContext states.
         .package(url: "https://github.com/apple/\(loggingPackage).git", from: "1.15.1"),
         .package(url: "https://github.com/apple/\(argumentParserPackage).git", from: "1.8.0"),
+        .package(url: "https://github.com/GraphQLSwift/\(graphQLPackage).git", from: "4.3.0"),
+        .package(url: "https://github.com/GraphQLSwift/\(graphitiPackage).git", from: "3.1.0"),
+        .package(url: "https://github.com/apple/\(collectionsPackage).git", from: "1.0.0"),
     ],
     targets: [
         .target(
             name: packageName,
             dependencies: [
-                .product(name: "Logging", package: loggingPackage)
+                .product(name: "Logging", package: loggingPackage),
+                .product(name: graphQLPackage, package: graphQLPackage),
+                .product(name: graphitiPackage, package: graphitiPackage),
+                .product(name: "OrderedCollections", package: collectionsPackage),
             ],
             path: "Sources/\(packageName)"
         ),
@@ -68,7 +86,10 @@ let package = Package(
         .testTarget(
             name: "\(packageName)Tests",
             dependencies: [
-                .target(name: packageName)
+                .target(name: packageName),
+                // The tests give variables to the engine as GraphQL `Map`
+                // values, and they call the scalar types of the schema.
+                .product(name: graphQLPackage, package: graphQLPackage),
             ],
             path: "Tests/\(packageName)Tests"
         ),

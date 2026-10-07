@@ -1,6 +1,24 @@
 {
-  "originHash" : "a3653be40dda3231e43265fd4e884fac3a7b3a59479245940aa943bc02a58e54",
+  "originHash" : "bf09ad607ba3cf5a16f011440ecaecbafbfa439a633a662eccb79423be560e94",
   "pins" : [
+    {
+      "identity" : "graphiti",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/GraphQLSwift/Graphiti.git",
+      "state" : {
+        "revision" : "3ec7bf90d9884324852af9d96d2ce5aa60e02cde",
+        "version" : "3.1.0"
+      }
+    },
+    {
+      "identity" : "graphql",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/GraphQLSwift/GraphQL.git",
+      "state" : {
+        "revision" : "a83766b34139a855476166b1dc44d9ae9d8ecff4",
+        "version" : "4.3.0"
+      }
+    },
     {
       "identity" : "swift-argument-parser",
       "kind" : "remoteSourceControl",
@@ -8,6 +26,15 @@
       "state" : {
         "revision" : "6a52f3251125d74daf04fcbd5e6f08a75d074382",
         "version" : "1.8.2"
+      }
+    },
+    {
+      "identity" : "swift-collections",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-collections",
+      "state" : {
+        "revision" : "3b69cedbaa49957e97c092ae400bb57602ef941f",
+        "version" : "1.7.2"
       }
     },
     {
