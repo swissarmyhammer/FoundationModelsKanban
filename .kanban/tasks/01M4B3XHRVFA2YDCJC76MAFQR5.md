@@ -31,11 +31,27 @@ comments:
     - evidence: 5 files — Sources/FoundationModelsKanban/Events/Loader.swift (new), Tests/FoundationModelsKanbanTests/Events/LoaderTests.swift (new), Sources/FoundationModelsKanban/Model/Graph.swift, Sources/FoundationModelsKanban/Events/EventLog.swift, Package.swift. `swift test --filter LoaderTests`: 9 tests passed. `swift test`: 302 tests in 18 suites passed, 0 compiler warnings.
     - next: /review
   timestamp: 2026-10-07T15:27:32.915786+00:00
+- actor: wballard
+  id: 01m4bfs4qdhj054w82crxsynh7
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (3cf3efb). 0 findings, 0 confirmed, 0 refuted. 7 validator passes attempted, 0 failed. 5 files reviewed. 4 .kanban files not reviewed because .reviewignore excludes them.
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T15:30:13.869758+00:00
+- actor: wballard
+  id: 01m4bfsafr251zb376kp9af8kh
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 5 files (Events/Loader.swift, LoaderTests.swift, Model/Graph.swift, Events/EventLog.swift, Package.swift)
+    - test: green — swift test, 302 passed, 0 warnings
+    - commit: 3cf3efb
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T15:30:19.768173+00:00
 depends_on:
 - 01M4B3XB2P4CK66JYADZWD88DR
 - 01M4B3X08THVXHAJEQ4Z8PDB4H
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: 8f80
 title: 'Parallel loader: stages, work queue, join'
 ---
 ## What

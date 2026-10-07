@@ -76,9 +76,22 @@ struct EventLogTests {
     /// - Parameter log: The event log of the board.
     /// - Returns: `true` when the lock is free.
     static func isLockFree(of log: EventLog) -> Bool {
-        let descriptor = open(log.lockFileURL.path, O_RDWR | O_CREAT, EventLog.lockFileMode)
+        let descriptor = open(log.lockFileURL.path, O_RDWR | O_CREAT | O_CLOEXEC, EventLog.lockFileMode)
         defer { close(descriptor) }
         return flock(descriptor, LOCK_EX | LOCK_NB) == 0
+    }
+
+    /// Tells if the lock of a board is released. A child process that another test starts at the same time can hold
+    /// a copy of the lock file for a short time, until its `exec` closes the copy. The check waits for the lock,
+    /// without a timer, so that this short time does not fail the test. A lock that is never released stops the
+    /// test with its time limit.
+    ///
+    /// - Parameter log: The event log of the board.
+    /// - Returns: `true` when the lock is released.
+    static func isLockReleased(of log: EventLog) -> Bool {
+        let descriptor = open(log.lockFileURL.path, O_RDWR | O_CREAT | O_CLOEXEC, EventLog.lockFileMode)
+        defer { close(descriptor) }
+        return flock(descriptor, LOCK_EX) == 0
     }
 
     // MARK: - Paths
@@ -252,14 +265,14 @@ struct EventLogTests {
 
     // MARK: - Lock
 
-    @Test("A different file descriptor cannot lock the board while the lock is held")
+    @Test("A different file descriptor cannot lock the board while the lock is held", .timeLimit(.minutes(1)))
     func lockExcludesOtherDescriptor() throws {
         let directory = try TemporaryDirectory()
         let log = EventLog(repositoryAt: directory.url)
         let lock = try log.lock()
         #expect(!Self.isLockFree(of: log))
         lock.unlock()
-        #expect(Self.isLockFree(of: log))
+        #expect(Self.isLockReleased(of: log))
     }
 
     @Test("A second lock of the same board waits until the first lock is released")
@@ -280,7 +293,7 @@ struct EventLogTests {
         #expect(records.withLock { list in list } == [Self.releasedRecord, Self.acquiredRecord])
     }
 
-    @Test("The lock of many boards takes the boards in the sort order of the board key")
+    @Test("The lock of many boards takes the boards in the sort order of the board key", .timeLimit(.minutes(1)))
     func manyBoardsLockInKeyOrder() throws {
         let directory = try TemporaryDirectory()
         let names = ["zeta", "alpha", "mid"]
@@ -294,7 +307,7 @@ struct EventLogTests {
         let lock = try EventLog.lock(sortedByKey: logs)
         #expect(ordered.allSatisfy { log in !Self.isLockFree(of: log) })
         lock.unlock()
-        #expect(ordered.allSatisfy { log in Self.isLockFree(of: log) })
+        #expect(ordered.allSatisfy { log in Self.isLockReleased(of: log) })
     }
 }
 
