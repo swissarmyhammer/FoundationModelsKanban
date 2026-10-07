@@ -33,11 +33,27 @@ comments:
   id: 01m4bbzeg2qk5rvcfqgsrwk578
   text: 'Correction to the step record: the EventTests suite has 19 tests (27 cases with the two 5-argument tests), not 21 (29). All pass.'
   timestamp: 2026-10-07T14:23:46.178166+00:00
+- actor: wballard
+  id: 01m4bc9fh0868apdwvje4p7nte
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (f329565). 0 findings, 0 confirmed, 1 refuted. 6 files reviewed. 4 .kanban files not reviewed (.reviewignore).
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T14:29:14.912338+00:00
+- actor: wballard
+  id: 01m4bc9pwp077phycyrrdmc0x4
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 6 files (Event.swift, PatchInput.swift, PatchSchema.swift, LocalRef.swift, EventTests.swift, GraphQLEngineTests.swift)
+    - test: green — swift test, 238 passed, 0 warnings
+    - commit: f329565
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T14:29:22.454155+00:00
 depends_on:
 - 01M4B3VF41P7FCKEC4MFT9GWA0
 - 01M4B3VR0CTZWWGMDJBT7YF4W0
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: 8b80
 title: 'Event model: envelope and PatchInput lines'
 ---
 ## What
