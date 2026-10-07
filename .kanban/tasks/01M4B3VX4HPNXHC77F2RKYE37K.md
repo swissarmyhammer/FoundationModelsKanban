@@ -23,11 +23,27 @@ comments:
     - evidence: Sources/FoundationModelsKanban/Tags/TagSlug.swift, Sources/FoundationModelsKanban/Tags/AutoColor.swift, Tests/FoundationModelsKanbanTests/Tags/TagSlugTests.swift, Tests/FoundationModelsKanbanTests/Tags/AutoColorTests.swift; `swift test --filter "TagSlugTests|AutoColorTests"` 18 tests in 2 suites passed; `swift test` 153 tests in 11 suites passed, 0 warnings
     - next: review
   timestamp: 2026-10-07T13:44:24.328243+00:00
+- actor: wballard
+  id: 01m4b9y3ze3y77b40wn1dg8vwg
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (4458df7); 0 findings, 0 confirmed, 0 refuted; 7 validator runs, 0 failed; 4 files reviewed, 4 .kanban/ files excluded by .reviewignore.
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T13:48:05.486617+00:00
+- actor: wballard
+  id: 01m4b9yb2snt0xgn7res0tqhpj
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 4 files (TagSlug.swift, AutoColor.swift, TagSlugTests.swift, AutoColorTests.swift)
+    - test: green — swift test, 153 passed, 0 warnings
+    - commit: 4458df7
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T13:48:12.761171+00:00
 depends_on:
 - 01M4B3V22A3PCQRESESTYBQ2FH
 - 01M4B4A8735GAP57Q8ZVDP5HY2
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '8880'
 title: Slugs, tag names, and auto color
 ---
 ## What
