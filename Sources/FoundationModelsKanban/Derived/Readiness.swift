@@ -68,13 +68,23 @@ struct Readiness {
         return column(ofTaskAt: slot) == terminal
     }
 
+    /// Gives the dependencies of a task: its `dependsOn` edges and its dependency markers, without the dependencies
+    /// on tombstoned nodes.
+    ///
+    /// - Parameter slot: The slot of the task.
+    /// - Returns: The targets, edges first and then markers. A target that the graph does not have stays an
+    ///   unresolved edge. A slot that holds no task gives no targets.
+    func dependencies(ofTaskAt slot: Int) -> [EdgeTarget] {
+        dependencies[slot, default: []]
+    }
+
     /// Gives the dependencies that block a task: the `blockedBy` field.
     ///
     /// - Parameter slot: The slot of the task.
     /// - Returns: The blocking targets, in the order of the dependencies. A target that the graph does not have
     ///   stays an unresolved edge.
     func blockers(ofTaskAt slot: Int) -> [EdgeTarget] {
-        dependencies[slot, default: []].filter { target in
+        dependencies(ofTaskAt: slot).filter { target in
             isBlocking(target, forTaskAt: slot)
         }
     }
@@ -139,7 +149,7 @@ extension Readiness {
     /// - Parameter slot: The slot of the task.
     /// - Returns: The slots. An unresolved dependency has no slot, so it is not in the result.
     private func dependencySlots(ofTaskAt slot: Int) -> [Int] {
-        dependencies[slot, default: []].compactMap(\.resolvedSlot)
+        dependencies(ofTaskAt: slot).compactMap(\.resolvedSlot)
     }
 }
 

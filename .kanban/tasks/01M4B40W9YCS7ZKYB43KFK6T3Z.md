@@ -24,10 +24,26 @@ comments:
     - evidence: 3 files — Sources/FoundationModelsKanban/GraphQL/NameMatcher.swift (new), Sources/FoundationModelsKanban/GraphQL/Schema.swift (alias table + `CanonicalName(field:)`), Tests/FoundationModelsKanbanTests/GraphQL/NameMatcherTests.swift (new). `swift test --filter NameMatcherTests`: 22 tests passed. `swift test`: 481 tests in 31 suites passed, 0 compiler warnings. swiftlint (magic numbers, docs, force rules, length 120): 0 violations. periphery (native build): 0 findings in the changed files.
     - next: /review
   timestamp: 2026-10-07T17:30:14.041791+00:00
+- actor: wballard
+  id: 01m4bpvm0h42w6zehkkkcv147c
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (aad78cd). 0 findings, 0 confirmed, 0 refuted. 3 files reviewed. 4 .kanban files not reviewed (.reviewignore).
+    - next: None. The task is in done.
+  timestamp: 2026-10-07T17:33:55.089542+00:00
+- actor: wballard
+  id: 01m4bpvtb9wpjsfd69ssjvsq3j
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 3 files (GraphQL/NameMatcher.swift, GraphQL/Schema.swift, NameMatcherTests.swift)
+    - test: green — swift test, 481 passed, 0 warnings
+    - commit: aad78cd
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T17:34:01.577026+00:00
 depends_on:
 - 01M4B3YQSXZCGCB08FVP8QCSF3
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: '9780'
 title: 'Forgiving names: the name matcher'
 ---
 ## What

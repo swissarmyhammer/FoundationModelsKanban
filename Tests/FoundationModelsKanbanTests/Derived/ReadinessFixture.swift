@@ -3,8 +3,8 @@ import Testing
 
 @testable import FoundationModelsKanban
 
-/// A test board for the tests of the derived fields: a graph with the default columns, and tasks, actors, and
-/// comments that the tests add (plan.md §5.3, §6).
+/// A test board for the tests of the derived fields and the filter: a graph with the default columns, and tasks,
+/// actors, tags, columns, and comments that the tests add (plan.md §5.3, §6).
 ///
 /// The time, the board keys, and the ULID, URL, and URI helpers are the ones of ``DependencyMarkersTests``.
 struct ReadinessFixture {
@@ -112,11 +112,24 @@ struct ReadinessFixture {
     ///
     /// - Parameters:
     ///   - slug: The slug of the actor.
+    ///   - name: The name of the actor.
     ///   - isDeleted: `true` when the actor is a tombstone.
     /// - Returns: The slot of the actor.
     @discardableResult
-    mutating func addActor(withSlug slug: String, isDeleted: Bool = false) -> Int {
-        graph.update(with: .actor(ActorNode(slug: slug, fields: Self.fields(isDeleted: isDeleted))))
+    mutating func addActor(withSlug slug: String, named name: String = "", isDeleted: Bool = false) -> Int {
+        graph.update(with: .actor(ActorNode(slug: slug, fields: Self.fields(isDeleted: isDeleted), name: name)))
+    }
+
+    /// Adds a tag, or replaces the tag with the same slug.
+    ///
+    /// - Parameters:
+    ///   - slug: The slug of the tag.
+    ///   - target: The slug of the tag that a rename made this tag point to, or `nil` for a tag with no rename.
+    ///   - isDeleted: `true` when the tag is a tombstone.
+    mutating func addTag(withSlug slug: String, renamedTo target: String? = nil, isDeleted: Bool = false) {
+        let renamedTo = target.map { targetSlug in EdgeTarget.unresolved(.local(.tag(slug: targetSlug))) }
+        let tag = TagNode(slug: slug, fields: Self.fields(isDeleted: isDeleted), renamedTo: renamedTo)
+        graph.update(with: .tag(tag))
     }
 
     /// Adds a comment, or replaces the comment with the same ULID.
@@ -148,10 +161,12 @@ struct ReadinessFixture {
     ///
     /// - Parameters:
     ///   - slug: The slug of the column.
+    ///   - name: The name of the column.
     ///   - order: The sort key of the column.
     ///   - isDeleted: `true` when the column is a tombstone.
-    mutating func addColumn(withSlug slug: String, order: Int, isDeleted: Bool = false) {
-        graph.update(with: .column(ColumnNode(slug: slug, fields: Self.fields(isDeleted: isDeleted), order: order)))
+    mutating func addColumn(withSlug slug: String, named name: String = "", order: Int, isDeleted: Bool = false) {
+        let column = ColumnNode(slug: slug, fields: Self.fields(isDeleted: isDeleted), name: name, order: order)
+        graph.update(with: .column(column))
     }
 
     /// Adds a task, or replaces the task with the same ULID.
@@ -159,6 +174,8 @@ struct ReadinessFixture {
     /// - Parameters:
     ///   - text: The ULID text of the task.
     ///   - column: The slug of the column of the task, or `nil` for a task with no column.
+    ///   - tags: The slugs of the tags that the `tags` edges name.
+    ///   - assignees: The slugs of the actors that the `assignees` edges name.
     ///   - dependencies: The ULID texts of the tasks of this board that the `dependsOn` edges name.
     ///   - remoteDependencies: The URIs of the tasks of other boards that the `dependsOn` edges name.
     ///   - moves: The moves of the task to a column, in event order.
@@ -169,6 +186,8 @@ struct ReadinessFixture {
     mutating func addTask(
         withULID text: String,
         inColumn column: String? = ReadinessFixture.todo,
+        taggedWith tags: [String] = [],
+        assignedTo assignees: [String] = [],
         dependingOn dependencies: [String] = [],
         dependingOnRemote remoteDependencies: [NodeURI] = [],
         withMoves moves: [ColumnMove] = [],
@@ -180,6 +199,8 @@ struct ReadinessFixture {
             id: try DependencyMarkersTests.ulid(of: text),
             fields: fields,
             column: column.map { slug in .unresolved(.local(.column(slug: slug))) },
+            assignees: assignees.map { slug in .unresolved(.local(.actor(slug: slug))) },
+            tags: tags.map { slug in .unresolved(.local(.tag(slug: slug))) },
             dependsOn: localEdges + remoteEdges,
             columnMoves: moves
         )
