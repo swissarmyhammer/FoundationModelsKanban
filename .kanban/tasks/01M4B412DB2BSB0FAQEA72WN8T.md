@@ -28,6 +28,36 @@ comments:
     - evidence: `swift test --filter ChangeBuilderTests` 12 tests (2 with 31 cases each) passed; `swift build --build-tests` + `swift test` 770 tests in 45 suites passed, only the accepted SwiftPM "missing creator" warning; `periphery scan --retain-public ... -- --build-tests --build-system native` no unused code. Files: Sources/FoundationModelsKanban/Observe/Change.swift, Sources/FoundationModelsKanban/Observe/ChangeBuilder.swift, Sources/FoundationModelsKanban/GraphQL/Schema.swift, Sources/FoundationModelsKanban/GraphQL/QueryResolvers.swift, Tests/FoundationModelsKanbanTests/Observe/ChangeBuilderTests.swift, Tests/FoundationModelsKanbanTests/Mutations/{TaskOperationTests,TagMutationTests,CommentTests,ColumnActorTests}.swift
     - next: /review
   timestamp: 2026-10-07T22:38:13.820855+00:00
+- actor: wballard
+  id: 01m4c8mqy6cx05kdjkwv2k2nzq
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (a34a66c): 3 findings (3 confirmed, 4 refuted). Sources/FoundationModelsKanban/Observe/ChangeBuilder.swift:263, Tests/FoundationModelsKanbanTests/Observe/ChangeBuilderTests.swift:322, Tests/FoundationModelsKanbanTests/Observe/ChangeBuilderTests.swift:331
+    - next: Correct the 3 findings in the "Review Findings (2026-10-07 17:41)" section. Then do the review again.
+  timestamp: 2026-10-07T22:44:44.102563+00:00
+- actor: wballard
+  id: 01m4c8n1vkr75gjpdn19fmzgvh
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 9 files (Observe/Change.swift, Observe/ChangeBuilder.swift, Schema, QueryResolvers, ChangeBuilderTests, TaskOperationTests, TagMutationTests, CommentTests, ColumnActorTests)
+    - test: green — swift test, 770 passed; build warnings only the 2 accepted kinds
+    - commit: a34a66c
+    - review: findings — Sources/FoundationModelsKanban/Observe/ChangeBuilder.swift:263, Tests/FoundationModelsKanbanTests/Observe/ChangeBuilderTests.swift:322, Tests/FoundationModelsKanbanTests/Observe/ChangeBuilderTests.swift:331
+  timestamp: 2026-10-07T22:44:54.259126+00:00
+- actor: wballard
+  id: 01m4c8tbnr2p2vp59ab2dkgxj8
+  text: |-
+    Review findings (2026-10-07 17:41) corrected:
+    - Finding 1 (duplication): `ChangeBuilder.swift` has two new shared helpers. `GraphNodeObject.nodeFields(named:adding:)` adds the `name` entry. `BoardObject`, `ColumnObject`, and the label helper call it, so the `("name", .single(Map(name)))` entry has one copy now. `LabelObject.labelFields(withColor:)` gives `name` and `color`. `ActorObject.trackedFields` and `TagObject.trackedFields` call it with `Map(color)`. Why the color goes in as a `Map` argument: the `Color` associated type is `String?` for an actor and `String` for a tag, so a generic body in `LabelObject` cannot call the `Map` initializer. Each type converts its own color, and the shared helper has the field list.
+    - Findings 2 and 3 (doc-parameter-naming): the cause was in 4 functions, not 2: `deleteDoneField`, `deleteAliceField`, `deleteBugField`, `renameBugField`. In each one, the `- Parameter refs:` entry is removed. The prose now says that the field does not read the refs of the case, so the parameter has no name. I did not name the parameter `refs`, because that gives an unused parameter, which periphery reports. All other `- Parameter` entries in `ChangeBuilderTests.swift` and `ChangeBuilder.swift` match their internal parameter names.
+  timestamp: 2026-10-07T22:47:48.152839+00:00
+- actor: wballard
+  id: 01m4c8tdnq9c4fch904h90jmv0
+  text: |-
+    ### implement — changed
+    - evidence: `swift test` 770 tests in 45 suites passed (ChangeBuilderTests suite passed, 2 tests with 31 cases each). The only build warning is the accepted SwiftPM "missing creator" warning from mlx-swift. Files: Sources/FoundationModelsKanban/Observe/ChangeBuilder.swift, Tests/FoundationModelsKanbanTests/Observe/ChangeBuilderTests.swift
+    - next: /review
+  timestamp: 2026-10-07T22:47:50.199124+00:00
 depends_on:
 - 01M4B3ZDK527CRVKQQRT87RGHJ
 - 01M4B4AJGSQDJ4PCBP2W5XQJKR
@@ -58,3 +88,14 @@ Describe what one transaction changed. The basis is plan.md §4.1 (`Change`, `No
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-07 17:41)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 9 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsKanban/Observe/ChangeBuilder.swift:263` `duplication/duplication` — The `trackedFields` body of `TagObject` repeats the `ActorObject` body verbatim: the same `nodeFields(adding:)` call with the same `name` and `color` entries. A later change to the tracked fields of one type could leave the other out of step, so the tracked-field list for name and color should live in one shared helper. Add one shared helper on `GraphNodeObject`, for example `nameAndColorFields`, that returns `nodeFields(adding: [("name", .single(Map(name))), ("color", .single(Map(color)))])`. Have both `ActorObject.trackedFields` and `TagObject.trackedFields` call it, and delete the second copy.
+- [x] `Tests/FoundationModelsKanbanTests/Observe/ChangeBuilderTests.swift:322` `swift/doc-parameter-naming` — The doc entry names `refs`, but the parameter is `_: CaseRefs`, which has no internal name. The documented name matches neither the internal name nor an external label, so DocC cannot resolve it. Remove the `- Parameter refs:` entry and keep the prose that says the field does not read the refs. Or name the parameter `refs` in the signature and document it as `- Parameter refs:`.
+- [x] `Tests/FoundationModelsKanbanTests/Observe/ChangeBuilderTests.swift:331` `swift/doc-parameter-naming` — The doc entry names `refs`, but the parameter is `_: CaseRefs`, which has no internal name. DocC cannot resolve the entry. Remove the `- Parameter refs:` entry, or name the parameter `refs` in the signature and document that name.

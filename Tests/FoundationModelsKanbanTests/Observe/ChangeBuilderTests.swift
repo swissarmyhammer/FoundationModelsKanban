@@ -319,7 +319,8 @@ struct ChangeBuilderTests {
 
     /// Makes the `deleteColumn` field of the empty column `done`.
     ///
-    /// - Parameter refs: The refs of the case. The field does not read them.
+    /// The field does not read the refs of the case, so the parameter has no name.
+    ///
     /// - Returns: The field.
     @Sendable
     static func deleteDoneField(_: CaseRefs) -> String {
@@ -328,7 +329,8 @@ struct ChangeBuilderTests {
 
     /// Makes the `deleteActor` field of `alice`.
     ///
-    /// - Parameter refs: The refs of the case. The field does not read them.
+    /// The field does not read the refs of the case, so the parameter has no name.
+    ///
     /// - Returns: The field.
     @Sendable
     static func deleteAliceField(_: CaseRefs) -> String {
@@ -337,7 +339,8 @@ struct ChangeBuilderTests {
 
     /// Makes the `deleteTag` field of `bug`.
     ///
-    /// - Parameter refs: The refs of the case. The field does not read them.
+    /// The field does not read the refs of the case, so the parameter has no name.
+    ///
     /// - Returns: The field.
     @Sendable
     static func deleteBugField(_: CaseRefs) -> String {
@@ -346,7 +349,8 @@ struct ChangeBuilderTests {
 
     /// Makes the `renameTag` field that renames `bug` to `defect`.
     ///
-    /// - Parameter refs: The refs of the case. The field does not read them.
+    /// The field does not read the refs of the case, so the parameter has no name.
+    ///
     /// - Returns: The field.
     @Sendable
     static func renameBugField(_: CaseRefs) -> String {

@@ -234,33 +234,56 @@ extension GraphNodeObject {
         ]
         return TrackedFields(uniqueKeysWithValues: interfaceFields + fields)
     }
+
+    /// Gives the values of the fields of the `Node` interface, then the value of `name`, then the values of the other
+    /// fields of the node type.
+    ///
+    /// - Parameters:
+    ///   - name: The name of the node.
+    ///   - fields: The values of the other fields of the node type, in the order of the fields.
+    /// - Returns: The values.
+    fileprivate func nodeFields(named name: String, adding fields: [(String, TrackedValue)]) -> TrackedFields {
+        nodeFields(adding: [("name", .single(Map(name)))] + fields)
+    }
+}
+
+extension LabelObject {
+    /// Gives the values of the public fields of an actor or a tag: the fields of the `Node` interface, `name`, and
+    /// `color`.
+    ///
+    /// - Parameter colorValue: The value of the `color` field. The color type of an actor and of a tag is not the
+    ///   same, so each type gives its color as a JSON value.
+    /// - Returns: The values.
+    fileprivate func labelFields(withColor colorValue: Map) -> TrackedFields {
+        nodeFields(named: name, adding: [("color", .single(colorValue))])
+    }
 }
 
 extension BoardObject {
     /// The values of the public fields of the board: `name` and the derived `summary`.
     var trackedFields: TrackedFields {
-        nodeFields(adding: [("name", .single(Map(name))), ("summary", .single(summary.jsonValue))])
+        nodeFields(named: name, adding: [("summary", .single(summary.jsonValue))])
     }
 }
 
 extension ColumnObject {
     /// The values of the public fields of the column: `name` and `order`.
     var trackedFields: TrackedFields {
-        nodeFields(adding: [("name", .single(Map(name))), ("order", .single(Map(order)))])
+        nodeFields(named: name, adding: [("order", .single(Map(order)))])
     }
 }
 
 extension ActorObject {
     /// The values of the public fields of the actor: `name` and `color`.
     var trackedFields: TrackedFields {
-        nodeFields(adding: [("name", .single(Map(name))), ("color", .single(Map(color)))])
+        labelFields(withColor: Map(color))
     }
 }
 
 extension TagObject {
     /// The values of the public fields of the tag: `name` and `color`.
     var trackedFields: TrackedFields {
-        nodeFields(adding: [("name", .single(Map(name))), ("color", .single(Map(color)))])
+        labelFields(withColor: Map(color))
     }
 }
 
