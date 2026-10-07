@@ -98,7 +98,7 @@ extension TagMarkers {
     ///
     /// - Parameter text: The text of the line, without its line break.
     /// - Returns: The markers, in text order. A marker in inline code is not in the result.
-    fileprivate static func markers(inLine text: Substring) -> [TagMarker] {
+    private static func markers(inLine text: Substring) -> [TagMarker] {
         let scalars = text.unicodeScalars
         return Array(
             sequence(state: scalars.startIndex) { start -> TagMarker? in

@@ -28,6 +28,41 @@ comments:
     - evidence: 7 files — Sources/FoundationModelsKanban/Body/BodyLines.swift (new), Sources/FoundationModelsKanban/Tags/TagMarkers.swift (new), Sources/FoundationModelsKanban/Derived/DependencyMarkers.swift, Sources/FoundationModelsKanban/Model/Graph.swift, Sources/FoundationModelsKanban/Tags/TagSlug.swift, Tests/FoundationModelsKanbanTests/Tags/TagMarkersTests.swift (new), Tests/FoundationModelsKanbanTests/Tags/TagResolveTests.swift (new). `swift test --filter 'TagMarkersTests|TagResolveTests'`: 23 tests in 2 suites passed. `swift test`: 336 tests in 21 suites passed, no build warnings. `periphery scan --retain-public --report-exclude 'Tests/**' -- --build-system native --build-tests`: no findings in changed files (4 earlier findings in GraphQL/Errors.swift only).
     - next: /review
   timestamp: 2026-10-07T15:48:38.296157+00:00
+- actor: wballard
+  id: 01m4bh2tmxjc7rk6zr8xgdt3s8
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD; 1 finding (1 confirmed, 0 refuted) — Sources/FoundationModelsKanban/Tags/TagMarkers.swift:101 (swift/access-control)
+    - next: Change `fileprivate` to `private` on `markers(inLine:)`. Remove this cause from all of TagMarkers.swift. Then run the review again.
+  timestamp: 2026-10-07T15:52:59.805001+00:00
+- actor: wballard
+  id: 01m4bh34spma1xqh1am5habfen
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 7 files (Body/BodyLines.swift, Tags/TagMarkers.swift, Derived/DependencyMarkers.swift, Model/Graph.swift, Tags/TagSlug.swift, TagMarkersTests.swift, TagResolveTests.swift)
+    - test: green — swift test, 336 passed, 0 warnings
+    - commit: d9f6082
+    - review: findings — Sources/FoundationModelsKanban/Tags/TagMarkers.swift:101
+  timestamp: 2026-10-07T15:53:10.198534+00:00
+- actor: wballard
+  id: 01m4bh4hdwp22d72k2ypcj97tg
+  text: |-
+    Fix for the swift/access-control finding.
+    - `TagMarkers.markers(inLine:)` changed from `fileprivate` to `private`. Only `TagMarkers` and its extensions in the same file call it.
+    - Checked each other `fileprivate` member in the changed files. They must stay `fileprivate`, because a different type in the same file calls them, and a `private` member of an extension is visible only to the same type:
+      - `Unicode.Scalar.isMarkerSlugScalar` (TagMarkers.swift): `TagMarkers.marker(in:at:)` calls it.
+      - `Substring.isFenceLine` and `Substring.isHeadingLine` (TagMarkers.swift): `TagMarkers.tagBearingFlags(of:)` calls them.
+      - `Slug.init?(nonEmptySlugOf:)` (TagSlug.swift): `TagName.init(normalizing:)` calls it.
+    - `Body/BodyLines.swift`, `Derived/DependencyMarkers.swift`, and `Model/Graph.swift` have no `fileprivate` member.
+    - TDD note: this change has no behavior change, so no new test. The compiler is the check.
+  timestamp: 2026-10-07T15:53:55.900583+00:00
+- actor: wballard
+  id: 01m4bh4jhd27wqy8w92bdpxhee
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Sources/FoundationModelsKanban/Tags/TagMarkers.swift. `swift test`: 336 tests in 21 suites passed, build complete with 0 compiler warnings.
+    - next: /review
+  timestamp: 2026-10-07T15:53:57.037249+00:00
 depends_on:
 - 01M4B3XHRVFA2YDCJC76MAFQR5
 - 01M4B3VX4HPNXHC77F2RKYE37K
@@ -54,3 +89,12 @@ Calculate the tags of a task. The basis is plan.md §6.1 and §6.2.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-07 10:49)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 7 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsKanban/Tags/TagMarkers.swift:101` `swift/access-control` — `markers(inLine:)` uses `fileprivate` but should use `private`. The function is only called from within `TagMarkers` and its extensions—specifically from `slugs()` at line 50 and from `editedLine()` at line 207. Private access is sufficient; fileprivate unnecessarily exposes it to sibling types in the file. Change `fileprivate static func markers(inLine text: Substring)` to `private static func markers(inLine text: Substring)`.
