@@ -340,7 +340,7 @@ extension WorkingCopy {
     /// - Returns: The stored refs of the tags, after the rename redirect.
     /// - Throws: ``KanbanError/invalidTagName(name:)`` when a name gives an empty slug.
     ///   ``KanbanError/notFound(type:reference:)`` when a tag URI names no live tag.
-    fileprivate mutating func tagRefs(
+    mutating func tagRefs(
         named names: [String],
         resolvingWith resolver: RefResolver,
         at time: DateTime
@@ -396,26 +396,47 @@ extension Graph {
         if let id {
             return try resolver.nodeRef(for: id, ofType: .column)
         }
-        guard let first = ColumnOrder(of: self).first, let column = node(at: first) else {
+        return try columnRef(atSlot: ColumnOrder(of: self).first)
+    }
+
+    /// Gives the local ref of the column in a slot of ``ColumnOrder``, for example its first or its terminal column.
+    ///
+    /// - Parameter slot: The slot of the column, or `nil` when the board has no live column.
+    /// - Returns: The local ref of the column.
+    /// - Throws: ``KanbanError/notFound(type:reference:)`` when the slot is `nil` or holds no node.
+    func columnRef(atSlot slot: Int?) throws(KanbanError) -> LocalRef {
+        guard let slot, let column = node(at: slot) else {
             throw .notFound(type: .column, reference: "")
         }
         return column.ref
     }
 
-    /// Gives the ordinal of a task that the call adds at the end of a column: after the last ordinal of the live tasks
-    /// that show in the column, or the first ordinal for an empty column (plan.md §6, "Ordinals").
+    /// Gives the live tasks that show in a column, in the order of the column: ordinal, then ULID.
     ///
-    /// - Parameter column: The local ref of the column.
-    /// - Returns: The ordinal.
-    fileprivate func nextOrdinal(inColumn column: LocalRef) -> Ordinal {
+    /// - Parameters:
+    ///   - column: The local ref of the column.
+    ///   - task: The local ref of a task to leave out, for example the task that a move puts in the column, or `nil`
+    ///     to keep each task.
+    /// - Returns: The tasks.
+    func tasks(inColumn column: LocalRef, excluding task: LocalRef? = nil) -> [TaskNode] {
         let order = ColumnOrder(of: self)
         let columnSlot = slot(for: column)
-        let ordinals = allSlots.filter(isLiveTask(at:)).compactMap { slot -> Ordinal? in
-            node(at: slot, as: TaskNode.self).flatMap { task in
-                order.displaySlot(of: task.column) == columnSlot ? task.ordinal : nil
-            }
-        }
-        return ordinals.max().map(Ordinal.init(after:)) ?? .first
+        return allSlots.filter(isLiveTask(at:))
+            .compactMap { slot in node(at: slot, as: TaskNode.self) }
+            .filter { shown in shown.ref != task && order.displaySlot(of: shown.column) == columnSlot }
+            .sorted { lhs, rhs in (lhs.ordinal, lhs.id) < (rhs.ordinal, rhs.id) }
+    }
+
+    /// Gives the ordinal of a task that the call puts at the end of a column: after the last ordinal of the live tasks
+    /// that show in the column, or the first ordinal for an empty column (plan.md §6, "Ordinals").
+    ///
+    /// - Parameters:
+    ///   - column: The local ref of the column.
+    ///   - task: The local ref of the task that the call moves, or `nil` for a new task. The column order does not
+    ///     count this task.
+    /// - Returns: The ordinal.
+    func nextOrdinal(inColumn column: LocalRef, excluding task: LocalRef? = nil) -> Ordinal {
+        tasks(inColumn: column, excluding: task).last.map { last in Ordinal(after: last.ordinal) } ?? .first
     }
 
     /// Gives the stored ref of an edge.
@@ -423,7 +444,7 @@ extension Graph {
     /// - Parameter edge: The edge.
     /// - Returns: The local ref of the target in a slot, the ref of an unresolved edge, or `nil` when the slot holds
     ///   no node.
-    fileprivate func storedRef(of edge: EdgeTarget) -> StoredRef? {
+    func storedRef(of edge: EdgeTarget) -> StoredRef? {
         switch edge {
         case .slot(let slot): node(at: slot).map { node in .local(node.ref) }
         case .unresolved(let ref): ref

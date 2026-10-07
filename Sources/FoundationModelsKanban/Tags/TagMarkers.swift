@@ -323,6 +323,15 @@ extension Graph {
         return current
     }
 
+    /// Follows the rename redirect from the local ref of a tag (plan.md §6.2).
+    ///
+    /// - Parameter ref: The local ref of the first tag.
+    /// - Returns: The local ref of the tag at the end of the rename chain, live or tombstoned, or `ref` when the graph
+    ///   does not have the tag or the walk ends with no tag.
+    func tagRef(redirectedFrom ref: LocalRef) -> LocalRef {
+        slot(for: ref).flatMap(renameTarget(ofTagAt:)).flatMap(node(at:))?.ref ?? ref
+    }
+
     /// Follows the rename redirect from a tag, and keeps the result only when it is a live tag.
     ///
     /// - Parameter slot: The slot of the first tag.

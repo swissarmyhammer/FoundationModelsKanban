@@ -193,11 +193,11 @@ extension WorkingCopy {
         body: String? = nil,
         at time: DateTime
     ) throws -> LocalRef {
-        guard graph.hasNode(ref), let slot = graph.slot(for: ref) else {
+        guard graph.hasNode(ref) else {
             try addNode(ref, setting: values, body: body, at: time)
             return ref
         }
-        let target = graph.renameTarget(ofTagAt: slot).flatMap(graph.node(at:))?.ref ?? ref
+        let target = graph.tagRef(redirectedFrom: ref)
         try apply(PatchInput(node: target, delete: false), at: time)
         return target
     }

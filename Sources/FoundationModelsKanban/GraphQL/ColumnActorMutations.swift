@@ -424,7 +424,7 @@ extension WorkingCopy {
 extension Graph {
     /// The order of a column that the call adds with no order: one more than the order of the terminal column, or 0
     /// on a board with no live column. Thus the new column comes last (plan.md §6).
-    fileprivate var nextColumnOrder: Int {
+    var nextColumnOrder: Int {
         let terminal = ColumnOrder(of: self).terminal.flatMap { slot in node(at: slot, as: ColumnNode.self) }
         return terminal.map { column in column.order + 1 } ?? .zero
     }
@@ -465,7 +465,7 @@ extension PatchValue {
     ///
     /// - Parameter value: The integer.
     /// - Returns: The JSON number value.
-    fileprivate static func integer(_ value: Int) -> PatchValue {
+    static func integer(_ value: Int) -> PatchValue {
         .json(.number(Number(value)))
     }
 }

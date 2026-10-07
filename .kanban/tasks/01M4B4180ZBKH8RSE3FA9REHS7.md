@@ -107,12 +107,28 @@ comments:
     - evidence: `swift test`: 723 tests in 43 suites passed, exit 0. Build warnings: 1 line only, the accepted SwiftPM `missing creator for mutated node: (.../mlx-swift_Cmlx.bundle/Contents/MacOS)`; no warning from our sources. Files: Tests/FoundationModelsKanbanTests/Tool/CommitTests.swift, Tests/FoundationModelsKanbanTests/GraphQLEngineTests.swift, Tests/FoundationModelsKanbanTests/GraphQL/QueryFixture.swift, Tests/FoundationModelsKanbanTests/GraphQL/NodeQueryTests.swift, Tests/FoundationModelsKanbanTests/Filter/TaskQueryFixture.swift. Finding marked `- [x]`. No commit.
     - next: /review
   timestamp: 2026-10-07T21:31:52.429442+00:00
+- actor: wballard
+  id: 01m4c4p54n2y7zgvw4gagga6s8
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (c9e71ed). 0 findings, 0 confirmed, 1 refuted. 5 files reviewed. 2 files under `.kanban/` not reviewed (ignore rule). All prior Review Findings items are checked.
+    - next: none. The task moved to done.
+  timestamp: 2026-10-07T21:35:36.085223+00:00
+- actor: wballard
+  id: 01m4c4pbv7wvbm1qwm24d6jmhc
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — 5 test files (CommitTests, GraphQLEngineTests, QueryFixture, NodeQueryTests, TaskQueryFixture); 1/1 findings checked
+    - test: green — swift test, 723 passed; build warnings only the 2 accepted kinds
+    - commit: c9e71ed
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T21:35:42.951714+00:00
 depends_on:
 - 01M4B3Z67TC96REJGDHD2DFH0R
 - 01M4B3YYXT069TKADQ93CBAA93
 - 01M4B3ZDK527CRVKQQRT87RGHJ
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: a280
 title: 'Search: searchTasks with MetadataSearcher'
 ---
 ## What

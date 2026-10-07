@@ -632,6 +632,7 @@ struct PublicSchema: API {
             .addBoardMutations()
             .addColumnActorMutations()
             .addTaskMutations()
+            .addTaskOperationMutations()
             .addCommentMutations()
             .addTagMutations()
             .build()

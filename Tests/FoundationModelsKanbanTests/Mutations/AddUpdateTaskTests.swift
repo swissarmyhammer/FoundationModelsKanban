@@ -39,20 +39,20 @@ struct AddUpdateTaskTests {
     private static let doingName = "Doing"
 
     /// The mutation field that adds a terminal column after `todo`, so that a task in `todo` is not done.
-    private static let doneColumn = #"addColumn(input: { name: "Done" }) { id }"#
+    static let doneColumn = #"addColumn(input: { name: "Done" }) { id }"#
 
     /// The slug of the first actor that a test adds.
-    private static let alice = "alice"
+    static let alice = "alice"
 
     /// The slug of the second actor that a test adds.
-    private static let bob = "bob"
+    static let bob = "bob"
 
     /// The mutation fields that add the actors ``alice`` and ``bob``.
-    private static let addActors = #"a: addActor(input: { name: "\#(alice)" }) { id } "#
+    static let addActors = #"a: addActor(input: { name: "\#(alice)" }) { id } "#
         + #"b: addActor(input: { name: "\#(bob)" }) { id }"#
 
     /// A ref that names no actor.
-    private static let unknownActor = "nobody"
+    static let unknownActor = "nobody"
 
     /// A tag name with a space and capitals.
     private static let tagName = "Bug Fix"
@@ -64,7 +64,7 @@ struct AddUpdateTaskTests {
     private static let tagSlug = "bug-fix"
 
     /// The slug of a tag that only a body marker names.
-    private static let markerSlug = "ui"
+    static let markerSlug = "ui"
 
     /// The slug of a tombstoned tag of the fixture.
     private static let oldSlug = "old"
@@ -85,7 +85,7 @@ struct AddUpdateTaskTests {
     private static let remoteTask = "kanban://github.com/o/other/task/01K6X2ABCDEFGHJKMNPQRSTVWX"
 
     /// A ref that names no task.
-    private static let unknownTask = "^zzzzzzz"
+    static let unknownTask = "^zzzzzzz"
 
     /// The selection of a mutation field that gives only the id.
     static let idSelection = "{ id }"
@@ -138,7 +138,7 @@ struct AddUpdateTaskTests {
     ///   - input: The other fields of the `input` object, or `""` for none.
     ///   - selection: The selection of the field.
     /// - Returns: The field.
-    private static func updateTask(
+    static func updateTask(
         _ task: ULID,
         with input: String,
         selecting selection: String = idSelection
@@ -150,7 +150,7 @@ struct AddUpdateTaskTests {
     ///
     /// - Parameter task: The ULID of the task. The input names it by `^` and the short id.
     /// - Returns: The `input` field.
-    private static func dependsOn(_ task: ULID) -> String {
+    static func dependsOn(_ task: ULID) -> String {
         #"dependsOn: ["\#(sigilRef(of: task))"]"#
     }
 
@@ -174,7 +174,7 @@ struct AddUpdateTaskTests {
     ///
     /// - Parameter response: The response JSON text.
     /// - Returns: The ULIDs.
-    private static func taskULIDs(in response: String) throws -> [ULID] {
+    static func taskULIDs(in response: String) throws -> [ULID] {
         try response.matches(of: #/task\/([0-9A-Z]{26})/#).map { match in
             try #require(ULID(ulidString: String(match.output.1)))
         }
@@ -202,7 +202,7 @@ struct AddUpdateTaskTests {
     ///   - task: The ULID of the task.
     ///   - directory: The temporary repo directory.
     /// - Returns: The patch, or `nil` when the task has no log.
-    private static func lastPatch(of task: ULID, in directory: TemporaryDirectory) throws -> PatchInput? {
+    static func lastPatch(of task: ULID, in directory: TemporaryDirectory) throws -> PatchInput? {
         try ColumnActorTests.patches(of: .task(task), in: directory).last
     }
 
@@ -210,7 +210,7 @@ struct AddUpdateTaskTests {
     ///
     /// - Parameter slugs: The slugs of the actors.
     /// - Returns: The local refs.
-    private static func actorRefs(_ slugs: String...) -> [StoredRef] {
+    static func actorRefs(_ slugs: String...) -> [StoredRef] {
         slugs.map { slug in .local(.actor(slug: slug)) }
     }
 
@@ -218,7 +218,7 @@ struct AddUpdateTaskTests {
     ///
     /// - Parameter slugs: The slugs of the tags.
     /// - Returns: The local refs.
-    private static func tagRefs(_ slugs: String...) -> [StoredRef] {
+    static func tagRefs(_ slugs: String...) -> [StoredRef] {
         slugs.map { slug in .local(.tag(slug: slug)) }
     }
 
@@ -226,7 +226,7 @@ struct AddUpdateTaskTests {
     ///
     /// - Parameter values: The values.
     /// - Returns: The list text, for example `["a", "b"]`.
-    private static func list(of values: [String]) -> String {
+    static func list(of values: [String]) -> String {
         "[" + values.map { value in #""\#(value)""# }.joined(separator: ", ") + "]"
     }
 
@@ -236,7 +236,7 @@ struct AddUpdateTaskTests {
     ///   - setup: The setup document.
     ///   - graph: The engine.
     /// - Returns: The ULID of each task URI of the response, in the order of the response.
-    private static func addedTasks(by setup: String, on graph: KanbanGraph) async throws -> [ULID] {
+    static func addedTasks(by setup: String, on graph: KanbanGraph) async throws -> [ULID] {
         try taskULIDs(in: await KanbanGraphTests.execute(setup, on: graph))
     }
 
