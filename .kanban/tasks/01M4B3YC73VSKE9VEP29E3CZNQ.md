@@ -31,11 +31,27 @@ comments:
     - evidence: 6 files — Sources/FoundationModelsKanban/Derived/Readiness.swift (new), Sources/FoundationModelsKanban/Derived/VirtualTags.swift (new), Sources/FoundationModelsKanban/Model/Node.swift, Tests/FoundationModelsKanbanTests/Derived/ReadinessFixture.swift (new), Tests/FoundationModelsKanbanTests/Derived/ReadinessTests.swift (new), Tests/FoundationModelsKanbanTests/Derived/VirtualTagsTests.swift (new). `swift test --filter 'ReadinessTests|VirtualTagsTests'`: 37 tests in 2 suites passed. `swift test`: 373 tests in 23 suites passed, 0 build warnings.
     - next: /review
   timestamp: 2026-10-07T16:03:42.538635+00:00
+- actor: wballard
+  id: 01m4bhvmw9rvjpnf2rwzy1d4pm
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (fdcf271). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. 6 files reviewed. 4 files in .kanban/ not reviewed (.reviewignore).
+    - next: none. The task moved to done.
+  timestamp: 2026-10-07T16:06:33.097692+00:00
+- actor: wballard
+  id: 01m4bhvv2r4gyqm30hq754ktys
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 6 files (Derived/Readiness.swift, Derived/VirtualTags.swift, Model/Node.swift, ReadinessFixture.swift, ReadinessTests.swift, VirtualTagsTests.swift)
+    - test: green — swift test, 373 passed, 0 warnings
+    - commit: fdcf271
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T16:06:39.448679+00:00
 depends_on:
 - 01M4B3XTMZSS5T07B8HEZXK9ZH
 - 01M4B3XZ1QTBXDAFR0ZPWAFXGZ
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '9280'
 title: 'Derived fields: readiness and virtual tags'
 ---
 ## What

@@ -15,7 +15,7 @@ struct ReadinessTests {
         var board = ReadinessFixture()
         board.addColumn(withSlug: "archive", order: Int.max, isDeleted: true)
         let done = try #require(board.graph.slot(for: .column(slug: ReadinessFixture.done)))
-        #expect(board.graph.terminalColumnSlot == done)
+        #expect(ColumnOrder(of: board.graph).terminal == done)
     }
 
     @Test("Two columns with the maximum order sort by slug, and the last slug is the terminal column")
@@ -24,7 +24,7 @@ struct ReadinessTests {
         board.addColumn(withSlug: "shipped", order: Int.max)
         board.addColumn(withSlug: "closed", order: Int.max)
         let shipped = try #require(board.graph.slot(for: .column(slug: "shipped")))
-        #expect(board.graph.terminalColumnSlot == shipped)
+        #expect(ColumnOrder(of: board.graph).terminal == shipped)
     }
 
     @Test("A graph with no live column has no terminal column, and no task is done")
@@ -33,7 +33,7 @@ struct ReadinessTests {
         board.graph = Graph()
         board.addColumn(withSlug: ReadinessFixture.done, order: .zero, isDeleted: true)
         let slot = try board.addTask(withULID: ReadinessFixture.first, inColumn: ReadinessFixture.done)
-        #expect(board.graph.terminalColumnSlot == nil)
+        #expect(ColumnOrder(of: board.graph).terminal == nil)
         #expect(!board.readiness.isDone(taskAt: slot))
     }
 

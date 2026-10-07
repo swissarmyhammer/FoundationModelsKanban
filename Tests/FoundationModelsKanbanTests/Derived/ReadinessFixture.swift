@@ -3,8 +3,8 @@ import Testing
 
 @testable import FoundationModelsKanban
 
-/// A test board for the readiness and virtual tag tests: a graph with the default columns, and tasks that the tests
-/// add (plan.md §6).
+/// A test board for the tests of the derived fields: a graph with the default columns, and tasks, actors, and
+/// comments that the tests add (plan.md §5.3, §6).
 ///
 /// The time, the board keys, and the ULID, URL, and URI helpers are the ones of ``DependencyMarkersTests``.
 struct ReadinessFixture {
@@ -34,6 +34,15 @@ struct ReadinessFixture {
 
     /// The ULID text of a task that the graph does not have.
     static let ghost = "01KT6VC9YZ4M6N8P0Q2R4S6T8W"
+
+    /// The ULID text of the first test comment.
+    static let firstComment = "01KT6WD0A15N7Q9S1T3V5W7X9Y"
+
+    /// The ULID text of the second test comment.
+    static let secondComment = "01KT6XE1B26P8R0T2V4W6X8Y0Z"
+
+    /// The slug of the test actor.
+    static let author = "claude-code"
 
     /// The graph of the board.
     var graph = Graph()
@@ -72,6 +81,69 @@ struct ReadinessFixture {
         )
     }
 
+    /// Gives a time some seconds after 1970-01-01T00:00:00Z.
+    ///
+    /// - Parameter seconds: The number of seconds.
+    /// - Returns: The time.
+    static func time(atSecond seconds: Int) -> DateTime {
+        DateTime(Date(timeIntervalSince1970: TimeInterval(seconds)))
+    }
+
+    /// Gives a move of a task to a column, as replay records it.
+    ///
+    /// - Parameters:
+    ///   - slug: The slug of the column.
+    ///   - seconds: The time of the move, in seconds after 1970-01-01T00:00:00Z.
+    /// - Returns: The move, with an unresolved edge to the column.
+    static func move(toColumn slug: String, atSecond seconds: Int) -> ColumnMove {
+        ColumnMove(at: time(atSecond: seconds), column: .unresolved(.local(.column(slug: slug))))
+    }
+
+    /// Gives the slot of a column.
+    ///
+    /// - Parameter slug: The slug of the column.
+    /// - Returns: The slot.
+    /// - Throws: An error when the graph never had the column.
+    func slot(ofColumn slug: String) throws -> Int {
+        try #require(graph.slot(for: .column(slug: slug)))
+    }
+
+    /// Adds an actor, or replaces the actor with the same slug.
+    ///
+    /// - Parameters:
+    ///   - slug: The slug of the actor.
+    ///   - isDeleted: `true` when the actor is a tombstone.
+    /// - Returns: The slot of the actor.
+    @discardableResult
+    mutating func addActor(withSlug slug: String, isDeleted: Bool = false) -> Int {
+        graph.update(with: .actor(ActorNode(slug: slug, fields: Self.fields(isDeleted: isDeleted))))
+    }
+
+    /// Adds a comment, or replaces the comment with the same ULID.
+    ///
+    /// - Parameters:
+    ///   - text: The ULID text of the comment.
+    ///   - task: The ULID text of the task of the comment.
+    ///   - author: The slug of the actor that wrote the comment.
+    ///   - isDeleted: `true` when the comment is a tombstone.
+    /// - Returns: The slot of the comment.
+    /// - Throws: An error when a ULID text is not valid.
+    @discardableResult
+    mutating func addComment(
+        withULID text: String,
+        onTask task: String,
+        byActor author: String = ReadinessFixture.author,
+        isDeleted: Bool = false
+    ) throws -> Int {
+        let comment = CommentNode(
+            id: try DependencyMarkersTests.ulid(of: text),
+            fields: Self.fields(isDeleted: isDeleted),
+            task: try Self.edge(toTask: task),
+            author: .unresolved(.local(.actor(slug: author)))
+        )
+        return graph.update(with: .comment(comment))
+    }
+
     /// Adds a column, or replaces the column with the same slug.
     ///
     /// - Parameters:
@@ -89,6 +161,7 @@ struct ReadinessFixture {
     ///   - column: The slug of the column of the task, or `nil` for a task with no column.
     ///   - dependencies: The ULID texts of the tasks of this board that the `dependsOn` edges name.
     ///   - remoteDependencies: The URIs of the tasks of other boards that the `dependsOn` edges name.
+    ///   - moves: The moves of the task to a column, in event order.
     ///   - fields: The body and the time values of the task.
     /// - Returns: The slot of the task.
     /// - Throws: An error when a ULID text is not valid.
@@ -98,6 +171,7 @@ struct ReadinessFixture {
         inColumn column: String? = ReadinessFixture.todo,
         dependingOn dependencies: [String] = [],
         dependingOnRemote remoteDependencies: [NodeURI] = [],
+        withMoves moves: [ColumnMove] = [],
         fields: NodeFields = ReadinessFixture.fields()
     ) throws -> Int {
         let localEdges = try dependencies.map(Self.edge(toTask:))
@@ -106,7 +180,8 @@ struct ReadinessFixture {
             id: try DependencyMarkersTests.ulid(of: text),
             fields: fields,
             column: column.map { slug in .unresolved(.local(.column(slug: slug))) },
-            dependsOn: localEdges + remoteEdges
+            dependsOn: localEdges + remoteEdges,
+            columnMoves: moves
         )
         return graph.update(with: .task(task))
     }
