@@ -31,12 +31,28 @@ comments:
     - evidence: 9 files — Sources/FoundationModelsKanban/Events/Replay.swift (new), Sources/FoundationModelsKanban/Model/{Node,TaskNode,BoardNode,ColumnNode,ActorNode,TagNode,CommentNode}.swift, Tests/FoundationModelsKanbanTests/Events/ReplayTests.swift (new); `swift test --filter ReplayTests` 26/26 pass; `swift test` 277 tests in 16 suites pass, 0 warnings.
     - next: /review
   timestamp: 2026-10-07T15:04:25.534891+00:00
+- actor: wballard
+  id: 01m4beggbrv5hgdvvdvbpdb41c
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (c52a3be). 0 findings. 7 validator runs attempted, 0 failed. 9 files reviewed. 4 .kanban/ files are excluded by .reviewignore.
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T15:08:02.296624+00:00
+- actor: wballard
+  id: 01m4begnxvtf7dn9kzer7fhgdm
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 9 files (Events/Replay.swift, Model/Node, TaskNode, BoardNode, ColumnNode, ActorNode, TagNode, CommentNode, ReplayTests.swift)
+    - test: green — swift test, 277 passed, 0 warnings
+    - commit: c52a3be
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T15:08:07.995044+00:00
 depends_on:
 - 01M4B3WK197P3T3VZHX3JHWP3E
 - 01M4B3WQYTY5YMPDNQ9RHQSMYE
 - 01M4B3X4CTB14YMDBTK59N8JA0
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: 8d80
 title: 'Replay: fold the events of one node'
 ---
 ## What
