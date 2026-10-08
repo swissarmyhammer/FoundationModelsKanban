@@ -28,12 +28,28 @@ comments:
     - evidence: 5 files — Sources/FoundationModelsKanban/Tool/KanbanArguments.swift (new), Sources/FoundationModelsKanban/Tool/KanbanTool.swift (new), Tests/FoundationModelsKanbanTests/Tool/KanbanArgumentsTests.swift (new), Tests/FoundationModelsKanbanTests/Tool/KanbanToolTests.swift (new), Tests/FoundationModelsKanbanTests/GraphQL/KanbanErrorTests.swift (helper takes `some Encodable`). `swift build --build-tests`: only the accepted SwiftPM "missing creator" warning. `swift test --skip-build` 3 runs: 919 tests in 60 suites passed each time (about 6.7 s each). Periphery: no unused code. No line over 120 characters.
     - next: /review
   timestamp: 2026-10-08T04:34:19.399921+00:00
+- actor: wballard
+  id: 01m4cwwengced6372zv674p22v
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (da5c430). 5 files reviewed, 4 .kanban files excluded by .reviewignore. 0 findings (7 attempted, 1 refuted, 0 failed).
+    - next: none. The task is in done.
+  timestamp: 2026-10-08T04:38:28.272091+00:00
+- actor: wballard
+  id: 01m4cwwmk6f380r6vs68e2zsxb
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 5 files (Tool/KanbanArguments.swift, Tool/KanbanTool.swift, 2 new test files, KanbanErrorTests.swift)
+    - test: green — swift test 3 runs with a 120 s limit, 919 passed each; build warnings only the 2 accepted kinds
+    - commit: da5c430
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T04:38:34.342606+00:00
 depends_on:
 - 01M4B3YYXT069TKADQ93CBAA93
 - 01M4B4AWDXHER3J8MZKEB7W39N
 - 01M4B40PAP9R6NP87BZASW5155
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: b080
 title: KanbanTool and forgiving KanbanArguments
 ---
 ## What
