@@ -69,8 +69,24 @@ comments:
     - evidence: Tests/FoundationModelsKanbanTests/Mutations/TaskOperationTests.swift. `swift build --build-tests`: only the accepted mlx "missing creator" warning. `swift test --skip-build` 3 runs: 985 tests in 68 suites passed each time (7.90 s, 7.81 s, 7.99 s); the CONFLICTING_PLACEMENT test passed with 4 cases. Finding marked [x].
     - next: /review
   timestamp: 2026-10-08T17:08:56.289079+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4e821159763nvgrfzqq54n6
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (e498add). 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed. All items of the prior Review Findings (2026-10-08 12:05) section are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-08T17:12:59.685901+00:00
+- actor: claude-code
+  id: 01m4e828z3j1yrw0z68fhpsmyq
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 test file (Mutations/TaskOperationTests.swift); 1/1 findings checked
+    - test: green — swift test 3 runs, 985 passed each (8.4 s, 7.8 s, 7.9 s); build warnings only the 2 accepted kinds
+    - commit: e498add
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T17:13:07.811165+00:00
+position_column: done
+position_ordinal: bf80
 title: 'moveTask: error when the input gives both before and after'
 ---
 ## What
