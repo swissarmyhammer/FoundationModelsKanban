@@ -28,11 +28,27 @@ comments:
     - evidence: `swift build --build-tests` + `swift test --skip-build`: 812 tests in 48 suites passed (HistoryTests 12, UndoneStateTests 5); only the accepted SwiftPM "missing creator" build warning; `periphery scan --retain-public --quiet -- --build-tests --build-system native`: no item in the new or changed code (only the items that were there before). Files: Sources/FoundationModelsKanban/Undo/UndoneState.swift, Sources/FoundationModelsKanban/Undo/History.swift, Sources/FoundationModelsKanban/GraphQL/Schema.swift, Sources/FoundationModelsKanban/Tool/Commit.swift, Sources/FoundationModelsKanban/Events/Replay.swift, Tests/FoundationModelsKanbanTests/Undo/UndoneStateTests.swift, Tests/FoundationModelsKanbanTests/Undo/HistoryTests.swift, Tests/FoundationModelsKanbanTests/Observe/ChangeBuilderTests.swift, Tests/FoundationModelsKanbanTests/GraphQL/NameRewriteTests.swift
     - next: /review
   timestamp: 2026-10-07T23:52:00.420906+00:00
+- actor: wballard
+  id: 01m4cct5d38rn9ezw3bxqc2dj0
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (69cc5a7). 0 findings, 0 confirmed, 1 refuted, 14 attempted, 0 failed. 9 files reviewed. 4 .kanban/ files not reviewed (.reviewignore).
+    - next: none. The task moved to done.
+  timestamp: 2026-10-07T23:57:36.035098+00:00
+- actor: wballard
+  id: 01m4cctbt5tdc3pewzfq56rmc8
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 9 files (Undo/UndoneState.swift, Undo/History.swift, Schema, Commit, Replay, UndoneStateTests, HistoryTests, ChangeBuilderTests, NameRewriteTests)
+    - test: green — swift test, 812 passed; build warnings only the 2 accepted kinds
+    - commit: 69cc5a7
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T23:57:42.597746+00:00
 depends_on:
 - 01M4B412DB2BSB0FAQEA72WN8T
 - 01M4B3Z67TC96REJGDHD2DFH0R
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: a780
 title: History query and undone state
 ---
 ## What

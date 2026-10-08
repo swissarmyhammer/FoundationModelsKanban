@@ -239,7 +239,7 @@ extension WorkingCopy {
     /// - Parameter start: The slot of the first tag, or `nil` when the graph does not have the tag.
     /// - Throws: ``KanbanError/tagRenameCycle(path:)`` with the slug of each tag on the walk, from the first tag to
     ///   the first slug that repeats.
-    private func checkNoRenameCycle(fromTagAt start: Int?) throws(KanbanError) {
+    func checkNoRenameCycle(fromTagAt start: Int?) throws(KanbanError) {
         guard let cycle = start.flatMap(graph.renameCycle(fromTagAt:)) else {
             return
         }

@@ -441,6 +441,24 @@ struct ChangeBuilderTests {
         return result
     }
 
+    /// Writes the fixture logs of ``KanbanGraphTests`` to a repo, and loads a new commit session of the board.
+    ///
+    /// - Parameters:
+    ///   - directory: The temporary repo directory.
+    ///   - events: The events to append to the logs after the fixture, before the session loads the board.
+    /// - Returns: The session, and the ULID of the fixture task.
+    static func fixtureSession(
+        inRepoAt directory: TemporaryDirectory,
+        writing events: [Event] = []
+    ) async throws -> (session: CommitSession, task: ULID) {
+        let task = try KanbanGraphTests.writeFixture(inRepoAt: directory.url).task
+        let log = EventLog(repositoryAt: directory.url)
+        for event in events {
+            try log.append(contentsOf: [event], toLogOf: event.patch.node)
+        }
+        return (try await CommitTests.makeSession(of: log), task)
+    }
+
     /// Writes the fixture logs of ``KanbanGraphTests`` to a repo, loads a new commit session of the board, and runs
     /// ``baseSetup`` in it.
     ///
@@ -452,14 +470,10 @@ struct ChangeBuilderTests {
         inRepoAt directory: TemporaryDirectory,
         writing events: [Event] = []
     ) async throws -> (session: CommitSession, task: ULID) {
-        let task = try KanbanGraphTests.writeFixture(inRepoAt: directory.url).task
-        let log = EventLog(repositoryAt: directory.url)
-        for event in events {
-            try log.append(contentsOf: [event], toLogOf: event.patch.node)
-        }
-        var session = try await CommitTests.makeSession(of: log)
+        let fixture = try await fixtureSession(inRepoAt: directory, writing: events)
+        var session = fixture.session
         try await run(baseSetup, in: &session)
-        return (session, task)
+        return (session, fixture.task)
     }
 
     /// Gives the refs of a case in the live graph of a session.

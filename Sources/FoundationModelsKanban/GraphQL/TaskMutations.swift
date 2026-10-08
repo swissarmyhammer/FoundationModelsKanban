@@ -344,7 +344,7 @@ extension WorkingCopy {
     ///   - ref: The local ref of the task.
     ///   - key: The current key of the board.
     /// - Throws: ``KanbanError/dependencyCycle(path:)`` with the short id of each task on the cycle.
-    private func checkNoCycle(throughTask ref: LocalRef, inBoard key: String) throws(KanbanError) {
+    func checkNoCycle(throughTask ref: LocalRef, inBoard key: String) throws(KanbanError) {
         guard
             let slot = graph.slot(for: ref),
             let cycle = Readiness(of: graph, inBoard: key).cycle(throughTaskAt: slot)

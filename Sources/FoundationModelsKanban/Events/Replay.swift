@@ -60,6 +60,35 @@ struct NodeLog: Hashable, Sendable {
     }
 }
 
+/// The stored state of one node after some of its events: the properties, the body, and the tombstone state. `undo`
+/// compares the state just before a transaction with the state just after it to make the inverse patches (plan.md
+/// §6.5).
+struct NodeSnapshot: Sendable {
+    /// The properties after the `set`, `unset`, `add`, and `remove` parts of the events.
+    let properties: PropertyBag
+
+    /// The body after the `edit` parts of the events.
+    let body: String
+
+    /// `true` when the node is a tombstone after the events.
+    let isDeleted: Bool
+
+    /// Folds some events of one node.
+    ///
+    /// - Parameters:
+    ///   - events: The events of the node, in any order. Each event must change the node.
+    ///   - ref: The local ref of the node.
+    /// - Returns: The state, or `nil` when there is no event: the node does not exist yet.
+    init?(folding events: [Event], for ref: LocalRef) {
+        guard let fold = NodeFold(folding: events.sorted { lhs, rhs in lhs.id < rhs.id }, for: ref) else {
+            return nil
+        }
+        properties = fold.properties
+        body = fold.body
+        isDeleted = fold.deleted != nil
+    }
+}
+
 extension Graph {
     /// Folds the events of one node again, and puts the new state of the node in its slot. The working copy of a call
     /// (plan.md §5.4 step 4) and the replay of `history` (plan.md §6.5) use it.
@@ -359,7 +388,7 @@ extension PropertyBag {
     ///   - names: The names of the properties to compare.
     /// - Returns: The `set` part for each property with a new value, and the `unset` part, in name order, for each
     ///   property that lost its value.
-    fileprivate func valueChanges(
+    func valueChanges(
         to later: PropertyBag,
         named names: Set<String>
     ) -> (set: [String: PatchValue], unset: [String]) {
@@ -375,7 +404,7 @@ extension PropertyBag {
     ///   - names: The names of the properties to compare.
     /// - Returns: The `add` part with the new members, and the `remove` part with the members that are gone. A
     ///   property with no change has no entry.
-    fileprivate func memberChanges(
+    func memberChanges(
         to later: PropertyBag,
         named names: Set<String>
     ) -> (add: [String: [StoredRef]], remove: [String: [StoredRef]]) {

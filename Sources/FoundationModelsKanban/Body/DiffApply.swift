@@ -34,9 +34,30 @@ extension UnifiedDiff {
     ///     the id of the event that holds the diff.
     /// - Returns: The body after the diff, and its conflict state.
     func applied(to text: String, withConflictLabel conflictLabel: String) -> AppliedBody {
-        let initial = HunkApplier(lines: TextLine.lines(in: text), conflictLabel: conflictLabel)
-        let lines = hunks.reduce(into: initial) { $0.apply($1) }.finishedLines
+        let lines = applier(of: text, withConflictLabel: conflictLabel).finishedLines
         return AppliedBody(text: TextLine.text(joining: lines), hasConflict: ConflictBlock.isPresent(in: lines))
+    }
+
+    /// Tells if each hunk of the diff matches a text, at its line number or at the nearest position, with the rules
+    /// of ``applied(to:withConflictLabel:)``. `undo` reads it: a later edit to a body is a conflict only when the
+    /// reversed diff does not apply (plan.md §6.5).
+    ///
+    /// - Parameter text: The current body.
+    /// - Returns: `true` when no hunk needs a conflict block. A conflict block that the text already has does not
+    ///   count.
+    func applies(exactlyTo text: String) -> Bool {
+        !applier(of: text, withConflictLabel: "").hasUnmatchedHunk
+    }
+
+    /// Applies each hunk of the diff to a text.
+    ///
+    /// - Parameters:
+    ///   - text: The current body.
+    ///   - conflictLabel: The text after the end marker of a conflict block.
+    /// - Returns: The applier after the last hunk.
+    private func applier(of text: String, withConflictLabel conflictLabel: String) -> HunkApplier {
+        let initial = HunkApplier(lines: TextLine.lines(in: text), conflictLabel: conflictLabel)
+        return hunks.reduce(into: initial) { $0.apply($1) }
     }
 
     /// Applies the hunks of one diff to the lines of a text, one hunk at a
@@ -58,6 +79,9 @@ extension UnifiedDiff {
         /// The number of lines between the line number of the last hunk that
         /// matched and the position where it matched.
         var shift = 0
+
+        /// `true` when a hunk did not match the text, so that its conflict block is in the result.
+        var hasUnmatchedHunk = false
 
         /// The lines of the result, with the lines after the last hunk.
         var finishedLines: [TextLine] {
@@ -103,6 +127,7 @@ extension UnifiedDiff {
         ///   - hunk: The hunk that cannot apply.
         ///   - expected: The index where the hunk was expected to match.
         private mutating func insertConflict(for hunk: Hunk, near expected: Int) {
+            hasUnmatchedHunk = true
             let start = min(max(expected, cursor), lines.count)
             let end = min(start + hunk.oldCount, lines.count)
             let block = ConflictBlock.lines(

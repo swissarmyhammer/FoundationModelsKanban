@@ -128,8 +128,9 @@ private struct BoardMutationArguments: Decodable, Sendable {
 
 // MARK: - Default columns
 
-/// A column that a new board gets (plan.md §6, "Default columns").
-private struct DefaultColumn: Sendable {
+/// A column that a new board gets (plan.md §6, "Default columns"). `undo` keeps the default columns of an auto-init,
+/// because the auto-init makes them as a side effect (plan.md §6.5).
+struct DefaultColumn: Sendable {
     /// The columns of a new board, in board order. The `order` of each column is its index in this list.
     static let all = [
         DefaultColumn(slug: "todo", name: "To Do"),

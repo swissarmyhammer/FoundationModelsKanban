@@ -28,9 +28,7 @@ private struct History {
     ///   - events: The global event list of the board, in the order of the event ids.
     ///   - boardKey: The current key of the board.
     init(of events: [Event], inBoard boardKey: String) {
-        transactions = OrderedDictionary(grouping: events, by: \.txn)
-            .map { txn, events in (txn: txn, events: events) }
-            .sorted { lhs, rhs in lhs.txn < rhs.txn }
+        transactions = events.groupedByTransaction()
         self.boardKey = boardKey
         undoneState = UndoneState(of: events)
     }

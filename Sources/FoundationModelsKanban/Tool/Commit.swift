@@ -41,9 +41,10 @@ struct EventStamp: Sendable {
     /// - Parameters:
     ///   - patch: The patch.
     ///   - time: The time of the change.
+    ///   - target: The transaction that the patch reverses, for a patch of `undo` and `redo`, else `nil`.
     /// - Returns: The event, with an id larger than each id that the stamp gave before.
-    mutating func makeEvent(of patch: PatchInput, at time: DateTime) -> Event {
-        Event(id: nextID(), txn: txn, ops: [], at: time, actor: actor, patch: patch)
+    mutating func makeEvent(of patch: PatchInput, at time: DateTime, undoing target: ULID?) -> Event {
+        Event(id: nextID(), txn: txn, ops: [], at: time, actor: actor, undoes: target, patch: patch)
     }
 
     /// Mints the ULID of a new node from the source of the event ids (the mint rule of plan.md §3.2).
@@ -85,9 +86,9 @@ extension ULID {
 /// The working copy of one run of a call (plan.md §5.4 steps 2 and 4, §12 item 25).
 ///
 /// The working copy starts as a copy-on-write copy of the live graph. Each mutation field runs with
-/// ``runField(as:_:)``: it makes patches, applies them with ``apply(_:at:)``, checks the graph rules, and keeps the
-/// patches. A field that throws discards only its own patches and its own changes to the graph. The live graph does
-/// not change until the commit succeeds.
+/// ``runField(as:_:)``: it makes patches, applies them with ``apply(_:at:undoing:)``, checks the graph rules, and
+/// keeps the patches. A field that throws discards only its own patches and its own changes to the graph. The live
+/// graph does not change until the commit succeeds.
 struct WorkingCopy: Sendable {
     /// The graph after the kept patches.
     private(set) var graph: Graph
@@ -176,14 +177,16 @@ struct WorkingCopy: Sendable {
     /// - Parameters:
     ///   - patch: The patch.
     ///   - time: The time of the change. It becomes the `at` of the event.
+    ///   - target: The transaction that the patch reverses, for a patch of `undo` and `redo`. It becomes the
+    ///     `undoes` of the event. The default is `nil`.
     /// - Throws: An ``EventError`` from the change of the patch. A valid patch gives no error.
-    mutating func apply(_ patch: PatchInput, at time: DateTime) throws(EventError) {
+    mutating func apply(_ patch: PatchInput, at time: DateTime, undoing target: ULID? = nil) throws(EventError) {
         let ref = patch.node
         let events = nodeEvents[ref] ?? liveEvents.filter { event in event.patch.node == ref }
         guard let change = try patch.changes(afterFolding: events) else {
             return
         }
-        let event = stamp.makeEvent(of: change, at: time)
+        let event = stamp.makeEvent(of: change, at: time, undoing: target)
         nodeEvents[ref] = graph.update(folding: events + [event], for: ref)
         kept.append(event)
     }
@@ -340,7 +343,7 @@ extension Event {
     ///
     /// - Parameter operations: The names of the public mutations of the call.
     /// - Returns: The event with the operations, and the same other values.
-    fileprivate func recording(operations: [String]) -> Event {
+    func recording(operations: [String]) -> Event {
         Event(id: id, txn: txn, ops: operations, at: at, actor: actor, boards: boards, undoes: undoes, patch: patch)
     }
 }

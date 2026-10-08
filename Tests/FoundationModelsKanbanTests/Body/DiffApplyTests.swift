@@ -13,6 +13,9 @@ struct DiffApplyTests {
     /// The lines 1 to ``baseLineCount``, each with a final newline.
     static let base = (1...baseLineCount).map { "\($0)\n" }.joined()
 
+    /// The line that the exact apply tests change, from 1.
+    static let checkedLine = 15
+
     /// The conflict label that the tests give, in the place of an event id.
     static let label = "01K6Z4EVENT"
 
@@ -147,6 +150,27 @@ struct DiffApplyTests {
         let diff = UnifiedDiff(from: "", to: "<<<<<<< current\n=======\n")
         let applied = diff.applied(to: "", withConflictLabel: Self.label)
         #expect(!applied.hasConflict)
+    }
+
+    // MARK: - Exact apply check
+
+    @Test("A diff applies exactly to a text where each hunk matches after lines move")
+    func diffAppliesExactlyAfterShift() {
+        let diff = UnifiedDiff(from: Self.base, to: Self.base(changing: Self.checkedLine, to: "changed"))
+        #expect(diff.applies(exactlyTo: "new a\nnew b\n" + Self.base))
+    }
+
+    @Test("A diff applies exactly to a text that has a conflict block in a different place")
+    func diffAppliesExactlyBesideConflictBlock() {
+        let diff = UnifiedDiff(from: Self.base, to: Self.base(changing: Self.checkedLine, to: "changed"))
+        let conflicted = UnifiedDiff(from: "a\n", to: "b\n").applied(to: "c\n", withConflictLabel: Self.label).text
+        #expect(diff.applies(exactlyTo: conflicted + Self.base))
+    }
+
+    @Test("A diff does not apply exactly to a text where one hunk does not match")
+    func diffWithUnmatchedHunkDoesNotApplyExactly() {
+        let diff = UnifiedDiff(from: Self.base, to: Self.base(changing: Self.checkedLine, to: "changed"))
+        #expect(!diff.applies(exactlyTo: Self.base(changing: Self.checkedLine, to: "changed later")))
     }
 
     // MARK: - Determinism

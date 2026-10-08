@@ -423,7 +423,7 @@ extension WorkingCopy {
     ///   - key: The current key of the board.
     /// - Throws: ``KanbanError/columnNotEmpty(column:liveTaskCount:)`` when the column shows live tasks.
     ///   ``KanbanError/notFound(type:reference:)`` when the graph does not have the column.
-    private func checkEmpty(column ref: LocalRef, inBoard key: String) throws(KanbanError) {
+    func checkEmpty(column ref: LocalRef, inBoard key: String) throws(KanbanError) {
         let view = BoardView(of: graph, inBoard: key)
         let column: ColumnObject = try view.requiredObject(
             at: graph.slot(for: ref),

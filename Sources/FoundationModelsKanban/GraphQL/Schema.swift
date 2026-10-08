@@ -680,6 +680,7 @@ struct PublicSchema: API {
             .addTaskOperationMutations()
             .addCommentMutations()
             .addTagMutations()
+            .addUndoMutations()
             .build()
     }
 }
