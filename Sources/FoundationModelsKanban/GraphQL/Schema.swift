@@ -13,17 +13,17 @@ actor BoardStore {
 
     /// The current key of the board, for example `github.com/swissarmyhammer/FoundationModelsKanban`. Each `id` in
     /// the output starts with `kanban://` and this key (plan.md §3.2).
-    let boardKey: String
+    private var boardKey: String
 
     /// The session actor of the call. A mutation field that writes to the board makes sure that this actor exists
     /// there (plan.md §6).
     let sessionActor: SessionActor
 
     /// The directory, the search, and the events of the current board, or `nil` for a board in memory only.
-    private let source: BoardSource?
+    private var source: BoardSource?
 
     /// The related boards that the run reads (plan.md §6.6).
-    private let related: RelatedBoards
+    private var related: RelatedBoards
 
     /// The reads of related boards that the run asked for and that ``related`` does not answer yet. After the run,
     /// the engine loads them, and the call runs again (``CommitSession/run(readingRelatedBoardsWith:_:)``).
@@ -59,6 +59,36 @@ actor BoardStore {
     /// The read view of the working graph now. Its cross-board dependencies read the related boards of the run.
     var view: BoardView {
         snapshot.view(reading: reading)
+    }
+
+    /// Replaces the board that the store reads with the board of one event of a subscription (plan.md §6.7, serial
+    /// gate).
+    ///
+    /// GraphQLSwift runs each event of a subscription with the context of the `subscribe` call. Thus, before an event
+    /// runs, the store of that context gets the board as the engine read it through the serial gate.
+    ///
+    /// - Parameter board: The board of the event.
+    func replace(with board: EventBoard) {
+        work = board.work
+        boardKey = board.key
+        source = board.source
+        related = board.related
+        requests = []
+        relatedWork = [:]
+    }
+
+    /// Gives the read view of the current board, or of the board that a board ref names (plan.md §6.6).
+    ///
+    /// - Parameter reference: The board ref: a board key, a repo directory name, a path, or the URI of a board. `nil`
+    ///   gives the current board.
+    /// - Returns: The read view, or `nil` when the engine did not load the board yet. The store then records the
+    ///   request, and the call runs again after the load.
+    /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the ref.
+    func view(ofBoard reference: String?) throws(KanbanError) -> BoardView? {
+        guard let reference else {
+            return view
+        }
+        return try view(ofBoardNamed: reference)
     }
 
     /// The working graph now, as a read of a related board sees the current board.
@@ -388,6 +418,9 @@ struct KanbanContext: Sendable {
 
     /// The ranked search over the tasks of the board, for `Board.searchTasks` (plan.md §6.4).
     let search: TaskSearch
+
+    /// The change feed of the engine. `Subscription.changes` adds a subscriber to it (plan.md §6.7).
+    let feed: ChangeFeed
 }
 
 // MARK: - Arguments
@@ -499,6 +532,29 @@ struct HistoryArguments: Codable, Sendable {
     let first: Int?
 }
 
+/// The arguments of `Subscription.changes`: the board to observe and the filters of the change feed (plan.md §4.1,
+/// §6.7). `Board.history` takes the same filters.
+struct ChangesArguments: Codable, Sendable, ChangeFilterArguments {
+    /// The board to observe: a board key, a repo directory name, a path, or the URI of a board (plan.md §6.6). No
+    /// value observes the current board.
+    let board: String?
+
+    /// The node types to keep, or `nil` for all types.
+    let type: [NodeType]?
+
+    /// The node to keep: a full URI or a short form, or `nil` for all nodes.
+    let node: NodeID?
+
+    /// The actor of the transactions to keep: a full URI or a short form, or `nil` for all actors.
+    let actor: NodeID?
+
+    /// The filter of the tasks to keep, for example `#bug`, or `nil` for no filter.
+    let filter: String?
+
+    /// `false` to leave out the `DERIVED` updates. An explicit `null` keeps them.
+    let derived: Bool?
+}
+
 /// The arguments of a task list that has only a filter: `Board.nextTask`, and the `tasks` fields of `Column`,
 /// `Actor`, and `Tag` (plan.md §6.3).
 struct FilterArguments: Codable, Sendable {
@@ -530,10 +586,7 @@ struct KanbanResolver: Sendable {
     /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the `id`.
     ///   ``KanbanError/notFound(type:reference:)`` when the graph has no board node.
     func board(context: KanbanContext, arguments: BoardArguments) async throws(KanbanError) -> BoardObject? {
-        guard let reference = arguments.id else {
-            return try BoardObject(in: await context.store.view)
-        }
-        return try await context.store.view(ofBoardNamed: reference).map { view throws(KanbanError) in
+        try await context.store.view(ofBoard: arguments.id).map { view throws(KanbanError) in
             try BoardObject(in: view)
         }
     }
@@ -1025,6 +1078,7 @@ struct PublicSchema: API {
             .addCommentMutations()
             .addTagMutations()
             .addUndoMutations()
+            .addChangesSubscription()
             .build()
     }
 }
@@ -1082,9 +1136,56 @@ extension API {
         } catch let error as GraphQLError {
             response = RewriteResponse(result: GraphQLResult(errors: [error]), rewrites: [])
         }
-        let encoder = GraphQLJSONEncoder()
-        encoder.outputFormatting = formatting.union(.withoutEscapingSlashes)
-        return try String(decoding: encoder.encode(response), as: UTF8.self)
+        return try response.encoded(formattedWith: formatting)
+    }
+
+    /// Starts one subscription document, and gives the response of each event as JSON text (plan.md §6.7).
+    ///
+    /// The name rewrite of plan.md §4.5 changes the document first, the same as for a call. A document that does not
+    /// parse or validate, and a subscription that cannot start, give a stream with one response with the errors and
+    /// no `data`, and the stream then ends.
+    ///
+    /// - Parameters:
+    ///   - document: The subscription document.
+    ///   - variables: The values of the variables of the document.
+    ///   - operationName: The operation of the document to run, or `nil` when the document has one operation.
+    ///   - formatting: The formatting of the JSON text. Slashes are never escaped.
+    ///   - context: The context of each resolver, for the start and for each event.
+    /// - Returns: The response of each event, in the order of the events.
+    /// - Throws: An error that is not a GraphQL error, for example an error from the JSON encoder.
+    func subscribe(
+        to document: String,
+        variables: [String: Map],
+        operationName: String?,
+        formattedWith formatting: GraphQLJSONEncoder.OutputFormatting,
+        context: ContextType
+    ) async throws -> AsyncThrowingStream<String, Error> {
+        let rewritten: RewrittenDocument
+        do {
+            rewritten = try DocumentRewriter(for: schema.schema).rewrittenDocument(from: document)
+        } catch let error as GraphQLError {
+            let response = RewriteResponse(result: GraphQLResult(errors: [error]), rewrites: [])
+            return .single(try response.encoded(formattedWith: formatting))
+        }
+        let encode: @Sendable (GraphQLResult) throws -> String = { result in
+            try RewriteResponse(result: rewritten.codedCallerResult(from: result), rewrites: rewritten.rewrites)
+                .encoded(formattedWith: formatting)
+        }
+        guard rewritten.ties.isEmpty else {
+            return .single(try encode(GraphQLResult(errors: rewritten.ties)))
+        }
+        let started = try await subscribe(
+            request: rewritten.text,
+            context: context,
+            variables: variables,
+            operationName: operationName
+        )
+        switch started {
+        case .success(let results):
+            return .encoding(results, with: encode)
+        case .failure(let failure):
+            return .single(try encode(GraphQLResult(errors: failure.errors)))
+        }
     }
 
     /// Runs a rewritten document, and gives the result in the form of the
@@ -1114,7 +1215,18 @@ extension API {
             variables: variables,
             operationName: operationName
         )
-        let callerResult = rewritten.callerResult(from: result)
+        return rewritten.codedCallerResult(from: result)
+    }
+}
+
+extension RewrittenDocument {
+    /// Gives a result of the engine in the form of the document that the caller wrote, with the message and the
+    /// code of each error that a ``KanbanError`` caused.
+    ///
+    /// - Parameter result: The result of the rewritten document.
+    /// - Returns: The result with the names of the caller.
+    fileprivate func codedCallerResult(from result: GraphQLResult) -> GraphQLResult {
+        let callerResult = callerResult(from: result)
         return GraphQLResult(data: callerResult.data, errors: callerResult.errors.map(Self.codedError(from:)))
     }
 
@@ -1191,6 +1303,57 @@ private struct RewriteResponse: Encodable {
         }
         if !rewrites.isEmpty {
             try container.encode(Extensions(rewrites: rewrites), forKey: .extensions)
+        }
+    }
+
+    /// Encodes the response as JSON text.
+    ///
+    /// - Parameter formatting: The formatting of the JSON text, for example `.sortedKeys`. Slashes are never
+    ///   escaped, so a ref such as `tag/bug` stays easy to read.
+    /// - Returns: The JSON text.
+    /// - Throws: An error from the JSON encoder.
+    func encoded(formattedWith formatting: GraphQLJSONEncoder.OutputFormatting) throws -> String {
+        let encoder = GraphQLJSONEncoder()
+        encoder.outputFormatting = formatting.union(.withoutEscapingSlashes)
+        return try String(decoding: encoder.encode(self), as: UTF8.self)
+    }
+}
+
+extension AsyncThrowingStream where Element == String, Failure == Error {
+    /// Gives a stream of one response that then ends: the response of a subscription that cannot start.
+    ///
+    /// - Parameter response: The response JSON text.
+    /// - Returns: The stream.
+    static func single(_ response: String) -> Self {
+        AsyncThrowingStream { continuation in
+            continuation.yield(response)
+            continuation.finish()
+        }
+    }
+
+    /// Gives the response of each event of a subscription as JSON text. The stream ends when the results end, and it
+    /// stops reading the results when the reader of the stream stops.
+    ///
+    /// - Parameters:
+    ///   - results: The result of each event.
+    ///   - encode: Gives the response JSON text of one result.
+    /// - Returns: The stream.
+    fileprivate static func encoding(
+        _ results: AsyncThrowingStream<GraphQLResult, Error>,
+        with encode: @escaping @Sendable (GraphQLResult) throws -> String
+    ) -> Self {
+        AsyncThrowingStream { continuation in
+            let reader = Task {
+                do {
+                    for try await result in results {
+                        continuation.yield(try encode(result))
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in reader.cancel() }
         }
     }
 }

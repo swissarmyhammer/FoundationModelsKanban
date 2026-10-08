@@ -36,10 +36,40 @@ struct ChangeBuilder: Sendable {
     ///   - isUndone: `true` when a later transaction that is not undone reverses this transaction (plan.md §6.5).
     /// - Returns: The change, or `nil` when there are no events.
     func change(of events: [Event], markingUndone isUndone: Bool) -> Change? {
+        let patched = OrderedSet(events.map(\.patch.node))
+        return change(of: events, patching: patched, inBoard: after.boardKey, markingUndone: isUndone)
+    }
+
+    /// Makes the change that a transaction of a different board makes in this board: only the `DERIVED` updates
+    /// (plan.md §6.7, derived updates across boards). For example, a task of a related board becomes done, and a task
+    /// of this board that depends on it becomes ready.
+    ///
+    /// - Parameters:
+    ///   - events: The events of the transaction in the other board, in the order of their ids.
+    ///   - key: The current key of the other board. It is the first key of `boards`.
+    ///   - isUndone: `true` when a later transaction that is not undone reverses this transaction (plan.md §6.5).
+    /// - Returns: The change, or `nil` when there are no events.
+    func derivedChange(of events: [Event], inBoard key: String, markingUndone isUndone: Bool) -> Change? {
+        change(of: events, patching: [], inBoard: key, markingUndone: isUndone)
+    }
+
+    /// Makes the change of the events of one transaction.
+    ///
+    /// - Parameters:
+    ///   - events: The events of the transaction, in the order of their ids.
+    ///   - patched: The local refs of the nodes of this board that a patch of the transaction changed.
+    ///   - key: The current key of the board of the events. It is the first key of `boards`.
+    ///   - isUndone: `true` when a later transaction that is not undone reverses this transaction.
+    /// - Returns: The change, or `nil` when there are no events.
+    private func change(
+        of events: [Event],
+        patching patched: OrderedSet<LocalRef>,
+        inBoard key: String,
+        markingUndone isUndone: Bool
+    ) -> Change? {
         guard let first = events.first else {
             return nil
         }
-        let patched = OrderedSet(events.map(\.patch.node))
         let patchUpdates = patched.compactMap { ref in update(of: ref, from: .patch) }
         let derivedUpdates = after.graph.allSlots.compactMap { slot in derivedUpdate(ofNodeAt: slot, besides: patched) }
         return Change(
@@ -47,7 +77,7 @@ struct ChangeBuilder: Sendable {
             at: first.at,
             actorRef: first.actor,
             ops: first.ops,
-            boards: [after.boardKey] + (first.boards ?? []),
+            boards: [key] + (first.boards ?? []),
             undone: isUndone,
             undoes: first.undoes.map { txn in NodeID(text: txn.ulidString) },
             nodeUpdates: patchUpdates + derivedUpdates

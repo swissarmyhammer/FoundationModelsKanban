@@ -57,6 +57,9 @@ public actor KanbanGraph {
     /// The gate that lets one call run at a time.
     private let gate = SerialGate()
 
+    /// The subscribers of the changes of the loaded boards (plan.md §6.7).
+    private let feed = ChangeFeed()
+
     /// The ranked search over the tasks of the current board, for the life of the engine (plan.md §6.4).
     private let search: TaskSearch
 
@@ -193,14 +196,44 @@ public actor KanbanGraph {
     ///   board cannot start.
     public func execute(query: String, variables: [String: Map], operationName: String?) async throws -> String {
         try await gate.run {
-            try await self.respond(to: query, variables: variables, operationName: operationName)
+            try await self.publishingChanges {
+                try await self.respond(to: query, variables: variables, operationName: operationName)
+            }
         }
     }
 
-    /// Stops all file watchers (plan.md §7.2): the watcher of the current board and the watcher of each related
-    /// board. After the call returns, a change of a file applies nothing. A later call still reads the graphs in
-    /// memory, but the graphs do not follow the files any more.
+    /// Starts one GraphQL subscription against the board (plan.md §6.7, §7.2).
+    ///
+    /// The start goes through the serial gate, and it loads the board and each board that its `dependsOn` edges
+    /// reach. The stream does not hold the gate. Each change goes to the stream as one GraphQL response: a commit of
+    /// this process at once, and a change of a log file when the file watcher of its board applies it. Each response
+    /// reads the board as the engine read it through the gate. A document that does not parse or validate, and a
+    /// subscription that cannot start, give a stream with one response with the errors, and the stream then ends.
+    /// ``close()`` ends the stream.
+    ///
+    /// - Parameters:
+    ///   - query: The subscription document.
+    ///   - variables: The values of the variables of the document.
+    ///   - operationName: The operation of the document to run, or `nil` when the document has one operation.
+    /// - Returns: The GraphQL response (`{data, errors}`) of each event, as JSON text with sorted keys.
+    /// - Throws: An I/O fault only, the same as ``execute(query:variables:operationName:)``.
+    public func subscribe(
+        query: String,
+        variables: [String: Map],
+        operationName: String?
+    ) async throws -> AsyncThrowingStream<String, Error> {
+        try await gate.run {
+            try await self.publishingChanges {
+                try await self.startSubscription(to: query, variables: variables, operationName: operationName)
+            }
+        }
+    }
+
+    /// Stops all file watchers and ends all subscriptions (plan.md §7.2): the watcher of the current board and the
+    /// watcher of each related board. After the call returns, a change of a file applies nothing. A later call still
+    /// reads the graphs in memory, but the graphs do not follow the files any more.
     public func close() async {
+        feed.finish()
         let watches = [activeWatch] + relatedBoards.values.map(\.watch)
         watchState = .closed
         for path in relatedBoards.keys {
@@ -225,35 +258,190 @@ public actor KanbanGraph {
         variables: [String: Map],
         operationName: String?
     ) async throws -> String {
+        let schema = schema
+        do {
+            return try await runCall { context in
+                try await schema.respond(
+                    to: query,
+                    variables: variables,
+                    operationName: operationName,
+                    formattedWith: .sortedKeys,
+                    context: context
+                )
+            }
+        } catch let error as KanbanError {
+            return try error.responseJSON()
+        }
+    }
+
+    /// Starts one subscription document inside the serial gate (plan.md §6.7).
+    ///
+    /// - Parameters:
+    ///   - query: The subscription document.
+    ///   - variables: The values of the variables of the document.
+    ///   - operationName: The operation of the document to run, or `nil`.
+    /// - Returns: The response of each event as JSON text with sorted keys. A subscription that cannot start gives a
+    ///   stream with one response with the error.
+    /// - Throws: A ``BoardKeyError``, a ``BoardWatcherError``, or an ``EventLogError`` when a board cannot load.
+    private func startSubscription(
+        to query: String,
+        variables: [String: Map],
+        operationName: String?
+    ) async throws -> AsyncThrowingStream<String, Error> {
+        let schema = schema
+        do {
+            return try await runCall { context in
+                try await schema.subscribe(
+                    to: query,
+                    variables: variables,
+                    operationName: operationName,
+                    formattedWith: .sortedKeys,
+                    context: context
+                )
+            }
+        } catch let error as KanbanError {
+            return .single(try error.responseJSON())
+        }
+    }
+
+    /// Runs one call on the session of the current board, and commits the patches that its mutation fields kept
+    /// (plan.md §5.4). The call loads the related boards that it asks for.
+    ///
+    /// - Parameter call: Runs the document against the context of one run, and gives the response.
+    /// - Returns: The response of the run that committed, or of the run that kept no patch.
+    /// - Throws: A ``BoardKeyError``, a ``BoardWatcherError``, or an ``EventLogError`` when a board cannot load or a
+    ///   commit cannot write. A ``KanbanError`` of the commit, for example ``KanbanError/boardBusy(attempts:)``.
+    private func runCall<Response: Sendable>(
+        _ call: @Sendable (KanbanContext) async throws -> Response
+    ) async throws -> Response {
         await observer?.callDidStart()
         defer { observer?.callDidFinish() }
         var session = try await loadedSession()
         defer { loadState = .loaded(session) }
-        let schema = schema
-        let clock = clock
-        let search = search
-        let key = session.key
+        let (clock, search, feed, key) = (clock, search, feed, session.key)
+        return try await session.run(
+            readingRelatedBoardsWith: { related, requests in
+                try await self.relatedBoards(updating: related, toAnswer: requests, currentKey: key)
+            },
+            storingRelatedBoardsWith: { sessions, related in
+                await self.storeRelatedBoards(sessions, in: related)
+            },
+            { store in
+                try await call(KanbanContext(store: store, clock: clock, search: search, feed: feed))
+            }
+        )
+    }
+
+    // MARK: - Change feed
+
+    /// Runs one operation inside the serial gate, and then sends the changes of the live graphs to the subscribers
+    /// (plan.md §6.7). The changes go out also when the operation throws, because a commit check can apply the
+    /// changes of a different process before the call fails.
+    ///
+    /// - Parameter operation: The operation.
+    /// - Returns: The value of the operation.
+    /// - Throws: The error of the operation.
+    private func publishingChanges<Value: Sendable>(
+        _ operation: @Sendable () async throws -> Value
+    ) async throws -> Value {
         do {
-            return try await session.run(
-                readingRelatedBoardsWith: { related, requests in
-                    try await self.relatedBoards(updating: related, toAnswer: requests, currentKey: key)
-                },
-                storingRelatedBoardsWith: { sessions, related in
-                    await self.storeRelatedBoards(sessions, in: related)
-                },
-                { store in
-                    try await schema.respond(
-                        to: query,
-                        variables: variables,
-                        operationName: operationName,
-                        formattedWith: .sortedKeys,
-                        context: KanbanContext(store: store, clock: clock, search: search)
-                    )
-                }
-            )
-        } catch let error as KanbanError {
-            return try error.responseJSON()
+            let value = try await operation()
+            await publishLiveChanges()
+            return value
+        } catch {
+            await publishLiveChanges()
+            throw error
         }
+    }
+
+    /// Takes the changes of the live graph of each loaded board, and sends them to the subscribers of the change feed
+    /// (plan.md §6.7). With no subscriber, the changes are only dropped.
+    ///
+    /// Before it makes the changes, the engine loads each board that a `dependsOn` edge of a loaded board reaches, so
+    /// that the derived fields read the tasks of those boards. A board that cannot load is recorded with swift-log,
+    /// and the changes of the operation are then not sent.
+    private func publishLiveChanges() async {
+        let changed = takeLiveChanges()
+        let subscribed = feed.subscribedBoards
+        guard !changed.isEmpty, !subscribed.isEmpty, case .loaded(let current) = loadState else {
+            return
+        }
+        let related: RelatedBoards
+        do {
+            let requests = RelatedBoards.loadable.dependencyRequests(
+                of: current.live.graph,
+                inBoard: current.key.description
+            )
+            related = try await relatedBoards(updating: .loadable, toAnswer: requests, currentKey: current.key)
+        } catch {
+            Log.kanban.error(
+                "The change feed cannot load the boards that the dependencies reach; the changes are not sent",
+                metadata: ["error": "\(error)"]
+            )
+            return
+        }
+        let sessions = loadedSessions
+        let round = ChangeRound(of: changed, amongBoards: sessions, currentPath: root.canonicalPath, reading: related)
+        for path in subscribed.sorted() {
+            guard let session = sessions[path] else {
+                assertionFailure("A subscriber observes the board at \(path), and the engine did not load it")
+                Log.kanban.error(
+                    "A subscriber observes a board that the engine did not load",
+                    metadata: ["path": "\(path)"]
+                )
+                continue
+            }
+            feed.publish(
+                round.changes(of: session, atPath: path),
+                toBoardAt: path,
+                readingTasksOf: round.view(of: session),
+                resolvingIn: eventBoard(of: session, reading: round.after)
+            )
+        }
+    }
+
+    /// Takes the changes of the live graph of each loaded board that added events since the last call.
+    ///
+    /// - Returns: The changes of each board that changed, by the canonical path of its repo directory.
+    private func takeLiveChanges() -> [String: BoardChanges] {
+        var changed: [String: BoardChanges] = [:]
+        if case .loaded(var session) = loadState {
+            let changes = session.takeLiveChanges()
+            loadState = .loaded(session)
+            changed[root.canonicalPath] = BoardChanges(of: session, changes: changes)
+        }
+        for (path, board) in relatedBoards {
+            var session = board.session
+            let changes = session.takeLiveChanges()
+            relatedBoards[path]?.session = session
+            changed[path] = BoardChanges(of: session, changes: changes)
+        }
+        return changed
+    }
+
+    /// The session of each loaded board: the current board and each loaded related board, by the canonical path of
+    /// its repo directory.
+    private var loadedSessions: [String: CommitSession] {
+        var sessions = relatedBoards.mapValues(\.session)
+        if case .loaded(let session) = loadState {
+            sessions[root.canonicalPath] = session
+        }
+        return sessions
+    }
+
+    /// Gives the board that the resolvers of the events of a board read.
+    ///
+    /// - Parameters:
+    ///   - session: The session of the board.
+    ///   - related: The other boards as the reads see them after the operation.
+    /// - Returns: The board.
+    private func eventBoard(of session: CommitSession, reading related: RelatedBoards) -> EventBoard {
+        EventBoard(
+            work: session.makeWorkingCopy(stampedBy: EventStamp(actingAs: sessionActor.ref, mintingFrom: idSource)),
+            key: session.key.description,
+            source: session.source,
+            related: related
+        )
     }
 
     /// Gives the session of the current board. The first call reads the board key, starts the file watcher of the
@@ -530,7 +718,9 @@ public actor KanbanGraph {
     private func receive(_ paths: [URL], ofBoardAt directory: URL) async {
         do {
             try await gate.run {
-                try await self.applyBatch(paths, ofBoardAt: directory)
+                try await self.publishingChanges {
+                    try await self.applyBatch(paths, ofBoardAt: directory)
+                }
             }
         } catch {
             Log.kanban.error(

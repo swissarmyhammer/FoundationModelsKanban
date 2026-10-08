@@ -99,125 +99,6 @@ private struct Projection {
     }
 }
 
-// MARK: - Filters
-
-/// The filters of `Board.history` (plan.md §6.7, Filters), resolved against the graph of the call: the graph now.
-///
-/// `type` keeps only the updates of the node types, `node` only the updates of the node, and `filter` only the
-/// updates of the tasks that match it now and of the comments on those tasks. `derived: false` leaves out the
-/// `DERIVED` updates. `actor` keeps only the transactions of the actor. A change with no update after the filters is
-/// left out.
-private struct ChangeFilter {
-    /// The node types to keep, or `nil` for all types.
-    private let types: Set<NodeType>?
-
-    /// The nodes to keep, or `nil` for all nodes. A `node` argument that names no node gives an empty set.
-    private let nodes: Set<LocalRef>?
-
-    /// The stored ref of the actor of the transactions to keep, or `nil` for all actors.
-    private let actor: StoredRef?
-
-    /// The evaluator of the task filter, or `nil` for no filter.
-    private let evaluator: FilterEvaluator?
-
-    /// `true` when the `DERIVED` updates stay in.
-    private let includesDerived: Bool
-
-    /// The graph of the call. The task filter reads it.
-    private let graph: Graph
-
-    /// Resolves the filters of a `history` call.
-    ///
-    /// - Parameters:
-    ///   - arguments: The arguments of the call.
-    ///   - view: The read view of the graph of the call.
-    /// - Throws: ``KanbanError/invalidFilter(filter:position:detail:example:)`` when the filter is empty or does not
-    ///   parse. ``KanbanError/notFound(type:reference:)`` when the `actor` names no actor.
-    ///   ``KanbanError/ambiguousID(reference:matches:)`` when the `node` is a prefix of more than one ULID.
-    init(for arguments: HistoryArguments, in view: BoardView) throws(KanbanError) {
-        let resolver = view.resolver
-        types = arguments.type.map(Set.init)
-        nodes = try arguments.node.map { id throws(KanbanError) in
-            Set(try resolver.anyLocalRef(for: id.text).map { ref in [ref] } ?? [])
-        }
-        actor = try arguments.actor.map { id throws(KanbanError) in
-            try resolver.storedRef(for: id.text, ofType: .actor, includingTombstones: true)
-        }
-        evaluator = try arguments.filter.map { text throws(KanbanError) in
-            FilterEvaluator(evaluating: try FilterExpr(parsing: text), over: view.readiness, inBoard: view.boardKey)
-        }
-        includesDerived = arguments.derived ?? HistoryArguments.includesDerivedByDefault
-        graph = view.graph
-    }
-
-    /// Applies the filters to one change.
-    ///
-    /// - Parameter change: The change of one transaction.
-    /// - Returns: The change with the updates that the filters keep, or `nil` when the actor does not match or no
-    ///   update stays.
-    func applied(to change: Change) -> Change? {
-        guard actor.map({ actor in actor == .local(change.actorRef) }) ?? true else {
-            return nil
-        }
-        let updates = change.nodeUpdates.filter { update in keeps(update: update) }
-        guard !updates.isEmpty else {
-            return nil
-        }
-        return change.keeping(only: updates)
-    }
-
-    /// Tells if the filters keep one update.
-    ///
-    /// - Parameter update: The update.
-    /// - Returns: `true` when the update passes the type, the node, the source, and the task filter.
-    private func keeps(update: NodeUpdate) -> Bool {
-        (types?.contains(update.type) ?? true)
-            && (nodes?.contains(update.ref) ?? true)
-            && (includesDerived || update.source != .derived)
-            && matchesTaskFilter(for: update)
-    }
-
-    /// Tells if an update passes the task filter: the update is of a task that matches the filter, or of a comment
-    /// on such a task.
-    ///
-    /// - Parameter update: The update.
-    /// - Returns: `true` when the call has no task filter, or when the task of the update matches it.
-    private func matchesTaskFilter(for update: NodeUpdate) -> Bool {
-        guard let evaluator else {
-            return true
-        }
-        return taskSlot(of: update).map(evaluator.matches(taskAt:)) ?? false
-    }
-
-    /// Gives the slot of the task that the task filter tests for an update: the task itself, or the task of a
-    /// comment.
-    ///
-    /// - Parameter update: The update.
-    /// - Returns: The slot of the task, or `nil` for an update of a different node type or a node that the graph does
-    ///   not have.
-    private func taskSlot(of update: NodeUpdate) -> Int? {
-        let slot = graph.slot(for: update.ref)
-        switch update.type {
-        case .task:
-            return slot
-        case .comment:
-            return slot.flatMap { slot in graph.node(at: slot, as: CommentNode.self) }?.task?.resolvedSlot
-        case .board, .column, .tag, .actor:
-            return nil
-        }
-    }
-}
-
-extension Change {
-    /// Gives this change with only some of its updates.
-    ///
-    /// - Parameter updates: The updates to keep.
-    /// - Returns: The change with the same envelope and only these updates.
-    fileprivate func keeping(only updates: [NodeUpdate]) -> Change {
-        replacingNodeUpdates(updates)
-    }
-}
-
 // MARK: - Resolver
 
 extension BoardObject {
@@ -227,8 +108,8 @@ extension BoardObject {
     /// The list reads the committed log of the board: the global event list of the board of the view. For the current
     /// board, it is the global event list of the working copy, and for a related board, it is the event list of
     /// that loaded board (plan.md §6.6). A patch of the same call is not in the log yet, so it is not in the list.
-    /// The GraphQL field is nullable: an error gives `null` for the field and one item in `errors`, and the other
-    /// fields of the board keep their data.
+    /// The filters resolve against the graph of the call: the graph now. The GraphQL field is nullable: an error gives
+    /// `null` for the field and one item in `errors`, and the other fields of the board keep their data.
     ///
     /// - Parameters:
     ///   - context: The context of the call. Its store holds the global event list of a board in memory only.
@@ -242,6 +123,6 @@ extension BoardObject {
         let events = view.source?.events ?? currentEvents
         let changes = History(of: events, inBoard: view.boardKey).changes(after: arguments.since?.text)
         let pageSize = max(arguments.first ?? HistoryArguments.defaultPageSize, .zero)
-        return Array(changes.reversed().lazy.compactMap { change in filter.applied(to: change) }.prefix(pageSize))
+        return Array(filter.applied(to: changes.reversed(), readingTasksOf: view).prefix(pageSize))
     }
 }

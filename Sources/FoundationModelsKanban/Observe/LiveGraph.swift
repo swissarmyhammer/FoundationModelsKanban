@@ -29,6 +29,10 @@ struct LiveGraph: Sendable {
     /// entry.
     private(set) var signatures: [LocalRef: FileSignature]
 
+    /// The changes of the graph that added events, in the order that they happened, until
+    /// ``takeChanges()`` takes them. The engine makes the `Change` values of the change feed from them (plan.md §6.7).
+    private var pendingChanges: [LiveGraphChange] = []
+
     /// The event log of the board.
     var log: EventLog {
         loader.log
@@ -63,30 +67,54 @@ struct LiveGraph: Sendable {
     /// files of the board, the apply loads the full board again instead (plan.md §5.6, large changes). A path that
     /// is not a node log of the board (for example the lock file) changes nothing.
     ///
-    /// The graph, the event list, and the signatures change only when the apply succeeds.
+    /// The graph, the event list, and the signatures change only when the apply succeeds. An apply that adds events
+    /// records a ``LiveGraphChange``, with the graph before and after the apply. A `union` merge can rewrite a file,
+    /// so the change holds the events whose ids the graph did not have, and not the lines at the end of a file.
     ///
     /// - Parameter changedPaths: The changed files.
-    /// - Returns: The ids of the events that the graph did not have before the apply, in the order of their ids. A
-    ///   caller makes `Change` values from them (plan.md §6.7).
+    /// - Returns: The ids of the events that the graph did not have before the apply, in the order of their ids.
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a directory or a file cannot be read.
     mutating func apply(changedPaths: some Sequence<URL>) async throws(EventLogError) -> [ULID] {
         let refs = Set(changedPaths.compactMap(loader.log.ref(ofFileAt:)))
         guard !refs.isEmpty else {
             return []
         }
-        let knownIDs = Set(events.map(\.id))
+        let (before, knownIDs) = (graph, Set(events.map(\.id)))
         if refs.count * Self.fullReloadDivisor > signatures.count {
+            let pending = pendingChanges
             self = try await Self.load(using: loader)
+            pendingChanges = pending
         } else {
             try await reload(filesOf: refs)
         }
-        return events.map(\.id).filter { id in !knownIDs.contains(id) }
+        let added = events.filter { event in !knownIDs.contains(event.id) }
+        record(LiveGraphChange(before: before, after: graph, events: added))
+        return added.map(\.id)
+    }
+
+    /// Gives the changes that added events since the last call, and forgets them.
+    ///
+    /// - Returns: The changes, in the order that they happened.
+    mutating func takeChanges() -> [LiveGraphChange] {
+        defer { pendingChanges = [] }
+        return pendingChanges
+    }
+
+    /// Records a change for the change feed, when it added events.
+    ///
+    /// - Parameter change: The change.
+    private mutating func record(_ change: LiveGraphChange) {
+        guard !change.events.isEmpty else {
+            return
+        }
+        pendingChanges.append(change)
     }
 
     /// Makes the graph of a commit the live graph, after the commit appended its events (plan.md §5.4 step 5.4).
     ///
     /// The call records the new signature of each log file that the commit appended to. Thus, the watcher event for
-    /// this write finds no change, and the tool does not read its own write again.
+    /// this write finds no change, and the tool does not read its own write again. The call also records a
+    /// ``LiveGraphChange`` with the written events, so the change feed sends the commit at once (plan.md §6.7).
     ///
     /// - Parameters:
     ///   - committed: The working graph of the call. It holds the state that the appended events give.
@@ -94,6 +122,7 @@ struct LiveGraph: Sendable {
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a log file cannot be read. Then nothing changes.
     mutating func adopt(_ committed: Graph, writing written: [Event]) throws(EventLogError) {
         let newSignatures = try fileSignatures(of: Set(written.map(\.patch.node)))
+        record(LiveGraphChange(before: graph, after: committed, events: written))
         install(committed, events: EventMerge.merged([events, written]), signatures: newSignatures)
     }
 
@@ -172,4 +201,17 @@ struct LiveGraph: Sendable {
             signatures[ref] = signature
         }
     }
+}
+
+/// One change of a live graph that added events: an apply of changed files, or a commit of this process (plan.md
+/// §5.6, change feed). The engine makes one `Change` for each transaction of the events (plan.md §6.7).
+struct LiveGraphChange: Sendable {
+    /// The graph just before the change.
+    let before: Graph
+
+    /// The graph just after the change.
+    let after: Graph
+
+    /// The events that the change added, in the order of their ids.
+    let events: [Event]
 }

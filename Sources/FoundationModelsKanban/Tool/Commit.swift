@@ -316,6 +316,14 @@ struct CommitSession: Sendable {
         await search.update(from: BoardView(of: live.graph, inBoard: key.description))
     }
 
+    /// Gives the changes of the live graph that added events since the last call, and forgets them: the commits of
+    /// this process and the applies of changed files (plan.md §6.7).
+    ///
+    /// - Returns: The changes, in the order that they happened.
+    mutating func takeLiveChanges() -> [LiveGraphChange] {
+        live.takeChanges()
+    }
+
     /// Applies one batch of the file watcher to the live graph, and then updates the search (plan.md §5.6, batch).
     ///
     /// A file whose signature equals the recorded signature is not read again: a write of this process, or a

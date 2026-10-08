@@ -154,10 +154,19 @@ struct RelatedBoards: Sendable {
     /// - Parameter changed: The working copy of each related board that the run changed.
     /// - Returns: The value with the working graphs.
     func with(working changed: some Sequence<RelatedWork>) -> RelatedBoards {
+        changed.reduce(self) { related, work in related.with(board: work.snapshot, atPath: work.path) }
+    }
+
+    /// Gives this value with one loaded related board as the reads see it, for example the graph of the board just
+    /// before a change of the change feed (plan.md §6.7).
+    ///
+    /// - Parameters:
+    ///   - board: The board.
+    ///   - path: The canonical path of the repo directory of the board.
+    /// - Returns: The value with the board.
+    func with(board: BoardSnapshot, atPath path: String) -> RelatedBoards {
         var related = self
-        for board in changed {
-            related.boards[board.path] = board.snapshot
-        }
+        related.boards[path] = board
         return related
     }
 

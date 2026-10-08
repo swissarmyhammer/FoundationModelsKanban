@@ -66,11 +66,27 @@ comments:
     - evidence: Sources/FoundationModelsKanban/GraphQL/UndoMutations.swift, Sources/FoundationModelsKanban/GraphQL/Schema.swift, Sources/FoundationModelsKanban/Observe/Change.swift, Sources/FoundationModelsKanban/Undo/History.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoUndoTests.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoCycleTests.swift, Tests/FoundationModelsKanbanTests/Tool/GitGraphFixture.swift. `swift build --build-tests`: only the accepted SwiftPM "missing creator" warning. Periphery on Sources: no findings. Full `swift test --skip-build` 3 times, 120 s limit: 940 tests in 63 suites passed each time (9.695 s, 9.676 s, 10.772 s test time; 22.74 s, 15.88 s, 17.21 s wall time).
     - next: /review
   timestamp: 2026-10-08T05:58:21.174504+00:00
+- actor: wballard
+  id: 01m4d1nw3536e7egvakpcr748d
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (b08b28d). 7 files reviewed. 0 findings, 0 confirmed, 0 refuted, 0 failed. All 3 prior Review Findings items are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-08T06:02:15.525859+00:00
+- actor: wballard
+  id: 01m4d1p2afbcmdpmdv4sdtte76
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 7 files (UndoMutations.swift, Schema.swift, Change.swift, History.swift, 2 cross-repo test files, GitGraphFixture.swift); 3/3 findings checked
+    - test: green — swift test 3 runs with a 120 s limit, 940 passed each (13.4 s, 9.7 s, 9.9 s); build warnings only the 2 accepted kinds
+    - commit: b08b28d
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T06:02:21.903043+00:00
 depends_on:
 - 01M4B433B8HKKXX0A08K77YCNF
 - 01M4B42D1RWYD5DV5CSMBNXMJ3
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: b280
 title: 'Cross-repo: cycle check and cross-board undo'
 ---
 ## What

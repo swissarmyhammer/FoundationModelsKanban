@@ -15,9 +15,6 @@ import ULID
 /// and if its watcher runs), because the time of an FSEvents batch has no upper limit.
 @Suite("Live graph: FSEvents watcher and batches", .timeLimit(.minutes(1)))
 struct BoardWatcherTests {
-    /// The longest time that a test waits for a batch.
-    static let batchTimeLimit = Duration.seconds(10)
-
     /// The arguments of a `searchTasks` query for a word of ``KanbanGraphTests/laterTitle`` in the `todo` column. The
     /// column of the fixture is the terminal column, so the filter names it to keep its done tasks.
     static let laterTitleSearch = #"\#(TaskSearchTests.query(TaskSearchTests.titleWord)), filter: "%todo""#
@@ -35,23 +32,15 @@ struct BoardWatcherTests {
         in batches: AsyncStream<[URL]>,
         satisfying condition: @escaping @Sendable ([URL]) async throws -> Bool
     ) async throws -> Bool {
-        try await withThrowingTaskGroup(of: Bool.self) { group in
-            group.addTask {
-                for await batch in batches {
-                    if try await condition(batch) {
-                        return true
-                    }
+        let isFound = try await StreamWait.value {
+            for await batch in batches {
+                if try await condition(batch) {
+                    return true
                 }
-                return false
             }
-            group.addTask {
-                try await Task.sleep(for: batchTimeLimit)
-                return false
-            }
-            let isFound = try await group.next() ?? false
-            group.cancelAll()
-            return isFound
+            return false
         }
+        return isFound ?? false
     }
 
     /// Waits until a query on an engine gives an expected response. The query runs again after each batch that the

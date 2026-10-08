@@ -87,7 +87,7 @@ struct CommitTests {
         timedBy clock: @escaping @Sendable () -> DateTime = { CommitTests.callTime },
         searchingWith search: TaskSearch = TaskSearch(embeddingWith: nil)
     ) -> KanbanContext {
-        KanbanContext(store: store, clock: clock, search: search)
+        KanbanContext(store: store, clock: clock, search: search, feed: ChangeFeed())
     }
 
     /// Runs one mutation field that applies one patch to the working copy.
