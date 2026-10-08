@@ -67,6 +67,23 @@ struct HistoryTests {
         }
     }
 
+    /// Runs the base setup, and then runs mutation fields on the fixture task, each one in its own transaction. The
+    /// other session helpers of this suite call this helper.
+    ///
+    /// - Parameters:
+    ///   - directory: The temporary repo directory.
+    ///   - fields: Gives the mutation fields from the refs of the fixture task after the base setup, in call order.
+    /// - Returns: The session after the last field, and the ULID of the fixture task.
+    static func session(
+        inRepoAt directory: TemporaryDirectory,
+        running fields: (ChangeBuilderTests.CaseRefs) -> [String]
+    ) async throws -> (session: CommitSession, task: ULID) {
+        let base = try await ChangeBuilderTests.baseSession(inRepoAt: directory)
+        var session = base.session
+        try await run(eachOf: fields(ChangeBuilderTests.refs(of: base.task, in: session)), in: &session)
+        return (session, base.task)
+    }
+
     /// Runs the base setup, and then completes the fixture task in one more transaction.
     ///
     /// - Parameter directory: The temporary repo directory.
@@ -75,10 +92,9 @@ struct HistoryTests {
         session: CommitSession,
         task: ULID
     ) {
-        let base = try await ChangeBuilderTests.baseSession(inRepoAt: directory)
-        var session = base.session
-        try await run(eachOf: [TaskOperationTests.taskField(MutationName.completeTask, of: base.task)], in: &session)
-        return (session, base.task)
+        try await session(inRepoAt: directory) { refs in
+            [TaskOperationTests.taskField(MutationName.completeTask, of: refs.task)]
+        }
     }
 
     /// Runs the base setup, tags the fixture task with ``TagMutationTests/bug``, and then runs more mutation fields
@@ -86,17 +102,13 @@ struct HistoryTests {
     ///
     /// - Parameters:
     ///   - directory: The temporary repo directory.
-    ///   - fields: Gives the mutation fields from the ULID of the fixture task, in call order.
+    ///   - fields: Gives the mutation fields from the refs of the fixture task after the base setup, in call order.
     /// - Returns: The session after the last field, and the ULID of the fixture task.
     static func taggedSession(
         inRepoAt directory: TemporaryDirectory,
-        running fields: (ULID) -> [String]
+        running fields: (ChangeBuilderTests.CaseRefs) -> [String]
     ) async throws -> (session: CommitSession, task: ULID) {
-        let base = try await ChangeBuilderTests.baseSession(inRepoAt: directory)
-        var session = base.session
-        let tag = ChangeBuilderTests.tagField(of: ChangeBuilderTests.refs(of: base.task, in: session))
-        try await run(eachOf: [tag] + fields(base.task), in: &session)
-        return (session, base.task)
+        try await session(inRepoAt: directory) { refs in [ChangeBuilderTests.tagField(of: refs)] + fields(refs) }
     }
 
     /// Gives the transaction ULID text of each change.
@@ -266,15 +278,13 @@ struct HistoryTests {
     @Test("history(filter:) keeps only the updates of the tasks that match, and of the comments on those tasks")
     func historyFilterKeepsMatchingTasksAndComments() async throws {
         let directory = try TemporaryDirectory()
-        let base = try await ChangeBuilderTests.baseSession(inRepoAt: directory)
-        var session = base.session
-        let refs = ChangeBuilderTests.refs(of: base.task, in: session)
-        let otherTask = AddUpdateTaskTests.addTask(with: AddUpdateTaskTests.dependsOn(base.task))
-        try await Self.run(
-            eachOf: [ChangeBuilderTests.tagField(of: refs), ChangeBuilderTests.addCommentField(refs), otherTask],
-            in: &session
-        )
-        let changes = try await Self.history(with: Self.bugFilterArguments, in: session)
+        let base = try await Self.taggedSession(inRepoAt: directory) { refs in
+            [
+                ChangeBuilderTests.addCommentField(refs),
+                AddUpdateTaskTests.addTask(with: AddUpdateTaskTests.dependsOn(refs.task)),
+            ]
+        }
+        let changes = try await Self.history(with: Self.bugFilterArguments, in: base.session)
         let updates = Self.updates(of: changes)
         #expect(Self.values(named: "type", of: updates) == [NodeType.task.rawValue, NodeType.comment.rawValue])
         let taskUpdates = updates.filter { update in update["type"].string == NodeType.task.rawValue }
@@ -284,11 +294,8 @@ struct HistoryTests {
     @Test("history(filter: \"#DELETED\") keeps the DELETED update of a deleted task")
     func historyDeletedFilterKeepsDeletedUpdate() async throws {
         let directory = try TemporaryDirectory()
-        let base = try await ChangeBuilderTests.baseSession(inRepoAt: directory)
-        var session = base.session
-        let refs = ChangeBuilderTests.refs(of: base.task, in: session)
-        try await Self.run(eachOf: [ChangeBuilderTests.deleteTaskField(refs)], in: &session)
-        let changes = try await Self.history(with: Self.deletedFilterArguments, in: session)
+        let base = try await Self.session(inRepoAt: directory) { refs in [ChangeBuilderTests.deleteTaskField(refs)] }
+        let changes = try await Self.history(with: Self.deletedFilterArguments, in: base.session)
         let task = ColumnActorTests.id(of: .task(base.task))
         #expect(Self.updateTexts(of: changes.first) == ["TASK DELETED \(task)"])
     }
@@ -296,13 +303,9 @@ struct HistoryTests {
     @Test("history(filter:) with a tag leaves out the updates of a deleted task, the same as a task list")
     func historyTagFilterLeavesOutDeletedTask() async throws {
         let directory = try TemporaryDirectory()
-        let base = try await ChangeBuilderTests.baseSession(inRepoAt: directory)
-        var session = base.session
-        let refs = ChangeBuilderTests.refs(of: base.task, in: session)
-        try await Self.run(
-            eachOf: [ChangeBuilderTests.tagField(of: refs), ChangeBuilderTests.deleteTaskField(refs)],
-            in: &session
-        )
+        let session = try await Self.taggedSession(inRepoAt: directory) { refs in
+            [ChangeBuilderTests.deleteTaskField(refs)]
+        }.session
         let changes = try await Self.history(with: Self.bugFilterArguments, in: session)
         #expect(changes.isEmpty)
     }
@@ -310,20 +313,15 @@ struct HistoryTests {
     @Test("After undeleteTask, history(filter: \"#DELETED\") leaves out the task, and a tag filter keeps it again")
     func historyAfterUndeleteFollowsLiveTask() async throws {
         let directory = try TemporaryDirectory()
-        let base = try await ChangeBuilderTests.baseSession(inRepoAt: directory)
-        var session = base.session
-        let refs = ChangeBuilderTests.refs(of: base.task, in: session)
-        try await Self.run(
-            eachOf: [
-                ChangeBuilderTests.tagField(of: refs),
+        let base = try await Self.taggedSession(inRepoAt: directory) { refs in
+            [
                 ChangeBuilderTests.deleteTaskField(refs),
-                TaskOperationTests.taskField(MutationName.undeleteTask, of: base.task),
-            ],
-            in: &session
-        )
-        let deleted = try await Self.history(with: Self.deletedFilterArguments, in: session)
+                TaskOperationTests.taskField(MutationName.undeleteTask, of: refs.task),
+            ]
+        }
+        let deleted = try await Self.history(with: Self.deletedFilterArguments, in: base.session)
         #expect(deleted.isEmpty)
-        let tagged = try await Self.history(with: Self.bugFilterArguments, in: session)
+        let tagged = try await Self.history(with: Self.bugFilterArguments, in: base.session)
         let task = ColumnActorTests.id(of: .task(base.task))
         #expect(Self.updateTexts(of: tagged.first) == ["TASK RESTORED \(task)"])
     }
@@ -333,7 +331,7 @@ struct HistoryTests {
         let directory = try TemporaryDirectory()
         let completed = try await Self.taggedSession(
             inRepoAt: directory,
-            running: { task in [TaskOperationTests.taskField(MutationName.completeTask, of: task)] }
+            running: { refs in [TaskOperationTests.taskField(MutationName.completeTask, of: refs.task)] }
         )
         #expect(try await Self.history(with: Self.bugFilterArguments, in: completed.session).isEmpty)
         let done = try await Self.history(with: Self.doneFilterArguments, in: completed.session)
@@ -346,12 +344,12 @@ struct HistoryTests {
         let directory = try TemporaryDirectory()
         let reopened = try await Self.taggedSession(
             inRepoAt: directory,
-            running: { task in
+            running: { refs in
                 [
-                    TaskOperationTests.taskField(MutationName.completeTask, of: task),
+                    TaskOperationTests.taskField(MutationName.completeTask, of: refs.task),
                     TaskOperationTests.taskField(
                         MutationName.moveTask,
-                        of: task,
+                        of: refs.task,
                         with: TaskOperationTests.moveInput()
                     ),
                 ]
@@ -366,11 +364,12 @@ struct HistoryTests {
     @Test("history(derived: false) leaves out the DERIVED updates")
     func historyWithoutDerivedLeavesOutDerivedUpdates() async throws {
         let directory = try TemporaryDirectory()
-        let base = try await ChangeBuilderTests.baseSession(inRepoAt: directory)
-        var session = base.session
-        let dependent = AddUpdateTaskTests.addTask(with: AddUpdateTaskTests.dependsOn(base.task))
-        let complete = TaskOperationTests.taskField(MutationName.completeTask, of: base.task)
-        try await Self.run(eachOf: [dependent, complete], in: &session)
+        let session = try await Self.session(inRepoAt: directory) { refs in
+            [
+                AddUpdateTaskTests.addTask(with: AddUpdateTaskTests.dependsOn(refs.task)),
+                TaskOperationTests.taskField(MutationName.completeTask, of: refs.task),
+            ]
+        }.session
         let derived = UpdateSource.derived.rawValue
         let withDerived = try await Self.history(in: session)
         #expect(Self.values(named: "source", of: Self.updates(of: withDerived)).contains(derived))
