@@ -17,13 +17,15 @@ enum CrossRepoFixture {
         /// The related repo, ``BoardLocatorTests/libName``.
         let lib: URL
 
-        /// Makes the sandbox and the repos.
+        /// Makes the sandbox, and runs git to make the repos in it.
         ///
-        /// - Throws: An error when a git command fails.
-        init() async throws {
-            sandbox = try GitSandbox()
-            app = try await sandbox.makeRepo(named: BoardLocatorTests.appName, origin: BoardLocatorTests.appOrigin)
-            lib = try await sandbox.makeRepo(named: BoardLocatorTests.libName, origin: BoardLocatorTests.libOrigin)
+        /// - Returns: The sandbox and its repos.
+        /// - Throws: An error when the sandbox directory cannot be made, or when a git command fails.
+        static func make() async throws -> SideBySide {
+            let sandbox = try GitSandbox()
+            let app = try await sandbox.makeRepo(named: BoardLocatorTests.appName, origin: BoardLocatorTests.appOrigin)
+            let lib = try await sandbox.makeRepo(named: BoardLocatorTests.libName, origin: BoardLocatorTests.libOrigin)
+            return SideBySide(sandbox: sandbox, app: app, lib: lib)
         }
     }
 

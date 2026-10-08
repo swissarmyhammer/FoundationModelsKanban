@@ -57,15 +57,19 @@ struct BoardLocatorTests {
         /// The second copy of the related repo, ``secondCopyName``.
         let secondCopy: URL
 
-        /// Makes the repos.
+        /// Runs git to make the repos in a sandbox.
         ///
         /// - Parameter sandbox: The sandbox of the test.
+        /// - Returns: The repos.
         /// - Throws: An error when a git command fails.
-        init(in sandbox: GitSandbox) async throws {
-            current = try await sandbox.makeRepo(named: currentCopyName, origin: appOrigin)
-            worktree = try await sandbox.addWorktree(named: worktreeName, to: current)
-            firstCopy = try await sandbox.makeRepo(named: firstCopyName, origin: libOrigin)
-            secondCopy = try await sandbox.makeRepo(named: secondCopyName, origin: libOrigin)
+        static func make(in sandbox: GitSandbox) async throws -> TwoCopies {
+            let current = try await sandbox.makeRepo(named: currentCopyName, origin: appOrigin)
+            return TwoCopies(
+                current: current,
+                worktree: try await sandbox.addWorktree(named: worktreeName, to: current),
+                firstCopy: try await sandbox.makeRepo(named: firstCopyName, origin: libOrigin),
+                secondCopy: try await sandbox.makeRepo(named: secondCopyName, origin: libOrigin)
+            )
         }
     }
 
@@ -84,8 +88,12 @@ struct BoardLocatorTests {
     ///   - root: The root directory of the current repo.
     ///   - locator: The locator. The default looks only in the parent directory.
     /// - Returns: The index.
-    static func scan(around root: URL, with locator: BoardLocator = .default) async -> BoardIndex {
-        await locator.scan(around: root, readingKeysWith: BoardKey.read(fromRepoAt:))
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the test is cancelled during the scan.
+    static func scan(
+        around root: URL,
+        with locator: BoardLocator = .default
+    ) async throws(BoardKeyError) -> BoardIndex {
+        try await locator.scan(around: root, readingKeysWith: BoardKey.read(fromRepoAt:))
     }
 
     /// Gives the names of the directories of the copies of an index, in scan order.
@@ -130,7 +138,7 @@ struct BoardLocatorTests {
             at: sandbox.root.appending(path: "notes", directoryHint: .isDirectory),
             withIntermediateDirectories: true
         )
-        let index = await Self.scan(around: app)
+        let index = try await Self.scan(around: app)
         #expect(Self.names(in: index) == [Self.appName, Self.libName])
         #expect(try index.copies.map(\.key) == [Self.key(of: Self.appOrigin), Self.key(of: Self.libOrigin)])
     }
@@ -141,7 +149,7 @@ struct BoardLocatorTests {
         let app = try await sandbox.makeRepo(named: Self.appName, origin: Self.appOrigin)
         let lib = try await sandbox.makeRepo(named: Self.libName, origin: Self.libOrigin)
         _ = try KanbanGraphTests.writeFixture(inRepoAt: lib)
-        #expect(await Self.scan(around: app).copies.map(\.isEnabled) == [false, true])
+        #expect(try await Self.scan(around: app).copies.map(\.isEnabled) == [false, true])
     }
 
     @Test("The scan order is the parent directory, then each search root in config order, with the names sorted")
@@ -154,7 +162,7 @@ struct BoardLocatorTests {
         let roots = ["first-root", "second-root"].map { name in
             sandbox.root.appending(path: name, directoryHint: .isDirectory)
         }
-        let index = await Self.scan(around: app, with: BoardLocator(searchRoots: roots))
+        let index = try await Self.scan(around: app, with: BoardLocator(searchRoots: roots))
         #expect(index.places.map(\.path) == [sandbox.root.path] + roots.map(\.path))
         #expect(Self.names(in: index) == [Self.appName, "b-lib", "z-lib", "a-lib"])
     }
@@ -163,7 +171,7 @@ struct BoardLocatorTests {
     func parentAsSearchRootIsScannedOneTime() async throws {
         let sandbox = try GitSandbox()
         let app = try await sandbox.makeRepo(named: Self.appName, origin: Self.appOrigin)
-        let index = await Self.scan(around: app, with: BoardLocator(searchRoots: [sandbox.root]))
+        let index = try await Self.scan(around: app, with: BoardLocator(searchRoots: [sandbox.root]))
         #expect(index.places.map(\.path) == [sandbox.root.path])
         #expect(Self.names(in: index) == [Self.appName])
     }
@@ -171,8 +179,8 @@ struct BoardLocatorTests {
     @Test("A worktree is a copy with the key of its main clone")
     func worktreeIsCopyWithKeyOfMainClone() async throws {
         let sandbox = try GitSandbox()
-        let repos = try await TwoCopies(in: sandbox)
-        let index = await Self.scan(around: repos.current)
+        let repos = try await TwoCopies.make(in: sandbox)
+        let index = try await Self.scan(around: repos.current)
         #expect(try Self.copy(at: repos.worktree, in: index).key == Self.key(of: Self.appOrigin))
     }
 
@@ -182,12 +190,12 @@ struct BoardLocatorTests {
         let app = try await sandbox.makeRepo(named: Self.appName, origin: Self.appOrigin)
         _ = try await sandbox.makeRepo(named: Self.libName, origin: Self.libOrigin)
         let reader = CountingKeyReader()
-        let first = await BoardLocator.default.scan(around: app) { root throws(BoardKeyError) in
+        let first = try await BoardLocator.default.scan(around: app) { root throws(BoardKeyError) in
             try await reader.key(ofRepoAt: root)
         }
         #expect(reader.readCount == Self.firstScanReads)
         let newRepo = try await sandbox.makeRepo(named: "new-lib", origin: Self.newOrigin)
-        let second = await BoardLocator.default.scan(around: app, reusing: first) { root throws(BoardKeyError) in
+        let second = try await BoardLocator.default.scan(around: app, reusing: first) { root throws(BoardKeyError) in
             try await reader.key(ofRepoAt: root)
         }
         #expect(reader.readCount == Self.firstScanReads + 1)
@@ -199,8 +207,8 @@ struct BoardLocatorTests {
     @Test("The current key resolves to the current directory, also when a different copy comes first")
     func currentKeyResolvesToCurrentDirectory() async throws {
         let sandbox = try GitSandbox()
-        let repos = try await TwoCopies(in: sandbox)
-        let index = await Self.scan(around: repos.current)
+        let repos = try await TwoCopies.make(in: sandbox)
+        let index = try await Self.scan(around: repos.current)
         #expect(Self.names(in: index).first == Self.worktreeName)
         #expect(try Self.resolve(Self.key(of: Self.appOrigin).description, in: repos, index: index) == .current)
     }
@@ -208,8 +216,8 @@ struct BoardLocatorTests {
     @Test("A related key resolves to the first copy in scan order")
     func relatedKeyResolvesToFirstCopy() async throws {
         let sandbox = try GitSandbox()
-        let repos = try await TwoCopies(in: sandbox)
-        let index = await Self.scan(around: repos.current)
+        let repos = try await TwoCopies.make(in: sandbox)
+        let index = try await Self.scan(around: repos.current)
         let resolution = try Self.resolve(Self.key(of: Self.libOrigin).description, in: repos, index: index)
         #expect(resolution == .copy(try Self.copy(at: repos.firstCopy, in: index)))
     }
@@ -217,8 +225,8 @@ struct BoardLocatorTests {
     @Test("A unique repo directory name resolves to its copy")
     func uniqueNameResolvesToCopy() async throws {
         let sandbox = try GitSandbox()
-        let repos = try await TwoCopies(in: sandbox)
-        let index = await Self.scan(around: repos.current)
+        let repos = try await TwoCopies.make(in: sandbox)
+        let index = try await Self.scan(around: repos.current)
         let resolution = try Self.resolve(Self.secondCopyName, in: repos, index: index)
         #expect(resolution == .copy(try Self.copy(at: repos.secondCopy, in: index)))
     }
@@ -230,7 +238,7 @@ struct BoardLocatorTests {
         _ = try await sandbox.makeRepo(named: Self.libName, origin: Self.libOrigin)
         let root = sandbox.root.appending(path: "src", directoryHint: .isDirectory)
         _ = try await sandbox.makeRepo(named: "src/\(Self.libName)", origin: Self.libOrigin)
-        let index = await Self.scan(around: app, with: BoardLocator(searchRoots: [root]))
+        let index = try await Self.scan(around: app, with: BoardLocator(searchRoots: [root]))
         let key = try Self.key(of: Self.appOrigin)
         #expect(index.resolution(of: Self.libName, currentRoot: app, currentKey: key) == nil)
     }
@@ -238,8 +246,8 @@ struct BoardLocatorTests {
     @Test("A path resolves to its copy, and the path of the current repo resolves to the current board")
     func pathResolvesToCopy() async throws {
         let sandbox = try GitSandbox()
-        let repos = try await TwoCopies(in: sandbox)
-        let index = await Self.scan(around: repos.current)
+        let repos = try await TwoCopies.make(in: sandbox)
+        let index = try await Self.scan(around: repos.current)
         let resolution = try Self.resolve(repos.secondCopy.path, in: repos, index: index)
         #expect(resolution == .copy(try Self.copy(at: repos.secondCopy, in: index)))
         #expect(try Self.resolve(repos.current.path, in: repos, index: index) == .current)
@@ -248,8 +256,8 @@ struct BoardLocatorTests {
     @Test("A board URI resolves by its key")
     func boardURIResolvesByKey() async throws {
         let sandbox = try GitSandbox()
-        let repos = try await TwoCopies(in: sandbox)
-        let index = await Self.scan(around: repos.current)
+        let repos = try await TwoCopies.make(in: sandbox)
+        let index = try await Self.scan(around: repos.current)
         let uri = NodeURI(boardKey: try Self.key(of: Self.libOrigin).description, ref: .board).description
         let resolution = try Self.resolve(uri, in: repos, index: index)
         #expect(resolution == .copy(try Self.copy(at: repos.firstCopy, in: index)))
@@ -258,8 +266,8 @@ struct BoardLocatorTests {
     @Test("A ref that names no copy resolves to nothing")
     func unknownRefResolvesToNothing() async throws {
         let sandbox = try GitSandbox()
-        let repos = try await TwoCopies(in: sandbox)
-        let index = await Self.scan(around: repos.current)
+        let repos = try await TwoCopies.make(in: sandbox)
+        let index = try await Self.scan(around: repos.current)
         #expect(try Self.resolve("github.com/example/missing", in: repos, index: index) == nil)
     }
 }
@@ -267,22 +275,85 @@ struct BoardLocatorTests {
 // MARK: - Counting key reader
 
 /// A key reader that reads the key from git and counts its reads.
+///
+/// The reader can block the first read of one repo until the task of the read is cancelled. The blocked read then
+/// throws ``BoardKeyError/gitCancelled(arguments:)``, the same as a git command that a cancel stops.
 final class CountingKeyReader: Sendable {
-    /// The number of reads, behind a lock, because a scan can read from a different thread.
-    private let reads = Mutex(0)
+    /// The number of seconds in ``blockLimit``.
+    private static let blockLimitSeconds = 60
+
+    /// The longest time that the blocked read waits for the cancel. After this time, the read reads from git.
+    private static let blockLimit = Duration.seconds(blockLimitSeconds)
+
+    /// The number of reads of each repo, by the canonical path of the repo, behind a lock, because a scan can read
+    /// from a different thread.
+    private let reads = Mutex([String: Int]())
+
+    /// The canonical path of the repo whose first read blocks, or `nil` for no blocked read.
+    private let blockedPath: String?
+
+    /// Gets one element when the blocked read starts to wait for the cancel.
+    private let blockedReads: AsyncStream<Void>
+
+    /// Gives the element of ``blockedReads``.
+    private let blockedReadStarts: AsyncStream<Void>.Continuation
+
+    /// Makes a reader.
+    ///
+    /// - Parameter blocked: The root directory of the repo whose first read blocks until the task is cancelled, or
+    ///   `nil` for no blocked read.
+    init(blockingFirstReadOf blocked: URL? = nil) {
+        blockedPath = blocked?.canonicalPath
+        (blockedReads, blockedReadStarts) = AsyncStream.makeStream()
+    }
 
     /// The number of reads so far.
     var readCount: Int {
-        reads.withLock { count in count }
+        reads.withLock { counts in counts.values.reduce(0, +) }
     }
 
-    /// Reads the key of a repo from git, and counts the read.
+    /// Gives the number of reads of one repo so far.
+    ///
+    /// - Parameter root: The root directory of the repo.
+    /// - Returns: The number of reads.
+    func readCount(ofRepoAt root: URL) -> Int {
+        reads.withLock { counts in counts[root.canonicalPath, default: 0] }
+    }
+
+    /// Waits until the blocked read starts to wait for the cancel.
+    func waitForBlockedRead() async {
+        var starts = blockedReads.makeAsyncIterator()
+        await starts.next()
+    }
+
+    /// Reads the key of a repo from git, and counts the read. The first read of the blocked repo waits for the cancel
+    /// of the task first.
     ///
     /// - Parameter root: The root directory of the repo.
     /// - Returns: The key.
-    /// - Throws: A ``BoardKeyError`` when git fails.
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the blocked read. A
+    ///   ``BoardKeyError`` when git fails.
     func key(ofRepoAt root: URL) async throws(BoardKeyError) -> BoardKey {
-        reads.withLock { count in count += 1 }
+        let path = root.canonicalPath
+        let isFirstRead = reads.withLock { counts in
+            counts[path, default: 0] += 1
+            return counts[path] == 1
+        }
+        if isFirstRead, path == blockedPath {
+            try await waitForCancel()
+        }
         return try await BoardKey.read(fromRepoAt: root)
+    }
+
+    /// Waits for the cancel of the task, but not longer than ``blockLimit``.
+    ///
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the wait.
+    private func waitForCancel() async throws(BoardKeyError) {
+        blockedReadStarts.yield()
+        do {
+            try await Task.sleep(for: Self.blockLimit)
+        } catch {
+            throw .gitCancelled(arguments: [])
+        }
     }
 }

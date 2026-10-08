@@ -41,7 +41,7 @@ public struct BoardLocator: Sendable {
     /// Scans the places for repos.
     ///
     /// A repo whose key cannot be read (for example, git fails in it) is not in the index, and the scan records it
-    /// with swift-log.
+    /// with swift-log. A cancel of the task is not such a failure: it stops the scan, and the scan gives no index.
     ///
     /// - Parameters:
     ///   - root: The root directory of the current repo.
@@ -49,18 +49,20 @@ public struct BoardLocator: Sendable {
     ///     key, so the scan reads the key only of a new repo (plan.md §6.6, index life).
     ///   - keyReader: Reads the key of a repo that the earlier scan did not find.
     /// - Returns: The index of the repos, in scan order.
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled before the scan reads each
+    ///   key. Then the scan gives no index: an index without the keys that the cancel stopped is not complete.
     func scan(
         around root: URL,
         reusing earlier: BoardIndex? = nil,
         readingKeysWith keyReader: @escaping BoardKeyReader
-    ) async -> BoardIndex {
+    ) async throws(BoardKeyError) -> BoardIndex {
         let places = places(around: root)
         let knownKeys = Dictionary(
             (earlier?.copies ?? []).map { copy in (copy.directory.canonicalPath, copy.key) },
             uniquingKeysWith: { first, _ in first }
         )
         let directories = places.flatMap(Self.repos(in:))
-        let keys = await Self.keys(ofReposAt: directories, knowing: knownKeys, readingKeysWith: keyReader)
+        let keys = try await Self.keys(ofReposAt: directories, knowing: knownKeys, readingKeysWith: keyReader)
         let copies = directories.compactMap { directory in
             keys[directory.canonicalPath].map { key in BoardCopy(directory: directory, key: key) }
         }
@@ -98,21 +100,31 @@ public struct BoardLocator: Sendable {
     ///   - knownKeys: The keys that the earlier scan read, by the canonical path of the repo directory.
     ///   - keyReader: Reads the key of a new repo.
     /// - Returns: The key of each repo whose key is known or can be read, by the canonical path of the repo directory.
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled before each key is read.
     private static func keys(
         ofReposAt directories: [URL],
         knowing knownKeys: [String: BoardKey],
         readingKeysWith keyReader: @escaping BoardKeyReader
-    ) async -> [String: BoardKey] {
-        await withTaskGroup(of: (path: String, key: BoardKey?).self) { group in
+    ) async throws(BoardKeyError) -> [String: BoardKey] {
+        let reads = await withTaskGroup(of: (path: String, key: KeyRead).self) { group in
             for directory in directories {
                 let path = directory.canonicalPath
                 group.addTask {
                     (path, await key(ofRepoAt: directory, knownKey: knownKeys[path], readingKeysWith: keyReader))
                 }
             }
-            return await group.reduce(into: [:]) { keys, read in keys[read.path] = read.key }
+            return await group.reduce(into: [String: KeyRead]()) { reads, read in reads[read.path] = read.key }
         }
+        var keys: [String: BoardKey] = [:]
+        for (path, read) in reads {
+            keys[path] = try read.get()
+        }
+        return keys
     }
+
+    /// The result of the key read of one repo: the key, `nil` when the key cannot be read, or the cancel that stopped
+    /// the read.
+    private typealias KeyRead = Result<BoardKey?, BoardKeyError>
 
     /// Gives the key of a repo.
     ///
@@ -120,23 +132,27 @@ public struct BoardLocator: Sendable {
     ///   - directory: The root directory of the repo.
     ///   - knownKey: The key that the earlier scan read, or `nil` for a new repo.
     ///   - keyReader: Reads the key of a new repo.
-    /// - Returns: The key, or `nil` when the key of a new repo cannot be read.
+    /// - Returns: The key, `nil` when the key of a new repo cannot be read, or
+    ///   ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the read. A cancel is not a
+    ///   repo that the scan skips: it stops the scan.
     private static func key(
         ofRepoAt directory: URL,
         knownKey: BoardKey?,
         readingKeysWith keyReader: BoardKeyReader
-    ) async -> BoardKey? {
+    ) async -> KeyRead {
         if let knownKey {
-            return knownKey
+            return .success(knownKey)
         }
         do {
-            return try await keyReader(directory)
+            return .success(try await keyReader(directory))
+        } catch BoardKeyError.gitCancelled(let arguments) {
+            return .failure(.gitCancelled(arguments: arguments))
         } catch {
             Log.kanban.warning(
                 "The scan for related boards cannot read the key of a repo",
                 metadata: ["path": "\(directory.path)", "error": "\(error)"]
             )
-            return nil
+            return .success(nil)
         }
     }
 }

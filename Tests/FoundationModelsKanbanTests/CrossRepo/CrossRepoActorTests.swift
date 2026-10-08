@@ -30,7 +30,7 @@ struct CrossRepoActorTests {
 
     @Test("history of a related board gives the actor of that board")
     func historyOfRelatedBoardGivesItsActor() async throws {
-        let repos = try await CrossRepoFixture.SideBySide()
+        let repos = try await CrossRepoFixture.SideBySide.make()
         let lib = try Self.makeLibGraph(in: repos)
         _ = try await CrossRepoFixture.addTask(with: "", on: lib)
         await lib.close()
@@ -44,7 +44,7 @@ struct CrossRepoActorTests {
 
     @Test("A DERIVED-only change of a subscription gives the actor of the board of the transaction")
     func derivedChangeGivesActorOfTransactionBoard() async throws {
-        let repos = try await CrossRepoFixture.SideBySide()
+        let repos = try await CrossRepoFixture.SideBySide.make()
         let lib = try Self.makeLibGraph(in: repos)
         let target = try await CrossRepoFixture.addTask(with: "", on: lib)
         let app = try GitGraphFixture.makeGraph(at: repos.app)

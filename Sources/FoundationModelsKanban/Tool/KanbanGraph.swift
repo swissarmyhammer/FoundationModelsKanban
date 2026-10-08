@@ -539,8 +539,9 @@ public actor KanbanGraph {
     ///   - requests: The requests of the run.
     ///   - key: The current key of the current board.
     /// - Returns: The related boards with an answer for each request, and with each loaded related board.
-    /// - Throws: A ``BoardWatcherError`` when the watcher of a board cannot start, or an ``EventLogError`` when a log
-    ///   file cannot be read.
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during a scan. A
+    ///   ``BoardWatcherError`` when the watcher of a board cannot start, or an ``EventLogError`` when a log file cannot
+    ///   be read.
     private func relatedBoards(
         updating related: RelatedBoards,
         toAnswer requests: Set<BoardRequest>,
@@ -606,7 +607,8 @@ public actor KanbanGraph {
     ///   - request: The request.
     ///   - related: The related boards that get the answer.
     ///   - key: The current key of the current board.
-    /// - Throws: A ``BoardWatcherError`` or an ``EventLogError`` when a board cannot load.
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the scan. A
+    ///   ``BoardWatcherError`` or an ``EventLogError`` when a board cannot load.
     private func answer(
         _ request: BoardRequest,
         in related: inout RelatedBoards,
@@ -626,9 +628,10 @@ public actor KanbanGraph {
     ///   - reference: The board ref.
     ///   - key: The current key of the current board.
     /// - Returns: The board.
-    /// - Throws: A ``BoardWatcherError`` or an ``EventLogError`` when the board cannot load.
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the scan. A
+    ///   ``BoardWatcherError`` or an ``EventLogError`` when the board cannot load.
     private func loadBoard(named reference: String, currentKey key: BoardKey) async throws -> BoardResolution {
-        let resolution = await resolution(of: reference, currentKey: key)
+        let resolution = try await resolution(of: reference, currentKey: key)
         if case .copy(let copy) = resolution {
             try await loadRelatedBoard(copy)
         }
@@ -642,21 +645,26 @@ public actor KanbanGraph {
     ///   - reference: The board ref.
     ///   - key: The current key of the current board.
     /// - Returns: The board, or `nil` when no copy of the index has the ref.
-    private func resolution(of reference: String, currentKey key: BoardKey) async -> BoardResolution? {
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the scan.
+    private func resolution(
+        of reference: String,
+        currentKey key: BoardKey
+    ) async throws(BoardKeyError) -> BoardResolution? {
         let root = root
         let resolve = { (index: BoardIndex) in index.resolution(of: reference, currentRoot: root, currentKey: key) }
         if case .scanned(let index) = scanState, let found = resolve(index) {
             return found
         }
-        return resolve(await rescan())
+        return resolve(try await rescan())
     }
 
     /// Scans for the copies of `Query.boards`, and loads each copy that is not the current repo.
     ///
     /// - Returns: The copies, in scan order.
-    /// - Throws: A ``BoardWatcherError`` or an ``EventLogError`` when a board cannot load.
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the scan. A
+    ///   ``BoardWatcherError`` or an ``EventLogError`` when a board cannot load.
     private func loadEachCopy() async throws -> [ListedCopy] {
-        let index = await rescan()
+        let index = try await rescan()
         let resolutions = index.copies.map { copy in index.resolution(of: copy, currentRoot: root) }
         for case .copy(let copy) in resolutions {
             try await loadRelatedBoard(copy)
@@ -669,13 +677,15 @@ public actor KanbanGraph {
     /// Scans the places for repos, and records the new index. A repo of the earlier scan keeps its key.
     ///
     /// - Returns: The new index.
-    private func rescan() async -> BoardIndex {
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the scan. Then the
+    ///   engine keeps the earlier index, and the next scan reads each key that the cancel stopped.
+    private func rescan() async throws(BoardKeyError) -> BoardIndex {
         let earlier: BoardIndex? =
             switch scanState {
             case .notScanned: nil
             case .scanned(let index): index
             }
-        let scanned = await locator.scan(around: root, reusing: earlier, readingKeysWith: keyReader)
+        let scanned = try await locator.scan(around: root, reusing: earlier, readingKeysWith: keyReader)
         scanState = .scanned(scanned)
         return scanned
     }

@@ -33,6 +33,39 @@ comments:
     - IntegrationTests `swift build --build-tests && swift test` (300 s limit): 1 test passed.
     - next: /review
   timestamp: 2026-10-08T13:02:06.027847+00:00
+- actor: wballard
+  id: 01m4dt5s3wva4g16vq9mara2xa
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (3054fe1); 2 findings (2 confirmed, 2 refuted) — Sources/FoundationModelsKanban/CrossRepo/BoardLocator.swift:133, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoFixture.swift:23
+    - next: implement the two open items in "Review Findings (2026-10-08 08:06)", then review again.
+  timestamp: 2026-10-08T13:10:22.588168+00:00
+- actor: wballard
+  id: 01m4dt6agv4r2vjhhwzjwyb827
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 3 source files (BoardKey.swift, BoardLocator.swift, KanbanGraph.swift), about 13 test files, IntegrationTests TemporaryGitRepo.swift; no public API change
+    - test: green — root swift test 3 runs, 963 passed each (10.0 s, 9.9 s, 10.0 s); IntegrationTests 1 passed; build warnings only the 2 accepted kinds; no leftover git process
+    - commit: 3054fe1
+    - review: findings — Sources/FoundationModelsKanban/CrossRepo/BoardLocator.swift:133, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoFixture.swift:23
+  timestamp: 2026-10-08T13:10:40.411442+00:00
+- actor: wballard
+  id: 01m4dv0fnwp6jm23pxkpakt2br
+  text: |-
+    Findings of "Review Findings (2026-10-08 08:06)", implementation notes:
+    - Finding 1 (BoardLocator.swift:133, completeness/public-output-contract): `BoardLocator.scan` is now `async throws(BoardKeyError)`. `key(ofRepoAt:)` gives a `Result<BoardKey?, BoardKeyError>` (private typealias `KeyRead`): `.gitCancelled` is a `.failure` (a stop signal); other read failures stay a logged warning and `nil`. `keys(ofReposAt:)` rethrows the first `.gitCancelled`, so the scan gives no index. `KanbanGraph.rescan()` and `resolution(of:currentKey:)` are `async throws(BoardKeyError)`; `rescan` does not set `scanState` when the scan throws, so the next scan reads each key again. The caller of `execute` gets `BoardKeyError.gitCancelled`, the same error that `loadedSession()` already gives for a cancel during the read of the current key. I chose the typed error over `CancellationError` so that both cancel paths give one error type to the caller.
+    - Other catches on the key-read path: `Commit.run` / `relatedBoards(updating:)` / `answer` / `loadBoard` / `loadEachCopy` now propagate the throw. `KanbanMain.CurrentBoard.withGraph` closes and rethrows (no change). `KanbanGraph.publishLiveChanges` catch logs and returns: it stores no partial index (the throw comes before `scanState` changes) and it does not go on with partial data, so no change there. `RelatedBoards.swift` has no catch. The one `try?` in BoardLocator.swift (`NodeURI(parsing:)` in `boardKey(in:)`) is an older, documented parse-to-nil.
+    - Test: `CrossRepoReadTests.cancelledScanStoresNoIndex`. `CountingKeyReader` (existing helper, extended, not copied) can block the first read of one repo until the task is cancelled, then throws `.gitCancelled`, and counts reads per repo. RED (old code): failed at the `#expect(throws: BoardKeyError.self)` assertion: the cancelled call returned a NOT_FOUND response built from a partial index. GREEN: passes (0.15 s).
+    - Finding 2 (CrossRepoFixture.swift:23, swift/initialization): `SideBySide.init() async throws` is replaced by `static func make() async throws -> SideBySide`; the memberwise init only stores the sandbox and the URLs. The same cause was in `BoardLocatorTests.TwoCopies.init(in:)` (git through `makeRepo`/`addWorktree`): now `static func make(in:)`. All 46 call sites updated (one edit per match). Checked: `GitGraphFixture` (no init), `GitSandbox.init()` (makes a directory only, no process), IntegrationTests `TemporaryGitRepo` (an enum with static functions, no init): no change needed.
+    - Test helper `BoardLocatorTests.scan` is now `async throws(BoardKeyError)`; its call sites use `try await`.
+  timestamp: 2026-10-08T13:24:57.660848+00:00
+- actor: wballard
+  id: 01m4dv0m21hsbf6e0v3x8w54s4
+  text: |-
+    ### implement — changed
+    - evidence: Sources: CrossRepo/BoardLocator.swift, Tool/KanbanGraph.swift. Tests: CrossRepo/{BoardLocatorTests, CrossRepoFixture, CrossRepoReadTests, CrossRepoWriteTests, CrossRepoUndoTests, CrossRepoCycleTests, CrossRepoEventBoardTests, CrossRepoActorTests}.swift, Observe/SubscriptionTests.swift. Public API: no change (all changed declarations are internal or private). `swift build --build-tests`: only the accepted `missing creator` warning. swiftlint line_length / no_magic_numbers: 0 violations. periphery (`--retain-public -- --build-tests --build-system native`): no item in Sources; only older items in test files that this change does not touch. Root `timeout 120 swift test --skip-build` 3 runs: 964 tests in 67 suites passed each (11.1 s, 14.5 s, 18.6 s). IntegrationTests `swift build --build-tests && swift test` (300 s limit): 1 test passed. Findings: 2 of 2 checked.
+    - next: /review
+  timestamp: 2026-10-08T13:25:02.145519+00:00
 position_column: doing
 position_ordinal: '80'
 title: Git.run blocks a Swift cooperative thread while git runs
@@ -53,3 +86,13 @@ Give `Git.run` an async form that waits for the end of git with no blocked threa
 ## Tests
 - [x] A test that runs many git commands at the same time as a `Task.sleep` wait shows that the sleep wakes near its deadline.
 - [x] Run the full root `swift test` 5 times; expect all pass.
+
+## Review Findings (2026-10-08 08:06)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 16 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsKanban/CrossRepo/BoardLocator.swift:133` `completeness/public-output-contract` — The new gitCancelled error is handled like any other key read failure. The catch block in key(ofRepoAt:) logs a warning and returns nil, so the scan keeps going and returns a partial index. A cancelled caller does not get a CancellationError. The partial index is stored in scanState by KanbanGraph.rescan, and resolution then runs against it. A copy that could not be read is left out, so a key can resolve to a later copy in scan order than the first one. Treat BoardKeyError.gitCancelled as a stop signal and not a skipped repo. Either make scan async throws and rethrow the cancellation, or check Task.isCancelled before storing the index in rescan. Do not store a partial index from a cancelled scan. Add one test that cancels a scan and checks that the next scan reads the key again.
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoFixture.swift:23` `swift/initialization` — The init of SideBySide does slow work. It starts several git processes through makeRepo, and an init has no way to report progress or be cancelled. The rule says init must not start a process or do other slow work. Move the repo creation into an explicit async setup function, for example static func make() async throws -> SideBySide, or a func setUp() async throws that the test calls. Keep init for storing the sandbox and the URLs that it is given.
