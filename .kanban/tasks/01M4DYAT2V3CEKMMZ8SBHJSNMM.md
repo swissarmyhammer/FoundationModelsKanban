@@ -30,8 +30,24 @@ comments:
   id: 01m4dz1t6zytppjze3rbymn4xc
   text: 'Correction to the step record above: the change has 8 files, not 9. The list in that record is complete.'
   timestamp: 2026-10-08T14:35:35.519364+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4dz9tawn8mm7mhxpkktfmk7
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (0d1148b). 0 findings (7 attempted, 0 confirmed, 1 refuted, 0 failed). 5 files reviewed. Ignore rule excluded 6 .kanban files. No validator matched 3 files: Package.resolved, IntegrationTests/Package.resolved, plan.md.
+    - next: none. The task is in done.
+  timestamp: 2026-10-08T14:39:57.788382+00:00
+- actor: claude-code
+  id: 01m4dza17spt14d6acchd0q34y
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 8 files (Package.swift, 2 Package.resolved, TaskSearch.swift, KanbanGraph.swift, 2 test files, plan.md); pins Extras 5c1c638, MetadataRegistry 858f5da, Ranker 6156346
+    - test: green — root swift test 3 runs, 964 passed each (8.4 s, 7.9 s, 8.3 s); IntegrationTests 1 passed; resolve leaves Package.resolved unchanged; build warnings only the 2 accepted kinds
+    - commit: 0d1148b
+    - review: clean — 0 findings (Package.resolved and plan.md have no validator)
+  timestamp: 2026-10-08T14:40:04.857512+00:00
+position_column: done
+position_ordinal: ba80
 title: Move TaskSearch to PooledEmbedding and the current sibling packages
 ---
 ## What

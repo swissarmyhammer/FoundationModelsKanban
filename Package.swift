@@ -55,6 +55,11 @@ let metadataRegistryPackage = "FoundationModelsMetadataRegistry"
 // package is already in the graph through FoundationModelsMetadataRegistry.
 let extrasPackage = "FoundationModelsExtras"
 
+// The code mode host of the tests (plan.md §9). The tests register
+// `KanbanTool` in a `MultiTool` and run a `runCode` script against it. Only the
+// test target links this package. The library does not depend on it.
+let multitoolPackage = "FoundationModelsMultitool"
+
 // The URL base of the sibling packages of the swissarmyhammer family. The same
 // base as FoundationModelsCodeContext uses.
 let swissArmyHammerOrg = "git@github.com:swissarmyhammer/"
@@ -91,6 +96,7 @@ let package = Package(
         .package(url: "https://github.com/pointfreeco/\(parsingPackage).git", from: "0.15.2", traits: []),
         .package(url: "\(swissArmyHammerOrg)\(metadataRegistryPackage).git", branch: "main"),
         .package(url: "\(swissArmyHammerOrg)\(extrasPackage).git", branch: "main"),
+        .package(url: "\(swissArmyHammerOrg)\(multitoolPackage).git", branch: "main"),
     ],
     targets: [
         .target(
@@ -131,6 +137,8 @@ let package = Package(
                 .product(name: "ULID", package: ulidPackage),
                 // The search tests give a fake `PooledEmbedding` to the engine.
                 .product(name: extrasPackage, package: extrasPackage),
+                // The code mode tests run `KanbanTool` in a `MultiTool`.
+                .product(name: multitoolPackage, package: multitoolPackage),
             ],
             path: "Tests/\(packageName)Tests"
         ),

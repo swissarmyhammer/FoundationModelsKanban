@@ -8,6 +8,14 @@ import PackageDescription
 /// The root manifest holds the same name in its own `packageName` constant.
 private let productPackageName = "FoundationModelsKanban"
 
+/// The package of `ModelPool` and `PooledModel`. The model test loads Qwen 3.8 with them, as a FoundationModels
+/// `LanguageModel`. The root manifest names the same package in its own `extrasPackage` constant, with the same URL and
+/// branch. A package can name only the products of a package that it declares, thus this package declares it again.
+private let extrasPackageName = "FoundationModelsExtras"
+
+/// The URL base of the sibling packages of the swissarmyhammer family. The root manifest holds the same base.
+private let swissArmyHammerOrg = "git@github.com:swissarmyhammer/"
+
 /// The SwiftPM manifest of the integration suite of FoundationModelsKanban.
 ///
 /// **Why this is a package of its own.** The org test contract (the README of swissarmyhammer/workflows) says:
@@ -22,9 +30,9 @@ private let productPackageName = "FoundationModelsKanban"
 ///     swift test                                     # unit tests
 ///     swift test --package-path IntegrationTests     # this suite
 ///
-/// **What this suite holds.** The tests that need a real external system, for example the on-device
-/// `SystemLanguageModel`. The first test is a smoke test: it makes a `KanbanGraph` in a temporary git repo and reads
-/// the board. Thus the package builds and runs on its own.
+/// **What this suite holds.** The tests that need a real external system, for example the real model
+/// `mlx-community/Qwen3.8-27B-mxfp4`, which MLX runs. The first test is a smoke test: it makes a `KanbanGraph` in a
+/// temporary git repo and reads the board. Thus the package builds and runs on its own.
 ///
 /// **The compile coupling that CI needs.** The root build does not compile the files of this package.
 /// `.github/workflows/ci.yml` gives `integration-package-path: IntegrationTests` to the shared `swift-ci.yaml`
@@ -42,14 +50,17 @@ let package = Package(
         .macOS("27.0")
     ],
     dependencies: [
-        .package(path: "..")
+        .package(path: ".."),
+        .package(url: "\(swissArmyHammerOrg)\(extrasPackageName).git", branch: "main"),
     ],
     targets: [
-        // The integration suite. Its one dependency is the library product of the root package.
+        // The integration suite. It links the library product of the root package, and the Extras product that
+        // loads the real model of the model test.
         .testTarget(
             name: "\(productPackageName)IntegrationTests",
             dependencies: [
-                .product(name: productPackageName, package: productPackageName)
+                .product(name: productPackageName, package: productPackageName),
+                .product(name: extrasPackageName, package: extrasPackageName),
             ],
             path: "Tests/\(productPackageName)IntegrationTests"
         )

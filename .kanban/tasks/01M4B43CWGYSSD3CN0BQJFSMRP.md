@@ -123,11 +123,84 @@ comments:
     - commit: none. The working tree on `main` went back to HEAD so that `main` stays green. `CodeModeTests.swift` is the same as on `wip/qjfsmrp-multitool` (931b3ea). The `Package.swift` change to make again: a `let multitoolPackage = "FoundationModelsMultitool"`, `.package(url: "\(swissArmyHammerOrg)\(multitoolPackage).git", branch: "main")`, and `.product(name: multitoolPackage, package: multitoolPackage)` in the test target only.
     - review: not run.
   timestamp: 2026-10-08T14:13:55.414945+00:00
+- actor: claude-code
+  id: 01m4dznpmw2w0amb6g34y11pmq
+  text: |-
+    Root unit test done.
+    - Package.swift: `multitoolPackage` constant, `.package(url: "\(swissArmyHammerOrg)\(multitoolPackage).git", branch: "main")`, product only in the test target.
+    - `swift package resolve` (no `swift package update`) picked the current origin/main of each sibling. No manual pin edit was necessary: Multitool 24f65ed, CodeContext 97caa23, Router 85b96f3, Extras 5c1c638, MetadataRegistry 858f5da, Ranker 6156346.
+    - `swift build --build-tests`: only the accepted warning `missing creator for mutated node`. The Multitool runtime log line `schema element widened to any` for `args.variables` is a test log line, not a build warning.
+    - CodeModeTests.swift restored from wip 931b3ea and changed: the script returns the two mutation responses whole, so a GraphQL error is an assertion failure, not a JS TypeError. The test also checks the log: the last event of the task sets `column` to `doing` (reuses `CrossRepoWriteTests.events(ofTask:inRepoAt:)` and `doingSlug`).
+    - TDD: the test passed at once, because the behavior is already in Multitool 24f65ed and KanbanTool. To prove that it can fail, I made one temporary mutation in `KanbanArguments.decodedVariables` (refuse the string form). RED: `CodeModeTests.swift:77 Expectation failed: Self.dataField("moveTask", of: result["moved"])` with `INVALID_VARIABLES`. Mutation reverted (Sources has no diff), GREEN.
+  timestamp: 2026-10-08T14:46:27.228250+00:00
+- actor: claude-code
+  id: 01m4e02ts0xc90za7a5y0qwm5g
+  text: |-
+    BLOCKER: the on-device model does not make the string form of `variables`. A person must decide.
+
+    What I did:
+    - IntegrationTests/Package.swift: added Multitool (`multitoolPackageName`, `.package(url: "\(swissArmyHammerOrg)\(multitoolPackageName).git", branch: "main")`, product in the test target). Reason: SwiftPM does not resolve the test-only dependencies of the `..` path package, so before this change the IntegrationTests graph had no Multitool, CodeContext or Router. After `swift package resolve`, IntegrationTests/Package.resolved has the same pins as the root (no identity and no state differs). Note for review: the test target links the Multitool product but no file imports it; the link only stops the SwiftPM "dependency is not used by any target" warning.
+    - New test `IntegrationTests/Tests/FoundationModelsKanbanIntegrationTests/ModelVariablesTests.swift`: a real `LanguageModelSession(tools: [KanbanTool(graph:)])` in a `TemporaryGitRepo`. The prompt gives the document `mutation($title: String!) { addTask(input: { title: $title }) { id title } }` and the value of `title`. It does not tell the model how to send the variables. Gate: `.enabled(if: SystemLanguageModel.default.availability == .available, "...")`, the same availability check as the Multitool bare-session scenarios. The test requires a `kanban` call whose `variables` is a string that holds the title, and then that the board has the task.
+
+    Result: the on-device model IS available on this machine, and the test ran. In 3 of 3 runs (one with the temporary decode mutation, two on the true code) the model sent:
+    `{"query": "mutation($title: String!) { addTask(input: { title: $title }) { id title } }", "variables": {}}`
+    Failure: `ModelVariablesTests.swift:102: Expectation failed: Self.variablesText(of: call.arguments)`.
+    The model picks the empty-object choice of the `anyOf`, not the string choice. Thus the premise of plan.md §7.1 ("The guide of the string choice asks the model for one JSON object in text") does not hold for this model. Also: the SDK has no description on a plain `DynamicGenerationSchema(type: String.self)` (only `guides`), so the description is on the `anyOf` node, as in the code now. The plan text "a string schema, with the guide ..." cannot be written more exactly.
+
+    Decision for a person, one of:
+    1. Change the schema of `variables` (plan.md §7.1), for example only a string for the model. Then Multitool rejects a JS object from a script, because the schema has a `type` again, and the decision 2 on this card (a script can give an object) breaks. Multitool could then need a change.
+    2. Accept that the model sends `{}` and puts the values in the document, or sends the string form only when the prompt asks for it. Then the model test must check a different behavior, and plan.md §7.1 and §12 item 10 change.
+    3. Change the tool description or the property description so that the model picks the string choice, and measure it again with this test. This is a product change outside this card, and the result of the model is not sure.
+    4. Remove the model test from this card and record the measured behavior.
+
+    Root unit work is complete and green: Package.swift (Multitool test dependency), Package.resolved (Multitool 24f65ed, CodeContext 97caa23, Router 85b96f3 and the current main of Extras, MetadataRegistry, Ranker, all by `swift package resolve`), CodeModeTests.swift. The three acceptance criteria are ticked.
+  timestamp: 2026-10-08T14:53:37.440579+00:00
+- actor: claude-code
+  id: 01m4e02zgmhswk8r8dz5fb4243
+  text: |-
+    ### implement — stuck
+    - evidence: Package.swift, Package.resolved, Tests/FoundationModelsKanbanTests/Multitool/CodeModeTests.swift, IntegrationTests/Package.swift, IntegrationTests/Package.resolved, IntegrationTests/Tests/FoundationModelsKanbanIntegrationTests/ModelVariablesTests.swift. Sources has no diff. Pins (root = IntegrationTests): Multitool 24f65ed, CodeContext 97caa23, Router 85b96f3, Extras 5c1c638, MetadataRegistry 858f5da, Ranker 6156346. Root: `swift build --build-tests` OK (only the accepted `missing creator` warning); `swift test --skip-build` 3 of 3 runs, 965 tests in 68 suites pass. IntegrationTests: `swift build --build-tests && swift test` — smoke test pass, ModelVariablesTests fail (`ModelVariablesTests.swift:102`, the model sent `"variables": {}`). The on-device model is available and the model test ran.
+    - next: a person chooses one of the 4 options in the blocker comment. Then implement continues with the model test.
+  timestamp: 2026-10-08T14:53:42.292344+00:00
+- actor: claude-code
+  id: 01m4e0ws9e323qgq7rhws3s0cp
+  text: |-
+    ### Decision from the user (2026-10-08)
+    - The model test uses Qwen 3.8, not the Apple on-device `SystemLanguageModel`. It stays an integration test in `IntegrationTests/`.
+    - Reason found: with the on-device model, guided generation picked the `anyOf` object branch (an object with no properties) and sent `"variables": {}` in 3 of 3 runs.
+  timestamp: 2026-10-08T15:07:47.886352+00:00
+- actor: claude-code
+  id: 01m4e10z6h92fbpmfp82r48k93
+  text: |-
+    Research for the Qwen 3.8 model test.
+    - Model id: `mlx-community/Qwen3.8-27B-mxfp4`. The siblings use this id: Router `IntegrationTests/.../Qwen38ToolAnswerIntegrationTests.swift` and `Support/Qwen38ResidentModel.swift`, Multitool `IntegrationTests/.../Support/LiveRouterFixture.swift` (`generationModel`), ACPAgent `AgentConfiguration.defaultStandard`. No sibling uses a different "Qwen 3.8" id (the other hit, `mlx-community/Qwen3.8-27B-4bit`, is only in a plan note, "never driven").
+    - Load path with no Router: Extras `PooledModel(ref:pool:)` is a FoundationModels `LanguageModel`. `LanguageModelSession(model: PooledModel(...), tools:)` loads the model on the first generation call through `ModelPool` and `MLXModelLoader`. Multitool b4e34f0 uses the same type (`RouterDiscoverySeams.pooledModel(of:)`), and Extras `IntegrationTests/.../PooledModelIntegrationTests.swift` and `Support/ToolSession.swift` run `LanguageModelSession(model:tools:)` this way.
+    - MLX: `qwen3_5` is in `MLXLLM` `LLMModelFactory`, which Extras links. Extras `MetalLibraryBootstrap` links `mlx.metallib` beside the test binary. CI already gives `integration-metallib-glob: "*Cmlx*/default.metallib"` in `.github/workflows/ci.yml`.
+    - Cache: `HubCache.default`, `~/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-mxfp4`. On this machine it is present, 14 GB (3 safetensors files). No download is necessary.
+    - Gate and time limit: the siblings do not skip a real-model test. Extras `ModelAvailability.requireMetalDevice()` fails the test with `#require(MTLCreateSystemDefaultDevice() != nil)`, "A skip gives a green run that measured nothing". Each real-model suite has a `.timeLimit` (Extras 10 min, Multitool `IntegrationHangGuard` 30 min) and runs serialized. Extras uses greedy sampling with a named `maximumResponseTokens`.
+    - IntegrationTests/Package.swift needs the `FoundationModelsExtras` product, declared by the same URL and branch as the root. The Multitool product of the last iteration is not imported by a file, so it is removed (the Qwen path does not need it).
+  timestamp: 2026-10-08T15:10:05.009399+00:00
+- actor: claude-code
+  id: 01m4e1cgsjv9tc44k57c6jn2nd
+  text: |-
+    ### implement — changed
+    - evidence:
+      - Files: IntegrationTests/Package.swift (the `FoundationModelsExtras` product, same URL and branch as the root, replaces the Multitool product that no file imported), IntegrationTests/Package.resolved (now differs from HEAD only by `originHash`; every pin equals the root pin, the Multitool, CodeContext and Router subtree is not in this graph), IntegrationTests/Tests/FoundationModelsKanbanIntegrationTests/ModelVariablesTests.swift (rewritten for Qwen 3.8). Root Package.swift, Package.resolved and CodeModeTests.swift are not changed in this iteration.
+      - Model: `mlx-community/Qwen3.8-27B-mxfp4`, `LanguageModelSession(model: PooledModel(ref:pool: ModelPool()), tools: [KanbanTool(graph:)])`, greedy sampling, 4096 response tokens. `MLXModelLoader` loads it from `~/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-mxfp4` (14 GB, present, no download). Gate: `#require(MTLCreateSystemDefaultDevice() != nil)`, no skip (Extras pattern). Hang guard `.timeLimit(.minutes(30))` (Multitool `IntegrationHangGuard` value).
+      - The check accepts the string form or an object, and requires `variables.title == "Write the release notes"`, and the task on the board.
+      - Mutation proof: the check over `{"variables": {}}` fails with `GeneratedContent does not contain a property 'title'. Content: {}`. Reverted.
+      - Model run 1: `"variables": "{\"title\": \"Write the release notes\"}"`, pass, 11.7 s (test), 19.9 s (process).
+      - Model run 2: `"variables": "{\"title\": \"Write the release notes\"}"`, pass, 8.2 s (test), 13.5 s (process).
+      - Model run 3 (full `swift build --build-tests && swift test` in IntegrationTests): `"variables": "{\"title\": \"Write the release notes\"}"`, pass, 8.2 s (test); smoke test pass; 2 tests in 2 suites passed.
+      - Root: `swift build --build-tests` OK, only the accepted `missing creator for mutated node` warning. `swift test --skip-build` 3 runs, each exit 0 in about 13 s; runs 2 and 3 report 965 tests in 68 suites passed.
+    - New task ^qg3rt2m: plan.md §7.1 and §12 item 8, and the `KanbanArguments` doc comment, still name the on-device model for this test.
+    - next: /review.
+  timestamp: 2026-10-08T15:16:23.474550+00:00
 depends_on:
 - 01M4DPPYA338NYS7JAA7J3AAR6
 - 01M4DYAT2V3CEKMMZ8SBHJSNMM
-position_column: todo
-position_ordinal: b480
+position_column: doing
+position_ordinal: '80'
 title: 'Multitool proof: code mode end to end'
 ---
 ## What
@@ -137,13 +210,13 @@ Prove that the tool works in code mode. The basis is plan.md §9 and §10 step 1
 - A second test with a real `LanguageModelSession` checks that the on-device model makes the string form of `variables` for a document with variables. Mark it so that it runs only when the on-device model is available (a Swift Testing trait), and reports as skipped with a reason otherwise.
 
 ## Acceptance Criteria
-- [ ] The script gets `result.data.board.nextTask` as a structured value.
-- [ ] Both `variables` forms work through Multitool, which passes the object through because the schema has `anyOf` and no `type`.
-- [ ] After the script, the task is in `doing` in the log.
+- [x] The script gets `result.data.board.nextTask` as a structured value.
+- [x] Both `variables` forms work through Multitool, which passes the object through because the schema has `anyOf` and no `type`.
+- [x] After the script, the task is in `doing` in the log.
 
 ## Tests
-- [ ] `Tests/FoundationModelsKanbanTests/Multitool/CodeModeTests.swift`.
-- [ ] Run `swift test --filter CodeModeTests`; expect all pass (the model test is skipped only when the model is not available).
+- [x] `Tests/FoundationModelsKanbanTests/Multitool/CodeModeTests.swift`.
+- [x] Run `swift test --filter CodeModeTests`; expect all pass (the model test is skipped only when the model is not available).
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
