@@ -98,8 +98,24 @@ comments:
     - evidence: Sources/FoundationModelsKanban/CrossRepo/BoardLocator.swift, Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoReadTests.swift. `swift build --build-tests`: only the accepted `missing creator` warning. Root `timeout 120 swift test --skip-build` 3 runs: 964 tests in 67 suites passed each (10.279 s, 9.954 s, 10.187 s). Findings of 08:28: 2 of 2 checked. No behavior change.
     - next: /review
   timestamp: 2026-10-08T13:34:40.674065+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: wballard
+  id: 01m4dvtara9v6g9e7b4r4vcm7k
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (805c29f): 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed. 3 files reviewed. 2 files in .kanban/ were not reviewed because of .reviewignore. All prior Review Findings items are checked.
+    - next: none. The task moved to done.
+  timestamp: 2026-10-08T13:39:04.586665+00:00
+- actor: wballard
+  id: 01m4dvtj808y0vg24ctep48mxb
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — BoardLocator.swift, BoardLocatorTests.swift, CrossRepoReadTests.swift; 2/2 findings checked
+    - test: green — root swift test 3 runs, 964 passed each (9.7 s, 10.2 s, 10.4 s); IntegrationTests 1 passed; build warnings only the 2 accepted kinds
+    - commit: 805c29f
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T13:39:12.256696+00:00
+position_column: done
+position_ordinal: b980
 title: Git.run blocks a Swift cooperative thread while git runs
 ---
 ## What
