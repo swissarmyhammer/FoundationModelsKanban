@@ -61,14 +61,30 @@ comments:
     - evidence: 2 files — Tests/FoundationModelsKanbanTests/Tool/CommitTests.swift, Tests/FoundationModelsKanbanTests/Undo/UndoTests.swift. `swift test`: 836 tests in 49 suites passed. The only build warning is the accepted mlx-swift "missing creator" warning.
     - next: /review
   timestamp: 2026-10-08T00:24:50.702826+00:00
+- actor: wballard
+  id: 01m4ceh0984zmr312v37e79fnm
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (bc6f53a). 0 findings (7 validator runs, 0 failed). All prior Review Findings items are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-08T00:27:33.032864+00:00
+- actor: wballard
+  id: 01m4ceh6fk24bsdr1sdt2p6gn0
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 2 files (CommitTests.swift, UndoTests.swift); 1/1 finding checked
+    - test: green — swift test, 836 passed; build warnings only the 2 accepted kinds
+    - commit: bc6f53a
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T00:27:39.379899+00:00
 depends_on:
 - 01M4B41N13P82QC4H6BBQRZ2PF
 - 01M4B406Z7RVSBJKKJ8KJW0CY2
 - 01M4B40CFSF002B4DKM3T8J6GV
 - 01M4B4B57JFX8HA0B45MMDQ1SQ
 - 01M4B4B1G28KK1NVCXHK9GDAYR
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: a880
 title: Undo and redo in one board
 ---
 ## What

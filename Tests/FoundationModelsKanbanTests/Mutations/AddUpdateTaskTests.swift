@@ -79,7 +79,7 @@ struct AddUpdateTaskTests {
     private static let emptySlugName = "---"
 
     /// A text that is not a valid ordinal.
-    private static let invalidOrdinal = "zz"
+    static let invalidOrdinal = "zz"
 
     /// The full URI of a task of a different board.
     private static let remoteTask = "kanban://github.com/o/other/task/01K6X2ABCDEFGHJKMNPQRSTVWX"

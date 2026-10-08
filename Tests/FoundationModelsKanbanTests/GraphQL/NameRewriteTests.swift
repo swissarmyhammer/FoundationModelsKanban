@@ -26,7 +26,7 @@ struct NameRewriteTests {
     private static let fragmentDefinitionQuery = "{ ...Q } fragment Q on Query { tasks { totalCount } }"
 
     /// A filter that does not parse.
-    private static let invalidFilter = "&&"
+    static let invalidFilter = "&&"
 
     // MARK: - Helpers
 
@@ -75,7 +75,7 @@ struct NameRewriteTests {
     /// - Parameter response: The response JSON text.
     /// - Returns: The `data` object.
     /// - Throws: An error when the response has no `data` object.
-    private static func data(of response: String) throws -> [String: Any] {
+    static func data(of response: String) throws -> [String: Any] {
         try #require(KanbanGraphTests.object(of: response)["data"] as? [String: Any])
     }
 
@@ -84,7 +84,7 @@ struct NameRewriteTests {
     /// - Parameter response: The response JSON text.
     /// - Returns: The errors.
     /// - Throws: An error when the response has no `errors` list.
-    private static func errors(of response: String) throws -> [[String: Any]] {
+    static func errors(of response: String) throws -> [[String: Any]] {
         try #require(KanbanGraphTests.object(of: response)["errors"] as? [[String: Any]])
     }
 

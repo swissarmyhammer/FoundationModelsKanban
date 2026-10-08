@@ -59,10 +59,10 @@ struct ColumnActorTests {
     static let green = "00ff00"
 
     /// The number of live tasks in `todo` in the fixture.
-    private static let fixtureTaskCount = 1
+    static let fixtureTaskCount = 1
 
     /// The local ref of the added column.
-    private static let qaColumn = LocalRef.column(slug: qaSlug)
+    static let qaColumn = LocalRef.column(slug: qaSlug)
 
     /// The local ref of the added actor.
     private static let alice = LocalRef.actor(slug: aliceSlug)
@@ -78,7 +78,7 @@ struct ColumnActorTests {
     private static let addAlice = "mutation { \(addAliceField) }"
 
     /// The `input` argument that names the added column.
-    private static let qaReference = #"input: { id: "\#(qaSlug)" }"#
+    static let qaReference = #"input: { id: "\#(Self.qaSlug)" }"#
 
     /// The `input` argument that names the added actor.
     private static let aliceReference = #"input: { id: "\#(aliceSlug)" }"#

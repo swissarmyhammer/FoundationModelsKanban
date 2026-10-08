@@ -54,7 +54,7 @@ struct TagMutationTests {
     static let greenInput = #"color: "\#(ColumnActorTests.green)""#
 
     /// The mutation document that adds ``bug`` and renames it to ``defect``.
-    private static let renameBugToDefect = AddUpdateTaskTests.mutation(
+    static let renameBugToDefect = AddUpdateTaskTests.mutation(
         of: addTag(named: bug),
         renameTag(from: bug, to: defect)
     )

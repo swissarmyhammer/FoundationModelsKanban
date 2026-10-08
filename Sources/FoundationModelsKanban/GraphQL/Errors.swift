@@ -210,6 +210,12 @@ extension KanbanError {
     struct ResponseError: Codable, Hashable, Sendable {
         /// The `extensions` object of a GraphQL error.
         struct Extensions: Codable, Hashable, Sendable {
+            /// The keys of the `extensions` object.
+            enum CodingKeys: String, CodingKey {
+                /// The key of the code.
+                case code
+            }
+
             /// The code of the error, for example `NOT_FOUND`.
             let code: String
         }
