@@ -15,8 +15,7 @@ struct NameRewriteTests {
     private static let taskRef = "^aaaaaaa"
 
     /// The selection of the root query tests: the fields of a task list.
-    private static let taskListSelection = "(\(QueryFixture.liveTasksArguments)) "
-        + "{ totalCount edges { node { id title } } }"
+    private static let taskListSelection = " { totalCount edges { node { id title } } }"
 
     /// The key of the `board` field that the rewrite adds around the first moved root field.
     private static let firstMoveKey = "_kanbanRoot0"
@@ -329,7 +328,7 @@ struct NameRewriteTests {
     func rootMoveIsInExtensions() async throws {
         let response = try await QueryFixture().respond(to: "{ tasks { totalCount } }")
         let rewrites = #""extensions":{"rewrites":[{"from":"tasks","to":"board.tasks","path":["tasks"]}]}"#
-        #expect(response == #"{"data":{"tasks":{"totalCount":2}},\#(rewrites)}"#)
+        #expect(response == #"{"data":{"tasks":{"totalCount":\#(QueryResolverTests.taskCount)}},\#(rewrites)}"#)
     }
 
     @Test("An error in a moved root field has the path that the caller wrote")

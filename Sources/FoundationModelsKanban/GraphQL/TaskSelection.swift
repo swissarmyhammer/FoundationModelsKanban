@@ -7,9 +7,9 @@ import Foundation
 /// `Column`, `Actor`, and `Tag`. A filter that is empty or does not parse gives `INVALID_FILTER`. A value that names
 /// nothing gives no task.
 ///
-/// A list leaves out the tasks in a hidden state (``VirtualTag/hiddenUnlessNamed``): the done tasks and the
-/// tombstones. A filter that names the tag of a state also selects from the tasks in that state, and the filter
-/// decides (``TaskFilter``, plan.md §3.3 rule 3).
+/// A list leaves out the tasks in a hidden state (``VirtualTag/hiddenUnlessNamed``): the tombstones. A filter that
+/// names the tag of a state also selects from the tasks in that state, and the filter decides (``TaskFilter``,
+/// plan.md §3.3 rule 3). A list with no filter gives each live task, done or not.
 struct TaskSelection {
     /// The full filter: the scope ANDed with the `filter` argument, or `nil` when the list has neither.
     private let filter: FilterExpr?
@@ -19,8 +19,7 @@ struct TaskSelection {
     /// - Parameters:
     ///   - text: The `filter` argument, or `nil` when the call gives no filter.
     ///   - scope: The atom of the node that holds the list, for example `%doing` for the `tasks` field of a column,
-    ///     or `nil` for a list of the board. It is ANDed with the filter, so it also names a hidden state: a column
-    ///     scope names `DONE` (``FilterExpr/names(_:)``).
+    ///     or `nil` for a list of the board. It is ANDed with the filter.
     /// - Throws: ``KanbanError/invalidFilter(filter:position:detail:example:)`` when the filter is empty or does not
     ///   parse.
     init(filtering text: String?, within scope: FilterExpr? = nil) throws(KanbanError) {

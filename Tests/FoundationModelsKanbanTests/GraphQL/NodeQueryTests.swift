@@ -164,6 +164,15 @@ struct NodeQueryTests {
         #"{"data":{"node":{"virtualTags":\#(tags)}}}"#
     }
 
+    /// Gives the expected response of a `tasks` query that selects the title of each task.
+    ///
+    /// - Parameter titles: The titles of the listed tasks, in board order.
+    /// - Returns: The response as JSON text.
+    static func titlesResponse(_ titles: [String]) -> String {
+        let edges = titles.map { title in #"{"node":{"title":"\#(title)"}}"# }
+        return #"{"data":{"board":{"tasks":{"edges":[\#(edges.joined(separator: ","))]}}}}"#
+    }
+
     @Test("node(id:) returns each of the six node types by its full URI", arguments: nodeCases)
     func nodeByFullURI(node: NodeCase) async throws {
         let response = try await Self.typeAndID(of: node.id, in: QueryFixture())
@@ -281,6 +290,14 @@ struct NodeQueryTests {
         #expect(response == expected)
     }
 
+    @Test("tasks with no filter lists each live task, also the done task, and no deleted task")
+    func noFilterListsDoneTaskAndNoTombstone() async throws {
+        var fixture = try QueryFixture()
+        try fixture.delete(nodeAt: .task(DependencyMarkersTests.ulid(of: ReadinessFixture.first)))
+        let response = try await fixture.respond(to: "{ board { tasks { edges { node { title } } } } }")
+        #expect(response == Self.titlesResponse([QueryFixture.secondTitle, QueryFixture.thirdTitle]))
+    }
+
     @Test("tasks(filter: \"#DELETED\") lists only the deleted tasks, also a deleted task in the done column")
     func deletedFilterListsOnlyTombstones() async throws {
         var fixture = try QueryFixture()
@@ -304,11 +321,6 @@ struct NodeQueryTests {
             DeletedFilterCase(
                 filter: "!#DELETED",
                 deleting: ReadinessFixture.first,
-                titles: [QueryFixture.secondTitle]
-            ),
-            DeletedFilterCase(
-                filter: "!#DELETED && (\(QueryFixture.liveTasksFilter))",
-                deleting: ReadinessFixture.first,
                 titles: [QueryFixture.secondTitle, QueryFixture.thirdTitle]
             ),
         ]
@@ -319,8 +331,7 @@ struct NodeQueryTests {
         let response = try await fixture.respond(
             to: #"{ board { tasks(filter: "\#(filterCase.filter)") { edges { node { title } } } } }"#
         )
-        let edges = filterCase.titles.map { title in #"{"node":{"title":"\#(title)"}}"# }
-        #expect(response == #"{"data":{"board":{"tasks":{"edges":[\#(edges.joined(separator: ","))]}}}}"#)
+        #expect(response == Self.titlesResponse(filterCase.titles))
     }
 
     @Test(

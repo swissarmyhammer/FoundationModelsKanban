@@ -39,8 +39,8 @@ struct TaskSearch: Sendable {
     /// Ranks the tasks for a query, and keeps the selected tasks only (plan.md §6.4, filter).
     ///
     /// `MetadataSearcher` has no filter. Thus the search asks for one match for each task of the board, and then
-    /// removes each match whose task is not in `tasks`: a task that does not pass the filter, a done task, a
-    /// tombstone when the filter does not name `#DELETED`, and a task that the view does not have.
+    /// removes each match whose task is not in `tasks`: a task that does not pass the filter, a tombstone when the
+    /// filter does not name `#DELETED`, and a task that the view does not have.
     ///
     /// - Parameters:
     ///   - query: The search text.

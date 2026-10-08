@@ -599,18 +599,17 @@ struct FilterEvaluatorTests {
 
     // MARK: - Names a virtual tag
 
-    /// Each filter of the "names DONE" test, with `true` when it has a `#DONE` atom, a column atom, a ref atom, or a
-    /// `~task` atom at some depth.
+    /// Each filter of the "names DONE" test, with `true` when it has a `#DONE` atom at some depth. `DONE` is not a
+    /// hidden state, so a column atom, a ref atom, and a `~task` atom do not name it.
     static let doneNamings: [(String, Bool)] = [
         ("#DONE", true),
         ("@alice && !#done", true),
         (url(ofType: .tag, withID: "DONE"), true),
-        ("%doing", true),
-        ("#bug && !%done", true),
-        ("(@alice || %todo) #bug", true),
-        (url(ofType: .column, withID: "doing"), true),
-        ("^\(first) || #READY", true),
-        ("#bug && ~Task", true),
+        ("%doing", false),
+        ("#bug && !%done", false),
+        (url(ofType: .column, withID: "done"), false),
+        ("^\(first) || #READY", false),
+        ("#bug && ~Task", false),
         ("#bug", false),
         ("#DELETED", false),
         ("@done", false),
@@ -619,7 +618,7 @@ struct FilterEvaluatorTests {
     ]
 
     @Test(
-        "A filter names the virtual tag DONE with a #DONE, column, ref, or ~task atom, at any depth and in any case",
+        "A filter names the virtual tag DONE only with a #DONE atom, at any depth and in any case",
         arguments: doneNamings
     )
     func namesDone(filter: String, isNamed: Bool) throws {

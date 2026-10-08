@@ -339,17 +339,19 @@ struct HistoryTests {
         #expect(Self.updateTexts(of: tagged.first) == ["TASK RESTORED \(task)"])
     }
 
-    @Test("history(filter:) with a tag leaves out the updates of a done task, and #DONE keeps them")
-    func historyDoneFilterKeepsDoneTask() async throws {
+    @Test(
+        "history(filter:) with a tag or with #DONE keeps the updates of a done task",
+        arguments: [bugFilterArguments, doneFilterArguments]
+    )
+    func historyKeepsDoneTask(arguments: String) async throws {
         let directory = try TemporaryDirectory()
         let completed = try await Self.taggedSession(
             inRepoAt: directory,
             running: { refs in [TaskOperationTests.taskField(MutationName.completeTask, of: refs.task)] }
         )
-        #expect(try await Self.history(with: Self.bugFilterArguments, in: completed.session).isEmpty)
-        let done = try await Self.history(with: Self.doneFilterArguments, in: completed.session)
+        let changes = try await Self.history(with: arguments, in: completed.session)
         let task = ColumnActorTests.id(of: .task(completed.task))
-        #expect(Self.updateTexts(of: done.first).contains("TASK UPDATED \(task)"))
+        #expect(Self.updateTexts(of: changes.first).contains("TASK UPDATED \(task)"))
     }
 
     @Test("After a move out of done, history(filter: \"#DONE\") leaves out the task, and a tag filter keeps it")

@@ -332,8 +332,8 @@ extension BoardObject {
     }
 
     /// Resolves `Board.searchTasks` (plan.md §6.4): the tasks that the search ranks for the query, highest score
-    /// first. The selection is the same as in `Board.tasks`: the filter applies, a tombstone is a hit only when the
-    /// filter names `#DELETED`, and a done task is a hit only when the filter names `#DONE` or a column.
+    /// first. The selection is the same as in `Board.tasks`: the filter applies, a done task is a hit as each other
+    /// live task, and a tombstone is a hit only when the filter names `#DELETED`.
     ///
     /// The GraphQL field is nullable: an error gives `null` for the field and one item in `errors`, and the other
     /// fields of the board keep their data.
@@ -355,8 +355,8 @@ extension BoardObject {
     }
 
     /// Resolves `Board.tasks`: one page of the tasks that the filter selects, in board order (plan.md §3.3 rule 3,
-    /// §6.3). The list has a tombstone only when the filter names `#DELETED`, and a done task only when the filter
-    /// names `#DONE` or a column.
+    /// §6.3). With no filter, the list has each live task, done or not. The list has a tombstone only when the filter
+    /// names `#DELETED`.
     ///
     /// The GraphQL field is nullable: an error gives `null` for the field and one item in `errors`, and the other
     /// fields of the board keep their data.
@@ -412,8 +412,8 @@ extension TaskHolderObject {
     /// Resolves the `tasks` field: the tasks that the node holds and that match the filter, in board order.
     ///
     /// The list is the same as `Board.tasks` with the filter `<scope> && (<filter>)`, where the scope is the atom of
-    /// the node. Thus the defaults are the same: a column scope names `DONE`, so the done column lists its tasks, but
-    /// an actor or a tag lists a done task only when the filter names `#DONE` (``TaskFilter``).
+    /// the node. Thus the defaults are the same: with no filter, the node lists each live task that it holds, done or
+    /// not, and a tombstone only when the filter names `#DELETED` (``TaskFilter``).
     ///
     /// The GraphQL field is nullable: an error gives `null` for the field and one item in `errors`, and the other
     /// fields keep their data.

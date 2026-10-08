@@ -233,17 +233,15 @@ struct TagMutationTests {
         #"{"data":{"board":{"task":{"tags":[{"name":"\#(name)"}]}}}}"#
     }
 
-    /// Gives the response of a query of the number of tasks that match a filter. The query ANDs the filter with
-    /// ``QueryFixture/liveTasksFilter`` to keep the done tasks, because the fixture column `todo` is the terminal
-    /// column.
+    /// Gives the response of a query of the number of tasks that match a filter. The fixture column `todo` is the
+    /// terminal column, so its tasks are done, and the filter selects from them.
     ///
     /// - Parameters:
     ///   - filter: The filter text.
     ///   - graph: The engine.
     /// - Returns: The response JSON text.
     private static func respond(toFilter filter: String, on graph: KanbanGraph) async throws -> String {
-        let liveFilter = "(\(filter)) && (\(QueryFixture.liveTasksFilter))"
-        let query = #"{ board { tasks(filter: "\#(liveFilter)") { totalCount } } }"#
+        let query = #"{ board { tasks(filter: "\#(filter)") { totalCount } } }"#
         return try await KanbanGraphTests.execute(query, on: graph)
     }
 

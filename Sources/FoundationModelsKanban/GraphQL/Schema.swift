@@ -450,8 +450,8 @@ struct TasksArguments: Codable, Sendable {
     /// The number of tasks of a page when the call does not give `first`.
     static let defaultPageSize = 10
 
-    /// The filter, for example `#bug && @alice`, or `nil` for no filter. The list leaves out the done and the
-    /// tombstoned tasks unless the filter names `#DONE` (or a column) or `#DELETED` (plan.md §3.3 rule 3, §6.3).
+    /// The filter, for example `#bug && @alice`, or `nil` for no filter. No filter gives each live task, done or not.
+    /// The list leaves out the tombstoned tasks unless the filter names `#DELETED` (plan.md §3.3 rule 3, §6.3).
     let filter: String?
 
     /// The maximum number of tasks of the page. A negative value gives no task. An explicit `null` gives

@@ -416,10 +416,9 @@ extension FilterCompiler {
 
 extension FilterExpr {
     /// Tells if the filter names a virtual tag: it has a `#` atom or a tag URL with the name of the tag, in any case,
-    /// at any depth, also under a NOT. A column atom (`%` or a column URL) names `DONE`, because a filter on the
-    /// column decides by itself if it wants the done tasks: `%done` lists them. A `^` atom and a `~task` atom name
-    /// each tag of ``VirtualTag/hiddenUnlessNamed``, because they select a node, or each task, by itself: `^id` gives
-    /// the node also when it is done or deleted, and `~task` gives each task.
+    /// at any depth, also under a NOT. A `^` atom and a `~task` atom name each tag of
+    /// ``VirtualTag/hiddenUnlessNamed``, because they select a node, or each task, by itself: `^id` gives the node
+    /// also when it is deleted, and `~task` gives each task. A column atom and an assignee atom name no virtual tag.
     ///
     /// A task list uses this test for each tag of ``VirtualTag/hiddenUnlessNamed`` (``TaskFilter``).
     ///
@@ -431,13 +430,11 @@ extension FilterExpr {
             switch kind {
             case .tag:
                 value.localName.flatMap(VirtualTag.init(named:)) == virtualTag
-            case .column:
-                virtualTag == .done
             case .ref:
                 isHidden
             case .type:
                 isHidden && value.localName.flatMap(PatchNodeType.init(pathSegment:)) == .task
-            case .assignee:
+            case .column, .assignee:
                 false
             }
         }
@@ -461,8 +458,7 @@ extension FilterExpr {
 
 extension FilterValue {
     /// The name that the value gives in its board: the name as the filter writes it, or the local id of a URL, or
-    /// `nil` for a board URL, which has no local id. A URL of any board counts, the same as a column URL of any board
-    /// names `DONE` (``FilterExpr/names(_:)``).
+    /// `nil` for a board URL, which has no local id. A URL of any board counts (``FilterExpr/names(_:)``).
     fileprivate var localName: String? {
         switch self {
         case .name(let name): name

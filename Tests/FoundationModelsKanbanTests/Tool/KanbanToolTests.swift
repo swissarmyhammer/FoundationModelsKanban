@@ -12,7 +12,7 @@ import Testing
 struct KanbanToolTests {
     /// The selection of a page of the tasks whose size is the variable `first`.
     static let pageSelection = """
-        { board { tasks(first: $first, \(QueryFixture.liveTasksArguments)) { edges { node { title } } totalCount } } }
+        { board { tasks(first: $first) { edges { node { title } } totalCount } } }
         """
 
     /// A page of the tasks whose size is the required variable `first`.

@@ -232,13 +232,19 @@ struct TaskSearchTests {
         #expect(hits.map(\.task.id) == [Self.id(ofTask: ReadinessFixture.first)])
     }
 
-    @Test("A done task is not a hit when the filter names no column")
-    func doneTaskIsExcluded() async throws {
+    @Test("With no filter, a done task is a hit, the same as Board.tasks")
+    func doneTaskIsHitWithNoFilter() async throws {
         let hits = try await Self.hits(searchingWith: Self.query(Self.doneWord))
+        #expect(hits.map(\.task.id).contains(Self.id(ofTask: ReadinessFixture.third)))
+    }
+
+    @Test("The filter !#DONE leaves out the done task")
+    func notDoneFilterLeavesOutDoneTask() async throws {
+        let hits = try await Self.hits(searchingWith: ##"\##(Self.query(Self.doneWord)), filter: "!#DONE""##)
         #expect(!hits.map(\.task.id).contains(Self.id(ofTask: ReadinessFixture.third)))
     }
 
-    @Test("A filter that names a column keeps the done tasks, the same as Board.tasks")
+    @Test("A filter that names the done column keeps the done task, the same as Board.tasks")
     func columnFilterKeepsDoneTask() async throws {
         let arguments = #"\#(Self.query(Self.doneWord)), filter: "%\#(ReadinessFixture.done)""#
         let hits = try await Self.hits(searchingWith: arguments)

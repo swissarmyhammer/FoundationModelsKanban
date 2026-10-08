@@ -265,6 +265,17 @@ struct SubscriptionTests {
         await graph.close()
     }
 
+    @Test("A subscription with a filter that does not name DONE sends the change of a done task")
+    func filterWithNoDoneAtomSendsDoneTask() async throws {
+        let directory = try TemporaryDirectory()
+        let task = try KanbanGraphTests.writeFixture(inRepoAt: directory.url).task
+        let graph = try KanbanGraphTests.makeGraph(at: directory.url)
+        let stream = try await Self.subscribe(Self.subscription(#"(filter: "!~actor")"#), on: graph)
+        let expected = try await Self.changeTitle(of: task, to: KanbanGraphTests.laterTitle, on: graph)
+        #expect(try await Self.events(Self.oneEvent, of: stream) == [expected])
+        await graph.close()
+    }
+
     // MARK: - Changes from other processes
 
     @Test("A log line that a different process appends sends one Change")

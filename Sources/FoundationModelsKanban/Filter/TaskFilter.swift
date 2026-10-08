@@ -6,10 +6,10 @@ import Foundation
 /// The test has two parts:
 ///
 /// - The hidden states. Each tag of ``VirtualTag/hiddenUnlessNamed`` marks a task state that the test leaves out by
-///   default: `DELETED` and `DONE`. A task with one of these tags passes only when the filter names the tag
-///   (``FilterExpr/names(_:)``; a column atom names `DONE`, and a `^` or `~task` atom names both). Thus a task list
-///   shows no tombstone and no done task, but `#DELETED` lists the tombstones, `#DONE || #bug` lists the done tasks
-///   and the open tasks with the tag `bug`, and `%done` lists the done tasks.
+///   default: `DELETED`. A task with one of these tags passes only when the filter names the tag
+///   (``FilterExpr/names(_:)``; a `^` or `~task` atom also names it). Thus a task list shows no tombstone, but
+///   `#DELETED` lists the tombstones. A done task is not hidden: a list with no filter gives it, `#DONE` lists the
+///   done tasks, and `!#DONE` lists the open tasks.
 /// - The filter (``FilterEvaluator``). With no filter, each node that is not hidden passes.
 ///
 /// `Board.tasks`, `Board.nextTask`, `Board.searchTasks`, the `tasks` fields of `Column`, `Actor`, and `Tag`, and the

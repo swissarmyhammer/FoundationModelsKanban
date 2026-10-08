@@ -38,13 +38,6 @@ struct QueryFixture {
     /// The body of the comment.
     static let commentBody = "Looks good."
 
-    /// The filter of a task list that lists each live task, open or done. A list leaves out the done tasks unless its
-    /// filter names `#DONE` (plan.md §6.3).
-    static let liveTasksFilter = "#DONE || !#DONE"
-
-    /// The arguments of a task list that lists each live task, open or done: the filter ``liveTasksFilter``.
-    static let liveTasksArguments = #"filter: "\#(liveTasksFilter)""#
-
     /// The graph of the board.
     var graph: Graph
 

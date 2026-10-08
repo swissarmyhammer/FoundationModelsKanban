@@ -27,8 +27,24 @@ comments:
     - evidence: 2 files — Tests/FoundationModelsKanbanTests/CIWorkflowTests.swift (new), .github/workflows/ci.yml (comment only). `swift build --build-tests` OK (only the accepted SwiftPM "missing creator" warning). `swift test --skip-build` 3 times: 1016 tests in 72 suites passed each time (about 13 s each). YAML loads with ruby.
     - next: /review
   timestamp: 2026-10-08T19:43:04.068817+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4egvj6j8vscbp3jx43ysw1g
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (2cee34a). 0 findings, 0 confirmed, 1 refuted, 7 attempted, 0 failed. The review examined 2 files. An ignore rule excluded 4 .kanban files.
+    - next: none. The task is in done.
+  timestamp: 2026-10-08T19:46:45.074101+00:00
+- actor: claude-code
+  id: 01m4egvr74qbj2612r0e92w181
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — Tests/FoundationModelsKanbanTests/CIWorkflowTests.swift (new), .github/workflows/ci.yml (comment)
+    - test: green — swift test 3 runs, 1016 passed each (7.7 s, 7.7 s, 7.6 s); build warnings only the 2 accepted kinds
+    - commit: 2cee34a
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T19:46:51.236768+00:00
+position_column: done
+position_ordinal: c280
 title: 'CIWorkflowTests: pin the CI delegation, the same as the sibling packages'
 ---
 ## What

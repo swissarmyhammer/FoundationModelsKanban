@@ -37,13 +37,13 @@ enum VirtualTag: String, CaseIterable, Sendable {
 
 extension VirtualTag {
     /// The virtual tags of the task states that a task list leaves out by default (plan.md §3.3 rule 3, §6.3): the
-    /// tombstones and the done tasks.
+    /// tombstones.
     ///
     /// A task with one of these tags is in a list only when the filter names the tag (``FilterExpr/names(_:)``).
-    /// Then the filter decides. Thus `#DELETED` lists only the deleted tasks, `#DONE` lists only the done tasks, and
-    /// `!#DONE` lists the live tasks that are not done. A column atom also names `DONE`, so `%done` lists the done
-    /// tasks.
-    static let hiddenUnlessNamed: [VirtualTag] = [.deleted, .done]
+    /// Then the filter decides. Thus `#DELETED` lists only the deleted tasks, and `!#DELETED` lists the live tasks.
+    /// `DONE` is not in the set: a list with no filter gives each live task, done or not, and the filter selects
+    /// exactly what it says, so `#DONE` lists the done tasks and `!#DONE` the open tasks.
+    static let hiddenUnlessNamed: [VirtualTag] = [.deleted]
 
     /// Finds the virtual tag that a tag name names.
     ///

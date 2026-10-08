@@ -70,8 +70,7 @@ struct QueryResolverTests {
         let data: DataObject
     }
 
-    /// Reads one page of tasks. The query gives ``QueryFixture/liveTasksFilter``, so that the page can hold the done
-    /// task.
+    /// Reads one page of tasks. The query gives no filter, so the pages hold each live task, the done task too.
     ///
     /// - Parameters:
     ///   - fixture: The board.
@@ -81,7 +80,7 @@ struct QueryResolverTests {
     static func page(of fixture: QueryFixture, after cursor: String?) async throws -> TasksResponse.Connection {
         let afterArgument = cursor.map { #", after: "\#($0)""# } ?? ""
         let response = try await fixture.respond(
-            to: "{ board { tasks(first: \(pageSize), \(QueryFixture.liveTasksArguments)\(afterArgument)) "
+            to: "{ board { tasks(first: \(pageSize)\(afterArgument)) "
                 + "{ totalCount edges { node { id } } pageInfo { hasNextPage endCursor } } } }"
         )
         return try JSONDecoder().decode(TasksResponse.self, from: Data(response.utf8)).data.board.tasks
@@ -152,7 +151,7 @@ struct QueryResolverTests {
         )
         fixture.graph.update(with: .task(fourth))
         let response = try await fixture.respond(
-            to: "{ board { tasks(\(QueryFixture.liveTasksArguments)) { edges { node { title } } } } }"
+            to: "{ board { tasks { edges { node { title } } } } }"
         )
         let titles = [
             QueryFixture.secondTitle, ReadinessFixture.fourth, QueryFixture.firstTitle, QueryFixture.thirdTitle,
