@@ -24,8 +24,24 @@ comments:
     - note: the default swiftlint set (no project config) reports `file_length` for RelatedBoards.swift (404 lines, limit 400) after this change; KanbanGraph.swift was already over its limit before this change.
     - next: /review
   timestamp: 2026-10-08T07:23:05.334746+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: wballard
+  id: 01m4d6npj4syz46bag8zfj6j9s
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (83bea3a): 0 findings, 0 confirmed, 2 refuted. 6 files reviewed. 4 .kanban files not reviewed (.reviewignore).
+    - next: none. Task moved to done.
+  timestamp: 2026-10-08T07:29:32.740601+00:00
+- actor: wballard
+  id: 01m4d6nwp1eypemc3daazk2hv5
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 6 files (RelatedBoards.swift, BoardLocator.swift, KanbanGraph.swift, Change.swift, ChangeBuilder.swift, new CrossRepoEventBoardTests.swift)
+    - test: green — swift test 3 runs with a 120 s limit, 953 passed each (16.5 s, 16.1 s, 18.8 s); build warnings only the 2 accepted kinds
+    - commit: 83bea3a
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T07:29:39.009148+00:00
+position_column: done
+position_ordinal: b580
 title: 'Event board of a related-board subscription: `.current` reads the wrong board'
 ---
 ## What
