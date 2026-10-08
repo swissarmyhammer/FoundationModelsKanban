@@ -57,6 +57,10 @@ enum KanbanError: Error, Hashable, Sendable {
     /// `INVALID_ORDINAL`: the ordinal is not a valid fractional index.
     case invalidOrdinal(ordinal: String)
 
+    /// `CONFLICTING_PLACEMENT`: the input of a move gives more than one place field. The fields are the names of
+    /// these place fields, in the order of the input type.
+    case conflictingPlacement(fields: [String])
+
     /// `BOARD_BUSY`: the log of the board changed during each commit attempt (plan.md §5.4).
     case boardBusy(attempts: Int)
 
@@ -93,6 +97,7 @@ extension KanbanError {
         case .invalidTagName: "INVALID_TAG_NAME"
         case .invalidSlug: "INVALID_SLUG"
         case .invalidOrdinal: "INVALID_ORDINAL"
+        case .conflictingPlacement: "CONFLICTING_PLACEMENT"
         case .boardBusy: "BOARD_BUSY"
         case .subscriptionNotInTool: "SUBSCRIPTION_NOT_IN_TOOL"
         }
@@ -146,6 +151,10 @@ extension KanbanError {
         case .invalidOrdinal(let ordinal):
             "The ordinal \"\(ordinal)\" is not a valid fractional index. Use before or after with a neighbor task, "
                 + "or leave out the ordinal to put the task at the end of the column."
+        case .conflictingPlacement(let fields):
+            "The input gives more than one place field: \(fields.joined(separator: Self.listSeparator)). "
+                + "Give only one of ordinal, before, and after, or give none of them to put the task at the end of "
+                + "the column."
         case .boardBusy(let attempts):
             "The board changed during each of the \(attempts) commit attempts, so the call wrote nothing. "
                 + "Send the call again."

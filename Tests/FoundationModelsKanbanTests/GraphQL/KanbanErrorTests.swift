@@ -52,6 +52,7 @@ struct KanbanErrorTests {
         (.invalidTagName(name: "!!!"), "INVALID_TAG_NAME"),
         (.invalidSlug(name: "---"), "INVALID_SLUG"),
         (.invalidOrdinal(ordinal: "zz!"), "INVALID_ORDINAL"),
+        (.conflictingPlacement(fields: ["before", "after"]), "CONFLICTING_PLACEMENT"),
         (.boardBusy(attempts: commitAttempts), "BOARD_BUSY"),
         (.subscriptionNotInTool, "SUBSCRIPTION_NOT_IN_TOOL"),
     ]
@@ -63,7 +64,7 @@ struct KanbanErrorTests {
         #expect(error.code == expectedCode)
     }
 
-    @Test("The cases give sixteen different codes")
+    @Test("The cases give seventeen different codes")
     func codesAreDistinct() {
         #expect(Set(Self.codes.map { $0.0.code }).count == Self.codes.count)
     }

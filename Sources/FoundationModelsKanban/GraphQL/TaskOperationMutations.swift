@@ -31,23 +31,62 @@ extension MutationName {
 
 // MARK: - Arguments
 
-/// The `input` object of `moveTask` (plan.md §4.2). The place in the column comes from the first field that the input
-/// gives: `ordinal`, then `before`, then `after`. With none of them, the task goes to the end of the column.
+/// The `input` object of `moveTask` (plan.md §4.2). The input gives one place field (`ordinal`, `before`, or `after`),
+/// or none of them for the end of the column. An input with more than one place field does not decode.
 private struct MoveTaskInput: Decodable, Sendable {
+    /// The keys of the fields of the input that are not place fields. ``Placement`` reads the place fields.
+    private enum CodingKeys: String, CodingKey {
+        /// The key of the task.
+        case id
+
+        /// The key of the column.
+        case column
+    }
+
     /// The task: a full URI or a short form (plan.md §3.2).
     let id: NodeID
 
     /// The column: a full URI, the slug, or a name. A slug that no column has makes a new column.
     let column: NodeID
 
-    /// The ordinal of the task in the column, or `nil` for a place from ``before``, ``after``, or the end.
-    let ordinal: String?
+    /// The place of the task in the column.
+    let placement: Placement
 
-    /// The task that the moved task goes before, or `nil`.
-    let before: NodeID?
+    /// The `ordinal` field of the input, or `nil`. The schema gets the type of the field from this property.
+    var ordinal: String? {
+        guard case .ordinal(let text) = placement else {
+            return nil
+        }
+        return text
+    }
 
-    /// The task that the moved task goes after, or `nil`.
-    let after: NodeID?
+    /// The `before` field of the input, or `nil`. The schema gets the type of the field from this property.
+    var before: NodeID? {
+        guard case .before(let neighbor) = placement else {
+            return nil
+        }
+        return neighbor
+    }
+
+    /// The `after` field of the input, or `nil`. The schema gets the type of the field from this property.
+    var after: NodeID? {
+        guard case .after(let neighbor) = placement else {
+            return nil
+        }
+        return neighbor
+    }
+
+    /// Reads the input object of a move.
+    ///
+    /// - Parameter decoder: The decoder of the input object.
+    /// - Throws: ``KanbanError/conflictingPlacement(fields:)`` when the input gives more than one place field. A
+    ///   `DecodingError` when the input has no `id` or no `column`, or a field has the wrong type.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(NodeID.self, forKey: .id)
+        column = try container.decode(NodeID.self, forKey: .column)
+        placement = try Placement(from: decoder)
+    }
 }
 
 /// The `input` object of `assignTask` and `unassignTask` (plan.md §4.2).
@@ -77,29 +116,50 @@ private enum NeighborSide {
     case after
 }
 
-/// The place of a moved task in its column (plan.md §6, "moveTask").
-private enum TaskPlacement {
-    /// After the last task of the column.
+/// The place of a moved task in its column, from the place fields of a `moveTask` input (plan.md §4.2, §6,
+/// "moveTask"). A value holds one place, so an input with more than one place field cannot make a value.
+private enum Placement: Decodable, Sendable {
+    /// The keys of the place fields of the input.
+    private enum CodingKeys: String, CodingKey {
+        /// The key of the ordinal.
+        case ordinal
+
+        /// The key of the neighbor that the task goes before.
+        case before
+
+        /// The key of the neighbor that the task goes after.
+        case after
+    }
+
+    /// After the last task of the column. The input gives no place field.
     case end
 
-    /// Next to a neighbor task, on one side. A neighbor that is not in the column puts the task at the end.
-    case beside(LocalRef, side: NeighborSide)
+    /// At an ordinal, as the input writes it.
+    case ordinal(String)
 
-    /// Makes the placement that the input of a move gives. `before` comes before `after`.
+    /// Before a neighbor task. A neighbor that is not in the column puts the task at the end.
+    case before(NodeID)
+
+    /// After a neighbor task. A neighbor that is not in the column puts the task at the end.
+    case after(NodeID)
+
+    /// Reads the place fields of the input object of a move.
     ///
-    /// - Parameters:
-    ///   - before: The task that the moved task goes before, or `nil`.
-    ///   - after: The task that the moved task goes after, or `nil`.
-    ///   - resolver: The resolver of the forgiving refs of the board.
-    /// - Throws: ``KanbanError/notFound(type:reference:)`` when a neighbor names no live task.
-    init(before: NodeID?, after: NodeID?, resolvingWith resolver: RefResolver) throws(KanbanError) {
-        if let before {
-            self = .beside(try resolver.nodeRef(for: before, ofType: .task), side: .before)
-        } else if let after {
-            self = .beside(try resolver.nodeRef(for: after, ofType: .task), side: .after)
-        } else {
-            self = .end
+    /// - Parameter decoder: The decoder of the input object.
+    /// - Throws: ``KanbanError/conflictingPlacement(fields:)`` when the input gives more than one place field. A
+    ///   `DecodingError` when a place field has the wrong type.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let given: [(key: CodingKeys, placement: Self?)] = [
+            (.ordinal, try container.decodeIfPresent(String.self, forKey: .ordinal).map(Self.ordinal)),
+            (.before, try container.decodeIfPresent(NodeID.self, forKey: .before).map(Self.before)),
+            (.after, try container.decodeIfPresent(NodeID.self, forKey: .after).map(Self.after)),
+        ]
+        let places = given.filter { field in field.placement != nil }
+        guard places.dropFirst().isEmpty else {
+            throw KanbanError.conflictingPlacement(fields: places.map(\.key.stringValue))
         }
+        self = places.first?.placement ?? .end
     }
 }
 
@@ -116,7 +176,8 @@ extension KanbanResolver {
     ///   only.
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live task has the id, a neighbor names no live
     ///   task, or the column is a tombstone. ``KanbanError/invalidOrdinal(ordinal:)`` and
-    ///   ``KanbanError/invalidSlug(name:)``.
+    ///   ``KanbanError/invalidSlug(name:)``. The decode of the input throws
+    ///   ``KanbanError/conflictingPlacement(fields:)`` before this resolver runs, so that the field writes nothing.
     fileprivate func moveTask(
         context: KanbanContext,
         arguments: InputArguments<MoveTaskInput>
@@ -124,12 +185,12 @@ extension KanbanResolver {
         let input = arguments.input
         return try await context.changeTask(input.id, named: MutationName.moveTask) { work, resolver, ref, time in
             let column = try work.columnRef(forMoveTo: input.column, resolvingWith: resolver, at: time)
-            let ordinal = try input.ordinal.map(Ordinal.init(parsing:))
-                ?? work.graph.ordinal(
-                    placing: TaskPlacement(before: input.before, after: input.after, resolvingWith: resolver),
-                    inColumn: column,
-                    moving: ref
-                )
+            let ordinal = try work.graph.ordinal(
+                placing: input.placement,
+                inColumn: column,
+                moving: ref,
+                resolvingWith: resolver
+            )
             try work.move(ref, to: column, placingAt: ordinal, at: time)
         }
     }
@@ -411,24 +472,53 @@ extension WorkingCopy {
 // MARK: - Graph
 
 extension Graph {
-    /// Gives the ordinal of a task that a move puts in a column (plan.md §6, "moveTask"). A neighbor that is not in the
-    /// column puts the task at the end of the column, the same as Rust.
+    /// Gives the ordinal of a task that a move puts in a column (plan.md §6, "moveTask").
     ///
     /// - Parameters:
     ///   - placement: The place in the column.
     ///   - column: The local ref of the column.
     ///   - task: The local ref of the moved task. The column order does not count this task.
+    ///   - resolver: The resolver of the forgiving refs of the board, for a neighbor.
     /// - Returns: The ordinal.
+    /// - Throws: ``KanbanError/invalidOrdinal(ordinal:)`` when the ordinal is not a valid fractional index.
+    ///   ``KanbanError/notFound(type:reference:)`` when a neighbor names no live task.
     fileprivate func ordinal(
-        placing placement: TaskPlacement,
+        placing placement: Placement,
+        inColumn column: LocalRef,
+        moving task: LocalRef,
+        resolvingWith resolver: RefResolver
+    ) throws(KanbanError) -> Ordinal {
+        switch placement {
+        case .end:
+            return nextOrdinal(inColumn: column, excluding: task)
+        case .ordinal(let text):
+            return try Ordinal(parsing: text)
+        case .before(let neighbor):
+            let ref = try resolver.nodeRef(for: neighbor, ofType: .task)
+            return ordinal(beside: ref, on: .before, inColumn: column, moving: task)
+        case .after(let neighbor):
+            let ref = try resolver.nodeRef(for: neighbor, ofType: .task)
+            return ordinal(beside: ref, on: .after, inColumn: column, moving: task)
+        }
+    }
+
+    /// Gives the ordinal of a task that a move puts next to a neighbor task. A neighbor that is not in the column
+    /// puts the task at the end of the column, the same as Rust.
+    ///
+    /// - Parameters:
+    ///   - neighbor: The local ref of the neighbor task.
+    ///   - side: The side of the neighbor where the task goes.
+    ///   - column: The local ref of the column.
+    ///   - task: The local ref of the moved task. The column order does not count this task.
+    /// - Returns: The ordinal.
+    private func ordinal(
+        beside neighbor: LocalRef,
+        on side: NeighborSide,
         inColumn column: LocalRef,
         moving task: LocalRef
     ) -> Ordinal {
         let tasks = tasks(inColumn: column, excluding: task)
-        guard
-            case .beside(let neighbor, let side) = placement,
-            let index = tasks.firstIndex(where: { shown in shown.ref == neighbor })
-        else {
+        guard let index = tasks.firstIndex(where: { shown in shown.ref == neighbor }) else {
             return nextOrdinal(inColumn: column, excluding: task)
         }
         let neighborOrdinal = tasks[index].ordinal

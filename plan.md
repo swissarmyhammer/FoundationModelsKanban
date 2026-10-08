@@ -290,7 +290,7 @@ These mutations also have an optional `board` field in `input`, because they nam
 | `updateBoard` | `name`, `body` | board: `set` the given properties, `edit body` |
 | `addTask` | `title!`, `body`, `column`, `ordinal`, `assignees`, `tags`, `dependsOn` | task: `set` the scalars, `edit body`, `add` the edges; one `set` patch for each unknown tag |
 | `updateTask` | `id!`, and any field of `addTask` except `column` and `ordinal`. A list value replaces the list. `null` clears a field. | task: `set` / `unset` the scalars; `edit body`; `add` / `remove` the list difference |
-| `moveTask` | `id!`, `column!`, `ordinal`, `before`, `after` | task: `set column, ordinal` (plus a column `set` patch if the column is new) |
+| `moveTask` | `id!`, `column!`, and one place field or none: `ordinal`, `before`, or `after`. With no place field, the task goes to the end of the column. An input with more than one place field gives `CONFLICTING_PLACEMENT` and writes nothing. | task: `set column, ordinal` (plus a column `set` patch if the column is new) |
 | `completeTask` | `id!` | task: `set column, ordinal` (terminal column) |
 | `assignTask` / `unassignTask` | `id!`, `actor!` | task: `add` / `remove` on `assignees` |
 | `tagTask` / `untagTask` | `id!`, `tags!` | task: `add` / `remove` on `tags` (plus a tag `set` patch for each unknown tag) |
@@ -330,7 +330,8 @@ mutation {
 The response follows the GraphQL specification: `{ "data": …, "errors": [ … ] }`.
 
 - Each error has `message`, `path`, and `extensions.code`.
-- The codes are: `INVALID_VARIABLES`, `NOT_FOUND`, `AMBIGUOUS_ID`, `ACTOR_NOT_FOUND`, `DUPLICATE_ID`, `COLUMN_NOT_EMPTY`, `DEPENDENCY_CYCLE`, `TAG_RENAME_CYCLE`, `NOTHING_TO_UNDO`, `UNDO_CONFLICT`, `INVALID_FILTER`, `INVALID_TAG_NAME`, `INVALID_SLUG`, `INVALID_ORDINAL`, `BOARD_BUSY`, `SUBSCRIPTION_NOT_IN_TOOL`.
+- The codes are: `INVALID_VARIABLES`, `NOT_FOUND`, `AMBIGUOUS_ID`, `ACTOR_NOT_FOUND`, `DUPLICATE_ID`, `COLUMN_NOT_EMPTY`, `DEPENDENCY_CYCLE`, `TAG_RENAME_CYCLE`, `NOTHING_TO_UNDO`, `UNDO_CONFLICT`, `INVALID_FILTER`, `INVALID_TAG_NAME`, `INVALID_SLUG`, `INVALID_ORDINAL`, `CONFLICTING_PLACEMENT`, `BOARD_BUSY`, `SUBSCRIPTION_NOT_IN_TOOL`.
+- `CONFLICTING_PLACEMENT` is for an input that gives more than one place field. The message names the place fields that the input gave, and tells the caller to give only one of them. Of the inputs, only `moveTask` has more than one place field (`ordinal`, `before`, `after`). `addTask` has only `ordinal`, so it cannot give this error.
 - The message must tell the model how to correct the call. For example, an `AMBIGUOUS_ID` error gives the matching ids.
 - A syntax or validation error gives the GraphQL "did you mean" suggestion. This is after the name rewrite in §4.5.
 - If a mutation field fails, no patch of that field is written. The patches of the other fields of the call are written (§5.4). The tool validates all patches of a field before it keeps them.
@@ -569,7 +570,7 @@ A log can change outside the tool: a manual edit, a `git pull`, a merge, a `git 
 | Virtual tags | `READY` (live, not done, and all dependencies done), `BLOCKED` (live, and at least one dependency is not done), `BLOCKING` (live, not done, and some live task depends on it). New in this design: `CONFLICT` (the body has a conflict block from a diff that could not apply, §5.5), `DELETED` (the task is a tombstone, §3.3), and `DONE` (live, and in the terminal column). A tombstone is never `READY`, `BLOCKED`, `BLOCKING`, or `DONE`. `DONE` does not change the other tags: a done task is never `READY` or `BLOCKING`, and, as in Rust, it is `BLOCKED` when a dependency is not done. `DELETED` and `DONE` are "hidden unless named": a list shows a tombstone only when the filter names `#DELETED`, and a done task only when the filter names `#DONE` or a column (§3.3 rule 3, §6.3). |
 | `nextTask` | From the tasks that have `READY` (live, not done, and ready) and match the filter: sort by column order, then by ordinal. Return the first task or `null`. `nextTask` never returns a tombstone or a done task, also for a filter that names `#DELETED` or `#DONE`. |
 | `completeTask` | Move to the terminal column, after the last ordinal there. |
-| `moveTask` | Ordinal priority: an explicit `ordinal`, then `before` or `after` a neighbor, then append at the end. A missing column is created (name = slug in title case). |
+| `moveTask` | The place comes from one field: an explicit `ordinal`, or `before` or `after` a neighbor. With no place field, the task goes to the end of the column. More than one place field gives `CONFLICTING_PLACEMENT` (§4.4); the Rust code used the first field and ignored the others. A missing column is created (name = slug in title case). |
 | Default column on add | The column with the minimum `order`. |
 | Ordinals | Fractional index (Figma algorithm), lowercase hex, default `"80"`. Byte compatibility with Rust is not necessary because the storage is new. |
 | Session actor | The session actor is the `actor` value of `KanbanGraph.init`, else the OS user. When a call writes at least one other patch to a board, it also makes sure that the session actor exists in that board (an actor `set` patch if it is new). A call that writes nothing writes no actor patch. This rule is the same in the current repo and in related boards. Thus, the envelope `actor` always names a real actor. |

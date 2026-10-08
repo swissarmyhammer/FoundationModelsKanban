@@ -101,10 +101,26 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsKanbanTests/Undo/HistoryTests.swift (52+/53-). `swift build --build-tests`: only the accepted mlx "missing creator" warning. `timeout 120 swift test --skip-build` 3 times: 984 tests in 68 suites passed each time (7.58 s, 7.62 s, 7.59 s). No line is longer than 120 characters. No assertion changed.
     - next: review. The finding of "Review Findings (2026-10-08 11:43)" is marked [x]. The task stays in doing. Nothing is committed.
   timestamp: 2026-10-08T16:49:56.799296+00:00
+- actor: claude-code
+  id: 01m4e6yb09fnfjy35ry6qf26cx
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (8688520): 0 findings, 0 confirmed, 0 refuted; 7 validator runs, 0 failed. All items in the prior Review Findings section are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-08T16:53:30.249612+00:00
+- actor: claude-code
+  id: 01m4e6ym3fnb7x16r67mbzfvz8
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 test file (Undo/HistoryTests.swift); 1/1 findings checked
+    - test: green — swift test 3 runs, 984 passed each (8.4 s, 7.6 s, 7.7 s); build warnings only the 2 accepted kinds
+    - commit: 8688520
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T16:53:39.567210+00:00
 depends_on:
 - 01M4C30V5Z7M6ERBZ8YD8WWDGY
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: be80
 title: 'Task lists take only the filter: remove column, tag, assignee, excludeDone; add #DONE'
 ---
 ## What

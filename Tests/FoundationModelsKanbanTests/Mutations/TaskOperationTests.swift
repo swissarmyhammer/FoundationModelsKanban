@@ -14,9 +14,10 @@ import ULID
 /// tests are the delete tests here, because a delete makes a tombstone (plan.md §12, item 21). Each test uses the
 /// fixture logs of ``KanbanGraphTests``: the board, the column `todo` with order 0, and one task in `todo`.
 ///
-/// Three rules are different from Rust. A `before` or `after` ref that names no task gives `NOT_FOUND`; the Rust code
+/// Four rules are different from Rust. A `before` or `after` ref that names no task gives `NOT_FOUND`; the Rust code
 /// put the task at the end of the column. A neighbor in a different column still puts the task at the end of the
-/// column, the same as Rust. `tagTask` and `untagTask` with an empty list write nothing; the Rust code gave an error,
+/// column, the same as Rust. A `moveTask` input with more than one place field gives `CONFLICTING_PLACEMENT`; the Rust
+/// code used the first field. `tagTask` and `untagTask` with an empty list write nothing; the Rust code gave an error,
 /// but the error catalog has no code for it, and the field returns the task. `tagTask` adds an edge and does not
 /// change the body; the Rust code wrote a `#tag` marker (plan.md §6.1).
 @Suite("Task operation mutations")
@@ -77,6 +78,26 @@ struct TaskOperationTests {
 
     /// The ordinal of the second task that ``threeTasks(in:)`` adds to `todo`.
     private static let thirdOrdinal = Ordinal(after: Ordinal(after: .first))
+
+    /// The `ordinal` place field of a `moveTask` input.
+    private static let ordinalField = "ordinal"
+
+    /// The `before` place field of a `moveTask` input.
+    private static let beforeField = "before"
+
+    /// The `after` place field of a `moveTask` input.
+    private static let afterField = "after"
+
+    /// Each set of two or more place fields of a `moveTask` input, in the order of the input type.
+    private static let conflictingPlacements = [
+        [beforeField, afterField],
+        [ordinalField, beforeField],
+        [ordinalField, afterField],
+        [ordinalField, beforeField, afterField],
+    ]
+
+    /// The code of the error for a `moveTask` input that gives more than one place field.
+    private static let conflictingPlacementCode = "CONFLICTING_PLACEMENT"
 
     /// A query that lists the tombstoned tasks of the board.
     private static let deletedTasksQuery = tasksQuery(filtering: "#DELETED")
@@ -172,6 +193,28 @@ struct TaskOperationTests {
     /// - Returns: The `input` field.
     private static func neighbor(_ side: String, of task: ULID) -> String {
         neighbor(side, naming: AddUpdateTaskTests.sigilRef(of: task))
+    }
+
+    /// Makes the place fields of a `moveTask` input on the fixture task. The `ordinal` field gets a valid ordinal, and
+    /// the `before` and `after` fields name the fixture task, so that each field alone is a valid place.
+    ///
+    /// - Parameter fields: The names of the place fields, for example `before` and `after`.
+    /// - Returns: The `input` fields.
+    private static func placementInput(giving fields: [String]) throws -> String {
+        let task = try AddUpdateTaskTests.fixtureTask()
+        return fields.map { field in
+            field == ordinalField ? #"\#(field): "\#(Ordinal.first.value)""# : neighbor(field, of: task)
+        }
+        .joined(separator: " ")
+    }
+
+    /// Gives the message of the error for a `moveTask` input that gives more than one place field.
+    ///
+    /// - Parameter fields: The names of the place fields that the input gives, in the order of the input type.
+    /// - Returns: The message.
+    private static func conflictingPlacementMessage(naming fields: [String]) -> String {
+        "The input gives more than one place field: \(fields.joined(separator: ", ")). Give only one of ordinal, "
+            + "before, and after, or give none of them to put the task at the end of the column."
     }
 
     /// Makes the `actor` part of an `assignTask` or an `unassignTask` input.
@@ -413,12 +456,11 @@ struct TaskOperationTests {
         #expect(order == [tasks.second, tasks.first, tasks.third])
     }
 
-    @Test("moveTask with an ordinal and a neighbor uses the ordinal")
-    func moveTaskOrdinalTakesPrecedence() async throws {
+    @Test("moveTask with only an ordinal puts the task at that ordinal")
+    func moveTaskToOrdinal() async throws {
         let tasks = try await Self.threeTasks(in: try TemporaryDirectory())
         let ordinal = Ordinal(after: Self.thirdOrdinal).value
-        let placement = #"ordinal: "\#(ordinal)" \#(Self.neighbor("before", of: tasks.second))"#
-        let input = Self.moveInput(placing: placement)
+        let input = Self.moveInput(placing: #"\#(Self.ordinalField): "\#(ordinal)""#)
         let move = Self.taskField("moveTask", of: tasks.first, with: input, selecting: Self.ordinalSelection)
         let response = try await CommentTests.run(move, on: tasks.graph)
         #expect(response == #"{"data":{"moveTask":{"ordinal":"\#(ordinal)"}}}"#)
@@ -440,6 +482,18 @@ struct TaskOperationTests {
         let move = try Self.fixtureField("moveTask", with: input)
         let error = try await CommentTests.failure(of: move, in: try TemporaryDirectory())
         #expect(error == .notFound(type: .task, reference: unknown))
+    }
+
+    @Test(
+        "moveTask with more than one place field gives CONFLICTING_PLACEMENT, names the fields, and writes nothing",
+        arguments: conflictingPlacements
+    )
+    func moveTaskConflictingPlacement(fields: [String]) async throws {
+        let input = Self.moveInput(placing: try Self.placementInput(giving: fields))
+        let move = try Self.fixtureField("moveTask", with: input)
+        let error = try await CommentTests.failure(of: move, in: try TemporaryDirectory())
+        #expect(error.code == Self.conflictingPlacementCode)
+        #expect(error.message == Self.conflictingPlacementMessage(naming: fields))
     }
 
     @Test("moveTask to a slug that no column has makes the column with the slug words in title case")

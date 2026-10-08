@@ -1,8 +1,43 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8280'
+comments:
+- actor: claude-code
+  id: 01m4e72n96h9yncxyg5t7bt156
+  text: |-
+    Research:
+    - `MoveTaskInput` holds `ordinal`, `before`, `after` as three optionals. The resolver uses `ordinal` first, then `TaskPlacement(before:after:)` takes `before` before `after`. No error for two fields.
+    - No catalog code fits: `INVALID_VARIABLES` is for variables that are not a JSON object, `INVALID_ORDINAL` is for a bad fractional index. Plan: add `CONFLICTING_PLACEMENT` to `KanbanError` and plan.md §4.4.
+    - Graphiti decodes the input inside the field resolve (`Field.swift`: `coders.decoder.decode(Arguments.self, ...)`), so an error from `init(from:)` becomes the error of the field, and the field writes nothing.
+    - `InputField(_:at:)` needs a key path of the field type on the input type, so the schema needs `String?`/`NodeID?` key paths after the change to one `Placement` enum.
+    - `addTask` has only `ordinal` (one place field). No other input has more than one place field. The tool description does not show `before`/`after`.
+    - The existing test `moveTaskOrdinalTakesPrecedence` checks the old rule (ordinal wins over before). It conflicts with the new rule. It becomes a test for an ordinal alone.
+    - The validator dump file is 750k characters; it is too large to read in one pass. I use the rule list from the caller.
+  timestamp: 2026-10-08T16:55:51.846057+00:00
+- actor: claude-code
+  id: 01m4e7emx1erfcqjptk342pbxt
+  text: |-
+    Implementation notes:
+    - RED: the new parameterized test `moveTaskConflictingPlacement` (4 cases: before+after, ordinal+before, ordinal+after, all three) failed on assertions before the change: the log changed (`nodeFileSignatures() == before`) and no error came back (`#require(error)` got nil).
+    - GREEN: new code `CONFLICTING_PLACEMENT` (`KanbanError.conflictingPlacement(fields:)`). No existing code fit: `INVALID_VARIABLES` is for variables that are not a JSON object, `INVALID_ORDINAL` is for a bad fractional index.
+    - New `private enum Placement { end, ordinal(String), before(NodeID), after(NodeID) }` decodes the three place fields and throws when more than one is set. `MoveTaskInput` holds one `placement`, so the bad state cannot reach the resolver. `TaskPlacement` is removed. `Graph.ordinal(placing:inColumn:moving:resolvingWith:)` switches on `Placement`.
+    - Graphiti decodes the input inside the field resolver, so the error is the error of the field, and the field writes nothing.
+    - `InputField(_:at:)` needs a key path of the field type, so `MoveTaskInput` keeps computed `ordinal`, `before`, `after` properties that read from `placement`. The schema uses them for the field types.
+    - The old test `moveTaskOrdinalTakesPrecedence` checked the old rule (ordinal wins). It conflicted with the card; it is now `moveTaskToOrdinal` (an ordinal alone), so the one-field coverage stays.
+    - `addTask` has only `ordinal`: no other input has more than one place field. The tool description does not show `before`/`after`, so it did not change.
+    - plan.md: §4.2 `moveTask` row, §4.4 code list and one rule line, §6 `moveTask` rule.
+    - KanbanErrorTests: the code table has the new case; the test name says seventeen codes.
+    - periphery (`periphery scan --retain-public --report-exclude 'Tests/**' --relative-results -- --build-system native --build-tests`): No unused code detected.
+  timestamp: 2026-10-08T17:02:24.673477+00:00
+- actor: claude-code
+  id: 01m4e7eq80b2729t86s47xz6we
+  text: |-
+    ### implement — changed
+    - evidence: Sources/FoundationModelsKanban/GraphQL/TaskOperationMutations.swift, Sources/FoundationModelsKanban/GraphQL/Errors.swift, Tests/FoundationModelsKanbanTests/Mutations/TaskOperationTests.swift, Tests/FoundationModelsKanbanTests/GraphQL/KanbanErrorTests.swift, plan.md. Error code CONFLICTING_PLACEMENT. `swift build --build-tests`: only the accepted mlx "missing creator" warning. `swift test --skip-build` 3 runs: 985 tests in 68 suites passed each time (8.05 s, 8.17 s, 7.77 s). periphery: no unused code.
+    - next: /review
+  timestamp: 2026-10-08T17:02:27.072044+00:00
+position_column: doing
+position_ordinal: '80'
 title: 'moveTask: error when the input gives both before and after'
 ---
 ## What
@@ -14,12 +49,12 @@ A person said on 2026-10-08: "both before and after at the same time is nonsense
 - Update plan.md §4.2 (`moveTask`) and the tool description if it shows `before`/`after`.
 
 ## Acceptance Criteria
-- [ ] `moveTask` with `before` and `after` gives the error and writes no event; the same for `ordinal` with `before` or `after`.
-- [ ] `moveTask` with one place field, or none, works as before.
+- [x] `moveTask` with `before` and `after` gives the error and writes no event; the same for `ordinal` with `before` or `after`.
+- [x] `moveTask` with one place field, or none, works as before.
 
 ## Tests
-- [ ] Add tests in the `moveTask` test suite for each pair of place fields, and check that the log has no new line.
-- [ ] Run the full `swift test`; expect all pass.
+- [x] Add tests in the `moveTask` test suite for each pair of place fields, and check that the log has no new line.
+- [x] Run the full `swift test`; expect all pass.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
