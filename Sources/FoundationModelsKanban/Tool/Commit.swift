@@ -86,9 +86,9 @@ extension ULID {
 /// The working copy of one run of a call (plan.md §5.4 steps 2 and 4, §12 item 25).
 ///
 /// The working copy starts as a copy-on-write copy of the live graph. Each mutation field runs with
-/// ``runField(as:_:)``: it makes patches, applies them with ``apply(_:at:undoing:)``, checks the graph rules, and
-/// keeps the patches. A field that throws discards only its own patches and its own changes to the graph. The live
-/// graph does not change until the commit succeeds.
+/// ``runField(as:reading:_:)``: it makes patches, applies them with ``apply(_:at:undoing:)``, checks the graph rules,
+/// and keeps the patches. A field that throws discards only its own patches and its own changes to the graph. The
+/// live graph does not change until the commit succeeds.
 struct WorkingCopy: Sendable {
     /// The graph after the kept patches.
     private(set) var graph: Graph
@@ -117,6 +117,15 @@ struct WorkingCopy: Sendable {
     /// is not known before the call, so it is not assigned.
     let knownSessionActor: LocalRef?
 
+    /// The other boards as the graph rules of a field read them: the related boards of the run, with the working
+    /// graph of each board that the run changed (plan.md §3.3 rule 6, §6.6). ``runField(as:reading:_:)`` gives them
+    /// to each field. A working copy that runs no field reads no other board.
+    private(set) var otherBoards = RelatedBoards.unavailable
+
+    /// The canonical paths of the repo directories of the other boards that a graph rule of a kept field read. The
+    /// commit locks and checks these boards too (plan.md §5.4 steps 4.4 and 5.1).
+    private(set) var readBoards: Set<String> = []
+
     /// Makes the working copy of a run.
     ///
     /// - Parameters:
@@ -139,14 +148,17 @@ struct WorkingCopy: Sendable {
     /// - Parameters:
     ///   - operation: The name of the public mutation of the field, for the `ops` of the events, or `nil` for a
     ///     field that is not a public mutation (the internal `patch` mutation).
+    ///   - boards: The other boards as the graph rules of the field read them.
     ///   - body: Makes and applies the patches of the field, and checks the graph rules.
     /// - Returns: The value of the body.
     /// - Throws: The error of the body. Then the working copy does not change.
     mutating func runField<Value, Failure: Error>(
         as operation: String?,
+        reading boards: RelatedBoards,
         _ body: (inout WorkingCopy) throws(Failure) -> Value
     ) throws(Failure) -> Value {
         var field = self
+        field.otherBoards = boards
         let value = try body(&field)
         if let operation, field.kept.count > kept.count {
             field.operations.append(operation)
@@ -165,16 +177,19 @@ struct WorkingCopy: Sendable {
     /// - Parameters:
     ///   - operation: The name of the public mutation of the field, for the `ops` of the events.
     ///   - other: The working copy of the board that the field changes.
+    ///   - boards: The other boards as the graph rules of the field read them.
     ///   - body: Makes and applies the patches of the field, and checks the graph rules.
     /// - Returns: The value of the body.
     /// - Throws: The error of the body. Then the two working copies do not change.
     mutating func runField<Value, Failure: Error>(
         as operation: String,
         on other: inout WorkingCopy,
+        reading boards: RelatedBoards,
         _ body: (inout WorkingCopy) throws(Failure) -> Value
     ) throws(Failure) -> Value {
         var field = other
         field.stamp = stamp
+        field.otherBoards = boards
         let value = try body(&field)
         if field.kept.count > other.kept.count {
             operations.append(operation)
@@ -201,6 +216,14 @@ struct WorkingCopy: Sendable {
     /// - Returns: `true` when an event changed the node.
     func hasEvents(of ref: LocalRef) -> Bool {
         nodeEvents[ref] != nil || liveEvents.contains { event in event.patch.node == ref }
+    }
+
+    /// Records the other boards that a graph rule of the field read, so that the commit locks and checks them
+    /// (plan.md §5.4 steps 4.4 and 5.1).
+    ///
+    /// - Parameter paths: The canonical paths of the repo directories of the boards.
+    mutating func record(readBoards paths: Set<String>) {
+        readBoards.formUnion(paths)
     }
 
     /// Applies one patch to the working copy (plan.md §5.4 steps 4.2 and 4.3).
@@ -350,8 +373,9 @@ struct CommitSession: Sendable {
     /// and the call runs again before it commits.
     ///
     /// A call that changes related boards (plan.md §6.6) commits all boards together: one lock of each changed
-    /// board in the sort order of the board key, one check of each changed board under the locks, and then the
-    /// append to each changed board. The engine gets the related sessions after each commit attempt.
+    /// board and of each board that a graph rule of the call read, in the sort order of the board key, one check of
+    /// each of these boards under the locks, and then the append to each changed board. The engine gets the related
+    /// sessions after each commit attempt.
     ///
     /// - Parameters:
     ///   - load: Loads the related boards of some requests, and gives the new related boards of the run. The value
@@ -375,7 +399,8 @@ struct CommitSession: Sendable {
             guard !work.kept.isEmpty || relatedWork.contains(where: \.hasPatches) else {
                 return response
             }
-            let attempt = try await commit(work, along: relatedWork)
+            let readOnlyWork = readOnlyWork(of: work, along: relatedWork, in: related)
+            let attempt = try await commit(work, along: relatedWork + readOnlyWork)
             await updateSearch()
             related = await store(attempt.relatedSessions, related)
             if case .committed = attempt {
@@ -430,6 +455,33 @@ struct CommitSession: Sendable {
         }
     }
 
+    /// Gives a working copy with no patch of each related board that a graph rule of a run read and that the run
+    /// did not change, so that the commit locks and checks the board too (plan.md §5.4 steps 4.4 and 5.1).
+    ///
+    /// - Parameters:
+    ///   - work: The working copy of the current board at the end of the run.
+    ///   - changed: The working copy of each related board that the run changed.
+    ///   - related: The related boards of the run.
+    /// - Returns: The working copies, in the sort order of the path of the repo directory.
+    private func readOnlyWork(
+        of work: WorkingCopy,
+        along changed: [RelatedWork],
+        in related: RelatedBoards
+    ) -> [RelatedWork] {
+        let known = Set(changed.map(\.path)).union([directory.canonicalPath])
+        return work.boardsRead(along: changed).subtracting(known).sorted().compactMap { path in
+            guard let session = related.session(atPath: path) else {
+                assertionFailure("A graph rule read the board at \(path), and the engine did not load it")
+                Log.kanban.error(
+                    "A graph rule read a board that the engine did not load",
+                    metadata: ["path": "\(path)"]
+                )
+                return nil
+            }
+            return RelatedWork(path: path, session: session, work: session.makeWorkingCopy(stampedBy: work.stamp))
+        }
+    }
+
     /// Makes a working copy of the live graph, with an empty board in memory when the board has no board node.
     ///
     /// - Parameter stamp: The envelope values of the events of the run. A working copy of a related board gets the
@@ -439,17 +491,18 @@ struct CommitSession: Sendable {
         WorkingCopy(graph: displayGraph, events: live.events, stamp: stamp)
     }
 
-    /// Writes the kept patches of a run under the locks of the boards that the run changed (plan.md §5.4 step 5).
+    /// Writes the kept patches of a run under the locks of the boards that the run changed or read for a graph rule
+    /// (plan.md §5.4 step 5).
     ///
-    /// The commit locks each changed board in the sort order of the board key. Under the locks, it compares the
-    /// signatures of the log files of each changed board with its live graph. When a log of one board changed, the
-    /// commit applies the changed files to the live graph of each changed board and writes nothing. Else it appends
-    /// the kept patches of each board with the `ops` of the full call and the keys of the other changed boards, and
-    /// each working copy becomes the live graph of its board.
+    /// The commit locks each of these boards in the sort order of the board key. Under the locks, it compares the
+    /// signatures of the log files of each locked board with its live graph. When a log of one board changed, the
+    /// commit applies the changed files to the live graph of each locked board and writes nothing. Else it appends
+    /// the kept patches of each changed board with the `ops` of the full call and the keys of the other changed
+    /// boards, and each working copy becomes the live graph of its board.
     ///
     /// - Parameters:
     ///   - work: The working copy of the current board at the end of the run.
-    ///   - related: The working copy of each related board that the run changed.
+    ///   - related: The working copy of each related board that the run changed or read for a graph rule.
     /// - Returns: The result: the patches are written, or a log changed and the call must run again. The result
     ///   holds the session of each related board after the attempt.
     /// - Throws: An ``EventLogError`` when a log file cannot be read, locked, or written.
@@ -457,18 +510,23 @@ struct CommitSession: Sendable {
         _ work: WorkingCopy,
         along related: [RelatedWork]
     ) async throws(EventLogError) -> CommitAttempt {
-        var writes = [BoardWrite(key: key, live: live, work: work)] + related.map(\.boardWrite)
-        let changedBoards = writes.indices.filter { index in writes[index].hasPatches }
-        let lock = try EventLog.lock(sortedByKey: changedBoards.map { index in writes[index].lockEntry })
+        let reads = work.boardsRead(along: related)
+        var writes = [BoardWrite(key: key, path: directory.canonicalPath, live: live, work: work)]
+            + related.map(\.boardWrite)
+        let lockedBoards = writes.indices.filter { index in
+            writes[index].hasPatches || reads.contains(writes[index].path)
+        }
+        let lock = try EventLog.lock(sortedByKey: lockedBoards.map { index in writes[index].lockEntry })
         var isLogChanged = false
-        for index in changedBoards {
+        for index in lockedBoards {
             let isChanged = try await writes[index].applyChangedFiles()
             isLogChanged = isLogChanged || isChanged
         }
         if !isLogChanged {
-            let keys = changedBoards.map { index in writes[index].key }
+            let changedBoards = writes.indices.filter { index in writes[index].hasPatches }
+            let keys = changedBoards.map { index in writes[index].key.description }
             for index in changedBoards {
-                try writes[index].append(recording: Array(work.operations), withBoards: keys)
+                try writes[index].append(recording: Array(work.operations), changing: keys)
             }
         }
         lock.unlock()
@@ -509,10 +567,14 @@ private enum CommitAttempt {
     }
 }
 
-/// One board of a commit: its key, its live graph, and the working copy of the run (plan.md §5.4 step 5).
+/// One board of a commit: its key, its repo directory, its live graph, and the working copy of the run (plan.md §5.4
+/// step 5).
 private struct BoardWrite {
     /// The key of the board.
     let key: BoardKey
+
+    /// The canonical path of the repo directory of the board.
+    let path: String
 
     /// The live graph of the board.
     var live: LiveGraph
@@ -550,10 +612,9 @@ private struct BoardWrite {
     ///   - operations: The names of the public mutations of the full call.
     ///   - keys: The keys of all boards that the call changed. Each event records the keys of the other boards.
     /// - Throws: An ``EventLogError`` when a log file cannot be written or read.
-    mutating func append(recording operations: [String], withBoards keys: [BoardKey]) throws(EventLogError) {
-        let others = Set(keys.filter { other in other != key }.map(\.description)).sorted()
+    mutating func append(recording operations: [String], changing keys: [String]) throws(EventLogError) {
         let written = work.kept.map { event in
-            event.recording(operations: operations, boards: others.isEmpty ? nil : others)
+            event.recording(operations: operations, changing: keys, inBoard: key.description)
         }
         for (ref, events) in OrderedDictionary(grouping: written, by: \.patch.node) {
             try live.log.append(contentsOf: events, toLogOf: ref)
@@ -564,7 +625,8 @@ private struct BoardWrite {
 
 // MARK: - Related work
 
-/// The working copy of one related board that a run changes (plan.md §6.6).
+/// The working copy of one related board that a run changes, or that a graph rule of the run reads (plan.md §5.4,
+/// §6.6).
 struct RelatedWork: Sendable {
     /// The canonical path of the repo directory of the board.
     let path: String
@@ -587,19 +649,42 @@ struct RelatedWork: Sendable {
 
     /// The board as the commit writes it.
     fileprivate var boardWrite: BoardWrite {
-        BoardWrite(key: session.key, live: session.live, work: work)
+        BoardWrite(key: session.key, path: path, live: session.live, work: work)
+    }
+}
+
+extension WorkingCopy {
+    /// Gives the other boards that a graph rule of the run read: in this working copy, or in the working copy of a
+    /// related board of the run.
+    ///
+    /// - Parameter related: The working copy of each related board of the run.
+    /// - Returns: The canonical paths of the repo directories of the boards.
+    fileprivate func boardsRead(along related: [RelatedWork]) -> Set<String> {
+        related.reduce(readBoards) { reads, board in reads.union(board.work.readBoards) }
     }
 }
 
 extension Event {
-    /// Gives this event with the `ops` and the `boards` of the full call.
+    /// Gives this event with the `ops` and the `boards` of the full call (plan.md §5.1). The `boards` value holds the
+    /// sorted keys of the other boards that the call changes, or `nil` when the call changes one board.
     ///
     /// - Parameters:
     ///   - operations: The names of the public mutations of the call.
-    ///   - boards: The keys of the other boards that the call changes, or `nil` when the call changes one board.
+    ///   - keys: The keys of all boards that the call changes.
+    ///   - key: The key of the board of the log of the event. The `boards` value does not hold it.
     /// - Returns: The event with the operations and the boards, and the same other values.
-    func recording(operations: [String], boards: [String]?) -> Event {
-        Event(id: id, txn: txn, ops: operations, at: at, actor: actor, boards: boards, undoes: undoes, patch: patch)
+    func recording(operations: [String], changing keys: [String], inBoard key: String) -> Event {
+        let others = Set(keys).subtracting([key]).sorted()
+        return Event(
+            id: id,
+            txn: txn,
+            ops: operations,
+            at: at,
+            actor: actor,
+            boards: others.isEmpty ? nil : others,
+            undoes: undoes,
+            patch: patch
+        )
     }
 }
 

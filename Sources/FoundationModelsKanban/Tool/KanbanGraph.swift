@@ -306,7 +306,9 @@ public actor KanbanGraph {
 
     /// Loads the related boards that a run of a call asks for, and gives the related boards of the next run (plan.md
     /// §6.6). The loop also loads each board that a cross-board dependency of a loaded board names, so that the
-    /// readiness of a task of a related board reads its own dependencies.
+    /// readiness of a task of a related board reads its own dependencies. The result holds each loaded related board,
+    /// also when the run asks for no board, because `undo` and `redo` with no `txn` search the loaded boards (plan.md
+    /// §6.5, scope).
     ///
     /// - Parameters:
     ///   - related: The related boards of the run.
@@ -320,7 +322,7 @@ public actor KanbanGraph {
         toAnswer requests: Set<BoardRequest>,
         currentKey key: BoardKey
     ) async throws -> RelatedBoards {
-        var updated = related
+        var updated = withLoadedBoards(related)
         var pending = requests
         while !pending.isEmpty {
             for request in pending where !updated.satisfies([request]) {

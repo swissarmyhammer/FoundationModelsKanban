@@ -344,23 +344,23 @@ extension WorkingCopy {
             .map { target in target.uri(inBoard: key) }
     }
 
-    /// Checks that no `dependsOn` cycle goes through a task (plan.md §3.3, rule 6).
+    /// Checks that no `dependsOn` cycle goes through a task (plan.md §3.3, rule 6). The check reads each board on the
+    /// path of the walk: this board from the working graph, and each other board from ``otherBoards``. It records
+    /// each other board that it read in ``readBoards``, so that the commit locks and checks it (plan.md §5.4).
     ///
     /// - Parameters:
     ///   - ref: The local ref of the task.
     ///   - key: The current key of the board.
-    /// - Throws: ``KanbanError/dependencyCycle(path:)`` with the short id of each task on the cycle.
-    func checkNoCycle(throughTask ref: LocalRef, inBoard key: String) throws(KanbanError) {
-        guard
-            let slot = graph.slot(for: ref),
-            let cycle = Readiness(of: graph, inBoard: key).cycle(throughTaskAt: slot)
-        else {
+    /// - Throws: ``KanbanError/dependencyCycle(path:)`` with each task on the cycle: the short id of a task of this
+    ///   board, and the full URI of a task of a different board.
+    mutating func checkNoCycle(throughTask ref: LocalRef, inBoard key: String) throws(KanbanError) {
+        var walk = DependencyWalk(of: graph, inBoard: key, reading: otherBoards)
+        let cycle = walk.cycle(throughTask: ref)
+        record(readBoards: walk.readBoards)
+        guard let cycle else {
             return
         }
-        let path = cycle.compactMap { step in graph.node(at: step, as: TaskNode.self) }.map { task in
-            "\(ShortID.sigil)\(ShortID(of: task.id).value)"
-        }
-        throw .dependencyCycle(path: path)
+        throw .dependencyCycle(path: walk.path(of: cycle))
     }
 }
 

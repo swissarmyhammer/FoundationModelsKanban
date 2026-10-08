@@ -1,9 +1,43 @@
 ---
+comments:
+- actor: wballard
+  id: 01m4czse88rnw712t83tgsn0t4
+  text: |-
+    Picked up. Research done. Findings:
+    - The one commit path is `CommitSession.run` -> `runReading` -> `commit(_:along:)`. It locks and checks only the boards with kept patches. A board that a graph rule only reads is not locked now, so the cross-board cycle rule of §5.4 step 4.4/5.1 is open.
+    - `WorkingCopy.checkNoCycle` uses `Readiness(of: graph, inBoard: key).cycle(throughTaskAt:)` with `RelatedBoards.unavailable`. Thus a cycle through a different board is not found. `Readiness.cycle` has no other caller.
+    - The field bodies get only `(work, resolver, time)`. The store holds the related boards as the run sees them (`BoardStore.reading`).
+    - `undo`/`redo` (`BoardStore.reverse`) run on the current board only, with `runMutation(named:at:)`, and record `boards: nil` in the Change. `UndoInput` has no `board` field.
+    - `RelatedBoards` holds the session of each loaded related board by canonical path; `BoardStore.target(of:)` resolves a board key and records a load request when the board is not loaded.
+    - `KanbanGraph.close()` stops the file watchers, and a later call still reads the graphs in memory. Two engines on the same repos, with the watchers of the second one closed, give a deterministic stale read for the concurrent cycle test, with no timing.
+    Plan: (1) a cross-board dependency walk that reads the other boards through `RelatedBoards` and records the canonical path of each board it reads in the working copy; (2) the commit locks and checks the read boards too (one commit path, read-only boards get a working copy with no patches); (3) `reverse` searches the current and the loaded boards, then reverses the transaction in each board of its `boards` list in one field, all or nothing, with `NOT_FOUND` for a missing board; (4) `board` field on the undo input.
+  timestamp: 2026-10-08T05:29:15.272101+00:00
+- actor: wballard
+  id: 01m4d0n6gpnzgq83d6n15htv64
+  text: |-
+    ### Design choices (not in plan.md)
+    - Cross-board cycle walk: new `DependencyWalk` (Derived/DependencyWalk.swift) replaces `Readiness.cycle(throughTaskAt:)`. It reads the board of the field from the working graph, and each other board from `RelatedBoards`. It records the canonical path of each other board that it reads. `WorkingCopy.checkNoCycle` uses it.
+    - The `DEPENDENCY_CYCLE` path shows a task of the board of the field as `^shortid`, and a task of a different board as its full URI.
+    - `WorkingCopy` gets `otherBoards` (the related boards as the graph rules of a field read them; `runField(as:reading:_:)` and `runField(as:on:reading:_:)` set it at the start of each field) and `readBoards` (the paths that a graph rule of a kept field read).
+    - One commit path: `CommitSession.run` adds a working copy with no patch for each read board that the run did not change (`readOnlyWork`), and `commit(_:along:)` locks and checks each board that has patches or that a graph rule read. Only the changed boards are appended. The engine stores the session of each read board after the attempt, so a rerun sees the changed files.
+    - `undo`/`redo`: the store searches the board of the `board` input field, else the current board and the loaded related boards (`BoardStore.loadedTargets`), takes the newest target, and reads the `boards` value of the transaction for the other boards. `BoardStore.runField(as:inEach:_:)` runs the field in each board one after the other, and restores all working copies when one board throws (all or nothing). A board where the inverse writes nothing is not an error; the field gives `NOTHING_TO_UNDO` only when no board changed. The returned `Change` is the change of the first board, with the node updates of the other boards added.
+    - `KanbanGraph.relatedBoards(updating:...)` now installs the loaded related boards also when the run asks for no board. Before, a run with no request got no loaded board, so `undo` with no `txn` could not search the loaded boards.
+    - Dead code removed: `BoardStore.runMutation(named:at:_:)` (current board only) and `ReverseRequest`. `Event.recording(operations:boards:)` is now `recording(operations:changing:inBoard:)`, shared by the commit and the undo change.
+    - Tests: `KanbanGraphTests.makeGraph` and `GitGraphFixture.makeGraph` get a `mintingFrom` parameter, and `GitGraphFixture.secondEngineIDs` gives a second engine ids that sort after the first engine. Two engines with one `FixedULIDSource` mint the same ids, and then an undo of engine 2 wrote events with the txn of the original call (first failure of the `undo(txn:, board:)` test).
+    - The concurrent cycle test is deterministic: the second engine loads both boards and then `close()` stops its file watchers, so only the commit check under the locks can see the write of the first engine. A mutation check (lock only the changed boards) made this test fail, so the read-board lock is load-bearing.
+  timestamp: 2026-10-08T05:44:24.854527+00:00
+- actor: wballard
+  id: 01m4d0n9ph7ff63qr9bhxhxe98
+  text: |-
+    ### implement — changed
+    - evidence: new Sources/FoundationModelsKanban/Derived/DependencyWalk.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoUndoTests.swift (5 tests), Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoCycleTests.swift (2 tests); changed Tool/Commit.swift, Tool/KanbanGraph.swift, GraphQL/Schema.swift, GraphQL/UndoMutations.swift, GraphQL/TaskMutations.swift, GraphQL/MutationResolvers.swift, CrossRepo/RelatedBoards.swift, Derived/Readiness.swift, Tests/.../Tool/KanbanGraphTests.swift, Tests/.../Tool/GitGraphFixture.swift. All 7 new tests failed first on assertions. `swift build --build-tests`: only the accepted SwiftPM "missing creator" warning. Periphery: no unused code. Full `swift test --skip-build` 3 times with a 120 s limit: 939 tests in 63 suites passed each time (about 9 s, 15 s, 9 s).
+    - next: /review
+  timestamp: 2026-10-08T05:44:28.113406+00:00
 depends_on:
 - 01M4B433B8HKKXX0A08K77YCNF
 - 01M4B42D1RWYD5DV5CSMBNXMJ3
-position_column: todo
-position_ordinal: b180
+position_column: doing
+position_ordinal: '8180'
 title: 'Cross-repo: cycle check and cross-board undo'
 ---
 ## What
@@ -13,13 +47,13 @@ The cross-board rules that need many boards at one time. The basis is plan.md §
 - `undo`/`redo` with no `txn` search the current board and the loaded boards only, and do not load other boards. The `board` input field selects a board for `undo(txn:, board:)` in a board that is not loaded.
 
 ## Acceptance Criteria
-- [ ] One call that changes two boards is reversed by one `undo`.
-- [ ] With one board missing, `undo` gives `NOT_FOUND` and writes nothing.
-- [ ] Two processes that add the two halves of a cross-board cycle at the same time: one call gets `DEPENDENCY_CYCLE` after its commit check.
+- [x] One call that changes two boards is reversed by one `undo`.
+- [x] With one board missing, `undo` gives `NOT_FOUND` and writes nothing.
+- [x] Two processes that add the two halves of a cross-board cycle at the same time: one call gets `DEPENDENCY_CYCLE` after its commit check.
 
 ## Tests
-- [ ] `Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoUndoTests.swift` and `CrossRepoCycleTests.swift`, with two temporary git repos side by side.
-- [ ] Run `swift test --filter CrossRepoUndoTests` and `--filter CrossRepoCycleTests`; expect all pass.
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoUndoTests.swift` and `CrossRepoCycleTests.swift`, with two temporary git repos side by side.
+- [x] Run `swift test --filter CrossRepoUndoTests` and `--filter CrossRepoCycleTests`; expect all pass.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.

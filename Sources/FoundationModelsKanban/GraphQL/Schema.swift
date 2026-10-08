@@ -187,7 +187,7 @@ actor BoardStore {
         as operation: String?,
         _ body: (inout WorkingCopy) throws(Failure) -> Value
     ) throws(Failure) -> Value {
-        try work.runField(as: operation, body)
+        try work.runField(as: operation, reading: reading, body)
     }
 
     // MARK: - Boards of the mutation fields
@@ -222,16 +222,67 @@ actor BoardStore {
     ///   - reference: The board ref that names the copy.
     /// - Returns: The board, or `nil` when the engine did not load the copy yet. The store then records the request.
     private func relatedTarget(of copy: BoardCopy, namedBy reference: String) -> MutationTarget? {
-        let path = copy.directory.canonicalPath
-        if let board = relatedWork[path] {
-            return .related(board)
-        }
         guard let session = related.session(of: copy) else {
             requests.insert(.board(reference))
             return nil
         }
-        let board = RelatedWork(path: path, session: session, work: session.makeWorkingCopy(stampedBy: work.stamp))
-        return .related(board)
+        return relatedTarget(of: session, atPath: copy.directory.canonicalPath)
+    }
+
+    /// Gives the working copy of a loaded related board for a mutation field: the working copy of the run when an
+    /// earlier field changed the board, else a new working copy of its session.
+    ///
+    /// - Parameters:
+    ///   - session: The session of the board.
+    ///   - path: The canonical path of the repo directory of the board.
+    /// - Returns: The board.
+    private func relatedTarget(of session: CommitSession, atPath path: String) -> MutationTarget {
+        .related(
+            relatedWork[path]
+                ?? RelatedWork(path: path, session: session, work: session.makeWorkingCopy(stampedBy: work.stamp))
+        )
+    }
+
+    /// The current board and each loaded related board, as the targets of a mutation field: the boards that `undo`
+    /// and `redo` with no board ref search (plan.md §6.5, scope). The list loads no board.
+    var loadedTargets: [MutationTarget] {
+        [.current] + related.loadedSessions.map { board in relatedTarget(of: board.session, atPath: board.path) }
+    }
+
+    /// Gives the working copy of a board of a mutation field as the run sees it now.
+    ///
+    /// - Parameter target: The board.
+    /// - Returns: The working copy.
+    func workingCopy(of target: MutationTarget) -> WorkingCopy {
+        switch target {
+        case .current: work
+        case .related(let board): relatedWork[board.path]?.work ?? board.work
+        }
+    }
+
+    /// Gives the current key of a board of a mutation field.
+    ///
+    /// - Parameter target: The board.
+    /// - Returns: The key.
+    private func key(of target: MutationTarget) -> String {
+        switch target {
+        case .current: boardKey
+        case .related(let board): board.session.key.description
+        }
+    }
+
+    /// Gives the read view of a board of a mutation field as the run sees it now.
+    ///
+    /// - Parameter target: The board.
+    /// - Returns: The read view.
+    private func view(of target: MutationTarget) -> BoardView {
+        switch target {
+        case .current:
+            view
+        case .related(let board):
+            BoardSnapshot(key: key(of: target), graph: workingCopy(of: target).graph, source: board.session.source)
+                .view(reading: reading)
+        }
     }
 
     /// Runs one mutation field on the working copy of a board: the current board or a related board (plan.md §6.6).
@@ -249,18 +300,68 @@ actor BoardStore {
         in target: MutationTarget,
         _ body: (inout WorkingCopy, String) throws -> Value
     ) throws -> (value: Value, view: BoardView) {
+        let key = key(of: target)
         switch target {
         case .current:
-            let key = boardKey
-            let value = try work.runField(as: operation) { work in try body(&work, key) }
+            let value = try work.runField(as: operation, reading: reading) { work in try body(&work, key) }
             return (value, view)
         case .related(var board):
-            let key = board.session.key.description
-            let value = try work.runField(as: operation, on: &board.work) { work in try body(&work, key) }
+            board.work = workingCopy(of: target)
+            let value = try work.runField(as: operation, on: &board.work, reading: reading) { work in
+                try body(&work, key)
+            }
             relatedWork[board.path] = board
-            return (value, board.snapshot.view(reading: reading))
+            return (value, view(of: target))
         }
     }
+
+    /// Runs one mutation field on the working copies of many boards, one board after the other (plan.md §6.5, many
+    /// boards). Each board runs with the changes of the boards before it. When the body throws for one board, the
+    /// field keeps none of its patches in any board.
+    ///
+    /// - Parameters:
+    ///   - operation: The name of the public mutation of the field.
+    ///   - targets: The boards of the field, each one time.
+    ///   - body: Makes and applies the patches of the field in one board, and checks the graph rules. It gets the
+    ///     working copy of the board and the current key of the board.
+    /// - Returns: The change of the field in each board, in the order of the boards.
+    /// - Throws: The error of the body. Then no working copy changes.
+    func runField(
+        as operation: String,
+        inEach targets: [MutationTarget],
+        _ body: (inout WorkingCopy, String) throws -> Void
+    ) throws -> [BoardFieldChange] {
+        let (savedWork, savedRelatedWork) = (work, relatedWork)
+        do {
+            return try targets.map { target in
+                let before = view(of: target)
+                let keptCount = workingCopy(of: target).kept.count
+                let after = try runField(as: operation, in: target, body).view
+                let kept = Array(workingCopy(of: target).kept.dropFirst(keptCount))
+                return BoardFieldChange(key: key(of: target), events: kept, before: before, after: after)
+            }
+        } catch {
+            work = savedWork
+            relatedWork = savedRelatedWork
+            throw error
+        }
+    }
+}
+
+/// The change of one mutation field in one board of ``BoardStore/runField(as:inEach:_:)``: the events that the field
+/// kept in the board, and the read views of the board before and after the field.
+struct BoardFieldChange {
+    /// The current key of the board.
+    let key: String
+
+    /// The events that the field kept in the board, in the order of their ids. They have no `ops` yet.
+    let events: [Event]
+
+    /// The read view of the board before the field.
+    let before: BoardView
+
+    /// The read view of the board after the field.
+    let after: BoardView
 }
 
 /// The board that one mutation field writes to, as the run sees it (plan.md §6.6).

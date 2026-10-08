@@ -178,7 +178,7 @@ struct DefaultColumn: Sendable {
 extension KanbanResolver {
     /// Resolves `Mutation.initBoard`: makes the board, or changes the given fields of a board that exists.
     ///
-    /// The auto-init of ``BoardStore/runMutation(named:at:_:)`` makes a new board. On a board that exists, the
+    /// The auto-init of ``BoardStore/runMutation(named:on:at:_:)`` makes a new board. On a board that exists, the
     /// mutation writes only the given fields that differ, and adds no column (plan.md §4.2).
     ///
     /// - Parameters:
@@ -231,27 +231,6 @@ extension KanbanResolver {
 // MARK: - Store
 
 extension BoardStore {
-    /// Runs one public mutation field on the working copy of the current board, with the rules that each public
-    /// mutation obeys (``WorkingCopy/applyMutationRules(actingAs:at:_:)``).
-    ///
-    /// - Parameters:
-    ///   - operation: The name of the public mutation of the field.
-    ///   - time: The time of the change.
-    ///   - body: Makes and applies the patches of the field, and checks the graph rules.
-    /// - Returns: The value of the body.
-    /// - Throws: The error of the body, or an ``EventError`` when a patch breaks a rule of the log. Then the field
-    ///   keeps none of its patches.
-    func runMutation<Value: Sendable>(
-        named operation: String,
-        at time: DateTime,
-        _ body: (inout WorkingCopy) throws -> Value
-    ) throws -> Value {
-        let actor = sessionActor
-        return try runField(as: operation) { work in
-            try work.applyMutationRules(actingAs: actor, at: time, body)
-        }
-    }
-
     /// Runs one public mutation field on the working copy of the board that the field names: the current board or
     /// a related board (plan.md §6.6). The field obeys the rules of each public mutation in that board
     /// (``WorkingCopy/applyMutationRules(actingAs:at:_:)``), and its refs resolve in that board.

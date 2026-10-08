@@ -166,7 +166,21 @@ struct RelatedBoards: Sendable {
     /// - Parameter copy: The copy.
     /// - Returns: The session, or `nil` when the engine did not load the copy.
     func session(of copy: BoardCopy) -> CommitSession? {
-        sessions[copy.directory.canonicalPath]
+        session(atPath: copy.directory.canonicalPath)
+    }
+
+    /// Gives the session of a loaded related board.
+    ///
+    /// - Parameter path: The canonical path of the repo directory of the board.
+    /// - Returns: The session, or `nil` when the engine did not load the board.
+    func session(atPath path: String) -> CommitSession? {
+        sessions[path]
+    }
+
+    /// The session of each loaded related board with the canonical path of its repo directory, in the sort order of
+    /// the path. `undo` and `redo` with no board ref search these boards (plan.md §6.5, scope).
+    var loadedSessions: [(path: String, session: CommitSession)] {
+        sessions.sorted { lhs, rhs in lhs.key < rhs.key }.map { path, session in (path, session) }
     }
 
     // MARK: - Reads

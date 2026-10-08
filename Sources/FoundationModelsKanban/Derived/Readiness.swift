@@ -154,32 +154,6 @@ extension Readiness {
         return false
     }
 
-    /// Finds the shortest `dependsOn` cycle through a task (plan.md §3.3, rule 6). A mutation that writes a dependency
-    /// of the task uses it to refuse the cycle. The walk reads the edges and the markers, and it stops at each task
-    /// that it already visited.
-    ///
-    /// - Parameter slot: The slot of the task.
-    /// - Returns: The slots on the cycle: the task, each task on the walk, and the task again. `nil` when no walk from
-    ///   the task comes back to the task.
-    func cycle(throughTaskAt slot: Int) -> [Int]? {
-        var parents: [Int: Int] = [:]
-        var pending = [slot]
-        var index = pending.startIndex
-        while index < pending.endIndex {
-            let current = pending[index]
-            index += 1
-            for next in dependencySlots(ofTaskAt: current) where parents[next] == nil {
-                guard next != slot else {
-                    return Array(sequence(first: current) { step in step == slot ? nil : parents[step] }.reversed())
-                        + [slot]
-                }
-                parents[next] = current
-                pending.append(next)
-            }
-        }
-        return nil
-    }
-
     /// Gives the slots of the dependencies of a task that the graph has.
     ///
     /// - Parameter slot: The slot of the task.

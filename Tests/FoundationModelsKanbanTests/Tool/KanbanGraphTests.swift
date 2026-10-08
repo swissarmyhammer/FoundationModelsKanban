@@ -77,12 +77,13 @@ struct KanbanGraphTests {
         boardKey
     }
 
-    /// Makes an engine for a repo, with the fixed clock, a session actor, and the fixed ULID source.
+    /// Makes an engine for a repo, with the fixed clock, a session actor, and a fixed ULID source.
     ///
     /// - Parameters:
     ///   - root: The root directory of the repo.
     ///   - keyReader: Gives the key of the board. The default is ``fakeKey(ofRepoAt:)``.
     ///   - actor: The session actor. The default is ``sessionActor``.
+    ///   - ids: The source of the transaction ULIDs and the event ids. The default is ``mutationIDs``.
     ///   - locator: Finds the related boards. The default looks only in the parent directory of the repo.
     ///   - observer: Gets a call when each call starts and ends, or `nil` for no calls.
     ///   - batchObserver: Gets a call when the file watcher applies a batch, or `nil` for no calls.
@@ -91,6 +92,7 @@ struct KanbanGraphTests {
         at root: URL,
         readingKeyWith keyReader: @escaping BoardKeyReader = fakeKey,
         actingAs actor: SessionActor = sessionActor,
+        mintingFrom ids: FixedULIDSource = mutationIDs,
         locatedBy locator: BoardLocator = .default,
         reportingTo observer: (any KanbanCallObserver)? = nil,
         observingBatchesWith batchObserver: (any LiveGraphObserver)? = nil
@@ -100,7 +102,7 @@ struct KanbanGraphTests {
             readingKeyWith: keyReader,
             timedBy: { time },
             actingAs: actor,
-            mintingFrom: mutationIDs,
+            mintingFrom: ids,
             locatedBy: locator,
             reportingTo: observer,
             observingBatchesWith: batchObserver
