@@ -40,6 +40,40 @@ struct SubscriptionTests {
     /// The name of the public mutation of a title change.
     static let updateTask = "updateTask"
 
+    /// One filter of a subscription to the fixture board, whether the test adds an other task before the title change
+    /// of the fixture task, and what the case proves. For each case, the expected outcome is the same: the next event
+    /// of the subscription is the event of the title change of the fixture task.
+    struct TitleFilterCase: Sendable, CustomTestStringConvertible {
+        /// Gives the filter text from the ULID of the fixture task.
+        let filter: @Sendable (ULID) -> String
+
+        /// `true` when the test adds an other task before the title change. The filter must leave out the change of
+        /// that task.
+        let addsOtherTaskFirst: Bool
+
+        /// What the case proves.
+        let proves: String
+
+        /// The name of the case in the test output.
+        var testDescription: String {
+            proves
+        }
+    }
+
+    /// The cases of ``filteredSubscriptionSendsTitleChange(filterCase:)``.
+    static let titleFilterCases = [
+        TitleFilterCase(
+            filter: { task in AddUpdateTaskTests.sigilRef(of: task) },
+            addsOtherTaskFirst: true,
+            proves: "A change with no update that matches the ^id filter is not sent"
+        ),
+        TitleFilterCase(
+            filter: { _ in "!~actor" },
+            addsOtherTaskFirst: false,
+            proves: "A subscription with a filter that does not name DONE sends the change of a done task"
+        ),
+    ]
+
     // MARK: - Helpers
 
     /// Makes a subscription document with ``selection``.
@@ -239,14 +273,19 @@ struct SubscriptionTests {
         await graph.close()
     }
 
-    @Test("A change with no update that matches the ^id filter is not sent")
-    func changeWithNoMatchingUpdateIsNotSent() async throws {
+    @Test(
+        "The next event of a filtered subscription is the title change of the fixture task",
+        arguments: titleFilterCases
+    )
+    func filteredSubscriptionSendsTitleChange(filterCase: TitleFilterCase) async throws {
         let directory = try TemporaryDirectory()
         let task = try KanbanGraphTests.writeFixture(inRepoAt: directory.url).task
         let graph = try KanbanGraphTests.makeGraph(at: directory.url)
-        let arguments = #"(filter: "\#(AddUpdateTaskTests.sigilRef(of: task))")"#
+        let arguments = #"(filter: "\#(filterCase.filter(task))")"#
         let stream = try await Self.subscribe(Self.subscription(arguments), on: graph)
-        _ = try await CrossRepoFixture.addTask(with: "", on: graph)
+        if filterCase.addsOtherTaskFirst {
+            _ = try await CrossRepoFixture.addTask(with: "", on: graph)
+        }
         let expected = try await Self.changeTitle(of: task, to: KanbanGraphTests.laterTitle, on: graph)
         #expect(try await Self.events(Self.oneEvent, of: stream) == [expected])
         await graph.close()
@@ -262,17 +301,6 @@ struct SubscriptionTests {
         _ = try await CommentTests.run(TaskOperationTests.taskField(MutationName.undeleteTask, of: task), on: graph)
         let secondDelete = try await Self.deleteTask(task, on: graph)
         #expect(try await Self.events(Self.twoEvents, of: stream) == [firstDelete, secondDelete])
-        await graph.close()
-    }
-
-    @Test("A subscription with a filter that does not name DONE sends the change of a done task")
-    func filterWithNoDoneAtomSendsDoneTask() async throws {
-        let directory = try TemporaryDirectory()
-        let task = try KanbanGraphTests.writeFixture(inRepoAt: directory.url).task
-        let graph = try KanbanGraphTests.makeGraph(at: directory.url)
-        let stream = try await Self.subscribe(Self.subscription(#"(filter: "!~actor")"#), on: graph)
-        let expected = try await Self.changeTitle(of: task, to: KanbanGraphTests.laterTitle, on: graph)
-        #expect(try await Self.events(Self.oneEvent, of: stream) == [expected])
         await graph.close()
     }
 
