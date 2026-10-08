@@ -190,14 +190,11 @@ struct BoardLocatorTests {
         let app = try await sandbox.makeRepo(named: Self.appName, origin: Self.appOrigin)
         _ = try await sandbox.makeRepo(named: Self.libName, origin: Self.libOrigin)
         let reader = CountingKeyReader()
-        let first = try await BoardLocator.default.scan(around: app) { root throws(BoardKeyError) in
-            try await reader.key(ofRepoAt: root)
-        }
+        let readKey: BoardKeyReader = reader.keyReader
+        let first = try await BoardLocator.default.scan(around: app, readingKeysWith: readKey)
         #expect(reader.readCount == Self.firstScanReads)
         let newRepo = try await sandbox.makeRepo(named: "new-lib", origin: Self.newOrigin)
-        let second = try await BoardLocator.default.scan(around: app, reusing: first) { root throws(BoardKeyError) in
-            try await reader.key(ofRepoAt: root)
-        }
+        let second = try await BoardLocator.default.scan(around: app, reusing: first, readingKeysWith: readKey)
         #expect(reader.readCount == Self.firstScanReads + 1)
         #expect(try Self.copy(at: newRepo, in: second).key == Self.key(of: Self.newOrigin))
     }
@@ -305,6 +302,11 @@ final class CountingKeyReader: Sendable {
     init(blockingFirstReadOf blocked: URL? = nil) {
         blockedPath = blocked?.canonicalPath
         (blockedReads, blockedReadStarts) = AsyncStream.makeStream()
+    }
+
+    /// The reader as a ``BoardKeyReader`` for a scan or a graph: each call gives ``key(ofRepoAt:)``.
+    var keyReader: BoardKeyReader {
+        { root throws(BoardKeyError) in try await self.key(ofRepoAt: root) }
     }
 
     /// The number of reads so far.

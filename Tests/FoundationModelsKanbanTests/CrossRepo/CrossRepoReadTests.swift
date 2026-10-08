@@ -223,9 +223,7 @@ struct CrossRepoReadTests {
         let sandbox = try GitSandbox()
         let repos = try await BoardLocatorTests.TwoCopies.make(in: sandbox)
         let reader = CountingKeyReader(blockingFirstReadOf: repos.firstCopy)
-        let graph = try KanbanGraphTests.makeGraph(at: repos.current) { root throws(BoardKeyError) in
-            try await reader.key(ofRepoAt: root)
-        }
+        let graph = try KanbanGraphTests.makeGraph(at: repos.current, readingKeyWith: reader.keyReader)
         let key = try CrossRepoFixture.keyText(of: BoardLocatorTests.libOrigin)
         let cancelled = Task { try await Self.board("path", of: key, on: graph) }
         await reader.waitForBlockedRead()

@@ -66,6 +66,38 @@ comments:
     - evidence: Sources: CrossRepo/BoardLocator.swift, Tool/KanbanGraph.swift. Tests: CrossRepo/{BoardLocatorTests, CrossRepoFixture, CrossRepoReadTests, CrossRepoWriteTests, CrossRepoUndoTests, CrossRepoCycleTests, CrossRepoEventBoardTests, CrossRepoActorTests}.swift, Observe/SubscriptionTests.swift. Public API: no change (all changed declarations are internal or private). `swift build --build-tests`: only the accepted `missing creator` warning. swiftlint line_length / no_magic_numbers: 0 violations. periphery (`--retain-public -- --build-tests --build-system native`): no item in Sources; only older items in test files that this change does not touch. Root `timeout 120 swift test --skip-build` 3 runs: 964 tests in 67 suites passed each (11.1 s, 14.5 s, 18.6 s). IntegrationTests `swift build --build-tests && swift test` (300 s limit): 1 test passed. Findings: 2 of 2 checked.
     - next: /review
   timestamp: 2026-10-08T13:25:02.145519+00:00
+- actor: wballard
+  id: 01m4dvbbfhrtd60795c6v75h17
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (181438a) found 2 findings (2 confirmed, 0 refuted): Sources/FoundationModelsKanban/CrossRepo/BoardLocator.swift:118, Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift:198
+    - next: Correct the 2 open items in "Review Findings (2026-10-08 08:28)". Then run implement, test, commit, and review again.
+  timestamp: 2026-10-08T13:30:53.809780+00:00
+- actor: wballard
+  id: 01m4dvbmbnaxdmte1jmjsts7gq
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — BoardLocator.swift, KanbanGraph.swift, 9 test files; 2/2 prior findings checked
+    - test: green — root swift test 3 runs, 964 passed each (9.3 s, 9.1 s, 8.4 s); IntegrationTests 1 passed; no leftover git process; build warnings only the 2 accepted kinds
+    - commit: 181438a
+    - review: findings — Sources/FoundationModelsKanban/CrossRepo/BoardLocator.swift:118, Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift:198
+  timestamp: 2026-10-08T13:31:02.901237+00:00
+- actor: wballard
+  id: 01m4dvj6j1enmpzcpsybz7hy3r
+  text: |-
+    Findings of "Review Findings (2026-10-08 08:28)", implementation notes:
+    - Finding 1 (BoardLocator.swift:118, swift/immutability): the `var` accumulator and its `for` loop are removed. `keys(ofReposAt:)` now gives one expression: `try Dictionary(uniqueKeysWithValues: reads.map { read throws(BoardKeyError) in (read.key, try read.value.get()) }).compactMapValues { key in key }`.
+    - What did not work: `try reads.mapValues { try $0.get() }` and `try reads.compactMapValues { read throws(BoardKeyError) in ... }` do not compile in the `throws(BoardKeyError)` function. `Dictionary.mapValues` and `compactMapValues` are `rethrows`, so they throw `any Error` (Swift 6.4: "thrown expression type 'any Error' cannot be converted to error type 'BoardKeyError'"). `Sequence.map` has a typed throw (`throws(E)`), so the form above keeps `BoardKeyError`. `compactMapValues` with a closure that does not throw removes the `nil` keys (a repo whose key cannot be read), the same as the old `keys[path] = nil`. The keys are the keys of a dictionary, so `uniqueKeysWithValues` cannot trap.
+    - Other `var` accumulators in BoardLocator.swift: none. `group.reduce(into:)` is an expression; `let names: [String]` in `repos(in:)` is a `let` with a deferred value.
+    - Finding 2 (BoardLocatorTests.swift:198, duplication/duplication): the same closure was in 2 tests (`BoardLocatorTests.rescanReadsKeyOfNewRepoOnly`, 2 copies, and `CrossRepoReadTests.cancelledScanStoresNoIndex`, 1 copy). One helper now: `CountingKeyReader.keyReader: BoardKeyReader`. The rescan test declares `let readKey: BoardKeyReader = reader.keyReader` before the first scan and gives it to both `BoardLocator.default.scan` calls. The cancel test gives `reader.keyReader` to `KanbanGraphTests.makeGraph`. `KanbanGraphTests` has a similar closure for a different type (`FailOnceKeyReader`, one copy): not the same closure, no change.
+  timestamp: 2026-10-08T13:34:38.145587+00:00
+- actor: wballard
+  id: 01m4dvj912zfhj82hgvm865a2w
+  text: |-
+    ### implement — changed
+    - evidence: Sources/FoundationModelsKanban/CrossRepo/BoardLocator.swift, Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoReadTests.swift. `swift build --build-tests`: only the accepted `missing creator` warning. Root `timeout 120 swift test --skip-build` 3 runs: 964 tests in 67 suites passed each (10.279 s, 9.954 s, 10.187 s). Findings of 08:28: 2 of 2 checked. No behavior change.
+    - next: /review
+  timestamp: 2026-10-08T13:34:40.674065+00:00
 position_column: doing
 position_ordinal: '80'
 title: Git.run blocks a Swift cooperative thread while git runs
@@ -96,3 +128,13 @@ Give `Git.run` an async form that waits for the end of git with no blocked threa
 
 - [x] `Sources/FoundationModelsKanban/CrossRepo/BoardLocator.swift:133` `completeness/public-output-contract` — The new gitCancelled error is handled like any other key read failure. The catch block in key(ofRepoAt:) logs a warning and returns nil, so the scan keeps going and returns a partial index. A cancelled caller does not get a CancellationError. The partial index is stored in scanState by KanbanGraph.rescan, and resolution then runs against it. A copy that could not be read is left out, so a key can resolve to a later copy in scan order than the first one. Treat BoardKeyError.gitCancelled as a stop signal and not a skipped repo. Either make scan async throws and rethrow the cancellation, or check Task.isCancelled before storing the index in rescan. Do not store a partial index from a cancelled scan. Add one test that cancels a scan and checks that the next scan reads the key again.
 - [x] `Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoFixture.swift:23` `swift/initialization` — The init of SideBySide does slow work. It starts several git processes through makeRepo, and an init has no way to report progress or be cancelled. The rule says init must not start a process or do other slow work. Move the repo creation into an explicit async setup function, for example static func make() async throws -> SideBySide, or a func setUp() async throws that the test calls. Keep init for storing the sandbox and the URLs that it is given.
+
+## Review Findings (2026-10-08 08:28)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 11 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Sources/FoundationModelsKanban/CrossRepo/BoardLocator.swift:118` `swift/immutability` — The keys dictionary is built with a `var` accumulator filled by a `for` loop, so a reader must read the whole loop to learn the final value. The loop only transforms each `KeyRead` into a `BoardKey`, which is the case the rule assigns to `map`. Replace the accumulator with one expression: `return try reads.mapValues { try $0.get() }`. `Dictionary.mapValues` rethrows, so the `try` still propagates the cancel error.
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift:198` `duplication/duplication` — The closure that adapts the counting key reader to the key reader type is written twice in the same test. The second copy repeats the first copy's logic. If one copy changes, the other can drift. Both closures call `reader.key(ofRepoAt:)` and differ only in the scan that receives them. Declare one local reader closure before the first scan, for example `let readKey: BoardKeyReader = { root throws(BoardKeyError) in try await reader.key(ofRepoAt: root) }`. Pass `readKey` to both `BoardLocator.default.scan` calls.

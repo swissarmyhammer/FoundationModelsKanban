@@ -115,11 +115,10 @@ public struct BoardLocator: Sendable {
             }
             return await group.reduce(into: [String: KeyRead]()) { reads, read in reads[read.path] = read.key }
         }
-        var keys: [String: BoardKey] = [:]
-        for (path, read) in reads {
-            keys[path] = try read.get()
-        }
-        return keys
+        return try Dictionary(
+            uniqueKeysWithValues: reads.map { read throws(BoardKeyError) in (read.key, try read.value.get()) }
+        )
+        .compactMapValues { key in key }
     }
 
     /// The result of the key read of one repo: the key, `nil` when the key cannot be read, or the cancel that stopped
