@@ -42,8 +42,24 @@ comments:
     - evidence: new Sources/FoundationModelsKanban/Derived/PriorityTier.swift, Sources/FoundationModelsKanban/Tool/AgentPlan.swift; changed Derived/Readiness.swift, Derived/VirtualTags.swift, GraphQL/QueryResolvers.swift, Tool/KanbanGraph.swift, Tool/KanbanTool.swift, plan.md; tests new Derived/PriorityTagsTests.swift, Tool/AgentPlanTests.swift, Tool/AgentPlanPostTests.swift, changed ReadinessFixture, VirtualTagsTests, FilterEvaluatorTests, NodeQueryTests, QueryResolverTests, ChangeBuilderTests, TaskOperationTests. `swift build --build-tests` only accepted warnings; `swift test --skip-build` x3 (120 s limit): 1012 tests pass each; IntegrationTests `swift build --build-tests && swift test`: 2 tests pass; periphery: no unused code.
     - next: /review
   timestamp: 2026-10-08T18:31:49.039443+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4ecxrjq8ds11y31jn6pmg5c
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (05ed623). 0 findings, 0 confirmed, 1 refuted, 21 attempted, 0 failed. 17 files reviewed. Not reviewed: 4 files in .kanban/ (.reviewignore) and plan.md (no validator matches).
+    - next: none. The task is in done.
+  timestamp: 2026-10-08T18:38:02.839720+00:00
+- actor: claude-code
+  id: 01m4ecxz58b0303fc3zm0dnxya
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — new Derived/PriorityTier.swift, Tool/AgentPlan.swift; Readiness, VirtualTags, QueryResolvers, KanbanGraph, KanbanTool; plan.md §7.3; 3 new and 7 changed test files
+    - test: green — root swift test 3 runs, 1012 passed each (8.4 s, 7.7 s, 8.2 s); IntegrationTests 2 passed; build warnings only the 2 accepted kinds
+    - commit: 05ed623
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T18:38:09.576377+00:00
+position_column: done
+position_ordinal: c180
 title: 'Send the ACP agent plan through ToolContext when a task changes; add #HIGH, #MEDIUM, #LOW derived tags'
 ---
 ## What
