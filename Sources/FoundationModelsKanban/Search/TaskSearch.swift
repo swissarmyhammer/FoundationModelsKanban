@@ -1,3 +1,4 @@
+import FoundationModelsExtras
 import FoundationModelsMetadataRegistry
 
 /// The ranked search over the live tasks of one board (plan.md §6.4, §12 item 6).
@@ -21,7 +22,7 @@ struct TaskSearch: Sendable {
     /// Makes a search with an empty catalog. The search embeds nothing until the first update.
     ///
     /// - Parameter embedder: The embedder of the tasks and the queries, or `nil` for BM25 and trigram only.
-    init(embeddingWith embedder: (any TextEmbedding)?) {
+    init(embeddingWith embedder: (any PooledEmbedding)?) {
         searcher = MetadataSearcher(items: [], mode: .retrieval, embedder: embedder)
         hasEmbedder = embedder != nil
     }

@@ -125,8 +125,9 @@ comments:
   timestamp: 2026-10-08T14:13:55.414945+00:00
 depends_on:
 - 01M4DPPYA338NYS7JAA7J3AAR6
-position_column: doing
-position_ordinal: '80'
+- 01M4DYAT2V3CEKMMZ8SBHJSNMM
+position_column: todo
+position_ordinal: b480
 title: 'Multitool proof: code mode end to end'
 ---
 ## What

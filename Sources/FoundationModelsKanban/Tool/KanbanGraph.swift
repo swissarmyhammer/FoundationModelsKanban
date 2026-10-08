@@ -1,5 +1,5 @@
 import Foundation
-import FoundationModelsMetadataRegistry
+import FoundationModelsExtras
 import GraphQL
 
 /// The engine of the kanban tool: one GraphQL endpoint over the board of a repo (plan.md §7.2).
@@ -46,7 +46,7 @@ public actor KanbanGraph {
     private let locator: BoardLocator
 
     /// The embedder of the search of each related board, or `nil` for BM25 and trigram only.
-    private let embedder: (any TextEmbedding)?
+    private let embedder: (any PooledEmbedding)?
 
     /// Gets a call when each call starts and ends, or `nil` for no calls.
     private let observer: (any KanbanCallObserver)?
@@ -119,7 +119,7 @@ public actor KanbanGraph {
         root: URL,
         actor: String?,
         locator: BoardLocator = .default,
-        embedder: (any TextEmbedding)? = nil
+        embedder: (any PooledEmbedding)? = nil
     ) throws {
         try self.init(
             root: root,
@@ -153,7 +153,7 @@ public actor KanbanGraph {
         actingAs actor: SessionActor,
         mintingFrom ids: any ULIDSource,
         locatedBy locator: BoardLocator = .default,
-        embeddingWith embedder: (any TextEmbedding)? = nil,
+        embeddingWith embedder: (any PooledEmbedding)? = nil,
         reportingTo observer: (any KanbanCallObserver)? = nil,
         observingBatchesWith batchObserver: (any LiveGraphObserver)? = nil
     ) throws {

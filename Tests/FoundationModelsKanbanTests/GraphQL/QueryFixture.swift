@@ -1,5 +1,5 @@
 import Foundation
-import FoundationModelsMetadataRegistry
+import FoundationModelsExtras
 import Testing
 
 @testable import FoundationModelsKanban
@@ -118,7 +118,7 @@ struct QueryFixture {
     ///
     /// - Parameter embedder: The embedder of the search, or `nil` for no embedder.
     /// - Returns: The search.
-    func makeSearch(embeddingWith embedder: (any TextEmbedding)? = nil) async -> TaskSearch {
+    func makeSearch(embeddingWith embedder: (any PooledEmbedding)? = nil) async -> TaskSearch {
         let search = TaskSearch(embeddingWith: embedder)
         await search.update(from: BoardView(of: graph, inBoard: DependencyMarkersTests.boardKey))
         return search

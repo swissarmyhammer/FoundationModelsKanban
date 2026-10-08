@@ -717,7 +717,7 @@ body     = [^ \t\n\r#@^%$()&|!]+
   - `id` = the task URI.
   - `renderBlock()` = the title, the tag names, and the body.
 - **Mode.** Use `.retrieval`. Do not use `.selection`: it calls an LLM, and the result then changes from call to call.
-- **Embedder.** Optional. `KanbanGraph(..., embedder: (any TextEmbedding)? = nil)`. With no embedder, search uses only BM25 + trigram and needs no model. The agent can give a `PooledEmbedder`.
+- **Embedder.** Optional. `KanbanGraph(..., embedder: (any PooledEmbedding)? = nil)`. `PooledEmbedding` is the embedder protocol of FoundationModelsExtras. With no embedder, search uses only BM25 + trigram and needs no model. The agent can give a `PooledEmbedder`.
 - **Life of the searcher.** `KanbanGraph` keeps one `MetadataSearcher` for each board, for its life. After the first load of a board, and after each commit or watcher batch that changes tasks, call `update(items:)` on the searcher of that board. This embeds again only the tasks that changed. Nothing is written to disk.
 - **Filter.** `MetadataSearcher.search(intent:limit:)` has no filter argument. Thus, call it with `limit` = the number of tasks in the board. Then remove the tasks that do not pass `filter` (§6.3), and keep the first `first` results. Deleted and done tasks are excluded by default, the same as `tasks`.
 - **Result.** `TaskHit { task: Task!, score: Float!, signals: SearchSignals }`. `SearchSignals` holds `bm25`, `trigram`, and `cosine` (null when there is no embedder).
@@ -856,7 +856,7 @@ struct KanbanArguments: ConvertibleFromGeneratedContent {
 ```swift
 public actor KanbanGraph {                     // the engine: the tool, the CLI, a GUI, and tests use it
     public init(root: URL, actor: String?, locator: BoardLocator = .default,   // locator holds the extra search roots
-                embedder: (any TextEmbedding)? = nil) throws
+                embedder: (any PooledEmbedding)? = nil) throws
     public func execute(query: String, variables: [String: Map], operationName: String?) async throws -> String
     public func subscribe(query: String, variables: [String: Map], operationName: String?) async throws
         -> AsyncThrowingStream<String, Error>   // one GraphQL response (JSON) for each event (§6.7)

@@ -45,9 +45,15 @@ let ulidPackage = "ULID.swift"
 let parsingPackage = "swift-parsing"
 
 // The ranked search of `searchTasks` (plan.md §6.4, §12 item 6). The package
-// also brings FoundationModelsRanker (BM25, trigram, cosine, and RRF) and its
-// `TextEmbedding` protocol, which it re-exports.
+// also brings FoundationModelsRanker (BM25, trigram, cosine, and RRF), which it
+// re-exports.
 let metadataRegistryPackage = "FoundationModelsMetadataRegistry"
+
+// The embedder protocol `PooledEmbedding` of `searchTasks` (plan.md §6.4).
+// FoundationModelsMetadataRegistry takes this protocol, but it does not
+// re-export it. Thus the library names this package to name the type. The
+// package is already in the graph through FoundationModelsMetadataRegistry.
+let extrasPackage = "FoundationModelsExtras"
 
 // The URL base of the sibling packages of the swissarmyhammer family. The same
 // base as FoundationModelsCodeContext uses.
@@ -84,6 +90,7 @@ let package = Package(
         .package(url: "https://github.com/yaslab/\(ulidPackage).git", from: "1.3.1"),
         .package(url: "https://github.com/pointfreeco/\(parsingPackage).git", from: "0.15.2", traits: []),
         .package(url: "\(swissArmyHammerOrg)\(metadataRegistryPackage).git", branch: "main"),
+        .package(url: "\(swissArmyHammerOrg)\(extrasPackage).git", branch: "main"),
     ],
     targets: [
         .target(
@@ -97,6 +104,7 @@ let package = Package(
                 .product(name: "ULID", package: ulidPackage),
                 .product(name: "Parsing", package: parsingPackage),
                 .product(name: metadataRegistryPackage, package: metadataRegistryPackage),
+                .product(name: extrasPackage, package: extrasPackage),
             ],
             path: "Sources/\(packageName)"
         ),
@@ -121,8 +129,8 @@ let package = Package(
                 .product(name: graphQLPackage, package: graphQLPackage),
                 // The identity tests make and read `ULID` values.
                 .product(name: "ULID", package: ulidPackage),
-                // The search tests give a fake `TextEmbedding` to the engine.
-                .product(name: metadataRegistryPackage, package: metadataRegistryPackage),
+                // The search tests give a fake `PooledEmbedding` to the engine.
+                .product(name: extrasPackage, package: extrasPackage),
             ],
             path: "Tests/\(packageName)Tests"
         ),

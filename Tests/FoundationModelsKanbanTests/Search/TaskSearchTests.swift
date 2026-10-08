@@ -1,5 +1,5 @@
 import Foundation
-import FoundationModelsMetadataRegistry
+import FoundationModelsExtras
 import GraphQL
 import Testing
 import ULID
@@ -92,7 +92,7 @@ struct TaskSearchTests {
     // MARK: - Fake embedders
 
     /// An embedder that gives the same vector length for each text: the length of the text and a constant.
-    struct FakeEmbedder: TextEmbedding {
+    struct FakeEmbedder: PooledEmbedding {
         /// The second value of each vector.
         static let constant: Float = 1
 
@@ -100,13 +100,13 @@ struct TaskSearchTests {
         ///
         /// - Parameter texts: The texts.
         /// - Returns: One vector for each text.
-        func embed(_ texts: [String]) async throws -> [[Float]] {
+        func embed(texts: [String]) async throws -> [[Float]] {
             texts.map { text in [Float(text.count), Self.constant] }
         }
     }
 
     /// An embedder that always fails.
-    struct FailingEmbedder: TextEmbedding {
+    struct FailingEmbedder: PooledEmbedding {
         /// The error of each embed.
         struct EmbedFailure: Error {}
 
@@ -115,7 +115,7 @@ struct TaskSearchTests {
         /// - Parameter texts: The texts.
         /// - Returns: No value.
         /// - Throws: ``EmbedFailure``.
-        func embed(_ texts: [String]) async throws -> [[Float]] {
+        func embed(texts: [String]) async throws -> [[Float]] {
             throw EmbedFailure()
         }
     }
@@ -165,7 +165,7 @@ struct TaskSearchTests {
     /// - Throws: An error when the response is not the expected JSON, or when the field is `null`.
     static func hits(
         searchingWith arguments: String,
-        embeddingWith embedder: (any TextEmbedding)? = nil
+        embeddingWith embedder: (any PooledEmbedding)? = nil
     ) async throws -> [Hit] {
         let fixture = try QueryFixture()
         let search = await fixture.makeSearch(embeddingWith: embedder)

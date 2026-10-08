@@ -1,5 +1,5 @@
 {
-  "originHash" : "4946f7f64044457b67eaafda7f9c4e19c3bf1008301a017b84ddba4743f7bfe2",
+  "originHash" : "90b3b27a00c6afc8b224533924aec6ff6ce05c3df432595a8e17b5f0fb4bbaaa",
   "pins" : [
     {
       "identity" : "eventsource",
@@ -16,7 +16,7 @@
       "location" : "git@github.com:swissarmyhammer/FoundationModelsExtras.git",
       "state" : {
         "branch" : "main",
-        "revision" : "130eb40c0177e4bfcc795886c19b19b44108d95d"
+        "revision" : "5c1c638d3112e1ccb55ea3994f19b32a70d7e251"
       }
     },
     {
@@ -25,7 +25,7 @@
       "location" : "git@github.com:swissarmyhammer/FoundationModelsMetadataRegistry.git",
       "state" : {
         "branch" : "main",
-        "revision" : "91d4225b1c64ec6f983ac8948da2a0170dd16999"
+        "revision" : "858f5da3d26c3c85fa95e0581b10210809179ca7"
       }
     },
     {
@@ -34,7 +34,7 @@
       "location" : "git@github.com:swissarmyhammer/FoundationModelsRanker.git",
       "state" : {
         "branch" : "main",
-        "revision" : "d75a67c6785654c6197137bf5c7c1c953b04710e"
+        "revision" : "61563468972b91a95c79dc0de4d70cee852ece6f"
       }
     },
     {
