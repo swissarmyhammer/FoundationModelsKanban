@@ -208,16 +208,6 @@ struct UndoTests {
         return changed
     }
 
-    /// Gives the body of a task in the live graph of a session.
-    ///
-    /// - Parameters:
-    ///   - task: The ULID of the task.
-    ///   - session: The commit session.
-    /// - Returns: The body.
-    static func body(of task: ULID, in session: CommitSession) throws -> String {
-        try LiveGraphApplyTests.task(.task(task), in: session.live.graph).fields.body
-    }
-
     /// Runs the base setup, and then two calls that set the title of the fixture task: first ``firstTitle``, then
     /// ``secondTitle``.
     ///
@@ -492,7 +482,7 @@ struct UndoTests {
         try await HistoryTests.run(eachOf: [Self.bodyField(bothLines, of: task)], in: &session)
         try await Self.reverse(with: Self.txnInput(first), in: &session)
         let expected = Self.lines(Self.bodyLines, changing: lastIndex, to: Self.laterChangedLine)
-        #expect(try Self.body(of: task, in: session) == Self.text(of: expected))
+        #expect(try CommitTests.field(\.fields.body, of: .task(task), in: session) == Self.text(of: expected))
     }
 
     @Test("undo of a body change whose reversed diff does not apply gives UNDO_CONFLICT with the later transaction")
@@ -514,7 +504,8 @@ struct UndoTests {
         let calls = try await Self.twoChangesOfOneLine(inRepoAt: directory)
         var session = calls.session
         try await Self.reverse(with: Self.txnInput(calls.first, forcing: true), in: &session)
-        #expect(try Self.body(of: calls.task, in: session) == Self.text(of: Self.bodyLines))
+        let body = try CommitTests.field(\.fields.body, of: .task(calls.task), in: session)
+        #expect(body == Self.text(of: Self.bodyLines))
     }
 
     // MARK: - Nothing to undo

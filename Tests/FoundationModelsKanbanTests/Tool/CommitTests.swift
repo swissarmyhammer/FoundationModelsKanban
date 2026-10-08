@@ -149,6 +149,21 @@ struct CommitTests {
         try LiveGraphApplyTests.writeTitle(to: task, atStep: LiveGraphApplyTests.laterStep + run, in: log)
     }
 
+    /// Gives one field of a task in the live graph of a session.
+    ///
+    /// - Parameters:
+    ///   - keyPath: The key path of the field in the task, for example `\.title` or `\.fields.body`.
+    ///   - task: The local ref of the task.
+    ///   - session: The commit session.
+    /// - Returns: The value of the field.
+    static func field<Value>(
+        _ keyPath: KeyPath<TaskNode, Value>,
+        of task: LocalRef,
+        in session: CommitSession
+    ) throws -> Value {
+        try LiveGraphApplyTests.task(task, in: session.live.graph)[keyPath: keyPath]
+    }
+
     /// Gives the title of a task in the live graph of a session.
     ///
     /// - Parameters:
@@ -156,7 +171,7 @@ struct CommitTests {
     ///   - session: The commit session.
     /// - Returns: The title.
     static func title(of task: LocalRef, in session: CommitSession) throws -> String {
-        try LiveGraphApplyTests.task(task, in: session.live.graph).title
+        try field(\.title, of: task, in: session)
     }
 
     /// Gives the events of the log file of a node that a call of a session wrote: the events with the actor of the

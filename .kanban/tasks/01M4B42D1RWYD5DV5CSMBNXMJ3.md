@@ -29,6 +29,38 @@ comments:
     - evidence: `swift build --build-tests` (only the accepted SwiftPM "missing creator" warning) + `swift test --skip-build`: 836 tests in 49 suites passed (UndoTests 21, DiffApplyTests +3). `periphery scan --retain-public --quiet -- --build-tests --build-system native`: no item in the new or changed source code (only the items that were there before). Files: Sources/FoundationModelsKanban/Undo/Inverse.swift, Sources/FoundationModelsKanban/Undo/UndoLog.swift, Sources/FoundationModelsKanban/GraphQL/UndoMutations.swift, Sources/FoundationModelsKanban/Undo/History.swift, Sources/FoundationModelsKanban/Body/DiffApply.swift, Sources/FoundationModelsKanban/Events/Replay.swift, Sources/FoundationModelsKanban/Tool/Commit.swift, Sources/FoundationModelsKanban/GraphQL/Schema.swift, Sources/FoundationModelsKanban/GraphQL/MutationResolvers.swift, Sources/FoundationModelsKanban/GraphQL/ColumnActorMutations.swift, Sources/FoundationModelsKanban/GraphQL/TaskMutations.swift, Sources/FoundationModelsKanban/GraphQL/TagMutations.swift, Tests/FoundationModelsKanbanTests/Undo/UndoTests.swift, Tests/FoundationModelsKanbanTests/Body/DiffApplyTests.swift, Tests/FoundationModelsKanbanTests/Observe/ChangeBuilderTests.swift
     - next: /review
   timestamp: 2026-10-08T00:17:05.992288+00:00
+- actor: wballard
+  id: 01m4ce8vfhsgbqapar9jrsdf5g
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (b23b7d9): 1 finding (1 confirmed, 4 refuted) — Tests/FoundationModelsKanbanTests/Undo/UndoTests.swift:217 (reuse/reuse)
+    - next: implement the finding in the 2026-10-07 19:19 Review Findings section, then review again.
+  timestamp: 2026-10-08T00:23:05.969889+00:00
+- actor: wballard
+  id: 01m4ce947gxc410r3s4tgtpk1n
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 15 files (Undo/Inverse.swift, Undo/UndoLog.swift, GraphQL/UndoMutations.swift, History, DiffApply, Replay, Commit, Schema, MutationResolvers, ColumnActorMutations, TaskMutations, TagMutations, UndoTests, DiffApplyTests, ChangeBuilderTests)
+    - test: green — swift test, 836 passed; build warnings only the 2 accepted kinds
+    - commit: b23b7d9
+    - review: findings — Tests/FoundationModelsKanbanTests/Undo/UndoTests.swift:217
+  timestamp: 2026-10-08T00:23:14.928654+00:00
+- actor: wballard
+  id: 01m4cec0bqqj1fvw319mvp8jrs
+  text: |-
+    Finding `UndoTests.swift:217` `reuse/reuse` is fixed.
+    - New helper `CommitTests.field<Value>(_ keyPath: KeyPath<TaskNode, Value>, of task: LocalRef, in session: CommitSession)`. It is beside `CommitTests.title`. It reads one field of a task from the live graph of a session through `LiveGraphApplyTests.task`.
+    - `CommitTests.title(of:in:)` now calls `field(\.title, ...)`. The title helper stays because many tests in CommitTests and UndoTests call it.
+    - `UndoTests.body(of:in:)` is removed. Its 2 call sites now call `CommitTests.field(\.fields.body, of: .task(...), in: session)`.
+    - Search in UndoTests.swift, ChangeBuilderTests.swift and DiffApplyTests.swift: no other helper reads one field of a task from the live graph. `titleField`/`bodyField` make `updateTask` mutation text. They do not read the graph, so they are a different shape.
+  timestamp: 2026-10-08T00:24:49.271953+00:00
+- actor: wballard
+  id: 01m4cec1re2g6wx2n1azevctnn
+  text: |-
+    ### implement — changed
+    - evidence: 2 files — Tests/FoundationModelsKanbanTests/Tool/CommitTests.swift, Tests/FoundationModelsKanbanTests/Undo/UndoTests.swift. `swift test`: 836 tests in 49 suites passed. The only build warning is the accepted mlx-swift "missing creator" warning.
+    - next: /review
+  timestamp: 2026-10-08T00:24:50.702826+00:00
 depends_on:
 - 01M4B41N13P82QC4H6BBQRZ2PF
 - 01M4B406Z7RVSBJKKJ8KJW0CY2
@@ -57,3 +89,12 @@ Reverse a transaction by appending inverse patches. The basis is plan.md §6.5 a
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-07 19:19)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 15 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Tests/FoundationModelsKanbanTests/Undo/UndoTests.swift:217` `reuse/reuse` — The new helper `body(of:in:)` repeats the shape of `CommitTests.title(of:in:)`. Both read one field of a task from the live graph of a session through `LiveGraphApplyTests.task`. The field is fixed in each helper, so each new field needs a new copy. A near-match that is not extended creates a parallel copy. Make one helper that takes the field as a key path, for example `field<Value>(_ keyPath: KeyPath<...>, of task: ULID, in session:)`, and place it beside `CommitTests.title`. Then `title` and `body` are both calls to that helper. If the task fields are not one type, keep the two helpers and state in a doc comment why they differ.
