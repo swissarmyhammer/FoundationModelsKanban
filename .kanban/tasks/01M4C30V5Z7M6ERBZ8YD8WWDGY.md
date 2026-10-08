@@ -24,6 +24,42 @@ comments:
     - evidence: `swift build --build-tests` clean (only the accepted "missing creator" warning); `swift test --skip-build` 3 runs: 973/973 pass each; periphery: "No unused code detected".
     - next: /review
   timestamp: 2026-10-08T15:52:19.037848+00:00
+- actor: claude-code
+  id: 01m4e3tbr4tx6e1vjxd7wyh9zh
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (46c3c41) — 1 finding (1 confirmed, 2 refuted): Tests/FoundationModelsKanbanTests/Search/TaskSearchTests.swift:263 completeness/inverse-operation-coverage
+    - next: Add an undelete step to the #DELETED search test, or a sibling test. Assert that the #DELETED search does not return the task after undelete, and that the plain title search returns it again. Then run /review again.
+  timestamp: 2026-10-08T15:58:54.212408+00:00
+- actor: claude-code
+  id: 01m4e3tmk063qs2t6g72f6a306
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 9 source files (new Filter/TaskFilter.swift), 7 test files, plan.md; removed the public `deleted` argument of Board.tasks
+    - test: green — root swift test 3 runs, 973 passed each (7.5 s, 7.4 s, 7.4 s); IntegrationTests 2 passed; build warnings only the 2 accepted kinds
+    - commit: 46c3c41
+    - review: findings — Tests/FoundationModelsKanbanTests/Search/TaskSearchTests.swift:263
+  timestamp: 2026-10-08T15:59:03.264052+00:00
+- actor: claude-code
+  id: 01m4e45q6r5b5dp3yg9d83zjhb
+  text: |-
+    Fix of the finding `completeness/inverse-operation-coverage` (TaskSearchTests). Cause: the #DELETED tests of the last commit checked only the delete direction. I added the undelete direction to each #DELETED area:
+    - TaskSearchTests `deletedTaskIsHitOnlyForDeletedFilter`: after an undelete (same index), the plain title search ranks the task first again, and the #DELETED search gives no hit.
+    - NodeQueryTests: new `QueryFixture.undelete(nodeAt:)`. `delete` and `undelete` share one private `setDeleted(_:ofNodeAt:)`, so no helper is copied. New parameterized test `undeletedTaskLosesDeletedVirtualTag`: after delete + undelete, virtualTags is ["READY","BLOCKING"] (first task) and ["BLOCKED"] (second task). New helpers `virtualTags(of:in:)` and `virtualTagsResponse(_:)`; the old DELETED virtualTags test uses them too.
+    - TaskOperationTests `undeleteTaskRestoresTask`: the #DELETED list is empty after undeleteTask (the default list check was already there).
+    - HistoryTests: new `historyAfterUndeleteFollowsLiveTask` (tag, delete, undelete): history(filter: "#DELETED") is empty, and history(filter: "#bug") starts with "TASK RESTORED". New constants `bugFilterArguments` and `deletedFilterArguments` replace the repeated filter literals in the file.
+    - SubscriptionTests: new `deletedFilterLeavesOutUndelete`: a #DELETED subscription gets delete, (no undelete), delete. `update(ofTask:from:)` gets a defaulted `kind:` parameter; new helper `deleteTask(_:on:)`.
+    - VirtualTagsTests: the last commit changed only the registry test there; it has no delete-direction test, so it needs no inverse. The undelete virtualTags check is in NodeQueryTests.
+    Proof that each new assertion can fail: I made undelete a no-op for one run (production `undeleteTask` wrote `delete: true`; `QueryFixture.undelete` kept the time). All 5 new or changed tests failed on the new assertions (12 issues). Then I restored both edits; `git diff -- Sources` is empty.
+    Note: on this repo, `files` `edit file` with `replace_all: true` replaced only the first match. Do one edit for each match.
+  timestamp: 2026-10-08T16:05:06.392858+00:00
+- actor: claude-code
+  id: 01m4e45sfta5xwtyf3ddwg6r47
+  text: |-
+    ### implement — changed
+    - evidence: 5 test files — Tests/FoundationModelsKanbanTests/Search/TaskSearchTests.swift, GraphQL/NodeQueryTests.swift, Mutations/TaskOperationTests.swift, Undo/HistoryTests.swift, Observe/SubscriptionTests.swift. `swift build --build-tests` clean (only the accepted "missing creator" warning). `timeout 120 swift test --skip-build` 3 runs: 976/976 pass each (7.53 s, 7.57 s, 7.50 s). Finding `TaskSearchTests.swift:263` is checked.
+    - next: /review
+  timestamp: 2026-10-08T16:05:08.730838+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'Replace tasks(deleted:) with the #DELETED virtual tag'
@@ -51,3 +87,15 @@ Files: `Derived/VirtualTags.swift`, `Filter/FilterParser.swift` and `FilterEvalu
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-08 10:56)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 15 file(s) reviewed, 9 not reviewed.
+
+> 8 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 8 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `plan.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsKanbanTests/Search/TaskSearchTests.swift:263` `completeness/inverse-operation-coverage` — The new test proves that a deleted task is a search hit only for the #DELETED filter. It never checks the inverse: after the task is undeleted, the #DELETED filter must no longer hit it. The one-way test leaves the restore direction of the new filter rule unproven. Add an undelete step to this test, or a sibling test, and assert that the #DELETED search no longer returns the task while the plain title search returns it again.

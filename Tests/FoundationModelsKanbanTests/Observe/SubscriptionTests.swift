@@ -120,10 +120,11 @@ struct SubscriptionTests {
     ///
     /// - Parameters:
     ///   - task: The full URI of the task.
+    ///   - kind: The kind of the update. The default is `UPDATED`.
     ///   - source: The source of the update.
-    /// - Returns: The JSON object, with sorted keys. Its kind is `UPDATED`.
-    static func update(ofTask task: String, from source: UpdateSource) -> String {
-        #"{"id":"\#(task)","kind":"\#(UpdateKind.updated.rawValue)","source":"\#(source.rawValue)"}"#
+    /// - Returns: The JSON object, with sorted keys.
+    static func update(ofTask task: String, kind: UpdateKind = .updated, from source: UpdateSource) -> String {
+        #"{"id":"\#(task)","kind":"\#(kind.rawValue)","source":"\#(source.rawValue)"}"#
     }
 
     /// Gives the full URI of a task of the fixture board.
@@ -169,6 +170,18 @@ struct SubscriptionTests {
         return titleEvent(of: task, txn: try await latestTxn(on: graph), operation: updateTask)
     }
 
+    /// Deletes a task with a `deleteTask` call, and gives the event that the call sends.
+    ///
+    /// - Parameters:
+    ///   - task: The ULID of the task.
+    ///   - graph: The engine.
+    /// - Returns: The response JSON text of the event, with the transaction of the call.
+    static func deleteTask(_ task: ULID, on graph: KanbanGraph) async throws -> String {
+        _ = try await CommentTests.run(TaskOperationTests.taskField(MutationName.deleteTask, of: task), on: graph)
+        let deleted = update(ofTask: id(of: task), kind: .deleted, from: .patch)
+        return event(txn: try await latestTxn(on: graph), operation: MutationName.deleteTask, updates: [deleted])
+    }
+
     /// Gives the transaction ULID of the next event that ``KanbanGraphTests/append(_:mintingFrom:to:)`` writes with a
     /// ULID source. The append mints the event id first, and then the transaction ULID.
     ///
@@ -204,6 +217,19 @@ struct SubscriptionTests {
         _ = try await CrossRepoFixture.addTask(with: "", on: graph)
         let expected = try await Self.changeTitle(of: task, to: KanbanGraphTests.laterTitle, on: graph)
         #expect(try await Self.events(Self.oneEvent, of: stream) == [expected])
+        await graph.close()
+    }
+
+    @Test("A #DELETED subscription sends the change of a deleteTask, and not the change of an undeleteTask")
+    func deletedFilterLeavesOutUndelete() async throws {
+        let directory = try TemporaryDirectory()
+        let task = try KanbanGraphTests.writeFixture(inRepoAt: directory.url).task
+        let graph = try KanbanGraphTests.makeGraph(at: directory.url)
+        let stream = try await Self.subscribe(Self.subscription(HistoryTests.deletedFilterArguments), on: graph)
+        let firstDelete = try await Self.deleteTask(task, on: graph)
+        _ = try await CommentTests.run(TaskOperationTests.taskField(MutationName.undeleteTask, of: task), on: graph)
+        let secondDelete = try await Self.deleteTask(task, on: graph)
+        #expect(try await Self.events(Self.twoEvents, of: stream) == [firstDelete, secondDelete])
         await graph.close()
     }
 

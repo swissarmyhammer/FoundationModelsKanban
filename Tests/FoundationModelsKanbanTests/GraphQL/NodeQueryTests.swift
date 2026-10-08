@@ -143,6 +143,27 @@ struct NodeQueryTests {
         return #"{"data":{"nodes":[\#(items)]}}"#
     }
 
+    /// Gives the response of `node(id:)` that selects the virtual tags of a task.
+    ///
+    /// - Parameters:
+    ///   - task: The ULID text of the task.
+    ///   - fixture: The board.
+    /// - Returns: The response as JSON text.
+    /// - Throws: An error that is not a GraphQL error.
+    static func virtualTags(of task: String, in fixture: QueryFixture) async throws -> String {
+        try await fixture.respond(
+            to: #"{ node(id: "\#(QueryFixture.sigilRef(of: task))") { ... on Task { virtualTags } } }"#
+        )
+    }
+
+    /// Gives the expected response of ``virtualTags(of:in:)``.
+    ///
+    /// - Parameter tags: The JSON list of the virtual tags, for example `["DELETED"]`.
+    /// - Returns: The response as JSON text.
+    static func virtualTagsResponse(_ tags: String) -> String {
+        #"{"data":{"node":{"virtualTags":\#(tags)}}}"#
+    }
+
     @Test("node(id:) returns each of the six node types by its full URI", arguments: nodeCases)
     func nodeByFullURI(node: NodeCase) async throws {
         let response = try await Self.typeAndID(of: node.id, in: QueryFixture())
@@ -304,10 +325,22 @@ struct NodeQueryTests {
     func deletedTaskHasOnlyDeletedVirtualTag(task: String) async throws {
         var fixture = try QueryFixture()
         try fixture.delete(nodeAt: .task(DependencyMarkersTests.ulid(of: task)))
-        let response = try await fixture.respond(
-            to: #"{ node(id: "\#(QueryFixture.sigilRef(of: task))") { ... on Task { virtualTags } } }"#
-        )
-        #expect(response == #"{"data":{"node":{"virtualTags":["DELETED"]}}}"#)
+        #expect(try await Self.virtualTags(of: task, in: fixture) == Self.virtualTagsResponse(#"["DELETED"]"#))
+    }
+
+    @Test(
+        "An undeleted task loses DELETED in virtualTags, and shows its live virtual tags again",
+        arguments: [
+            (ReadinessFixture.first, #"["READY","BLOCKING"]"#),
+            (ReadinessFixture.second, #"["BLOCKED"]"#),
+        ]
+    )
+    func undeletedTaskLosesDeletedVirtualTag(task: String, liveTags: String) async throws {
+        var fixture = try QueryFixture()
+        let ref = LocalRef.task(try DependencyMarkersTests.ulid(of: task))
+        try fixture.delete(nodeAt: ref)
+        try fixture.undelete(nodeAt: ref)
+        #expect(try await Self.virtualTags(of: task, in: fixture) == Self.virtualTagsResponse(liveTags))
     }
 
     @Test("The schema has no deleted argument on Board.tasks")
@@ -338,8 +371,26 @@ extension QueryFixture {
     /// - Parameter ref: The local ref of the node.
     /// - Throws: An error when the board has no node with the ref.
     mutating func delete(nodeAt ref: LocalRef) throws {
-        var tombstone = try #require(graph.slot(for: ref).flatMap(graph.node(at:))?.state)
-        tombstone.fields.deleted = DependencyMarkersTests.time
-        graph.update(with: tombstone.node)
+        try setDeleted(DependencyMarkersTests.time, ofNodeAt: ref)
+    }
+
+    /// Makes a tombstone of the board a live node again: its `deleted` time is `nil`.
+    ///
+    /// - Parameter ref: The local ref of the node.
+    /// - Throws: An error when the board has no node with the ref.
+    mutating func undelete(nodeAt ref: LocalRef) throws {
+        try setDeleted(nil, ofNodeAt: ref)
+    }
+
+    /// Sets the `deleted` time of a node of the board.
+    ///
+    /// - Parameters:
+    ///   - time: The `deleted` time, or `nil` for a live node.
+    ///   - ref: The local ref of the node.
+    /// - Throws: An error when the board has no node with the ref.
+    private mutating func setDeleted(_ time: DateTime?, ofNodeAt ref: LocalRef) throws {
+        var state = try #require(graph.slot(for: ref).flatMap(graph.node(at:))?.state)
+        state.fields.deleted = time
+        graph.update(with: state.node)
     }
 }

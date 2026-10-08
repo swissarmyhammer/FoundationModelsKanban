@@ -260,17 +260,24 @@ struct TaskSearchTests {
         #expect(!after.map(\.task.id).contains(deleted))
     }
 
-    @Test("A deleted task is a hit only when the filter names #DELETED")
+    @Test("A deleted task is a hit only when the filter names #DELETED, and after an undelete only when it does not")
     func deletedTaskIsHitOnlyForDeletedFilter() async throws {
         var fixture = try QueryFixture()
-        try fixture.delete(nodeAt: .task(DependencyMarkersTests.ulid(of: ReadinessFixture.second)))
+        let ref = LocalRef.task(try DependencyMarkersTests.ulid(of: ReadinessFixture.second))
+        try fixture.delete(nodeAt: ref)
         let search = await fixture.makeSearch()
-        let deleted = Self.id(ofTask: ReadinessFixture.second)
-        let live = try await Self.hits(searchingWith: Self.query(Self.titleWord), in: fixture, using: search)
-        #expect(!live.map(\.task.id).contains(deleted))
-        let arguments = ##"\##(Self.query(Self.titleWord)), filter: "#DELETED""##
-        let tombstones = try await Self.hits(searchingWith: arguments, in: fixture, using: search)
-        #expect(tombstones.map(\.task.id) == [deleted])
+        let task = Self.id(ofTask: ReadinessFixture.second)
+        let plain = Self.query(Self.titleWord)
+        let deletedFilter = ##"\##(plain), filter: "#DELETED""##
+        let live = try await Self.hits(searchingWith: plain, in: fixture, using: search)
+        #expect(!live.map(\.task.id).contains(task))
+        let tombstones = try await Self.hits(searchingWith: deletedFilter, in: fixture, using: search)
+        #expect(tombstones.map(\.task.id) == [task])
+        try fixture.undelete(nodeAt: ref)
+        let restored = try await Self.hits(searchingWith: plain, in: fixture, using: search)
+        #expect(restored.first?.task.id == task)
+        let noTombstones = try await Self.hits(searchingWith: deletedFilter, in: fixture, using: search)
+        #expect(noTombstones.isEmpty)
     }
 
     @Test("The first argument keeps only the first hits")

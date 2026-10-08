@@ -691,7 +691,7 @@ struct TaskOperationTests {
         #expect(try await Self.listedTasks(by: Self.deletedTasksQuery, on: fixture.graph) == [fixture.task])
     }
 
-    @Test("undeleteTask on a tombstone writes delete false, and the board lists the task again")
+    @Test("undeleteTask on a tombstone writes delete false, the board lists the task again, and #DELETED does not")
     func undeleteTaskRestoresTask() async throws {
         let directory = try TemporaryDirectory()
         let fixture = try ColumnActorTests.makeFixtureGraph(in: directory)
@@ -703,6 +703,7 @@ struct TaskOperationTests {
         #expect(response.hasSuffix(#""undeleteTask":{"deleted":null}}}"#))
         #expect(try ColumnActorTests.lastPatch(of: .task(fixture.task), isDelete: false, in: directory))
         #expect(try await Self.listedTasks(on: fixture.graph) == [fixture.task])
+        #expect(try await Self.listedTasks(by: Self.deletedTasksQuery, on: fixture.graph).isEmpty)
     }
 
     @Test("undeleteTask on a live task writes nothing and returns the task")
