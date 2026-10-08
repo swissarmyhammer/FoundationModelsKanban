@@ -200,8 +200,11 @@ enum Git {
     /// The name of the git program, which ``launcherPath`` finds.
     static let programName = "git"
 
+    /// The number of seconds in ``defaultTimeLimit``.
+    private static let defaultTimeLimitSeconds = 30
+
     /// The longest time that a git command can run before it is stopped. A local git command ends in much less time.
-    static let defaultTimeLimit = DispatchTimeInterval.seconds(30)
+    static let defaultTimeLimit = DispatchTimeInterval.seconds(defaultTimeLimitSeconds)
 
     /// The result of a git command.
     struct Output: Sendable {

@@ -16,17 +16,29 @@ struct EventLogTests {
     /// The longest time that a test waits for a lock to be released. A child process that another test starts at the
     /// same time can hold a copy of the lock file for a short time, until its `exec` closes the copy. This limit is
     /// much longer than that time.
-    static let lockWaitLimit = Duration.seconds(10)
+    static let lockWaitLimit = Duration.seconds(lockWaitLimitSeconds)
+
+    /// The number of seconds in ``lockWaitLimit``.
+    private static let lockWaitLimitSeconds = 10
 
     /// The deadline of the lock wait in the test that holds the lock for all of the wait.
-    static let heldLockWaitLimit = Duration.milliseconds(300)
+    static let heldLockWaitLimit = Duration.milliseconds(heldLockWaitLimitMilliseconds)
+
+    /// The number of milliseconds in ``heldLockWaitLimit``.
+    private static let heldLockWaitLimitMilliseconds = 300
 
     /// The longest time that a deadline wait can continue after its deadline: one pause, and the scheduling delay of
     /// a busy machine.
-    static let deadlineTolerance = Duration.seconds(2)
+    static let deadlineTolerance = Duration.seconds(deadlineToleranceSeconds)
+
+    /// The number of seconds in ``deadlineTolerance``.
+    private static let deadlineToleranceSeconds = 2
 
     /// The pause between two tries of a wait with a deadline.
-    static let retryPause = Duration.milliseconds(10)
+    static let retryPause = Duration.milliseconds(retryPauseMilliseconds)
+
+    /// The number of milliseconds in ``retryPause``.
+    private static let retryPauseMilliseconds = 10
 
     /// The record of the lock test when the first lock is released.
     static let releasedRecord = "first released"

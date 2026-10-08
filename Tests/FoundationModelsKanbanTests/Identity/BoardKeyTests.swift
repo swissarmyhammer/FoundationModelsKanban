@@ -162,17 +162,26 @@ struct BoardKeyTests {
     static let floodArguments = ["-c", "alias.flood=!head -c \(floodSize) /dev/zero >&2; echo \(floodWord)", "flood"]
 
     /// The time that the slow command runs. This is much longer than ``shortGitLimit``.
-    static let slowCommandDuration = Duration.seconds(5)
+    static let slowCommandDuration = Duration.seconds(slowCommandSeconds)
+
+    /// The number of seconds in ``slowCommandDuration``.
+    private static let slowCommandSeconds = 5
 
     /// The arguments of a git alias that runs for ``slowCommandDuration``.
     static let slowArguments = ["-c", "alias.slow=!sleep \(slowCommandDuration.components.seconds)", "slow"]
 
     /// The time limit of the slow command.
-    static let shortGitLimit = DispatchTimeInterval.milliseconds(300)
+    static let shortGitLimit = DispatchTimeInterval.milliseconds(shortGitLimitMilliseconds)
+
+    /// The number of milliseconds in ``shortGitLimit``.
+    private static let shortGitLimitMilliseconds = 300
 
     /// The time limit of each git command in the test that runs many git commands at the same time. A git command
     /// that can run ends in much less time.
-    static let parallelGitLimit = DispatchTimeInterval.seconds(10)
+    static let parallelGitLimit = DispatchTimeInterval.seconds(parallelGitLimitSeconds)
+
+    /// The number of seconds in ``parallelGitLimit``.
+    private static let parallelGitLimitSeconds = 10
 
     /// The number of git commands for each processor in the test that runs many git commands at the same time. Each
     /// command blocks the thread of its task, so more commands than processors block each thread of Swift

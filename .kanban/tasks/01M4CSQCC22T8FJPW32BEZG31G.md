@@ -30,6 +30,37 @@ comments:
     - `swift build --build-tests`: only the known `missing creator` warning. No line longer than 120 characters in the 3 files. periphery: no item in Sources; the same 7 earlier items in test files that this change did not touch.
     - next: /review
   timestamp: 2026-10-08T04:11:34.692057+00:00
+- actor: wballard
+  id: 01m4cvhxeyyhwbfacs1esn34sg
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (97e355c): 1 finding (1 confirmed, 0 refuted) — Sources/FoundationModelsKanban/Identity/BoardKey.swift:204 code-hygiene/magic-numbers-swift
+    - next: replace the magic numbers in BoardKey.swift with named constants, then review again. The task stays in review.
+  timestamp: 2026-10-08T04:15:14.398180+00:00
+- actor: wballard
+  id: 01m4cvj40zj3wrp46mqmbypjhj
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 3 files (Identity/BoardKey.swift, Events/EventLogTests.swift, Identity/BoardKeyTests.swift)
+    - test: green — swift test 3 runs with a 120 s limit, 906 passed each; build warnings only the 2 accepted kinds
+    - commit: 97e355c
+    - review: findings — Sources/FoundationModelsKanban/Identity/BoardKey.swift:204
+  timestamp: 2026-10-08T04:15:21.119210+00:00
+- actor: wballard
+  id: 01m4cvrykrs2rz9h24gtk2ctqg
+  text: |-
+    Discovery: swiftlint `no_magic_numbers` (0.65.1, allowed_numbers [0, 1, -1, 100]) reports a literal in a call argument also in a `static let`, for example `static let x = DispatchTimeInterval.seconds(30)`. A plain `static let x = 30` is not reported. A probe file showed this. The tool does not report the same form in the test files, but the order for this pass said to name those literals too.
+
+    Fix: each literal that a `static let` gave to `.seconds(...)` or `.milliseconds(...)` is now a `private static let` integer with a doc comment, and the old constant uses it. BoardKey.swift: `Git.defaultTimeLimitSeconds` (30). EventLogTests: `lockWaitLimitSeconds` (10), `heldLockWaitLimitMilliseconds` (300), `deadlineToleranceSeconds` (2), `retryPauseMilliseconds` (10). BoardKeyTests: `slowCommandSeconds` (5), `shortGitLimitMilliseconds` (300), `parallelGitLimitSeconds` (10). `floodSize` and `commandsPerProcessor` were already plain named constants. The other literals in BoardKey.swift (`successStatus` 0, `missingConfigKeyStatus` 1) were already named constants with doc comments. The values did not change.
+  timestamp: 2026-10-08T04:19:04.952355+00:00
+- actor: wballard
+  id: 01m4cvs1b42xa0d6fg5w61z8wq
+  text: |-
+    ### implement — changed
+    - evidence: 3 files — Sources/FoundationModelsKanban/Identity/BoardKey.swift, Tests/FoundationModelsKanbanTests/Events/EventLogTests.swift, Tests/FoundationModelsKanbanTests/Identity/BoardKeyTests.swift. `swift build --build-tests`: only the accepted `missing creator` warning. swiftlint no_magic_numbers on the 3 files: 0 findings. `swift test --skip-build` 3 runs, 120 s limit each: 906 tests in 58 suites passed each time (6.894 s, 6.682 s, 6.653 s). periphery (`--retain-public --report-exclude 'Tests/**'`): no unused code. No line longer than 120 characters.
+    - finding marked: BoardKey.swift:204 code-hygiene/magic-numbers-swift — [x]
+    - next: /review
+  timestamp: 2026-10-08T04:19:07.748592+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'Tests: bound the blocking flock wait in EventLogTests.isLockReleased'
@@ -51,3 +82,12 @@ Change the wait so that it always ends. For example, try `flock(descriptor, LOCK
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-07 23:14)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsKanban/Identity/BoardKey.swift:204` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.
