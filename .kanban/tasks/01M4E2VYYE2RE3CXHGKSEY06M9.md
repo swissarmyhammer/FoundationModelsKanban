@@ -56,6 +56,39 @@ comments:
     outcome: changed
     evidence: `kanban --schema` shows `history(filter: String, since: ID, first: Int = 20): [Change!]`, `updates(filter: String): [NodeUpdate!]`, `changes(board: String, filter: String): Change!`, and no `source` or `UpdateSource`. Root: `swift build --build-tests` passed (only the accepted mlx "missing creator" warning); `swift test --skip-build` 3 times, each 996 tests in 68 suites passed. Periphery: no unused code. IntegrationTests: `swift build --build-tests && swift test` passed (2 tests in 2 suites). The task stays in doing; nothing is committed.
   timestamp: 2026-10-08T17:58:31.248376+00:00
+- actor: claude-code
+  id: 01m4eb30s2kts05gm4z0zff0bz
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (3c53354): 3 findings (3 confirmed, 1 refuted) — Tests/FoundationModelsKanbanTests/Filter/FilterEvaluatorTests.swift:130, Tests/FoundationModelsKanbanTests/Filter/FilterEvaluatorTests.swift:482, Tests/FoundationModelsKanbanTests/Filter/FilterEvaluatorTests.swift:515
+    - next: implement the 3 `reuse/reuse` findings in the "Review Findings (2026-10-08 13:02)" section. The task stays in review.
+  timestamp: 2026-10-08T18:05:57.922468+00:00
+- actor: claude-code
+  id: 01m4eb3b1b4hkqs0wjx35xr65c
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — Observe/*, GraphQL/Schema.swift, Undo/History.swift, Tool/*, Filter/*, CLI, plan.md, README.md, tests; removed type/node/actor/derived and NodeUpdate.source; added the ~type atom
+    - test: green — root swift test 3 runs, 996 passed each (8.0 s, 8.0 s, 7.7 s); IntegrationTests 2 passed; schema checked; build warnings only the 2 accepted kinds
+    - commit: 3c53354
+    - review: findings — Tests/FoundationModelsKanbanTests/Filter/FilterEvaluatorTests.swift:130, Tests/FoundationModelsKanbanTests/Filter/FilterEvaluatorTests.swift:482, Tests/FoundationModelsKanbanTests/Filter/FilterEvaluatorTests.swift:515
+  timestamp: 2026-10-08T18:06:08.427068+00:00
+- actor: claude-code
+  id: 01m4eb6d0krfe6bt8p3j0e7vyt
+  text: |-
+    Picked up the 3 `reuse/reuse` findings in FilterEvaluatorTests.swift. Plan:
+    - Add `matchingRefs(of: String, in:)`, the one place that parses a filter text. `nodeMatches(of:in:)` and `matches(of: String, in:)` both call it. Only the map from LocalRef to text is different.
+    - Add `taskULIDs(in:)` for the LocalRef-to-ULID map, so `matches(of: FilterExpr)` and `matches(of: String)` do not repeat the `compactMap` body.
+    - Add `refText(ofSlug:as:)` and `refTexts(ofSlugs:as:)`, which take a LocalRef constructor. `sampleColumns`, the actor list in `nodeTypeAtomOfTasksAndActors`, and the single `doing` column ref in `refAtomMatchesColumn` use them (the same cause in the rest of the file).
+    - No assertion line changes. No other file calls these helpers (grep).
+  timestamp: 2026-10-08T18:07:48.755366+00:00
+- actor: claude-code
+  id: 01m4eb9qg452cc37262nwv4w3h
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsKanbanTests/Filter/FilterEvaluatorTests.swift. Added `matchingRefs(of: String, in:)` (the one parse step; `nodeMatches` and `matches(of: String)` call it), `taskULIDs(in:)` (the LocalRef-to-ULID map; both `matches` overloads call it), and `refText(ofSlug:as:)` / `refTexts(ofSlugs:as:)` (used by `sampleColumns`, the actor list, and the `doing` column ref in `refAtomMatchesColumn`). No assertion line changed. `swift build --build-tests` passed (only the accepted SwiftPM "missing creator" warning). `swift test --skip-build` 3 times, limit 120 s each: 996 tests in 68 suites passed each time (7.820 s, 7.787 s, 7.767 s). The 3 findings are marked `- [x]`.
+    - not changed: `taskRef(_:)` and the comment ref in `refAtomOfComment` build a ref from a ULID, not from a slug. A change of the comment ref would change an assertion line, which the instruction forbids.
+    - next: /review. The task stays in doing; nothing is committed.
+  timestamp: 2026-10-08T18:09:37.796900+00:00
 depends_on:
 - 01M4E2MCSNEA5GS581W5QZEQ1H
 position_column: doing
@@ -89,3 +122,18 @@ Rules:
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-08 13:02)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 26 file(s) reviewed, 6 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 2 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+> - `plan.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsKanbanTests/Filter/FilterEvaluatorTests.swift:130` `reuse/reuse` — nodeMatches(of:in:) repeats the parse-then-evaluate body of the existing matches(of: String, in:) at line 156. Only the evaluated function differs (matchingRefs instead of matches). A second parallel copy can drift from the first. Make the parse step a shared helper that takes the evaluation closure, or have nodeMatches and matches(of: String) both call one generic parsed-filter overload. Then only the mapping from LocalRef to text differs.
+- [x] `Tests/FoundationModelsKanbanTests/Filter/FilterEvaluatorTests.swift:482` `reuse/reuse` — sampleColumns maps a list of slugs to LocalRef description text. The same mapping is written again for actors at line 515. Two copies of one mapping shape exist in this file. Add one small helper that takes the slugs and a LocalRef constructor, and use it for both columns and actors.
+- [x] `Tests/FoundationModelsKanbanTests/Filter/FilterEvaluatorTests.swift:515` `reuse/reuse` — The actor mapping at line 515 repeats the slug-to-LocalRef-text mapping of sampleColumns at line 482, written as a second copy in the same file. Use the same shared slug-mapping helper for the actor list as for the column list.

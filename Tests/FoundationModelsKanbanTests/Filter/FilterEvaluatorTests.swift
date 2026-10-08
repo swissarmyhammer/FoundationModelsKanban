@@ -122,13 +122,39 @@ struct FilterEvaluatorTests {
 
     /// Parses a filter and evaluates it against each node of a board, of each node type.
     ///
+    /// This is the one place that parses the text of a filter. Each helper that takes the text calls it.
+    ///
+    /// - Parameters:
+    ///   - filter: The text of the filter.
+    ///   - board: The board.
+    /// - Returns: The local refs of the nodes that match, in slot order.
+    /// - Throws: An error when the filter does not parse.
+    static func matchingRefs(of filter: String, in board: ReadinessFixture) throws -> [LocalRef] {
+        matchingRefs(of: try FilterExpr(parsing: filter), in: board)
+    }
+
+    /// Parses a filter and evaluates it against each node of a board, of each node type.
+    ///
     /// - Parameters:
     ///   - filter: The text of the filter.
     ///   - board: The board.
     /// - Returns: The text of the local ref of each node that matches, in slot order, for example `column/todo`.
     /// - Throws: An error when the filter does not parse.
     static func nodeMatches(of filter: String, in board: ReadinessFixture) throws -> [String] {
-        matchingRefs(of: try FilterExpr(parsing: filter), in: board).map(\.description)
+        try matchingRefs(of: filter, in: board).map(\.description)
+    }
+
+    /// Gives the ULID text of each task ref in a list of local refs.
+    ///
+    /// - Parameter refs: The local refs, of each node type.
+    /// - Returns: The ULID texts of the task refs, in the order of `refs`.
+    static func taskULIDs(in refs: [LocalRef]) -> [String] {
+        refs.compactMap { ref in
+            guard case .task(let ulid) = ref else {
+                return nil
+            }
+            return ulid.ulidString
+        }
     }
 
     /// Evaluates a parsed filter against each task of a board.
@@ -138,12 +164,7 @@ struct FilterEvaluatorTests {
     ///   - board: The board.
     /// - Returns: The ULID texts of the tasks that match, in slot order.
     static func matches(of filter: FilterExpr, in board: ReadinessFixture) -> [String] {
-        matchingRefs(of: filter, in: board).compactMap { ref in
-            guard case .task(let ulid) = ref else {
-                return nil
-            }
-            return ulid.ulidString
-        }
+        taskULIDs(in: matchingRefs(of: filter, in: board))
     }
 
     /// Parses a filter and evaluates it against each task of a board.
@@ -154,7 +175,7 @@ struct FilterEvaluatorTests {
     /// - Returns: The ULID texts of the tasks that match, in slot order.
     /// - Throws: An error when the filter does not parse.
     static func matches(of filter: String, in board: ReadinessFixture) throws -> [String] {
-        matches(of: try FilterExpr(parsing: filter), in: board)
+        taskULIDs(in: try matchingRefs(of: filter, in: board))
     }
 
     /// Parses a filter and evaluates it against each task of the sample board.
@@ -478,8 +499,28 @@ struct FilterEvaluatorTests {
 
     // MARK: - Nodes of each type
 
+    /// Gives the text of the local ref of a node that a slug finds.
+    ///
+    /// - Parameters:
+    ///   - slug: The slug of the node.
+    ///   - makeRef: The constructor of the local ref, for example `LocalRef.column(slug:)`.
+    /// - Returns: The text, for example `column/todo`.
+    static func refText(ofSlug slug: String, as makeRef: (String) -> LocalRef) -> String {
+        makeRef(slug).description
+    }
+
+    /// Gives the text of the local ref of each node in a list of slugs.
+    ///
+    /// - Parameters:
+    ///   - slugs: The slugs of the nodes.
+    ///   - makeRef: The constructor of the local ref, for example `LocalRef.actor(slug:)`.
+    /// - Returns: The texts, in the order of `slugs`.
+    static func refTexts(ofSlugs slugs: [String], as makeRef: (String) -> LocalRef) -> [String] {
+        slugs.map { slug in refText(ofSlug: slug, as: makeRef) }
+    }
+
     /// The text of the local ref of each column of the sample board, in slot order.
-    static let sampleColumns = ReadinessFixture.defaultColumns.map { slug in LocalRef.column(slug: slug).description }
+    static let sampleColumns = refTexts(ofSlugs: ReadinessFixture.defaultColumns, as: LocalRef.column(slug:))
 
     /// Gives the text of the local ref of a task.
     ///
@@ -512,7 +553,7 @@ struct FilterEvaluatorTests {
         let board = try Self.sampleBoard()
         let tasks = try [Self.first, Self.second, Self.third, Self.fourth].map(Self.taskRef)
         #expect(try Self.nodeMatches(of: "~task", in: board) == tasks)
-        let actors = [Self.alice, Self.will].map { slug in LocalRef.actor(slug: slug).description }
+        let actors = Self.refTexts(ofSlugs: [Self.alice, Self.will], as: LocalRef.actor(slug:))
         #expect(try Self.nodeMatches(of: "~actor", in: board) == actors)
     }
 
@@ -535,7 +576,7 @@ struct FilterEvaluatorTests {
         "^doing", "^\(url(ofType: .column, withID: ReadinessFixture.doing))",
     ])
     func refAtomMatchesColumn(filter: String) throws {
-        let doing = LocalRef.column(slug: ReadinessFixture.doing).description
+        let doing = Self.refText(ofSlug: ReadinessFixture.doing, as: LocalRef.column(slug:))
         #expect(try Self.nodeMatches(of: filter, in: try Self.sampleBoard()) == [doing])
     }
 
