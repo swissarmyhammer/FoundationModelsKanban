@@ -79,7 +79,7 @@ struct BrokenMergeDisplayTests {
         let readiness = board.readiness
         #expect(readiness.column(ofTaskAt: slot) == (try board.slot(ofColumn: ReadinessFixture.todo)))
         #expect(readiness.isDone(taskAt: slot))
-        #expect(readiness.virtualTags(ofTaskAt: slot).isEmpty)
+        #expect(readiness.virtualTags(ofTaskAt: slot) == [.done])
         #expect(readiness.summary == BoardSummary(total: 1, ready: 1, done: 1))
     }
 

@@ -34,6 +34,9 @@ struct HistoryTests {
     /// The arguments of a `history` call that keeps the updates of the deleted tasks.
     static let deletedFilterArguments = ##"(filter: "#DELETED")"##
 
+    /// The arguments of a `history` call that keeps the updates of the done tasks.
+    static let doneFilterArguments = ##"(filter: "#DONE")"##
+
     // MARK: - Helpers
 
     /// Runs `board { history }` in a session, and expects that it gives no error.
@@ -75,6 +78,24 @@ struct HistoryTests {
         let base = try await ChangeBuilderTests.baseSession(inRepoAt: directory)
         var session = base.session
         try await run(eachOf: [TaskOperationTests.taskField(MutationName.completeTask, of: base.task)], in: &session)
+        return (session, base.task)
+    }
+
+    /// Runs the base setup, tags the fixture task with ``TagMutationTests/bug``, and then runs more mutation fields
+    /// on the task, each one in its own transaction.
+    ///
+    /// - Parameters:
+    ///   - directory: The temporary repo directory.
+    ///   - fields: Gives the mutation fields from the ULID of the fixture task, in call order.
+    /// - Returns: The session after the last field, and the ULID of the fixture task.
+    static func taggedSession(
+        inRepoAt directory: TemporaryDirectory,
+        running fields: (ULID) -> [String]
+    ) async throws -> (session: CommitSession, task: ULID) {
+        let base = try await ChangeBuilderTests.baseSession(inRepoAt: directory)
+        var session = base.session
+        let tag = ChangeBuilderTests.tagField(of: ChangeBuilderTests.refs(of: base.task, in: session))
+        try await run(eachOf: [tag] + fields(base.task), in: &session)
         return (session, base.task)
     }
 
@@ -305,6 +326,41 @@ struct HistoryTests {
         let tagged = try await Self.history(with: Self.bugFilterArguments, in: session)
         let task = ColumnActorTests.id(of: .task(base.task))
         #expect(Self.updateTexts(of: tagged.first) == ["TASK RESTORED \(task)"])
+    }
+
+    @Test("history(filter:) with a tag leaves out the updates of a done task, and #DONE keeps them")
+    func historyDoneFilterKeepsDoneTask() async throws {
+        let directory = try TemporaryDirectory()
+        let completed = try await Self.taggedSession(
+            inRepoAt: directory,
+            running: { task in [TaskOperationTests.taskField(MutationName.completeTask, of: task)] }
+        )
+        #expect(try await Self.history(with: Self.bugFilterArguments, in: completed.session).isEmpty)
+        let done = try await Self.history(with: Self.doneFilterArguments, in: completed.session)
+        let task = ColumnActorTests.id(of: .task(completed.task))
+        #expect(Self.updateTexts(of: done.first).contains("TASK UPDATED \(task)"))
+    }
+
+    @Test("After a move out of done, history(filter: \"#DONE\") leaves out the task, and a tag filter keeps it")
+    func historyAfterMoveOutOfDoneFollowsOpenTask() async throws {
+        let directory = try TemporaryDirectory()
+        let reopened = try await Self.taggedSession(
+            inRepoAt: directory,
+            running: { task in
+                [
+                    TaskOperationTests.taskField(MutationName.completeTask, of: task),
+                    TaskOperationTests.taskField(
+                        MutationName.moveTask,
+                        of: task,
+                        with: TaskOperationTests.moveInput()
+                    ),
+                ]
+            }
+        )
+        #expect(try await Self.history(with: Self.doneFilterArguments, in: reopened.session).isEmpty)
+        let tagged = try await Self.history(with: Self.bugFilterArguments, in: reopened.session)
+        let task = ColumnActorTests.id(of: .task(reopened.task))
+        #expect(Self.updateTexts(of: tagged.first).contains("TASK UPDATED \(task)"))
     }
 
     @Test("history(derived: false) leaves out the DERIVED updates")

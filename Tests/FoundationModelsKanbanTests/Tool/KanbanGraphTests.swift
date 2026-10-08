@@ -54,9 +54,9 @@ struct KanbanGraphTests {
     static let sessionActor = SessionActor(ref: ReplayTests.actor, name: actorName)
 
     /// A query that reads the board, its tasks, and the column of each task. The one column of the fixture is the
-    /// terminal column, so its tasks are done, and the query gives `excludeDone: false` to list them.
+    /// terminal column, so its tasks are done, and the query gives ``QueryFixture/liveTasksFilter`` to list them.
     static let boardQuery = """
-        { board { name key tasks(excludeDone: false) {
+        { board { name key tasks(\(QueryFixture.liveTasksArguments)) {
             totalCount edges { node { id shortId title column { name } } } } } }
         """
 
@@ -291,7 +291,8 @@ struct KanbanGraphTests {
         let document = """
             query Names { board { name } }
             query Page($first: Int) {
-                board { tasks(first: $first, excludeDone: false) { edges { node { title } } totalCount } }
+                board { tasks(first: $first, \(QueryFixture.liveTasksArguments)) {
+                    edges { node { title } } totalCount } }
             }
             """
         let response = try await Self.makeGraph(at: directory.url).execute(

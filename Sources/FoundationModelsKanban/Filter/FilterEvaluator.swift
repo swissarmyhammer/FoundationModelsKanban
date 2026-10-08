@@ -355,26 +355,28 @@ extension FilterCompiler {
     }
 }
 
-// MARK: - Names a column or a virtual tag
+// MARK: - Names a virtual tag
 
 extension FilterExpr {
-    /// `true` when the filter names a column: it has a `%` atom or a column URL at any depth, also under a NOT.
-    ///
-    /// The `excludeDone` default of a task list is `false` for such a filter, so that `%done` lists the done tasks
-    /// (plan.md §6.3, scoping arguments).
-    var namesColumn: Bool {
-        containsAtom { kind, _ in kind == .column }
-    }
-
     /// Tells if the filter names a virtual tag: it has a `#` atom or a tag URL with the name of the tag, in any case,
-    /// at any depth, also under a NOT.
+    /// at any depth, also under a NOT. A column atom (`%` or a column URL) names `DONE`, because a filter on the
+    /// column decides by itself if it wants the done tasks: `%done` lists them.
     ///
     /// A task list uses this test for each tag of ``VirtualTag/hiddenUnlessNamed`` (``TaskFilter``).
     ///
     /// - Parameter virtualTag: The virtual tag.
     /// - Returns: `true` when an atom of the filter names the tag.
     func names(_ virtualTag: VirtualTag) -> Bool {
-        containsAtom { kind, value in kind == .tag && value.localName.flatMap(VirtualTag.init(named:)) == virtualTag }
+        containsAtom { kind, value in
+            switch kind {
+            case .tag:
+                value.localName.flatMap(VirtualTag.init(named:)) == virtualTag
+            case .column:
+                virtualTag == .done
+            case .assignee, .ref:
+                false
+            }
+        }
     }
 
     /// Walks the filter, and tells if one of its atoms satisfies a condition.
@@ -395,8 +397,8 @@ extension FilterExpr {
 
 extension FilterValue {
     /// The name that the value gives in its board: the name as the filter writes it, or the local id of a URL, or
-    /// `nil` for a board URL, which has no local id. A URL of any board counts, the same as for
-    /// ``FilterExpr/namesColumn``.
+    /// `nil` for a board URL, which has no local id. A URL of any board counts, the same as a column URL of any board
+    /// names `DONE` (``FilterExpr/names(_:)``).
     fileprivate var localName: String? {
         switch self {
         case .name(let name): name

@@ -25,7 +25,8 @@ extension HistoryArguments: ChangeFilterArguments {}
 ///
 /// `type` keeps only the updates of the node types, `node` only the updates of the node, and `filter` only the
 /// updates of the tasks that match it and of the comments on those tasks. As in a task list, a tombstoned task matches
-/// only a filter that names `#DELETED` (``TaskFilter``). `derived: false` leaves out the `DERIVED`
+/// only a filter that names `#DELETED`, and a done task only a filter that names `#DONE` or a column
+/// (``TaskFilter``). `derived: false` leaves out the `DERIVED`
 /// updates. `actor` keeps only the transactions of the actor. A change with no update after the filters is left out.
 ///
 /// The refs resolve one time, against the graph of the call that makes the filter. The task filter reads the graph
@@ -104,7 +105,8 @@ struct ChangeFilter: Sendable {
         let filter: ChangeFilter
 
         /// The test of the task filter, or `nil` for no filter. A tombstoned task passes it only when the filter names
-        /// `#DELETED`, the same as in a task list (``TaskFilter``).
+        /// `#DELETED`, and a done task only when it names `#DONE` or a column, the same as in a task list
+        /// (``TaskFilter``).
         let taskFilter: TaskFilter?
 
         /// The graph whose tasks the task filter tests.

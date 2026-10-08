@@ -3,8 +3,8 @@ import Foundation
 /// A virtual tag: a tag that the projection calculates for a task at read time, from the board state (plan.md §5.5,
 /// §6). No patch writes it. The filter `#READY` and the other `#` atoms match it.
 ///
-/// The cases are in the order of the Rust virtual tag registry. The new tags `CONFLICT` and `DELETED` come last. The
-/// raw value is the slug of the tag, and the match is case-sensitive.
+/// The cases are in the order of the Rust virtual tag registry. The new tags `CONFLICT`, `DELETED`, and `DONE` come
+/// last. The raw value is the slug of the tag, and the match is case-sensitive.
 enum VirtualTag: String, CaseIterable, Sendable {
     /// The task is live, it is not done, and all its dependencies are done.
     case ready = "READY"
@@ -20,14 +20,20 @@ enum VirtualTag: String, CaseIterable, Sendable {
 
     /// The task is a tombstone: it has a `deleted` time (plan.md §3.3, rule 3).
     case deleted = "DELETED"
+
+    /// The task is live, and it shows in the terminal column.
+    case done = "DONE"
 }
 
 extension VirtualTag {
-    /// The virtual tags of the task states that a task list leaves out by default (plan.md §3.3 rule 3, §6.3).
+    /// The virtual tags of the task states that a task list leaves out by default (plan.md §3.3 rule 3, §6.3): the
+    /// tombstones and the done tasks.
     ///
     /// A task with one of these tags is in a list only when the filter names the tag (``FilterExpr/names(_:)``).
-    /// Then the filter decides. Thus `#DELETED` lists only the deleted tasks, and `!#DELETED` lists the live tasks.
-    static let hiddenUnlessNamed: [VirtualTag] = [.deleted]
+    /// Then the filter decides. Thus `#DELETED` lists only the deleted tasks, `#DONE` lists only the done tasks, and
+    /// `!#DONE` lists the live tasks that are not done. A column atom also names `DONE`, so `%done` lists the done
+    /// tasks.
+    static let hiddenUnlessNamed: [VirtualTag] = [.deleted, .done]
 
     /// Finds the virtual tag that a tag name names.
     ///
@@ -54,7 +60,8 @@ extension Readiness {
     }
 
     /// Tells if one virtual tag applies to a task. A tombstone has the tag `DELETED`, and it can have `CONFLICT`. It
-    /// never has `READY`, `BLOCKED`, or `BLOCKING`.
+    /// never has `READY`, `BLOCKED`, `BLOCKING`, or `DONE`. A done task never has `READY` or `BLOCKING`. As in Rust,
+    /// it has `BLOCKED` when one of its dependencies is not done.
     ///
     /// - Parameters:
     ///   - tag: The virtual tag.
@@ -76,6 +83,8 @@ extension Readiness {
             return task.fields.hasConflict
         case .deleted:
             return task.fields.isDeleted
+        case .done:
+            return isLive && isDone(taskAt: slot)
         }
     }
 }

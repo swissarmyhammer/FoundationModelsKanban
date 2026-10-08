@@ -444,28 +444,15 @@ struct NodesArguments: Codable, Sendable {
     let ids: [NodeID]
 }
 
-/// The arguments of `Board.tasks`: the list, the filter and the scoping arguments of plan.md §6.3, and the cursor
-/// paging of plan.md §4.1.
+/// The arguments of `Board.tasks`: the filter of plan.md §6.3, and the cursor paging of plan.md §4.1. The filter is
+/// the only way to select the tasks.
 struct TasksArguments: Codable, Sendable {
     /// The number of tasks of a page when the call does not give `first`.
     static let defaultPageSize = 10
 
-    /// The filter, for example `#bug && @alice`, or `nil` for no filter. The filter `#DELETED` lists the tombstoned
-    /// tasks (plan.md §3.3, rule 3).
+    /// The filter, for example `#bug && @alice`, or `nil` for no filter. The list leaves out the done and the
+    /// tombstoned tasks unless the filter names `#DONE` (or a column) or `#DELETED` (plan.md §3.3 rule 3, §6.3).
     let filter: String?
-
-    /// The column that the tasks show in: the same as the atom `%x` in the filter.
-    let column: NodeID?
-
-    /// The tag that the tasks have: the same as the atom `#x` in the filter.
-    let tag: NodeID?
-
-    /// The actor that the tasks are assigned to: the same as the atom `@x` in the filter.
-    let assignee: NodeID?
-
-    /// `true` to leave out the done tasks. No value is `true`, or `false` when the call names a column or the filter
-    /// names a hidden state such as `#DELETED`.
-    let excludeDone: Bool?
 
     /// The maximum number of tasks of the page. A negative value gives no task. An explicit `null` gives
     /// ``defaultPageSize``.
@@ -686,11 +673,20 @@ struct ColumnObject: SlotNodeObject {
     /// The read view of the graph.
     let view: BoardView
 
-    /// The slot of the column in the graph.
-    let slot: Int
-
     /// The state of the column node.
     let state: ColumnNode
+
+    /// Makes the object of a column. A column field does not use the slot: a filter selects the tasks of the column
+    /// by its URL.
+    ///
+    /// - Parameters:
+    ///   - view: The read view of the graph.
+    ///   - slot: The slot of the column. The object does not keep it.
+    ///   - state: The state of the column node.
+    init(view: BoardView, slot _: Int, state: ColumnNode) {
+        self.view = view
+        self.state = state
+    }
 }
 
 /// An actor, as the GraphQL `Actor` type.
@@ -698,11 +694,20 @@ struct ActorObject: SlotNodeObject, LabelObject {
     /// The read view of the graph.
     let view: BoardView
 
-    /// The slot of the actor in the graph.
-    let slot: Int
-
     /// The state of the actor node.
     let state: ActorNode
+
+    /// Makes the object of an actor. An actor field does not use the slot: a filter selects the tasks of the actor
+    /// by its URL.
+    ///
+    /// - Parameters:
+    ///   - view: The read view of the graph.
+    ///   - slot: The slot of the actor. The object does not keep it.
+    ///   - state: The state of the actor node.
+    init(view: BoardView, slot _: Int, state: ActorNode) {
+        self.view = view
+        self.state = state
+    }
 }
 
 /// A tag, as the GraphQL `Tag` type.
@@ -710,11 +715,20 @@ struct TagObject: SlotNodeObject, LabelObject {
     /// The read view of the graph.
     let view: BoardView
 
-    /// The slot of the tag in the graph.
-    let slot: Int
-
     /// The state of the tag node.
     let state: TagNode
+
+    /// Makes the object of a tag. A tag field does not use the slot: a filter selects the tasks of the tag by its
+    /// URL.
+    ///
+    /// - Parameters:
+    ///   - view: The read view of the graph.
+    ///   - slot: The slot of the tag. The object does not keep it.
+    ///   - state: The state of the tag node.
+    init(view: BoardView, slot _: Int, state: TagNode) {
+        self.view = view
+        self.state = state
+    }
 }
 
 /// A task, as the GraphQL `Task` type.
@@ -823,10 +837,6 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 }
                 Field("tasks", at: BoardObject.tasks) {
                     Argument("filter", at: \.filter)
-                    Argument("column", at: \.column)
-                    Argument("tag", at: \.tag)
-                    Argument("assignee", at: \.assignee)
-                    Argument("excludeDone", at: \.excludeDone)
                     Argument("first", at: \.first).defaultValue(TasksArguments.defaultPageSize)
                     Argument("after", at: \.after)
                 }

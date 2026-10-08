@@ -79,7 +79,13 @@ struct TaskOperationTests {
     private static let thirdOrdinal = Ordinal(after: Ordinal(after: .first))
 
     /// A query that lists the tombstoned tasks of the board.
-    private static let deletedTasksQuery = ##"{ board { tasks(filter: "#DELETED") { edges { node { id } } } } }"##
+    private static let deletedTasksQuery = tasksQuery(filtering: "#DELETED")
+
+    /// A query that lists the done tasks of the board.
+    private static let doneTasksQuery = tasksQuery(filtering: "#DONE")
+
+    /// The selection of a task field that gives the virtual tags.
+    private static let virtualTagsSelection = "{ virtualTags }"
 
     /// The `input` field that names the actor ``AddUpdateTaskTests/alice``.
     static let aliceInput = actorInput(naming: AddUpdateTaskTests.alice)
@@ -97,6 +103,14 @@ struct TaskOperationTests {
     ]
 
     // MARK: - Helpers
+
+    /// Makes a query that lists the ids of the tasks of the board that a filter selects.
+    ///
+    /// - Parameter filter: The filter, for example `#DONE`.
+    /// - Returns: The query.
+    private static func tasksQuery(filtering filter: String) -> String {
+        #"{ board { tasks(filter: "\#(filter)") { edges { node { id } } } } }"#
+    }
 
     /// Makes a field of a task mutation.
     ///
@@ -319,6 +333,29 @@ struct TaskOperationTests {
             ]
         )
         #expect(try AddUpdateTaskTests.lastPatch(of: fixture.task, in: directory) == expected)
+    }
+
+    @Test("moveTask into the done column gives DONE and the #DONE list, and a move out takes both away")
+    func moveTaskIntoAndOutOfDone() async throws {
+        let directory = try TemporaryDirectory()
+        let fixture = try ColumnActorTests.makeFixtureGraph(in: directory)
+        let input = Self.moveInput(to: Self.doneSlug)
+        let toDone = Self.taskField("moveTask", of: fixture.task, with: input, selecting: Self.virtualTagsSelection)
+        let response = try await KanbanGraphTests.execute(
+            AddUpdateTaskTests.mutation(of: AddUpdateTaskTests.doneColumn, toDone),
+            on: fixture.graph
+        )
+        #expect(response.hasSuffix(#""moveTask":{"virtualTags":["DONE"]}}}"#))
+        #expect(try await Self.listedTasks(by: Self.doneTasksQuery, on: fixture.graph) == [fixture.task])
+        let back = Self.taskField(
+            "moveTask",
+            of: fixture.task,
+            with: Self.moveInput(),
+            selecting: Self.virtualTagsSelection
+        )
+        let backResponse = try await CommentTests.run(back, on: fixture.graph)
+        #expect(backResponse == #"{"data":{"moveTask":{"virtualTags":["READY"]}}}"#)
+        #expect(try await Self.listedTasks(by: Self.doneTasksQuery, on: fixture.graph).isEmpty)
     }
 
     @Test("moveTask with no placement puts the task after the last task of the column")

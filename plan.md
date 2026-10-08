@@ -153,7 +153,7 @@ kanban://github.com/swissarmyhammer/FoundationModelsKanban/actor/claude-code
 
 1. Each stored edge holds the local ref of its target. A `dependsOn` edge to a task in a different board holds the full URI of that task (§3.2).
 2. A delete makes a **tombstone**. It does not change other nodes.
-3. At read time, the projection ignores an edge to a tombstoned node. Thus, delete does not need cascade writes. A tombstoned task has the virtual tag `DELETED` (§6). Lists do not show a tombstone, unless the filter names `#DELETED` at some depth (also under a NOT). Then the list selects from the live tasks and the tombstoned tasks, and the filter decides. Thus `#DELETED` lists only the deleted tasks, `#DELETED || #bug` lists both, and `!#DELETED` lists the live tasks. This one rule applies to each task list (`tasks`, `nextTask`, `searchTasks`, and the `tasks` fields of `Column`, `Actor`, and `Tag`) and to the task filter of `history` and `Subscription.changes`. It is keyed by the virtual tag: each virtual tag in the "hidden unless named" set marks a state that a list leaves out by default. `DELETED` is the first tag in that set. `node(id:)`, `nodes(ids:)`, and `NodeUpdate.node` return it with `deleted` set, so that a caller can see when the node was deleted.
+3. At read time, the projection ignores an edge to a tombstoned node. Thus, delete does not need cascade writes. A tombstoned task has the virtual tag `DELETED` (§6). Lists do not show a tombstone, unless the filter names `#DELETED` at some depth (also under a NOT). Then the list selects from the live tasks and the tombstoned tasks, and the filter decides. Thus `#DELETED` lists only the deleted tasks, `#DELETED || #bug` lists both, and `!#DELETED` lists the live tasks. This one rule applies to each task list (`tasks`, `nextTask`, `searchTasks`, and the `tasks` fields of `Column`, `Actor`, and `Tag`) and to the task filter of `history` and `Subscription.changes`. It is keyed by the virtual tag: each virtual tag in the "hidden unless named" set marks a state that a list leaves out by default. The set has two tags: `DELETED` and `DONE` (§6.3). Each tag is revealed only by its own name: `!#DELETED` does not show the done tasks. `node(id:)`, `nodes(ids:)`, and `NodeUpdate.node` return it with `deleted` set, so that a caller can see when the node was deleted.
 4. A `dependsOn` edge to a node that is **not known** (for example, the other repo is not available) counts as **not done**. The task is then blocked. This is the same as the Rust rule "missing dependency = blocked".
 5. A column that has live tasks cannot be deleted (`COLUMN_NOT_EMPTY`).
 6. A `dependsOn` edge that makes a cycle is refused (`DEPENDENCY_CYCLE`). The check reads all boards on the cycle path, and the commit check of §5.4 covers these boards. The Rust code defined this error but did not use it.
@@ -187,9 +187,9 @@ type Board implements Node {
   actors: [Actor!]!                   # shared nodes
   tags: [Tag!]!                       # shared nodes
   task(id: ID!): Task
-  tasks(filter: String, column: ID, tag: ID, assignee: ID,
-        excludeDone: Boolean,          # no value: true, or false when a column or #DELETED is named (§6.3)
-        first: Int = 10, after: String): TaskConnection!   # the filter #DELETED lists the tombstones (§3.3)
+  tasks(filter: String, first: Int = 10, after: String): TaskConnection!
+                                      # only the filter selects; no done task and no tombstone unless the filter
+                                      # names #DONE (or a column) or #DELETED (§3.3 rule 3, §6.3)
   nextTask(filter: String): Task
   searchTasks(query: String!, filter: String, first: Int = 10): [TaskHit!]!   # §6.4
   summary: BoardSummary!              # counts: total, ready, blocked, done, percent
@@ -237,7 +237,7 @@ type Task implements Node {
   blockedBy: [Task!]!                 # derived
   blocks: [Task!]!                    # derived
   ready: Boolean!                     # derived
-  virtualTags: [String!]!             # READY | BLOCKED | BLOCKING | CONFLICT | DELETED
+  virtualTags: [String!]!             # READY | BLOCKED | BLOCKING | CONFLICT | DELETED | DONE
   progress: Progress!                 # derived from Markdown checklists
   comments: [Comment!]!
   created: DateTime!                  # all time values are derived from the event log (§5.3)
@@ -566,8 +566,8 @@ A log can change outside the tool: a manual edit, a `git pull`, a merge, a `git 
 | Auto-init | If the first mutation runs and `.kanban` has no board, the tool initializes the board with the default columns. The default board `name` is the repo directory name. A query on an empty repo returns an empty board with that name and writes nothing. |
 | Terminal column | The column with the maximum `order`. A task there is "done". |
 | `ready` | All `dependsOn` targets are done. |
-| Virtual tags | `READY` (live, not done, and all dependencies done), `BLOCKED` (live, and at least one dependency is not done), `BLOCKING` (live, not done, and some live task depends on it). New in this design: `CONFLICT` (the body has a conflict block from a diff that could not apply, §5.5), and `DELETED` (the task is a tombstone, §3.3). A tombstone is never `READY`, `BLOCKED`, or `BLOCKING`. `DELETED` is "hidden unless named": a list shows a tombstone only when the filter names `#DELETED` (§3.3, rule 3). |
-| `nextTask` | From the tasks that have `READY` (live, not done, and ready) and match the filter: sort by column order, then by ordinal. Return the first task or `null`. `nextTask` never returns a tombstone, also for a filter that names `#DELETED`. |
+| Virtual tags | `READY` (live, not done, and all dependencies done), `BLOCKED` (live, and at least one dependency is not done), `BLOCKING` (live, not done, and some live task depends on it). New in this design: `CONFLICT` (the body has a conflict block from a diff that could not apply, §5.5), `DELETED` (the task is a tombstone, §3.3), and `DONE` (live, and in the terminal column). A tombstone is never `READY`, `BLOCKED`, `BLOCKING`, or `DONE`. `DONE` does not change the other tags: a done task is never `READY` or `BLOCKING`, and, as in Rust, it is `BLOCKED` when a dependency is not done. `DELETED` and `DONE` are "hidden unless named": a list shows a tombstone only when the filter names `#DELETED`, and a done task only when the filter names `#DONE` or a column (§3.3 rule 3, §6.3). |
+| `nextTask` | From the tasks that have `READY` (live, not done, and ready) and match the filter: sort by column order, then by ordinal. Return the first task or `null`. `nextTask` never returns a tombstone or a done task, also for a filter that names `#DELETED` or `#DONE`. |
 | `completeTask` | Move to the terminal column, after the last ordinal there. |
 | `moveTask` | Ordinal priority: an explicit `ordinal`, then `before` or `after` a neighbor, then append at the end. A missing column is created (name = slug in title case). |
 | Default column on add | The column with the minimum `order`. |
@@ -661,7 +661,7 @@ body     = [^ \t\n\r#@^%$()&|!]+
 
 | Syntax | Matches |
 |---|---|
-| `#tag` | Tasks with this tag, from an edge or a `#marker` (§6.1), after the rename redirect (§6.2). Also the virtual tags `READY`, `BLOCKED`, `BLOCKING`, and the new `CONFLICT` and `DELETED`. `#DELETED` also lets the list select the tombstones (§3.3, rule 3). |
+| `#tag` | Tasks with this tag, from an edge or a `#marker` (§6.1), after the rename redirect (§6.2). Also the virtual tags `READY`, `BLOCKED`, `BLOCKING`, and the new `CONFLICT`, `DELETED`, and `DONE`. `#DELETED` also lets the list select the tombstones, and `#DONE` the done tasks (§3.3, rule 3). |
 | `@user` | Tasks assigned to this actor, by actor slug or by the slug of the actor name. |
 | `^id` | The task itself, or a task with this `dependsOn` target (from an edge or a marker). `id` can be a full ULID, a 7-character short id, `^short`, or a unique ULID prefix. |
 | `&&` / `and` / `AND` | Both sides. |
@@ -683,8 +683,8 @@ body     = [^ \t\n\r#@^%$()&|!]+
 |---|---|
 | `%doing` | Tasks in this column, by column slug or by the slug of the column name. The match ignores case. |
 
-- Thus, `%review || (%todo && #READY)` is one filter. Before, it needed two calls with the `column` argument.
-- A filter with a `%` atom (or a column URL) counts as "names a column" for the `excludeDone` default (see **Scoping arguments**). Thus, `%done` lists the done tasks.
+- Thus, `%review || (%todo && #READY)` is one filter. In Rust, it needed two calls with the `column` param.
+- A `%` atom (or a column URL) names `DONE` (see **Default selection**). Thus, `%done` lists the done tasks.
 
 **New: `kanban://` URLs.** A URL can be the body of an atom, or it can be an atom by itself. The `body` rule already accepts `:` and `/`, so the Rust grammar needs only the bare `url` atom.
 
@@ -703,7 +703,16 @@ body     = [^ \t\n\r#@^%$()&|!]+
 - A URL whose key is the current key of the board resolves in that board, the same as a local ref (§3.2). A tag, actor, or column URL with the key of a different board matches nothing, because those edges stay in one board (§6.6).
 - A URL of the wrong type for its sigil (for example `#kanban://…/task/…`), or a board or comment URL, gives `INVALID_FILTER`. The message gives the correct form.
 
-**Scoping arguments.** The Rust `list tasks` params stay as arguments of `tasks`. Each one is sugar for one atom and is ANDed with `filter`: `tag` = `#x`, `assignee` = `@x`, `column` = `%x`. The Rust `project` param is removed. Each takes one value; to combine values, the agent writes a `filter`. As in Rust, `excludeDone` defaults to `true` when no column is named, and to `false` when a column is named. A column is named by the `column` argument, or by a `%` atom or a column URL anywhere in `filter`. `excludeDone` also defaults to `false` when `filter` names `#DELETED` at some depth (also under a NOT), so that `#DELETED` shows a deleted task in the done column. There is no `deleted` argument: the filter `#DELETED` selects the tombstones (§3.3, rule 3).
+**Only the filter selects.** A task list takes only `filter`, and `first` and `after` for paging. The Rust `list tasks` params `tag`, `assignee`, `column`, `project`, and `excludeDone` are removed, and there is no `deleted` argument. The agent writes the atom instead: `#x`, `@x`, `%x`. The shortcut mutations (for example `completeTask`) stay.
+
+**Default selection.** The derived tags are `READY`, `BLOCKED`, `BLOCKING`, `CONFLICT`, `DELETED`, and `DONE` (§6, "Virtual tags"). `DELETED` and `DONE` are "hidden unless named" (§3.3, rule 3):
+
+- A list leaves out a task that has a hidden tag, unless the filter names that tag at some depth (also under a NOT). Then the filter decides.
+- `#DELETED` names `DELETED`. `#DONE` names `DONE`. A `%` atom or a column URL also names `DONE`, as the Rust rule "a named column turns off `excludeDone`" does. Thus `%done` lists the done tasks, and `%done && !#DONE` lists none.
+- Each tag is revealed only by its own name. `!#DELETED` lists the live tasks that are not done; `#DONE || !#DONE` lists all live tasks.
+- `DONE` is only on a live task. Thus `#DELETED` lists a tombstone in the done column, and `#DONE` does not.
+
+The same rule applies to each place where `filter` applies (below). The `tasks` field of a `Column`, an `Actor`, or a `Tag` is `Board.tasks` with the filter `<atom of the node> && (<filter>)`. Thus a column lists its done tasks, and an actor or a tag lists a done task only when the filter names `#DONE`.
 
 **Where `filter` applies:** `tasks`, `nextTask`, `searchTasks`, the `tasks` fields of `Column`, `Actor`, and `Tag`, `history`, and `Subscription.changes`.
 
@@ -803,7 +812,7 @@ subscription { changes(board: "FoundationModelsMultitool", filter: "#kanban") {
 - **Fields.** Each `FieldChange` gives the public field name and the values before and after the transaction. A list field (for example `tags`, `assignees`, `dependsOn`) gives `added` and `removed`. The `body` field gives only `diff`, a unified diff from the body before the transaction to the body after it (§5.5). `before` and `after` are null for `body`, so that a large body is not sent two times. A client that needs the full text selects `node { body }`. `KanbanGraph` calculates the values from the projection just before and just after the transaction. Thus, the values are the same that a query shows, not the raw patch.
 - **Derived updates.** A change to one node can change derived fields of other nodes. For example, `completeTask` on task A can make task B `ready`, change `blockedBy` and `virtualTags` of B, and change `Board.summary`. Also, a tag rename or a tag delete changes `tags` of each task that uses the tag. `KanbanGraph` compares the derived fields (§5.3, step 4) and the read-time tags (§6.1) of each task in the changed boards, before and after. It adds a `NodeUpdate` with `source: DERIVED` for each node whose values changed. The data is small, so a full compare is fast enough. `derived: false` on `changes` leaves these updates out.
 - **Derived updates across boards.** A `dependsOn` edge can point to a task in a related board. When that task changes, the tasks that depend on it can become ready. Each loaded board has its own watcher (§5.6). Thus, `KanbanGraph` loads, and so watches, each board that a `dependsOn` edge of a board with a subscriber reaches.
-- **Filters.** `type` keeps only updates of these node types. `node` keeps only updates of this node. `filter` (§6.3) keeps only updates of tasks that match it, and of the comments on those tasks. A tombstoned task matches only a filter that names `#DELETED`, the same as in a task list (§3.3, rule 3). Thus `filter: "#DELETED"` keeps the `DELETED` update of a task. A `Change` with no update after the filters is not sent.
+- **Filters.** `type` keeps only updates of these node types. `node` keeps only updates of this node. `filter` (§6.3) keeps only updates of tasks that match it, and of the comments on those tasks. A tombstoned task matches only a filter that names `#DELETED`, and a done task only a filter that names `#DONE` or a column, the same as in a task list (§3.3 rule 3, §6.3). Thus `filter: "#DELETED"` keeps the `DELETED` update of a task, and `filter: "#DONE"` keeps the updates of a done task. A `Change` with no update after the filters is not sent.
 - **Arguments.** `board` (no value = the current repo), `type`, `node`, `actor`, `filter`, and `derived`. `history` takes the same filters, so that a client can catch up with `history(since:)` and then subscribe with the same arguments.
 - **Changes from this process.** When `KanbanGraph` commits a call (§5.4), it sends the `Change` to each matching subscriber at once.
 - **Changes from other processes, `git pull`, or a merge.** The file watcher of the board (§5.6) applies the changed files to the live graph and finds the event ids that are new. It does not use file positions, because a `union` merge can rewrite a file. It groups the new events by `txn` and sends one `Change` for each transaction, in `txn` order. The values before and after come from the live graph before and after the batch.
@@ -991,15 +1000,15 @@ Each step must compile and pass its tests before the next step starts.
   - short id and `^` resolution, and ambiguous prefixes;
   - no partial write on an error;
   - field clear (`null`) and no change (missing);
-  - `tasks` filter arguments, `excludeDone`, paging;
+  - the `tasks` filter, the default selection of §6.3, paging;
   - move with ordinal, `before`, or `after`;
   - delete and undelete (the Rust archive tests, with archive mapped to delete);
   - `nextTask` with a filter;
   - auto-init;
   - the session actor fallback.
 - Also port these unit tests: `types/position.rs`, `types/short_id.rs`, `tag_parser.rs` (the parse part), `virtual_tags.rs`, `task/next.rs`, and all of `swissarmyhammer-filter-expr` (parser and evaluator, keyword boundaries, precedence, and the parse errors). The `$project` tests change: `$x` gives `INVALID_FILTER`.
-- **Filter compatibility.** Each filter example in the Rust kanban tool description and in the `kanban` and `finish` skills (`../skills/skills/`) is a test case. Each gives the same tasks as in Rust, except the `$project` examples, which give `INVALID_FILTER` with a message that names `#` and `%`. A `tag`, `assignee`, or `column` argument gives the same result as its atom. `excludeDone` follows the Rust default.
-- **Column atom.** `%doing` matches the tasks in `doing`, by slug and by name, with any case. `%done` lists done tasks (a `%` atom turns off the `excludeDone` default). `%review || (%todo && #READY)` gives the tasks of both parts.
+- **Filter compatibility.** Each filter example in the Rust kanban tool description and in the `kanban` and `finish` skills (`../skills/skills/`) is a test case. Each gives the same tasks as in Rust, except the `$project` examples, which give `INVALID_FILTER` with a message that names `#` and `%`. A Rust call with a `tag`, `assignee`, or `column` param is written as a filter with its atom, and gives the same tasks. A `tag`, `assignee`, `column`, or `excludeDone` argument gives a GraphQL validation error. With no `#DONE` and no column in the filter, a list has no done task, as with the Rust `excludeDone` default.
+- **Column atom.** `%doing` matches the tasks in `doing`, by slug and by name, with any case. `%done` lists done tasks (a `%` atom names `DONE`, §6.3). `%review || (%todo && #READY)` gives the tasks of both parts.
 - **Filter URLs.** `^`, `#`, and `@` with a full URL match the same tasks as the short form. A bare task, tag, actor, or column URL matches. An `id` copied from a query result works as a filter. A `^` URL to a task in a different board matches the tasks that depend on it. A URL of the wrong type, and a board or comment URL, give `INVALID_FILTER`.
 - Do not port the tests for the `verb noun` parser, the aliases, or the scalar-or-array list input. GraphQL types replace them.
 - **Tests that are new for this design:**
@@ -1084,7 +1093,7 @@ The owner made each decision below.
 19. **Documents with a Markdown body. — DECIDED.** Each node is a document: properties plus one Markdown `body`. The field is `body` on all six node types. It replaces `description` (Board, Tag, Task) and `text` (Comment); these old names are aliases (§4.5). The log stores each change to a body as a unified diff in an `edit` patch, not as the full text (§5.5). Thus, the log stays small, and two branches that change different lines of one body merge. A hunk that cannot apply after a merge makes a git-style conflict block in the body and the virtual tag `CONFLICT`. `FieldChange` for `body` gives `diff`, not `before` and `after`. Undo writes the reversed diff.
 20. **Time values are derived. — DECIDED.** The Rust `due` and `scheduled` fields are removed, together with the `Date` scalar and `INVALID_DATE`. All six node types have `created`, `updated`, and `deleted` (on the `Node` interface). A task also has `started` and `completed`. All these values are derived from the envelope `at` of the patches during replay (§5.3). No patch stores a time value, and no mutation accepts one. A tombstone is not in lists, but `node(id:)` returns it with `deleted` set.
 21. **No archive; delete and undelete. — DECIDED.** The Rust archive (`archived`, `archiveTask`, `unarchiveTask`) is removed. A delete is a `delete: true` patch in the log, and an undelete is a `delete: false` patch. Each node type that has a delete mutation also has an undelete mutation (`undeleteTask`, `undeleteColumn`, `undeleteActor`, `undeleteTag`, `undeleteComment`). `tasks(filter: "#DELETED")` lists the deleted tasks (§3.3, rule 3). The verbs `archive` and `unarchive` / `restore` map to `delete` and `undelete` (§4.5).
-22. **Filter language. — DECIDED.** Keep the Rust filter language (`#tag`, `@user`, `^id`, `&&`/`and`, `||`/`or`, `!`/`not`, `()`, implicit AND), so that the filters in the existing tool description and skills still work. Remove `$project`; `$x` gives `INVALID_FILTER` with a correction. Add the column atom `%column`. The language also accepts `kanban://` URLs: as the body of `^`, `#`, `@`, and `%`, and as a bare atom whose node type gives the meaning (task, tag, actor, or column). The Rust scoping params `tag`, `assignee`, and `column` and the Rust `excludeDone` default are kept; a `%` atom also counts as a named column (§6.3).
+22. **Filter language. — DECIDED.** Keep the Rust filter language (`#tag`, `@user`, `^id`, `&&`/`and`, `||`/`or`, `!`/`not`, `()`, implicit AND), so that the filters in the existing tool description and skills still work. Remove `$project`; `$x` gives `INVALID_FILTER` with a correction. Add the column atom `%column`. The language also accepts `kanban://` URLs: as the body of `^`, `#`, `@`, and `%`, and as a bare atom whose node type gives the meaning (task, tag, actor, or column). The Rust scoping params `tag`, `assignee`, `column`, and `excludeDone` are removed: a task list takes only the filter. The virtual tag `DONE` replaces the `excludeDone` default: a list leaves out the done tasks unless the filter names `#DONE` or a column (§6.3).
 23. **Parallel load, no cache. — DECIDED.** There is no cache and no snapshot on disk. `KanbanGraph` loads each board from the logs the first time that a call needs it, and then keeps it live (item 25). A parallel loader reads the node files with a work queue and a fixed set of workers. It reads in stages, in entity order: board, actors, columns, tags, tasks, comments. At the end of each stage, it joins the new nodes to the nodes of the earlier stages, so that the in-memory graph has direct edges. Each worker folds one node from its own file, because each patch changes one node (§5.3).
 24. **Filter parser. — DECIDED.** Use `pointfreeco/swift-parsing` for the filter DSL. It is the Swift parser-combinator library that is most like `chumsky`, which the Rust code uses. Thus, the Swift grammar has the same shape as the Rust grammar, and the language can grow. The tool writes its own `INVALID_FILTER` messages from the failure position; it does not show the library error text.
 25. **Live graph with a file watcher. — DECIDED.** `KanbanGraph` keeps the `Graph` of each loaded board in memory. An FSEvents watcher on the `.kanban/` directory of each loaded board runs for the life of `KanbanGraph`, also when there is no subscriber. A manual edit, a `git pull`, a merge, a branch switch, or a write from a different process makes a batch of changed files. The batch goes through the serial gate, and the tool reads each changed file again, folds its node again, and joins it in entity order (§5.6). Edges hold stable slots, so a reload of one node does not break other nodes. File signatures let the tool ignore its own writes. The commit check compares signatures under the lock, so a write never depends on the timing of FSEvents. A query can show old data until the watcher has processed the events; this is accepted. A mutation works on a copy-on-write working copy, which becomes the live graph only after the commit.

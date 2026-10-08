@@ -92,8 +92,24 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsKanbanTests/Observe/SubscriptionTests.swift. `swift build --build-tests` clean (only the accepted "missing creator" warning). `timeout 120 swift test --skip-build` 3 runs: 976/976 pass each (7.42 s, 7.44 s, 7.49 s). Finding `SubscriptionTests.swift:179` is checked.
     - next: /review
   timestamp: 2026-10-08T16:11:36.155145+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4e4rh59zrzghg4h3mh2ck67
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (00333ec). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. All items in the two prior Review Findings sections are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-08T16:15:22.793304+00:00
+- actor: claude-code
+  id: 01m4e4rq5ajz1y9hxw7m3b5bhc
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — 1 test file (SubscriptionTests.swift); 1/1 findings checked
+    - test: green — swift test 3 runs, 976 passed each (7.5 s, 7.6 s, 7.6 s); build warnings only the 2 accepted kinds
+    - commit: 00333ec
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T16:15:28.938267+00:00
+position_column: done
+position_ordinal: bd80
 title: 'Replace tasks(deleted:) with the #DELETED virtual tag'
 ---
 ## What

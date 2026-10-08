@@ -94,7 +94,8 @@ extension Design {
         static let edgeFields = "ready tags { id } dependsOn { id } comments { task { id } author { id } }"
 
         /// A query that reads the whole board with the edges of each task.
-        static let boardQuery = "{ board { key tags { id } columns { id } actors { id } tasks(excludeDone: false) "
+        static let boardQuery = "{ board { key tags { id } columns { id } actors { id } "
+            + "tasks(\(QueryFixture.liveTasksArguments)) "
             + "{ edges { node { id column { id } \(edgeFields) } } } } }"
 
         // MARK: - Helpers

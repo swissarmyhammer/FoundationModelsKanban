@@ -304,6 +304,11 @@ struct NodeQueryTests {
             DeletedFilterCase(
                 filter: "!#DELETED",
                 deleting: ReadinessFixture.first,
+                titles: [QueryFixture.secondTitle]
+            ),
+            DeletedFilterCase(
+                filter: "!#DELETED && (\(QueryFixture.liveTasksFilter))",
+                deleting: ReadinessFixture.first,
                 titles: [QueryFixture.secondTitle, QueryFixture.thirdTitle]
             ),
         ]
@@ -343,11 +348,27 @@ struct NodeQueryTests {
         #expect(try await Self.virtualTags(of: task, in: fixture) == Self.virtualTagsResponse(liveTags))
     }
 
-    @Test("The schema has no deleted argument on Board.tasks")
-    func tasksFieldHasNoDeletedArgument() throws {
-        let sdl = try PublicSchema().sdl
-        #expect(sdl.contains("  tasks(filter: String"))
-        #expect(!sdl.contains("deleted: Boolean"))
+    @Test("A live task in the done column shows DONE in virtualTags, and a deleted one shows only DELETED")
+    func doneTaskHasDoneVirtualTag() async throws {
+        var fixture = try QueryFixture()
+        let third = ReadinessFixture.third
+        #expect(try await Self.virtualTags(of: third, in: fixture) == Self.virtualTagsResponse(#"["DONE"]"#))
+        try fixture.delete(nodeAt: .task(DependencyMarkersTests.ulid(of: third)))
+        #expect(try await Self.virtualTags(of: third, in: fixture) == Self.virtualTagsResponse(#"["DELETED"]"#))
+    }
+
+    @Test("Each task list of the schema takes only the filter, and Board.tasks also the paging arguments")
+    func taskListsTakeOnlyTheFilter() throws {
+        let lines = try PublicSchema().sdl.split(separator: "\n").map { line in
+            line.trimmingCharacters(in: .whitespaces)
+        }
+        let taskLists = Set(lines.filter { line in line.hasPrefix("tasks(") })
+        let expected: Set = [
+            "tasks(filter: String, first: Int = \(TasksArguments.defaultPageSize), after: String): TaskConnection",
+            "tasks(filter: String): [Task!]",
+        ]
+        #expect(taskLists == expected)
+        #expect(!lines.contains { line in line.contains("deleted: Boolean") })
     }
 
     @Test("Comment.author returns a deleted author as the tombstone, with deleted set")

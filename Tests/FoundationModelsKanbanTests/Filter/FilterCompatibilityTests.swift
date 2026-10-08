@@ -8,8 +8,9 @@ import Testing
 /// Each filter example of the Rust kanban tool description
 /// (`swissarmyhammer-tools/src/mcp/tools/kanban/description.md`) and of the `kanban` and `finish` skills
 /// (`../skills/skills/`) is one test case. Each gives the tasks that the Rust `list tasks` gives on the same board,
-/// except a `$project` example, which gives `INVALID_FILTER`. The scoping arguments `tag`, `assignee`, and `column`
-/// give the same tasks as their atoms, and `excludeDone` follows the Rust default.
+/// except a `$project` example, which gives `INVALID_FILTER`. The Rust arguments `tag`, `assignee`, `column`, and
+/// `excludeDone` are not in the schema: the filter selects the tasks, and a list leaves out the done tasks unless the
+/// filter names `#DONE` or a column.
 @Suite("Filter compatibility")
 struct FilterCompatibilityTests {
     /// The ULID text of a task in `todo` with the tag `bug`, assigned to `alice`.
@@ -99,23 +100,25 @@ struct FilterCompatibilityTests {
         ("!$auth-migration", "auth-migration"),
     ]
 
-    /// The `finish` skill scoped-batch calls: `column: "review"` with the scope, and `column: "todo"` with
-    /// `#READY && (<scope>)`. Each has the scope and the tasks of the two calls.
+    /// The `finish` skill scoped-batch calls, as filters: `%review && (<scope>)`, and
+    /// `%todo && #READY && (<scope>)`. Each has the scope and the tasks of the two calls.
     static let finishExamples: [(scope: String, review: [String], todo: [String])] = [
         ("#feature", [polishUI], [addSearch]),
         ("#bug", [], [fixLogin]),
         ("#bug || #feature", [polishUI], [fixLogin, addSearch]),
     ]
 
-    /// Each scoping argument and its value, with the filter of its atom.
-    static let scopingArguments: [(argument: String, atom: String)] = [
-        (#"tag: "bug""#, "#bug"),
-        (#"tag: "BUG""#, "#bug"),
-        (#"assignee: "alice""#, "@alice"),
-        (#"assignee: "Bob Smith""#, "@bob-smith"),
-        (#"column: "done""#, "%done"),
-        (#"column: "Doing""#, "%doing"),
-        (#"tag: "\#(QueryFixture.id(of: "tag/bug"))""#, "#bug"),
+    /// The arguments that a task list does not have. The filter selects the tasks (plan.md §6.3).
+    static let removedArguments = [#"tag: "bug""#, #"assignee: "alice""#, #"column: "done""#, "excludeDone: false"]
+
+    /// Each filter that names `#DONE`, with the tasks that it lists, in board order.
+    static let doneExamples: [(filter: String, tasks: [String])] = [
+        ("#DONE", [oldBug]),
+        ("#DONE || #feature", [addSearch, polishUI, oldBug]),
+        ("!#DONE", openTasks),
+        ("#bug && (\(QueryFixture.liveTasksFilter))", openBugs + [oldBug]),
+        ("%done && !#DONE", []),
+        (QueryFixture.liveTasksFilter, allTasks),
     ]
 
     /// The test board: the default columns with names, two actors, three tags, and seven tasks.
@@ -188,77 +191,72 @@ struct FilterCompatibilityTests {
         #expect(error.code == "INVALID_FILTER")
     }
 
-    @Test("column: \"todo\" lists the tasks of todo, as in the kanban skill")
+    @Test("%todo lists the tasks of todo, as column: \"todo\" in the kanban skill")
     func columnExample() async throws {
-        #expect(try await fixture.taskULIDs(selectedBy: #"column: "todo""#) == Self.todoTasks)
+        #expect(try await fixture.taskULIDs(selectedBy: #"filter: "%todo""#) == Self.todoTasks)
     }
 
     @Test("The finish skill calls give the review and the ready todo tasks of the scope", arguments: finishExamples)
     func finishExample(scope: String, review: [String], todo: [String]) async throws {
-        let reviewArguments = #"column: "review", filter: "\#(scope)""#
-        let todoArguments = ##"column: "todo", filter: "#READY && (\##(scope))""##
+        let reviewArguments = #"filter: "%review && (\#(scope))""#
+        let todoArguments = ##"filter: "%todo && #READY && (\##(scope))""##
         #expect(try await fixture.taskULIDs(selectedBy: reviewArguments) == review)
         #expect(try await fixture.taskULIDs(selectedBy: todoArguments) == todo)
     }
 
     @Test("The finish skill call with no scope gives the ready todo tasks")
     func finishExampleWithNoScope() async throws {
-        let ready = try await fixture.taskULIDs(selectedBy: ##"column: "todo", filter: "#READY""##)
+        let ready = try await fixture.taskULIDs(selectedBy: ##"filter: "%todo && #READY""##)
         #expect(ready == [Self.fixLogin, Self.addSearch, Self.slowQuery])
-        #expect(try await fixture.taskULIDs(selectedBy: #"column: "review""#) == [Self.polishUI])
+        #expect(try await fixture.taskULIDs(selectedBy: #"filter: "%review""#) == [Self.polishUI])
     }
 
-    // MARK: - Scoping arguments
+    // MARK: - Only the filter
 
-    @Test("A scoping argument gives the same tasks as its atom", arguments: scopingArguments)
-    func scopingArgumentEqualsAtom(argument: String, atom: String) async throws {
-        let byArgument = try await fixture.taskULIDs(selectedBy: argument)
-        let byAtom = try await fixture.taskULIDs(selectedBy: #"filter: "\#(atom)""#)
-        #expect(byArgument == byAtom)
-        #expect(!byArgument.isEmpty)
+    @Test("A task list has no scoping or excludeDone argument", arguments: removedArguments)
+    func removedArgumentIsUnknown(argument: String) async throws {
+        let response = try await fixture.respond(to: "{ board { tasks(\(argument)) { totalCount } } }")
+        #expect(response.contains("does not have argument"))
+        #expect(!response.contains(#""totalCount""#))
     }
 
-    @Test("A scoping argument ANDs with the full filter, not with its last OR branch")
-    func scopingArgumentAndsWithFullFilter() async throws {
-        let tasks = try await fixture.taskULIDs(selectedBy: ##"filter: "#bug || #feature", assignee: "alice""##)
+    @Test("An OR filter ANDed with an atom keeps the parentheses of the OR")
+    func orFilterAndsAsOneGroup() async throws {
+        let tasks = try await fixture.taskULIDs(selectedBy: ##"filter: "(#bug || #feature) && @alice""##)
         #expect(tasks == [Self.fixLogin, Self.blockedBug, Self.polishUI])
     }
 
-    @Test("A scoping value with an operator is one name, so it adds no second atom")
-    func scopingValueIsOneName() async throws {
-        #expect(try await fixture.taskULIDs(selectedBy: #"tag: "bug || #feature""#).isEmpty)
-    }
-
-    @Test("An empty scoping value gives INVALID_FILTER", arguments: ["tag", "assignee", "column"])
-    func emptyScopingValue(argument: String) async throws {
-        let error = try await fixture.kanbanError(of: #"{ board { tasks(\#(argument): "  ") { totalCount } } }"#)
+    @Test("An empty atom gives INVALID_FILTER", arguments: ["#", "@", "%"])
+    func emptyAtom(sigil: String) async throws {
+        let error = try await fixture.kanbanError(of: #"{ board { tasks(filter: "\#(sigil)  ") { totalCount } } }"#)
         #expect(error.code == "INVALID_FILTER")
     }
 
-    @Test("A scoping URL of the wrong type gives INVALID_FILTER")
-    func scopingURLOfWrongType() async throws {
+    @Test("A tag URL of the wrong type gives INVALID_FILTER")
+    func tagURLOfWrongType() async throws {
         let url = QueryFixture.id(ofTask: Self.fixLogin)
-        let error = try await fixture.kanbanError(of: #"{ board { tasks(tag: "\#(url)") { totalCount } } }"#)
+        let error = try await fixture.kanbanError(of: ##"{ board { tasks(filter: "#\##(url)") { totalCount } } }"##)
         #expect(error.code == "INVALID_FILTER")
     }
 
-    // MARK: - excludeDone
+    // MARK: - DONE
 
-    @Test("With no column named, the done tasks are not in the list")
+    @Test("With no filter, or a filter that names no column and not #DONE, the list has no done task")
     func doneTasksAreOutByDefault() async throws {
+        let noFilter = "first: \(TasksArguments.defaultPageSize)"
+        #expect(try await fixture.taskULIDs(selectedBy: noFilter) == Self.openTasks)
         #expect(try await fixture.taskULIDs(selectedBy: ##"filter: "#bug""##) == Self.openBugs)
     }
 
-    @Test("excludeDone: false lists the done tasks too")
-    func excludeDoneFalseListsDoneTasks() async throws {
-        #expect(try await fixture.taskULIDs(selectedBy: "excludeDone: false") == Self.allTasks)
-        let bugs = try await fixture.taskULIDs(selectedBy: ##"filter: "#bug", excludeDone: false"##)
-        #expect(bugs == Self.openBugs + [Self.oldBug])
+    @Test("A filter that names #DONE selects from the done tasks too, and the filter decides", arguments: doneExamples)
+    func doneFilter(filter: String, tasks: [String]) async throws {
+        #expect(try await fixture.taskULIDs(selectedBy: #"filter: "\#(filter)""#) == tasks)
     }
 
-    @Test("excludeDone: true with column: \"done\" gives no task")
-    func excludeDoneTrueOverridesColumn() async throws {
-        #expect(try await fixture.taskULIDs(selectedBy: #"column: "done", excludeDone: true"#).isEmpty)
+    @Test("nextTask with #DONE gives no task, because a done task is not READY")
+    func nextTaskWithDoneFilter() async throws {
+        #expect(try await fixture.nextTaskULID(withFilter: "#DONE") == nil)
+        #expect(try await fixture.nextTaskULID(withFilter: "#DONE || @alice") == Self.fixLogin)
     }
 
     // MARK: - Column atom
@@ -294,11 +292,22 @@ struct FilterCompatibilityTests {
                 + ##"actors { tasks(filter: "#bug") { shortId } } tags { tasks(filter: "@alice") { shortId } } } }"##
         )
         let columns = Self.taskLists(of: [[Self.fixLogin, Self.blockedBug], [Self.crashOnSave], [], [Self.oldBug]])
-        let aliceBugs = [Self.fixLogin, Self.blockedBug, Self.oldBug]
+        let aliceBugs = [Self.fixLogin, Self.blockedBug]
         let actors = Self.taskLists(of: [aliceBugs, [Self.crashOnSave]])
         let tags = Self.taskLists(of: [aliceBugs, [Self.polishUI], []])
         let expected = #"{"data":{"board":{"columns":\#(columns),"actors":\#(actors),"tags":\#(tags)}}}"#
         #expect(response == expected)
+    }
+
+    @Test("The tasks field of an actor and a tag lists the done tasks only when the filter names #DONE")
+    func nodeTaskFieldsNameDone() async throws {
+        let response = try await fixture.respond(
+            to: ##"{ board { actors { tasks(filter: "#DONE") { shortId } } "##
+                + ##"tags { tasks(filter: "#DONE") { shortId } } } }"##
+        )
+        let actors = Self.taskLists(of: [[Self.oldBug], []])
+        let tags = Self.taskLists(of: [[Self.oldBug], [], []])
+        #expect(response == #"{"data":{"board":{"actors":\#(actors),"tags":\#(tags)}}}"#)
     }
 
     /// Gives the JSON of a list of nodes, each with a `tasks` list of short ids.

@@ -5,9 +5,10 @@ import Foundation
 /// The test has two parts:
 ///
 /// - The hidden states. Each tag of ``VirtualTag/hiddenUnlessNamed`` marks a task state that the test leaves out by
-///   default. A task with one of these tags passes only when the filter names the tag (``FilterExpr/names(_:)``).
-///   Thus a task list shows no tombstone, but `#DELETED` lists the tombstones, and `#DELETED || #bug` lists the
-///   tombstones and the live tasks with the tag `bug`.
+///   default: `DELETED` and `DONE`. A task with one of these tags passes only when the filter names the tag
+///   (``FilterExpr/names(_:)``; a column atom names `DONE`). Thus a task list shows no tombstone and no done task,
+///   but `#DELETED` lists the tombstones, `#DONE || #bug` lists the done tasks and the open tasks with the tag `bug`,
+///   and `%done` lists the done tasks.
 /// - The filter (``FilterEvaluator``). With no filter, each task that is not hidden passes.
 ///
 /// `Board.tasks`, `Board.nextTask`, `Board.searchTasks`, the `tasks` fields of `Column`, `Actor`, and `Tag`, and the
@@ -43,14 +44,5 @@ struct TaskFilter {
     func matches(taskAt slot: Int) -> Bool {
         !hiddenTags.contains { tag in readiness.hasVirtualTag(tag, taskAt: slot) }
             && (evaluator?.matches(taskAt: slot) ?? true)
-    }
-}
-
-extension FilterExpr {
-    /// `true` when the filter names a column or a hidden state (``VirtualTag/hiddenUnlessNamed``). For such a filter,
-    /// the `excludeDone` default of a task list is `false`: `%done` lists the done tasks, and `#DELETED` lists a
-    /// deleted task also in the done column (plan.md §6.3, scoping arguments).
-    var keepsDoneTasksByDefault: Bool {
-        namesColumn || VirtualTag.hiddenUnlessNamed.contains(where: names)
     }
 }

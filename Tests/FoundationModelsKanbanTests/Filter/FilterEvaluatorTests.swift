@@ -239,6 +239,17 @@ struct FilterEvaluatorTests {
         #expect(try Self.matches(of: "#CONFLICT", in: board) == [Self.first])
     }
 
+    @Test("The virtual tag DONE matches a live task in the terminal column, and NOT DONE matches the others")
+    func doneTag() throws {
+        var board = ReadinessFixture()
+        try board.addTask(withULID: Self.first, inColumn: ReadinessFixture.done)
+        try board.addTask(withULID: Self.second)
+        let tombstone = ReadinessFixture.fields(isDeleted: true)
+        try board.addTask(withULID: Self.third, inColumn: ReadinessFixture.done, fields: tombstone)
+        #expect(try Self.matches(of: "#DONE", in: board) == [Self.first])
+        #expect(try Self.matches(of: "!#DONE", in: board) == [Self.second, Self.third])
+    }
+
     @Test("The keyword operators in lowercase")
     func lowercaseKeywords() throws {
         #expect(try Self.sampleMatches(of: "not #done and @alice or #docs") == [Self.first, Self.third])
@@ -442,25 +453,31 @@ struct FilterEvaluatorTests {
         #expect(Self.matches(of: .atom(.tag, .uri(uri)), in: try Self.sampleBoard()).isEmpty)
     }
 
-    // MARK: - Names a column
-
-    @Test(
-        "A filter with a column atom or a column URL names a column",
-        arguments: ["%doing", "#bug && !%done", "(@alice || %todo) #bug", url(ofType: .column, withID: "doing")]
-    )
-    func namesColumn(filter: String) throws {
-        #expect(try FilterExpr(parsing: filter).namesColumn)
-    }
-
-    @Test(
-        "A filter with no column atom does not name a column",
-        arguments: ["#bug", "@alice && !#done", "^\(first) || #READY", url(ofType: .tag, withID: "bug")]
-    )
-    func namesNoColumn(filter: String) throws {
-        #expect(try !FilterExpr(parsing: filter).namesColumn)
-    }
-
     // MARK: - Names a virtual tag
+
+    /// Each filter of the "names DONE" test, with `true` when it has a `#DONE` atom or a column atom at some depth.
+    static let doneNamings: [(String, Bool)] = [
+        ("#DONE", true),
+        ("@alice && !#done", true),
+        (url(ofType: .tag, withID: "DONE"), true),
+        ("%doing", true),
+        ("#bug && !%done", true),
+        ("(@alice || %todo) #bug", true),
+        (url(ofType: .column, withID: "doing"), true),
+        ("#bug", false),
+        ("^\(first) || #READY", false),
+        ("#DELETED", false),
+        ("@done", false),
+        (url(ofType: .tag, withID: "bug"), false),
+    ]
+
+    @Test(
+        "A filter names the virtual tag DONE with a #DONE atom or a column atom, at any depth and in any case",
+        arguments: doneNamings
+    )
+    func namesDone(filter: String, isNamed: Bool) throws {
+        #expect(try FilterExpr(parsing: filter).names(.done) == isNamed)
+    }
 
     /// Each filter of the "names DELETED" test, with `true` when it has a `#DELETED` atom at some depth.
     static let deletedNamings: [(String, Bool)] = [

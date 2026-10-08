@@ -446,7 +446,7 @@ extension WorkingCopy {
             forEdge: .unresolved(.local(ref)),
             ofType: .column
         )
-        let taskCount = view.orderedTasks(where: column.isHolder(of:)).count
+        let taskCount = try column.tasks(filteredBy: nil).count
         guard taskCount == .zero else {
             throw .columnNotEmpty(column: column.state.slug, liveTaskCount: taskCount)
         }

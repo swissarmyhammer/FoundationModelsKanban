@@ -3,7 +3,8 @@ import Testing
 
 @testable import FoundationModelsKanban
 
-/// Tests the virtual tags of a task: `READY`, `BLOCKED`, `BLOCKING`, `CONFLICT`, and `DELETED` (plan.md §5.5, §6).
+/// Tests the virtual tags of a task: `READY`, `BLOCKED`, `BLOCKING`, `CONFLICT`, `DELETED`, and `DONE` (plan.md §5.5,
+/// §6).
 /// The tests in the "Rust" sections are the port of the tests of the Rust `virtual_tags.rs`.
 @Suite("Virtual tags")
 struct VirtualTagsTests {
@@ -20,9 +21,10 @@ struct VirtualTagsTests {
 
     // MARK: - Rust: registry
 
-    @Test("The virtual tags are READY, BLOCKED, BLOCKING, CONFLICT, and DELETED, in this order (Rust registry order)")
+    @Test("The virtual tags are READY, BLOCKED, BLOCKING, CONFLICT, DELETED, and DONE, in this order")
     func tagsInRegistryOrder() {
-        #expect(VirtualTag.allCases.map(\.rawValue) == ["READY", "BLOCKED", "BLOCKING", "CONFLICT", "DELETED"])
+        let names = ["READY", "BLOCKED", "BLOCKING", "CONFLICT", "DELETED", "DONE"]
+        #expect(VirtualTag.allCases.map(\.rawValue) == names)
     }
 
     @Test("A virtual tag slug is upper case, and the match is case-sensitive (Rust test_is_virtual_slug)")
@@ -144,6 +146,45 @@ struct VirtualTagsTests {
         var board = ReadinessFixture()
         try board.addTask(withULID: ReadinessFixture.first)
         #expect(try !Self.tags(ofTask: ReadinessFixture.first, on: board).contains(.conflict))
+    }
+
+    // MARK: - DONE
+
+    @Test("A live task in the terminal column has DONE, and not READY or BLOCKING")
+    func doneTaskHasDone() throws {
+        var board = ReadinessFixture()
+        try board.addTask(withULID: ReadinessFixture.first, inColumn: ReadinessFixture.done)
+        try board.addTask(withULID: ReadinessFixture.second, dependingOn: [ReadinessFixture.first])
+        #expect(try Self.tags(ofTask: ReadinessFixture.first, on: board) == [.done])
+    }
+
+    @Test(
+        "A task that is not in the terminal column does not have DONE",
+        arguments: ReadinessFixture.defaultColumns.dropLast()
+    )
+    func openTaskHasNoDone(column: String) throws {
+        var board = ReadinessFixture()
+        try board.addTask(withULID: ReadinessFixture.first, inColumn: column)
+        #expect(try !Self.tags(ofTask: ReadinessFixture.first, on: board).contains(.done))
+    }
+
+    @Test("A tombstone in the terminal column has DELETED, and not DONE")
+    func doneTombstoneHasNoDone() throws {
+        var board = ReadinessFixture()
+        let fields = ReadinessFixture.fields(isDeleted: true)
+        try board.addTask(withULID: ReadinessFixture.first, inColumn: ReadinessFixture.done, fields: fields)
+        #expect(try Self.tags(ofTask: ReadinessFixture.first, on: board) == [.deleted])
+    }
+
+    @Test("A done task with a dependency that is not done keeps BLOCKED, as in Rust, and has DONE")
+    func doneTaskWithOpenDependencyIsBlocked() throws {
+        var board = ReadinessFixture()
+        try board.addTask(
+            withULID: ReadinessFixture.first,
+            inColumn: ReadinessFixture.done,
+            dependingOn: [ReadinessFixture.ghost]
+        )
+        #expect(try Self.tags(ofTask: ReadinessFixture.first, on: board) == [.blocked, .done])
     }
 
     @Test("A node that is not a task has no virtual tags")

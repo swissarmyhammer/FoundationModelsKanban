@@ -14,7 +14,8 @@ struct NameRewriteTests {
     private static let taskRef = "^aaaaaaa"
 
     /// The selection of the root query tests: the fields of a task list.
-    private static let taskListSelection = "(excludeDone: false) { totalCount edges { node { id title } } }"
+    private static let taskListSelection = "(\(QueryFixture.liveTasksArguments)) "
+        + "{ totalCount edges { node { id title } } }"
 
     /// The key of the `board` field that the rewrite adds around the first moved root field.
     private static let firstMoveKey = "_kanbanRoot0"
@@ -188,13 +189,13 @@ struct NameRewriteTests {
 
     @Test(
         "An argument in a different case, style, number, alias, or spelling gets the canonical name",
-        arguments: [("Filter", "filter"), ("exclude_done", "excludeDone"), ("filters", "filter"), ("label", "tag"),
-                    ("filtr", "filter")]
+        arguments: [("tasks", "Filter", "filter"), ("task", "task_id", "id"), ("tasks", "filters", "filter"),
+                    ("tasks", "filtr", "filter")]
     )
-    func argumentGetsCanonicalName(written: String, canonical: String) throws {
-        let rewritten = try Self.rewritten(from: #"{ board { tasks(\#(written): "x") { totalCount } } }"#)
-        #expect(rewritten.text == #"{ board { tasks(\#(canonical): "x") { totalCount } } }"#)
-        #expect(rewritten.rewrites == [NameRewrite(from: written, to: canonical, path: ["board", "tasks", written])])
+    func argumentGetsCanonicalName(field: String, written: String, canonical: String) throws {
+        let rewritten = try Self.rewritten(from: #"{ board { \#(field)(\#(written): "x") { __typename } } }"#)
+        #expect(rewritten.text == #"{ board { \#(field)(\#(canonical): "x") { __typename } } }"#)
+        #expect(rewritten.rewrites == [NameRewrite(from: written, to: canonical, path: ["board", field, written])])
     }
 
     @Test(

@@ -194,14 +194,6 @@ extension BoardView {
         return object
     }
 
-    /// Gives the live tasks of the board in board order.
-    ///
-    /// - Parameter isIncluded: Tells if a task is in the result.
-    /// - Returns: The tasks that `isIncluded` accepts, in board order.
-    func orderedTasks(where isIncluded: (TaskObject) -> Bool = { _ in true }) -> [TaskObject] {
-        liveObjects(at: taskOrder).filter(isIncluded)
-    }
-
     /// The tasks of the board, live and tombstoned, in board order. A task list selects from them with a
     /// ``TaskFilter``, which leaves out the tombstones unless the filter names `#DELETED` (plan.md §3.3, rule 3).
     var allTasks: [TaskObject] {
@@ -350,7 +342,8 @@ extension BoardObject {
     }
 
     /// Resolves `Board.nextTask` (plan.md §6): the first task in board order that has the virtual tag `READY` and
-    /// matches the filter. `READY` is live, not done, and ready, so a filter that names `#DELETED` gives no tombstone.
+    /// matches the filter. `READY` is live, not done, and ready, so a filter that names `#DELETED` or `#DONE` gives
+    /// no tombstone and no done task.
     ///
     /// - Parameters:
     ///   - context: The context of the call. The field does not read it.
@@ -360,12 +353,12 @@ extension BoardObject {
     ///   parse.
     func nextTask(context _: KanbanContext, arguments: FilterArguments) throws(KanbanError) -> TaskObject? {
         let isReady: (TaskObject) -> Bool = { task in view.readiness.hasVirtualTag(.ready, taskAt: task.slot) }
-        return try TaskSelection(filtering: arguments.filter, excludingDone: true).tasks(in: view, where: isReady).first
+        return try TaskSelection(filtering: arguments.filter).tasks(in: view, where: isReady).first
     }
 
     /// Resolves `Board.searchTasks` (plan.md §6.4): the tasks that the search ranks for the query, highest score
     /// first. The selection is the same as in `Board.tasks`: the filter applies, a tombstone is a hit only when the
-    /// filter names `#DELETED`, and the done tasks are not hits unless the filter names a column or `#DELETED`.
+    /// filter names `#DELETED`, and a done task is a hit only when the filter names `#DONE` or a column.
     ///
     /// The GraphQL field is nullable: an error gives `null` for the field and one item in `errors`, and the other
     /// fields of the board keep their data.
@@ -377,7 +370,7 @@ extension BoardObject {
     /// - Throws: ``KanbanError/invalidFilter(filter:position:detail:example:)`` when the filter is empty or does not
     ///   parse.
     func searchTasks(context: KanbanContext, arguments: SearchTasksArguments) async throws -> [TaskHit]? {
-        let tasks = try TaskSelection(searchFiltering: arguments.filter).tasks(in: view)
+        let tasks = try TaskSelection(filtering: arguments.filter).tasks(in: view)
         return try await (view.source?.search ?? context.search).hits(
             for: arguments.query,
             in: view,
@@ -386,22 +379,23 @@ extension BoardObject {
         )
     }
 
-    /// Resolves `Board.tasks`: one page of the tasks that the filter and the scoping arguments select, in board order
-    /// (plan.md §3.3 rule 3, §6.3). The list has a tombstone only when the filter names `#DELETED`.
+    /// Resolves `Board.tasks`: one page of the tasks that the filter selects, in board order (plan.md §3.3 rule 3,
+    /// §6.3). The list has a tombstone only when the filter names `#DELETED`, and a done task only when the filter
+    /// names `#DONE` or a column.
     ///
     /// The GraphQL field is nullable: an error gives `null` for the field and one item in `errors`, and the other
     /// fields of the board keep their data.
     ///
     /// - Parameters:
     ///   - context: The context of the call. The field does not read it.
-    ///   - arguments: The filter, the scoping arguments, the page size, and the cursor before the page.
+    ///   - arguments: The filter, the page size, and the cursor before the page.
     /// - Returns: The page, the page info, and the number of all selected tasks. The value is never `nil`. The
     ///   optional type makes the GraphQL field nullable.
-    /// - Throws: ``KanbanError/invalidFilter(filter:position:detail:example:)`` when the filter or a scoping value is
-    ///   not valid. ``KanbanError/notFound(type:reference:)`` when the cursor names no task of the list.
+    /// - Throws: ``KanbanError/invalidFilter(filter:position:detail:example:)`` when the filter is empty or does not
+    ///   parse. ``KanbanError/notFound(type:reference:)`` when the cursor names no task of the list.
     ///   ``KanbanError/ambiguousID(reference:matches:)`` when the cursor is a prefix of more than one ULID.
     func tasks(context _: KanbanContext, arguments: TasksArguments) throws(KanbanError) -> TaskConnection? {
-        let tasks = try TaskSelection(for: arguments).tasks(in: view)
+        let tasks = try TaskSelection(filtering: arguments.filter).tasks(in: view)
         var start = tasks.startIndex
         if let cursor = arguments.after {
             // The cursor can name a tombstone of a `#DELETED` list. A task that the list does not hold is not found.
@@ -429,16 +423,22 @@ extension BoardObject {
 /// A GraphQL object of a node that lists the tasks that it holds in a `tasks(filter:)` field: a column, an actor, or
 /// a tag.
 protocol TaskHolderObject: GraphNodeObject {
-    /// Tells if the node holds a task.
-    ///
-    /// - Parameter task: A live task of the board.
-    /// - Returns: `true` when the node holds the task.
-    func isHolder(of task: TaskObject) -> Bool
+    /// The kind of the filter atom that names a node of this type: `%` for a column, `@` for an actor, and `#` for a
+    /// tag.
+    static var scopeKind: FilterAtomKind { get }
 }
 
 extension TaskHolderObject {
-    /// Resolves the `tasks` field: the live tasks that the node holds and that match the filter, in board order. The
-    /// list keeps the done tasks.
+    /// The filter atom that names the node by its URL, for example `%kanban://<board-key>/column/doing`.
+    private var scope: FilterExpr {
+        .atom(Self.scopeKind, .uri(NodeURI(boardKey: view.boardKey, ref: state.ref)))
+    }
+
+    /// Resolves the `tasks` field: the tasks that the node holds and that match the filter, in board order.
+    ///
+    /// The list is the same as `Board.tasks` with the filter `<scope> && (<filter>)`, where the scope is the atom of
+    /// the node. Thus the defaults are the same: a column scope names `DONE`, so the done column lists its tasks, but
+    /// an actor or a tag lists a done task only when the filter names `#DONE` (``TaskFilter``).
     ///
     /// The GraphQL field is nullable: an error gives `null` for the field and one item in `errors`, and the other
     /// fields keep their data.
@@ -450,7 +450,17 @@ extension TaskHolderObject {
     /// - Throws: ``KanbanError/invalidFilter(filter:position:detail:example:)`` when the filter is empty or does not
     ///   parse.
     func tasks(context _: KanbanContext, arguments: FilterArguments) throws(KanbanError) -> [TaskObject]? {
-        try TaskSelection(filtering: arguments.filter).tasks(in: view, where: isHolder(of:))
+        try tasks(filteredBy: arguments.filter)
+    }
+
+    /// Gives the tasks that the node holds and that match a filter, in board order: the list of the `tasks` field.
+    ///
+    /// - Parameter text: The filter, or `nil` for no filter.
+    /// - Returns: The tasks.
+    /// - Throws: ``KanbanError/invalidFilter(filter:position:detail:example:)`` when the filter is empty or does not
+    ///   parse.
+    func tasks(filteredBy text: String?) throws(KanbanError) -> [TaskObject] {
+        try TaskSelection(filtering: text, within: scope).tasks(in: view)
     }
 }
 
@@ -465,13 +475,8 @@ extension ColumnObject: TaskHolderObject {
         state.order
     }
 
-    /// Tells if a task shows in the column.
-    ///
-    /// - Parameter task: A live task of the board.
-    /// - Returns: `true` when the task shows in the column.
-    func isHolder(of task: TaskObject) -> Bool {
-        view.readiness.column(ofTaskAt: task.slot) == slot
-    }
+    /// The `%` atom names a column.
+    static let scopeKind = FilterAtomKind.column
 }
 
 extension ActorObject {
@@ -485,13 +490,8 @@ extension ActorObject {
         state.color
     }
 
-    /// Tells if a task has the actor as assignee.
-    ///
-    /// - Parameter task: A live task of the board.
-    /// - Returns: `true` when an `assignees` edge of the task has the actor as its target.
-    func isHolder(of task: TaskObject) -> Bool {
-        task.state.assignees.contains(.slot(slot))
-    }
+    /// The `@` atom names the assignee of a task.
+    static let scopeKind = FilterAtomKind.assignee
 }
 
 extension TagObject {
@@ -505,13 +505,8 @@ extension TagObject {
         state.resolvedColor
     }
 
-    /// Tells if a task has the tag, from an edge or a marker (plan.md §6.1).
-    ///
-    /// - Parameter task: A live task of the board.
-    /// - Returns: `true` when the tags of the task hold the tag.
-    func isHolder(of task: TaskObject) -> Bool {
-        view.graph.tagSlots(of: task.state).contains(slot)
-    }
+    /// The `#` atom names a tag, from an edge or a marker (plan.md §6.1).
+    static let scopeKind = FilterAtomKind.tag
 }
 
 // MARK: - Task
