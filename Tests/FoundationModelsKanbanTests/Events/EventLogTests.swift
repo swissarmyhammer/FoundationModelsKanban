@@ -316,7 +316,17 @@ struct EventLogTests {
 /// An empty temporary directory for one test. The directory is removed when the value ends.
 ///
 /// The type is a class, because its `deinit` removes the directory.
+///
+/// The directory is in a shared folder of the tests, and not directly in the temporary directory of the user. A test
+/// that uses the directory as a repo root and reads a related board makes the engine scan the parent directory
+/// (plan.md §6.6). Thus the parent holds only the directories of the tests, and the scan stays small.
 final class TemporaryDirectory {
+    /// The shared folder of the temporary directories of the tests.
+    private static let parent = FileManager.default.temporaryDirectory.appending(
+        path: "FoundationModelsKanbanTests",
+        directoryHint: .isDirectory
+    )
+
     /// The directory.
     let url: URL
 
@@ -324,10 +334,7 @@ final class TemporaryDirectory {
     ///
     /// - Throws: An error from `FileManager` when the directory cannot be made.
     init() throws {
-        url = FileManager.default.temporaryDirectory.appending(
-            path: "EventLogTests-\(UUID().uuidString)",
-            directoryHint: .isDirectory
-        )
+        url = Self.parent.appending(path: "EventLogTests-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     }
 

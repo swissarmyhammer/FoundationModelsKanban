@@ -24,23 +24,144 @@ actor BoardStore {
     /// is not known before the call, so it is not assigned.
     let knownSessionActor: LocalRef?
 
+    /// The directory, the search, and the events of the current board, or `nil` for a board in memory only.
+    private let source: BoardSource?
+
+    /// The related boards that the run reads (plan.md §6.6).
+    private let related: RelatedBoards
+
+    /// The reads of related boards that the run asked for and that ``related`` does not answer yet. After the run,
+    /// the engine loads them, and the call runs again (``CommitSession/run(readingRelatedBoardsWith:_:)``).
+    private(set) var requests: Set<BoardRequest> = []
+
     /// Makes a store that holds the working copy of a board.
     ///
     /// - Parameters:
     ///   - work: The working copy at the start of the run.
     ///   - boardKey: The current key of the board.
     ///   - sessionActor: The session actor of the call.
-    init(working work: WorkingCopy, boardKey: String, actingAs sessionActor: SessionActor) {
+    ///   - source: The directory, the search, and the events of the board. The default is `nil`: a board in memory
+    ///     only.
+    ///   - related: The related boards that the run reads. The default reads no related board.
+    init(
+        working work: WorkingCopy,
+        boardKey: String,
+        actingAs sessionActor: SessionActor,
+        from source: BoardSource? = nil,
+        reading related: RelatedBoards = .unavailable
+    ) {
         self.work = work
         self.boardKey = boardKey
         self.sessionActor = sessionActor
+        self.source = source
+        self.related = related
         let isKnown = work.graph.node(for: sessionActor.ref)?.state.fields.isDeleted == false
         knownSessionActor = isKnown ? sessionActor.ref : nil
     }
 
-    /// The read view of the working graph now.
+    /// The read view of the working graph now. Its cross-board dependencies read the related boards of the run.
     var view: BoardView {
-        BoardView(of: work.graph, inBoard: boardKey)
+        let current = snapshot
+        return current.view(reading: related.with(current: current))
+    }
+
+    /// The working graph now, as a read of a related board sees the current board.
+    private var snapshot: BoardSnapshot {
+        BoardSnapshot(key: boardKey, graph: work.graph, source: source)
+    }
+
+    /// Gives the read view of the board that a board ref names: `Query.board(id:)` (plan.md §6.6).
+    ///
+    /// - Parameter reference: The board ref: a board key, a repo directory name, a path, or the URI of a board.
+    /// - Returns: The read view, or `nil` when the engine did not load the board yet. The store then records the
+    ///   request, and the call runs again after the load.
+    /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the ref.
+    func view(ofBoardNamed reference: String) throws(KanbanError) -> BoardView? {
+        let current = view
+        if (try? current.resolver.storedRef(for: reference, ofType: .board)) != nil {
+            return current
+        }
+        guard let resolution = related.resolution(ofBoard: reference) else {
+            requests.insert(.board(reference))
+            return nil
+        }
+        guard resolution != .notFound else {
+            throw .boardNotFound(reference: reference, searchRoots: related.searchRoots.map(\.path))
+        }
+        return view(of: resolution)
+    }
+
+    /// Finds the nodes of any type that some forgiving refs name, live or tombstoned: `Query.node` and
+    /// `Query.nodes` (plan.md §3.3 rule 3, §6.6). A short form names a node of the current board, and a full URI
+    /// names a node of the board of its key.
+    ///
+    /// - Parameter references: The refs as the caller wrote them: full URIs or short forms.
+    /// - Returns: The nodes of the refs that name a node, in the order of the refs. A node of a related board that
+    ///   the engine did not load yet is not in the list; the store then records the request, and the call runs
+    ///   again after the load. A URI of a board that the scan cannot find names no node.
+    /// - Throws: ``KanbanError/ambiguousID(reference:matches:)`` when a ref is a prefix of more than one ULID.
+    func nodes(for references: [String]) throws(KanbanError) -> [any NodeObject] {
+        let current = view
+        return try references.map { reference throws(KanbanError) in
+            try node(for: reference, readingFirst: current)
+        }
+        .compactMap(\.self)
+    }
+
+    /// Finds the node of any type that one forgiving ref names: first in the current board, and then in the board
+    /// of the key of a full URI.
+    ///
+    /// - Parameters:
+    ///   - reference: The ref as the caller wrote it.
+    ///   - current: The read view of the current board.
+    /// - Returns: The node, or `nil` when no node has the ref, when the scan finds no board for the key of a URI, or
+    ///   when the engine did not load the board of the URI yet.
+    /// - Throws: ``KanbanError/ambiguousID(reference:matches:)`` when the ref is a prefix of more than one ULID.
+    private func node(
+        for reference: String,
+        readingFirst current: BoardView
+    ) throws(KanbanError) -> (any NodeObject)? {
+        if let node = try current.node(for: reference) {
+            return node
+        }
+        let text = reference.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A URI of a board that the scan cannot find names no node: the same as an id that names no node.
+        guard
+            let uri = try? NodeURI(parsing: text),
+            uri.boardKey != boardKey,
+            let board = try? view(ofBoardNamed: uri.boardKey)
+        else {
+            return nil
+        }
+        return try board.node(for: text)
+    }
+
+    /// Gives the read views of the copies of `Query.boards` (plan.md §6.6).
+    ///
+    /// - Parameter enabled: `true` for the enabled copies only, `false` for the copies that are not enabled only, or
+    ///   `nil` for all copies.
+    /// - Returns: The read views in scan order, or `nil` when the engine did not scan for the list yet. The store
+    ///   then records the request, and the call runs again after the scan.
+    func listedViews(enabled: Bool?) -> [BoardView]? {
+        guard let copies = related.copies else {
+            requests.insert(.allCopies)
+            return nil
+        }
+        return copies
+            .filter { copy in enabled.map { enabled in copy.isEnabled == enabled } ?? true }
+            .compactMap { copy in view(of: copy.board) }
+    }
+
+    /// Gives the read view of a resolved board.
+    ///
+    /// - Parameter resolution: The board: the current board or a loaded copy.
+    /// - Returns: The read view, or `nil` when the board is not found or not loaded.
+    private func view(of resolution: BoardResolution) -> BoardView? {
+        guard resolution != .current else {
+            return view
+        }
+        let related = related.with(current: snapshot)
+        return related.board(resolvedAs: resolution)?.view(reading: related)
     }
 
     /// Runs one mutation field on the working copy. A field that throws keeps none of its patches.
@@ -75,7 +196,8 @@ struct KanbanContext: Sendable {
 
 /// The arguments of `Query.board`.
 struct BoardArguments: Codable, Sendable {
-    /// The board to read: the key of the board, or its full URI. No value reads the current board.
+    /// The board to read: a board key, the name of a repo directory that only one scanned repo has, the path of a
+    /// repo, or the full URI of the board (plan.md §6.6). No value reads the current board.
     let id: String?
 }
 
@@ -186,14 +308,19 @@ struct FilterArguments: Codable, Sendable {
     let filter: String?
 }
 
+/// The arguments of `Query.boards` (plan.md §6.6).
+struct BoardsArguments: Codable, Sendable {
+    /// `true` for the enabled boards only, `false` for the boards that are not enabled only, or `nil` for all boards.
+    let enabled: Bool?
+}
+
 // MARK: - Root resolver
 
 /// The root resolver of the kanban schemas.
 ///
 /// Each resolver is `async`. Graphiti calls it with the context of the call.
 struct KanbanResolver: Sendable {
-    /// Resolves `Query.board`. This step reads the current board only. The related boards come with the cross-repo
-    /// task.
+    /// Resolves `Query.board`: the current board, or the board that a board ref names (plan.md §6.6).
     ///
     /// The GraphQL field is nullable (plan.md §4.1): an error gives `null` for the field and one item in `errors`,
     /// and the other fields of the call keep their data.
@@ -201,28 +328,44 @@ struct KanbanResolver: Sendable {
     /// - Parameters:
     ///   - context: The context of the call.
     ///   - arguments: The board to read. No `id` reads the current board.
-    /// - Returns: The board. The value is never `nil`. The optional type makes the GraphQL field nullable.
-    /// - Throws: ``KanbanError/notFound(type:reference:)`` when the `id` does not name the current board, or when
-    ///   the graph has no board node.
+    /// - Returns: The board. The value is `nil` only in a run that the engine runs again after it loads the board.
+    /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the `id`.
+    ///   ``KanbanError/notFound(type:reference:)`` when the graph has no board node.
     func board(context: KanbanContext, arguments: BoardArguments) async throws(KanbanError) -> BoardObject? {
-        let view = await context.store.view
-        if let reference = arguments.id {
-            _ = try view.resolver.storedRef(for: reference, ofType: .board)
+        guard let reference = arguments.id else {
+            return try BoardObject(in: await context.store.view)
         }
-        return try BoardObject(in: view)
+        return try await context.store.view(ofBoardNamed: reference).map { view throws(KanbanError) in
+            try BoardObject(in: view)
+        }
+    }
+
+    /// Resolves `Query.boards`: each copy of each repo that the scan finds, with its path, in scan order (plan.md
+    /// §6.6).
+    ///
+    /// - Parameters:
+    ///   - context: The context of the call.
+    ///   - arguments: The enabled state of the boards to list, or no value for all boards.
+    /// - Returns: The boards. The list is empty in a run that the engine runs again after it scans.
+    /// - Throws: ``KanbanError/notFound(type:reference:)`` when a graph has no board node. A loaded board always has
+    ///   one.
+    func boards(context: KanbanContext, arguments: BoardsArguments) async throws(KanbanError) -> [BoardObject] {
+        let views = await context.store.listedViews(enabled: arguments.enabled) ?? []
+        return try views.map { view throws(KanbanError) in try BoardObject(in: view) }
     }
 
     /// Resolves `Query.node`: one node of any type by its full URI or a short form, live or tombstoned (plan.md
-    /// §3.3, rule 3).
+    /// §3.3, rule 3). A full URI of a related board reads that board (plan.md §6.6).
     ///
     /// - Parameters:
     ///   - context: The context of the call.
     ///   - arguments: The id of the node.
-    /// - Returns: The node, or `nil` when no node of the current board has the id.
+    /// - Returns: The node, or `nil` when no node has the id. A URI of a board that the scan cannot find names no
+    ///   node.
     /// - Throws: ``KanbanError/ambiguousID(reference:matches:)`` when the id is a prefix of more than one ULID. The
     ///   field is then `null`, and `errors` has the matches.
     func node(context: KanbanContext, arguments: NodeArguments) async throws(KanbanError) -> (any NodeObject)? {
-        try await context.store.view.node(for: arguments.id.text)
+        try await context.store.nodes(for: [arguments.id.text]).first
     }
 
     /// Resolves `Query.nodes`: the nodes of some ids, in the order of the ids, live or tombstoned (plan.md §4.1).
@@ -239,8 +382,7 @@ struct KanbanResolver: Sendable {
     /// - Throws: ``KanbanError/ambiguousID(reference:matches:)`` when an id is a prefix of more than one ULID, the same
     ///   as `Query.node`.
     func nodes(context: KanbanContext, arguments: NodesArguments) async throws(KanbanError) -> [any NodeObject]? {
-        let view = await context.store.view
-        return try arguments.ids.map { id throws(KanbanError) in try view.node(for: id.text) }.compactMap(\.self)
+        try await context.store.nodes(for: arguments.ids.map(\.text))
     }
 }
 
@@ -407,6 +549,9 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Field("nodes", at: KanbanResolver.nodes) {
                     Argument("ids", at: \.ids)
                 }
+                Field("boards", at: KanbanResolver.boards) {
+                    Argument("enabled", at: \.enabled)
+                }
             }
     }
 
@@ -455,6 +600,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                     Argument("first", at: \.first).defaultValue(TasksArguments.defaultPageSize)
                 }
                 Field("summary", at: \.summary)
+                Field("path", at: \.path)
                 Field("history", at: BoardObject.history) {
                     Argument("type", at: \.type)
                     Argument("node", at: \.node)

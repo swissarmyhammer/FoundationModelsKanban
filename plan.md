@@ -194,6 +194,7 @@ type Board implements Node {
   nextTask(filter: String): Task
   searchTasks(query: String!, filter: String, first: Int = 10): [TaskHit!]!   # §6.4
   summary: BoardSummary!              # counts: total, ready, blocked, done, percent
+  path: String                        # repo directory of this copy (§6.6); null only for a board in memory
   history(type: [NodeType!], node: ID, actor: ID, filter: String, derived: Boolean = true,
           since: ID, first: Int = 20): [Change!]!   # §6.5, newest first; since = only after that txn (§6.7)
 }

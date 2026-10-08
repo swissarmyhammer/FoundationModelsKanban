@@ -180,9 +180,9 @@ extension RefResolver {
 
     /// Gives the stored ref of a URI to a node of a different board.
     ///
-    /// The resolver does not read the other board, so it does not check that the node exists. The cross-repo task
-    /// ^emwcz5z (BoardLocator) finds the other board, and adds the search roots to the `NOT_FOUND` message of a
-    /// board that it cannot find.
+    /// The resolver does not read the other board, so it does not check that the node exists. A read of the
+    /// dependency finds the other board with the ``BoardLocator`` (plan.md §6.6). A target in a board that the scan
+    /// cannot find counts as not done.
     ///
     /// - Parameters:
     ///   - uri: The URI, with a key that is not the key of this board.

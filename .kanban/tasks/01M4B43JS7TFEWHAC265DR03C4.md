@@ -29,13 +29,29 @@ comments:
     - evidence: 7 files — Tests/FoundationModelsKanbanTests/Design/{ReplayPropertyTests,MergeTests,PortabilityTests,SchemaChangeTests}.swift (new), Tests/FoundationModelsKanbanTests/Mutations/{ColumnActorTests,CommentTests,TaskOperationTests}.swift (helper reuse). `swift test`: 874 tests in 56 suites passed (7.4 s). `swift test --filter Design`: 19 tests in 5 suites passed. `swift build --build-tests`: only the accepted SwiftPM "missing creator" warning. periphery: No unused code detected.
     - next: review
   timestamp: 2026-10-08T01:43:49.885183+00:00
+- actor: wballard
+  id: 01m4ck6tz9efn25hp0qhwj6j0r
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (d5d1795). 0 findings. 14 validator runs, 0 failed. 7 files reviewed. 4 files in .kanban/ not reviewed (.reviewignore).
+    - next: none. The task is in done.
+  timestamp: 2026-10-08T01:49:22.793557+00:00
+- actor: wballard
+  id: 01m4ck70z9agvkz45vs8d82mpz
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 7 files (Design/ReplayPropertyTests, MergeTests, PortabilityTests, SchemaChangeTests; ColumnActorTests, CommentTests, TaskOperationTests); no production code changed
+    - test: green — swift test 3 runs, 874 passed each; build warnings only the 2 accepted kinds
+    - commit: d5d1795
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T01:49:28.937584+00:00
 depends_on:
 - 01M4B406Z7RVSBJKKJ8KJW0CY2
 - 01M4B40CFSF002B4DKM3T8J6GV
 - 01M4B4B57JFX8HA0B45MMDQ1SQ
 - 01M4B41VDXZ3NKEG4554PVXWQN
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ad80
 title: Merge, portability, and replay property tests
 ---
 ## What

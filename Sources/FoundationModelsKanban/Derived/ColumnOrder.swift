@@ -54,4 +54,12 @@ struct ColumnOrder {
         }
         return slot
     }
+
+    /// Tells if a task shows in the terminal column: the task is done.
+    ///
+    /// - Parameter column: The `column` edge of the task.
+    /// - Returns: `true` when the board has a live column and the task shows in the terminal column.
+    func isTerminal(_ column: EdgeTarget?) -> Bool {
+        terminal != nil && displaySlot(of: column) == terminal
+    }
 }

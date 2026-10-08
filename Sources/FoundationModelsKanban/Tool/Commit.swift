@@ -280,24 +280,54 @@ struct CommitSession: Sendable {
         return files
     }
 
+    /// The root directory of the repo of the board.
+    private var directory: URL {
+        live.log.directory.deletingLastPathComponent()
+    }
+
+    /// The directory, the search, and the events of the board, for its read views.
+    private var source: BoardSource {
+        BoardSource(directory: directory, search: search, events: live.events)
+    }
+
+    /// The board as a read of a related board sees it: the live graph, with an empty board in memory when the board
+    /// has no board node (plan.md §6.6, board name).
+    var snapshot: BoardSnapshot {
+        BoardSnapshot(key: key.description, graph: displayGraph, source: source)
+    }
+
+    /// The live graph, with an empty board in memory with the name of the repo directory when the board has no board
+    /// node.
+    private var displayGraph: Graph {
+        live.graph.withBoard(named: directory.lastPathComponent, at: clock())
+    }
+
     /// Runs one call on a working copy of the live graph, and commits the patches that the call kept (plan.md §5.4).
     ///
     /// A call that keeps no patch writes nothing and takes no lock (plan.md §5.4 step 6). A run that finds a changed
     /// log discards its response, and the call runs again on the new live graph.
     ///
-    /// - Parameter call: Runs the call against the store of the working copy, and gives the response.
+    /// Before the first run, the loader loads the related boards that the cross-board dependencies of the live graph
+    /// name (plan.md §6.6). A run that asks for a related board that the loader did not load, for example a board
+    /// ref of `Query.board` or a dependency that the run adds, discards its response: the loader loads the board,
+    /// and the call runs again before it commits.
+    ///
+    /// - Parameters:
+    ///   - load: Loads the related boards of some requests, and gives the new related boards of the run. The value
+    ///     must answer each request. The default loads no board, so the run reads no related board.
+    ///   - call: Runs the call against the store of the working copy, and gives the response.
     /// - Returns: The response of the run that committed, or of the run that kept no patch.
     /// - Throws: ``KanbanError/boardBusy(attempts:)`` when a log changed before the commit of each of the
     ///   ``maximumRuns`` runs. Then the call wrote nothing. An ``EventLogError`` when a log file cannot be read,
-    ///   locked, or written. The error of the call.
+    ///   locked, or written. An error of the loader. The error of the call.
     mutating func run<Response: Sendable>(
+        readingRelatedBoardsWith load: RelatedBoardLoad = { _, _ in .unavailable },
         _ call: @Sendable (BoardStore) async throws -> Response
     ) async throws -> Response {
+        let initialRequests = RelatedBoards.loadable.dependencyRequests(of: live.graph, inBoard: key.description)
+        var related = try await load(.loadable, initialRequests)
         for _ in 1...Self.maximumRuns {
-            let store = BoardStore(working: makeWorkingCopy(), boardKey: key.description, actingAs: actor)
-            let response = try await call(store)
-            let work = await store.work
-            ids = work.stamp.ids
+            let (response, work) = try await runReading(&related, loadingWith: load, call)
             guard !work.kept.isEmpty else {
                 return response
             }
@@ -310,14 +340,55 @@ struct CommitSession: Sendable {
         throw KanbanError.boardBusy(attempts: Self.maximumRuns)
     }
 
+    /// Runs one call on a new working copy, and runs it again while the run asks for related boards that the
+    /// related boards of the run do not answer.
+    ///
+    /// Each load answers each request of the run, so each run after a load reads more boards than the run before.
+    /// A run that is the same as the run before asks for nothing new, so the loop ends.
+    ///
+    /// - Parameters:
+    ///   - related: The related boards of the run. The loop gives the related boards of the last run back.
+    ///   - load: Loads the related boards of some requests.
+    ///   - call: Runs the call against the store of the working copy, and gives the response.
+    /// - Returns: The response and the working copy of the last run.
+    /// - Throws: An error of the loader, or the error of the call.
+    private mutating func runReading<Response: Sendable>(
+        _ related: inout RelatedBoards,
+        loadingWith load: RelatedBoardLoad,
+        _ call: @Sendable (BoardStore) async throws -> Response
+    ) async throws -> (response: Response, work: WorkingCopy) {
+        while true {
+            let store = BoardStore(
+                working: makeWorkingCopy(),
+                boardKey: key.description,
+                actingAs: actor,
+                from: source,
+                reading: related
+            )
+            let response = try await call(store)
+            let work = await store.work
+            ids = work.stamp.ids
+            let dependencies = related.dependencyRequests(of: work.graph, inBoard: key.description)
+            let requests = await store.requests.union(dependencies)
+            guard !related.satisfies(requests) else {
+                return (response, work)
+            }
+            related = try await load(related, requests)
+            guard related.satisfies(requests) else {
+                assertionFailure("The loader of the related boards did not answer the requests \(requests)")
+                Log.kanban.error("The loader of the related boards did not answer each request; the run stays")
+                return (response, work)
+            }
+        }
+    }
+
     /// Makes the working copy of one run: the live graph, with an empty board in memory when the board has no
     /// board node.
     ///
     /// - Returns: The working copy.
     private func makeWorkingCopy() -> WorkingCopy {
-        let repositoryName = live.log.directory.deletingLastPathComponent().lastPathComponent
-        return WorkingCopy(
-            graph: live.graph.withBoard(named: repositoryName, at: clock()),
+        WorkingCopy(
+            graph: displayGraph,
             events: live.events,
             stamp: EventStamp(actingAs: actor.ref, mintingFrom: ids)
         )

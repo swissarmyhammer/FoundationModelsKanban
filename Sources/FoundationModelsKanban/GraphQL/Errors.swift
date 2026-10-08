@@ -14,6 +14,10 @@ enum KanbanError: Error, Hashable, Sendable {
     /// `NOT_FOUND`: no node of the type has the reference.
     case notFound(type: PatchNodeType, reference: String)
 
+    /// `NOT_FOUND`: the scan finds no board for the board ref (plan.md §6.6). The search roots are the places that
+    /// the scan looked in, in scan order.
+    case boardNotFound(reference: String, searchRoots: [String])
+
     /// `AMBIGUOUS_ID`: the reference is a prefix of more than one id. The matches are the short ids of these ids.
     case ambiguousID(reference: String, matches: [ShortID])
 
@@ -76,7 +80,7 @@ extension KanbanError {
     var code: String {
         switch self {
         case .invalidVariables: "INVALID_VARIABLES"
-        case .notFound: "NOT_FOUND"
+        case .notFound, .boardNotFound: "NOT_FOUND"
         case .ambiguousID: "AMBIGUOUS_ID"
         case .actorNotFound: "ACTOR_NOT_FOUND"
         case .duplicateID: "DUPLICATE_ID"
@@ -103,6 +107,10 @@ extension KanbanError {
         case .notFound(let type, let reference):
             "No \(Self.noun(for: type)) has the reference \"\(reference)\". Query the board to get the correct ids, "
                 + "and then send the call again."
+        case .boardNotFound(let reference, let searchRoots):
+            "No board has the reference \"\(reference)\". The scan looked for git repos in: "
+                + "\(searchRoots.joined(separator: Self.listSeparator)). Use a board key, a repo directory name, "
+                + "or a repo path from these places, and then send the call again."
         case .ambiguousID(let reference, let matches):
             "The reference \"\(reference)\" matches more than one id: \(Self.sigilList(of: matches)). "
                 + "Send one of these short ids."

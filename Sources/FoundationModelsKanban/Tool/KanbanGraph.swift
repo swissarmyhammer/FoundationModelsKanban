@@ -20,12 +20,17 @@ import GraphQL
 /// When the engine loads a board, it also starts a file watcher on the `.kanban/` directory of the board, or on the
 /// repo directory until `.kanban/` appears. The watcher runs until ``close()``, also when no client subscribes. Each
 /// batch of changed files goes through the serial gate, so a call never sees a half-applied batch (plan.md §5.6).
+///
+/// The engine also reads the related boards: the boards of the other repos that the ``BoardLocator`` finds (plan.md
+/// §6.6). A call loads a related board when it names the board (`Query.board(id:)`, `Query.boards`, `node(id:)` with
+/// a URI of the board) or when a cross-board dependency reads it. A loaded related board stays live, with its own
+/// file watcher.
 public actor KanbanGraph {
     /// The root directory of the repo of the current board.
     private let root: URL
 
     /// Reads the key of the board from the repo.
-    private let keyReader: @Sendable (URL) throws(BoardKeyError) -> BoardKey
+    private let keyReader: BoardKeyReader
 
     /// The clock that gives the time of a change. A test gives a fixed clock (plan.md §11).
     private let clock: @Sendable () -> DateTime
@@ -36,6 +41,12 @@ public actor KanbanGraph {
     /// The source of the transaction ULIDs and the event ids, until the first call loads the board. The session of
     /// the board then continues it.
     private let idSource: any ULIDSource
+
+    /// Finds the related boards (plan.md §6.6).
+    private let locator: BoardLocator
+
+    /// The embedder of the search of each related board, or `nil` for BM25 and trigram only.
+    private let embedder: (any TextEmbedding)?
 
     /// Gets a call when each call starts and ends, or `nil` for no calls.
     private let observer: (any KanbanCallObserver)?
@@ -49,14 +60,23 @@ public actor KanbanGraph {
     /// The ranked search over the tasks of the current board, for the life of the engine (plan.md §6.4).
     private let search: TaskSearch
 
-    /// Gets a call when the file watcher applies a batch, or `nil` for no calls.
+    /// Gets a call when a file watcher applies a batch, or `nil` for no calls.
     private let batchObserver: (any LiveGraphObserver)?
 
     /// The live graph of the current board and its commit path, or `nil` until the first call loads the board.
     private var session: CommitSession?
 
+    /// The current key of the current board, or `nil` until the first call reads it.
+    private var currentKey: BoardKey?
+
     /// The state of the file watcher of the current board.
     private var watchState = WatchState.notStarted
+
+    /// The index of the last scan for related boards, or `nil` before the first scan (plan.md §6.6, index life).
+    private var index: BoardIndex?
+
+    /// The loaded related boards, by the canonical path of their repo directory.
+    private var relatedBoards: [String: RelatedBoard] = [:]
 
     /// The file watcher of the current board while it runs, or `nil` before the first load and after ``close()``. A
     /// test also reads it to prove which directory the engine watches, and that ``close()`` stopped the watcher.
@@ -65,6 +85,14 @@ public actor KanbanGraph {
             return nil
         }
         return watch
+    }
+
+    /// `true` after ``close()``: no file watcher starts.
+    private var isClosed: Bool {
+        guard case .closed = watchState else {
+            return false
+        }
+        return true
     }
 
     /// The public schema in the GraphQL schema definition language (SDL), generated from the Graphiti schema.
@@ -81,40 +109,49 @@ public actor KanbanGraph {
     /// - Parameters:
     ///   - root: The root directory of the repo.
     ///   - actor: The name of the session actor of the mutations, or `nil` for the name of the OS user.
+    ///   - locator: Finds the related boards: it holds the extra search roots (plan.md §6.6).
     ///   - embedder: The embedder of `searchTasks`, for example a `PooledEmbedder`, or `nil` for a search with BM25
     ///     and trigram only, which needs no model (plan.md §6.4).
     /// - Throws: An error from Graphiti when a type of the public schema is not valid.
     ///   ``KanbanError/invalidSlug(name:)`` when the actor name gives an empty slug.
-    public init(root: URL, actor: String?, embedder: (any TextEmbedding)? = nil) throws {
+    public init(
+        root: URL,
+        actor: String?,
+        locator: BoardLocator = .default,
+        embedder: (any TextEmbedding)? = nil
+    ) throws {
         try self.init(
             root: root,
             readingKeyWith: BoardKey.read(fromRepoAt:),
             timedBy: { DateTime(Date()) },
             actingAs: Self.sessionActor(named: actor),
             mintingFrom: SystemULIDSource(),
+            locatedBy: locator,
             embeddingWith: embedder
         )
     }
 
-    /// Makes an engine with a key reader, a clock, a session actor, a ULID source, an embedder, and observers that a
-    /// test gives.
+    /// Makes an engine with a key reader, a clock, a session actor, a ULID source, a locator, an embedder, and
+    /// observers that a test gives.
     ///
     /// - Parameters:
     ///   - root: The root directory of the repo.
-    ///   - keyReader: Reads the key of the board from the repo.
+    ///   - keyReader: Reads the key of the board of a repo: the current repo and each related repo.
     ///   - clock: Gives the time of a change.
     ///   - actor: The session actor.
     ///   - ids: The source of the transaction ULIDs and the event ids.
+    ///   - locator: Finds the related boards. The default looks only in the parent directory of the repo.
     ///   - embedder: The embedder of `searchTasks`, or `nil` for BM25 and trigram only.
     ///   - observer: Gets a call when each call starts and ends, or `nil` for no calls.
-    ///   - batchObserver: Gets a call when the file watcher applies a batch, or `nil` for no calls.
+    ///   - batchObserver: Gets a call when a file watcher applies a batch, or `nil` for no calls.
     /// - Throws: An error from Graphiti when a type of the public schema is not valid.
     init(
         root: URL,
-        readingKeyWith keyReader: @escaping @Sendable (URL) throws(BoardKeyError) -> BoardKey,
+        readingKeyWith keyReader: @escaping BoardKeyReader,
         timedBy clock: @escaping @Sendable () -> DateTime,
         actingAs actor: SessionActor,
         mintingFrom ids: any ULIDSource,
+        locatedBy locator: BoardLocator = .default,
         embeddingWith embedder: (any TextEmbedding)? = nil,
         reportingTo observer: (any KanbanCallObserver)? = nil,
         observingBatchesWith batchObserver: (any LiveGraphObserver)? = nil
@@ -124,6 +161,8 @@ public actor KanbanGraph {
         self.clock = clock
         sessionActor = actor
         idSource = ids
+        self.locator = locator
+        self.embedder = embedder
         search = TaskSearch(embeddingWith: embedder)
         self.observer = observer
         self.batchObserver = batchObserver
@@ -152,7 +191,7 @@ public actor KanbanGraph {
     ///   - operationName: The operation of the document to run, or `nil` when the document has one operation.
     /// - Returns: The GraphQL response (`{data, errors}`) as JSON text with sorted keys.
     /// - Throws: An I/O fault only: a ``BoardKeyError`` when git cannot give the board key, an ``EventLogError``
-    ///   when a log file cannot be read, locked, or written, or a ``BoardWatcherError`` when the file watcher of the
+    ///   when a log file cannot be read, locked, or written, or a ``BoardWatcherError`` when the file watcher of a
     ///   board cannot start.
     public func execute(query: String, variables: [String: Map], operationName: String?) async throws -> String {
         try await gate.run {
@@ -160,12 +199,18 @@ public actor KanbanGraph {
         }
     }
 
-    /// Stops all file watchers (plan.md §7.2). After the call returns, a change of a file applies nothing. A later
-    /// call still reads the graph in memory, but the graph does not follow the files any more.
+    /// Stops all file watchers (plan.md §7.2): the watcher of the current board and the watcher of each related
+    /// board. After the call returns, a change of a file applies nothing. A later call still reads the graphs in
+    /// memory, but the graphs do not follow the files any more.
     public func close() async {
-        let watch = activeWatch
+        let watches = [activeWatch] + relatedBoards.values.map(\.watch)
         watchState = .closed
-        await watch?.end()
+        for path in relatedBoards.keys {
+            relatedBoards[path]?.watch = nil
+        }
+        for watch in watches.compactMap(\.self) {
+            await watch.end()
+        }
     }
 
     /// Runs one document inside the serial gate, and commits the patches that its mutation fields kept.
@@ -175,7 +220,8 @@ public actor KanbanGraph {
     ///   - variables: The values of the variables of the document.
     ///   - operationName: The operation of the document to run, or `nil`.
     /// - Returns: The response as JSON text with sorted keys.
-    /// - Throws: A ``BoardKeyError`` or an ``EventLogError`` when the board cannot load or a commit cannot write.
+    /// - Throws: A ``BoardKeyError``, a ``BoardWatcherError``, or an ``EventLogError`` when a board cannot load or a
+    ///   commit cannot write.
     private func respond(
         to query: String,
         variables: [String: Map],
@@ -189,15 +235,20 @@ public actor KanbanGraph {
         let clock = clock
         let search = search
         do {
-            return try await session.run { store in
-                try await schema.respond(
-                    to: query,
-                    variables: variables,
-                    operationName: operationName,
-                    formattedWith: .sortedKeys,
-                    context: KanbanContext(store: store, clock: clock, search: search)
-                )
-            }
+            return try await session.run(
+                readingRelatedBoardsWith: { related, requests in
+                    try await self.relatedBoards(updating: related, toAnswer: requests)
+                },
+                { store in
+                    try await schema.respond(
+                        to: query,
+                        variables: variables,
+                        operationName: operationName,
+                        formattedWith: .sortedKeys,
+                        context: KanbanContext(store: store, clock: clock, search: search)
+                    )
+                }
+            )
         } catch let error as KanbanError {
             return try error.responseJSON()
         }
@@ -217,12 +268,28 @@ public actor KanbanGraph {
             return session
         }
         let key = try keyReader(root)
-        let log = EventLog(repositoryAt: root)
         if case .notStarted = watchState {
-            let hasBoardDirectory = FileManager.default.fileExists(atPath: log.directory.path)
-            watchState = .watching(try startWatch(on: hasBoardDirectory ? log.directory : root))
+            watchState = .watching(try startWatch(ofBoardAt: root))
         }
-        let live = try await LiveGraph.load(using: BoardLoader(reading: log))
+        let loaded = try await loadSession(at: root, key: key, searchingWith: search)
+        currentKey = key
+        return loaded
+    }
+
+    /// Loads the board of a repo, and gives its tasks to its search.
+    ///
+    /// - Parameters:
+    ///   - directory: The root directory of the repo.
+    ///   - key: The current key of the board.
+    ///   - search: The ranked search over the tasks of the board.
+    /// - Returns: The session of the board.
+    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a directory or a file cannot be read.
+    private func loadSession(
+        at directory: URL,
+        key: BoardKey,
+        searchingWith search: TaskSearch
+    ) async throws(EventLogError) -> CommitSession {
+        let live = try await LiveGraph.load(using: BoardLoader(reading: EventLog(repositoryAt: directory)))
         let loaded = CommitSession(
             of: live,
             inBoard: key,
@@ -235,34 +302,170 @@ public actor KanbanGraph {
         return loaded
     }
 
+    // MARK: - Related boards
+
+    /// Loads the related boards that a run of a call asks for, and gives the related boards of the next run (plan.md
+    /// §6.6). The loop also loads each board that a cross-board dependency of a loaded board names, so that the
+    /// readiness of a task of a related board reads its own dependencies.
+    ///
+    /// - Parameters:
+    ///   - related: The related boards of the run.
+    ///   - requests: The requests of the run.
+    /// - Returns: The related boards with an answer for each request, and with each loaded related board.
+    /// - Throws: A ``BoardWatcherError`` when the watcher of a board cannot start, or an ``EventLogError`` when a log
+    ///   file cannot be read.
+    private func relatedBoards(
+        updating related: RelatedBoards,
+        toAnswer requests: Set<BoardRequest>
+    ) async throws -> RelatedBoards {
+        var updated = related
+        var pending = requests
+        while !pending.isEmpty {
+            for request in pending where !updated.satisfies([request]) {
+                try await answer(request, in: &updated)
+            }
+            updated.install(
+                boards: relatedBoards.mapValues(\.session.snapshot),
+                searchRoots: index?.places ?? locator.places(around: root)
+            )
+            pending = updated.loadedDependencyRequests.filter { request in !updated.satisfies([request]) }
+        }
+        return updated
+    }
+
+    /// Answers one request: resolves the board ref or scans for the list, and loads each board that the answer
+    /// names.
+    ///
+    /// - Parameters:
+    ///   - request: The request.
+    ///   - related: The related boards that get the answer.
+    /// - Throws: A ``BoardWatcherError`` or an ``EventLogError`` when a board cannot load.
+    private func answer(_ request: BoardRequest, in related: inout RelatedBoards) async throws {
+        switch request {
+        case .board(let reference):
+            related.record(try await loadBoard(named: reference), forBoard: reference)
+        case .allCopies:
+            related.record(listing: try await loadEachCopy())
+        }
+    }
+
+    /// Finds the board that a board ref names, and loads it when it is a related board. A ref that names no copy of
+    /// the index makes one more scan (plan.md §6.6, index life).
+    ///
+    /// - Parameter reference: The board ref.
+    /// - Returns: The board.
+    /// - Throws: A ``BoardWatcherError`` or an ``EventLogError`` when the board cannot load.
+    private func loadBoard(named reference: String) async throws -> BoardResolution {
+        guard let key = currentKey else {
+            return .notFound
+        }
+        let wasScanned = index != nil
+        var resolution = scannedIndex().resolution(of: reference, currentRoot: root, currentKey: key)
+        if resolution == nil, wasScanned {
+            resolution = rescan().resolution(of: reference, currentRoot: root, currentKey: key)
+        }
+        if case .copy(let copy) = resolution {
+            try await loadRelatedBoard(copy)
+        }
+        return resolution ?? .notFound
+    }
+
+    /// Scans for the copies of `Query.boards`, and loads each copy that is not the current repo.
+    ///
+    /// - Returns: The copies, in scan order.
+    /// - Throws: A ``BoardWatcherError`` or an ``EventLogError`` when a board cannot load.
+    private func loadEachCopy() async throws -> [ListedCopy] {
+        let index = rescan()
+        let resolutions = index.copies.map { copy in index.resolution(of: copy, currentRoot: root) }
+        for case .copy(let copy) in resolutions {
+            try await loadRelatedBoard(copy)
+        }
+        return zip(resolutions, index.copies).map { resolution, copy in
+            ListedCopy(board: resolution, isEnabled: copy.isEnabled)
+        }
+    }
+
+    /// Gives the index of the scan, and scans the first time.
+    ///
+    /// - Returns: The index.
+    private func scannedIndex() -> BoardIndex {
+        index ?? rescan()
+    }
+
+    /// Scans the places for repos again. A repo of the earlier scan keeps its key.
+    ///
+    /// - Returns: The new index.
+    private func rescan() -> BoardIndex {
+        let scanned = locator.scan(around: root, reusing: index, readingKeysWith: keyReader)
+        index = scanned
+        return scanned
+    }
+
+    /// Loads a related board and starts its file watcher, when the board is not loaded yet. After ``close()``, the
+    /// board loads with no watcher.
+    ///
+    /// - Parameter copy: The copy of the related repo.
+    /// - Throws: A ``BoardWatcherError`` when the watcher cannot start, or an ``EventLogError`` when a log file cannot
+    ///   be read. Then the board is not loaded.
+    private func loadRelatedBoard(_ copy: BoardCopy) async throws {
+        let path = copy.directory.canonicalPath
+        guard relatedBoards[path] == nil else {
+            return
+        }
+        let watch = isClosed ? nil : try startWatch(ofBoardAt: copy.directory)
+        do {
+            let search = TaskSearch(embeddingWith: embedder)
+            let session = try await loadSession(at: copy.directory, key: copy.key, searchingWith: search)
+            relatedBoards[path] = RelatedBoard(session: session, watch: watch)
+        } catch {
+            await watch?.end()
+            throw error
+        }
+    }
+
     // MARK: - File watcher
 
-    /// Starts a file watcher on a directory of the current board, and a task that gives each batch of the watcher
-    /// to ``receive(_:)``. The task holds the engine weakly, so the watcher does not keep the engine alive.
+    /// Starts a file watcher on a board: on its `.kanban/` directory, or on the repo directory when `.kanban/` is not
+    /// there.
     ///
-    /// - Parameter directory: The `.kanban/` directory of the board, or the repo directory when `.kanban/` is not
-    ///   there.
+    /// - Parameter directory: The root directory of the repo of the board.
     /// - Returns: The watch.
     /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when the watcher cannot start.
-    private func startWatch(on directory: URL) throws(BoardWatcherError) -> BoardWatch {
+    private func startWatch(ofBoardAt directory: URL) throws(BoardWatcherError) -> BoardWatch {
+        let boardDirectory = EventLog(repositoryAt: directory).directory
+        let hasBoardDirectory = FileManager.default.fileExists(atPath: boardDirectory.path)
+        return try startWatch(on: hasBoardDirectory ? boardDirectory : directory, ofBoardAt: directory)
+    }
+
+    /// Starts a file watcher on a directory of a board, and a task that gives each batch of the watcher to
+    /// ``receive(_:ofBoardAt:)``. The task holds the engine weakly, so the watcher does not keep the engine alive.
+    ///
+    /// - Parameters:
+    ///   - directory: The `.kanban/` directory of the board, or the repo directory when `.kanban/` is not there.
+    ///   - root: The root directory of the repo of the board.
+    /// - Returns: The watch.
+    /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when the watcher cannot start.
+    private func startWatch(on directory: URL, ofBoardAt root: URL) throws(BoardWatcherError) -> BoardWatch {
         let watcher = try BoardWatcher(watching: directory)
         let batches = watcher.batches
         let consumer = Task { [weak self] in
             for await paths in batches {
-                await self?.receive(paths)
+                await self?.receive(paths, ofBoardAt: root)
             }
         }
         return BoardWatch(watcher: watcher, directory: directory, consumer: consumer)
     }
 
-    /// Gives one batch of the file watcher to the serial gate (plan.md §5.6, batch). A batch that cannot apply is
+    /// Gives one batch of a file watcher to the serial gate (plan.md §5.6, batch). A batch that cannot apply is
     /// recorded with swift-log. The live graph then does not change, and the commit check still finds the change.
     ///
-    /// - Parameter paths: The changed paths of the batch.
-    private func receive(_ paths: [URL]) async {
+    /// - Parameters:
+    ///   - paths: The changed paths of the batch.
+    ///   - directory: The root directory of the repo of the board of the watcher.
+    private func receive(_ paths: [URL], ofBoardAt directory: URL) async {
         do {
             try await gate.run {
-                try await self.applyBatch(paths)
+                try await self.applyBatch(paths, ofBoardAt: directory)
             }
         } catch {
             Log.kanban.error(
@@ -272,45 +475,91 @@ public actor KanbanGraph {
         }
     }
 
-    /// Applies one batch of the file watcher to the live graph, inside the serial gate (plan.md §5.6).
+    /// Applies one batch of a file watcher to the live graph of its board, inside the serial gate (plan.md §5.6).
     ///
-    /// When the watcher watches the repo directory and `.kanban/` is there now, the watcher first moves to
-    /// `.kanban/`, and the batch also holds the `.kanban/` directory, so that it compares each file of the board.
+    /// - Parameters:
+    ///   - paths: The changed paths of the batch.
+    ///   - directory: The root directory of the repo of the board of the watcher.
+    /// - Throws: A ``BoardWatcherError`` when the watcher cannot move, or an ``EventLogError`` when a file cannot be
+    ///   read.
+    private func applyBatch(_ paths: [URL], ofBoardAt directory: URL) async throws {
+        guard directory != root else {
+            return try await applyCurrentBatch(paths)
+        }
+        let path = directory.canonicalPath
+        guard var board = relatedBoards[path], let watch = board.watch else {
+            return
+        }
+        if let moved = try await movedWatch(watch, ofBoardAt: directory) {
+            relatedBoards[path]?.watch = moved
+            try await apply(paths, to: &board.session, afterMove: true)
+        } else {
+            try await apply(paths, to: &board.session, afterMove: false)
+        }
+        relatedBoards[path]?.session = board.session
+    }
+
+    /// Applies one batch of the file watcher of the current board.
     ///
     /// - Parameter paths: The changed paths of the batch.
     /// - Throws: A ``BoardWatcherError`` when the watcher cannot move, or an ``EventLogError`` when a file cannot be
     ///   read.
-    private func applyBatch(_ paths: [URL]) async throws {
-        guard activeWatch != nil, var session else {
+    private func applyCurrentBatch(_ paths: [URL]) async throws {
+        guard let watch = activeWatch, var session else {
             return
         }
         defer { self.session = session }
-        let log = session.live.log
-        let didMove = try await moveWatchToBoardDirectory(of: log)
-        let applied = try await session.apply(watchedPaths: didMove ? paths + [log.directory] : paths)
+        let moved = try await movedWatch(watch, ofBoardAt: root)
+        if let moved {
+            watchState = .watching(moved)
+        }
+        try await apply(paths, to: &session, afterMove: moved != nil)
+    }
+
+    /// Applies the changed paths of one batch to the session of a board, and tells the batch observer.
+    ///
+    /// When the watcher moved to `.kanban/`, the batch also holds the `.kanban/` directory, so that it compares each
+    /// file of the board.
+    ///
+    /// - Parameters:
+    ///   - paths: The changed paths of the batch.
+    ///   - session: The session of the board.
+    ///   - didMove: `true` when the watcher of the board moved to `.kanban/` for this batch.
+    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a file cannot be read.
+    private func apply(
+        _ paths: [URL],
+        to session: inout CommitSession,
+        afterMove didMove: Bool
+    ) async throws(EventLogError) {
+        let boardDirectory = session.live.log.directory
+        let applied = try await session.apply(watchedPaths: didMove ? paths + [boardDirectory] : paths)
         guard !applied.isEmpty else {
             return
         }
         batchObserver?.didApply(changedPaths: applied)
     }
 
-    /// Moves the file watcher from the repo directory to the `.kanban/` directory, when the watcher watches the repo
+    /// Moves a file watcher from the repo directory to the `.kanban/` directory, when the watcher watches the repo
     /// directory and `.kanban/` is there now (plan.md §5.6, a repo with no `.kanban/` yet). The new watcher starts
     /// before the old one stops, so no change is lost.
     ///
-    /// - Parameter log: The event log of the board.
-    /// - Returns: `true` when the watcher moved.
+    /// - Parameters:
+    ///   - watch: The watch of the board.
+    ///   - directory: The root directory of the repo of the board.
+    /// - Returns: The new watch, or `nil` when the watcher did not move.
     /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when the new watcher cannot start. Then the old
     ///   watcher stays.
-    private func moveWatchToBoardDirectory(of log: EventLog) async throws(BoardWatcherError) -> Bool {
-        guard let watch = activeWatch, watch.directory == root,
-            FileManager.default.fileExists(atPath: log.directory.path)
-        else {
-            return false
+    private func movedWatch(
+        _ watch: BoardWatch,
+        ofBoardAt directory: URL
+    ) async throws(BoardWatcherError) -> BoardWatch? {
+        let boardDirectory = EventLog(repositoryAt: directory).directory
+        guard watch.directory == directory, FileManager.default.fileExists(atPath: boardDirectory.path) else {
+            return nil
         }
-        watchState = .watching(try startWatch(on: log.directory))
+        let moved = try startWatch(on: boardDirectory, ofBoardAt: directory)
         await watch.watcher.stop()
-        return true
+        return moved
     }
 }
 
@@ -324,9 +573,20 @@ private enum WatchState {
     /// The watcher runs.
     case watching(BoardWatch)
 
-    /// ``KanbanGraph/close()`` stopped the watcher. No watcher starts again, and a batch that comes now changes
+    /// ``KanbanGraph/close()`` stopped the watchers. No watcher starts again, and a batch that comes now changes
     /// nothing.
     case closed
+}
+
+// MARK: - Related board
+
+/// A loaded related board of a ``KanbanGraph``, and its file watcher (plan.md §5.6, §6.6).
+private struct RelatedBoard {
+    /// The live graph of the board and its commit path.
+    var session: CommitSession
+
+    /// The file watcher of the board, or `nil` after ``KanbanGraph/close()``.
+    var watch: BoardWatch?
 }
 
 // MARK: - Board watch
@@ -377,12 +637,12 @@ protocol KanbanCallObserver: Sendable {
     func callDidFinish()
 }
 
-/// Gets a call when the file watcher of a ``KanbanGraph`` applies a batch to the live graph, inside the serial gate.
+/// Gets a call when a file watcher of a ``KanbanGraph`` applies a batch to a live graph, inside the serial gate.
 ///
 /// A test uses it to count the applies and to wait for a batch. A batch whose files all have their recorded
 /// signatures (for example the write of this process) applies nothing and gives no call.
 protocol LiveGraphObserver: Sendable {
-    /// Tells that a batch changed the live graph.
+    /// Tells that a batch changed a live graph.
     ///
     /// - Parameter paths: The node files that the apply read again, in the sort order of their refs.
     func didApply(changedPaths paths: [URL])

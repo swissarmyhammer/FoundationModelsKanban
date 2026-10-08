@@ -17,20 +17,38 @@ struct BoardView: Sendable {
     /// ordinal, then by ULID. A task with no live column to show in comes last.
     let taskOrder: [Int]
 
+    /// The directory, the search, and the events of the board, or `nil` for a view that only a graph rule, the
+    /// history replay, or a test fixture reads.
+    let source: BoardSource?
+
     /// Makes the read view of a graph.
     ///
     /// - Parameters:
     ///   - graph: The graph of the board.
     ///   - boardKey: The current key of the board.
-    init(of graph: Graph, inBoard boardKey: String) {
-        readiness = Readiness(of: graph, inBoard: boardKey)
+    ///   - source: The directory, the search, and the events of the board. The default is `nil`.
+    ///   - related: The related boards that the cross-board dependencies read (plan.md §6.6). The default reads no
+    ///     related board.
+    init(
+        of graph: Graph,
+        inBoard boardKey: String,
+        from source: BoardSource? = nil,
+        reading related: RelatedBoards = .unavailable
+    ) {
+        readiness = Readiness(of: graph, inBoard: boardKey, reading: related)
         self.boardKey = boardKey
+        self.source = source
         taskOrder = Self.boardOrder(of: readiness, deleted: false)
     }
 
     /// The graph of the board.
     var graph: Graph {
         readiness.graph
+    }
+
+    /// The related boards that the cross-board dependencies read.
+    var related: RelatedBoards {
+        readiness.related
     }
 
     /// The resolver of the forgiving refs of the board.
@@ -312,6 +330,11 @@ extension BoardObject {
         view.readiness.summary
     }
 
+    /// The root directory of the repo of the board (plan.md §6.6), or `nil` for a board in memory only.
+    var path: String? {
+        view.source?.directory.path
+    }
+
     /// Resolves `Board.task`: one live task by a full URI or a short form.
     ///
     /// The GraphQL field is nullable (plan.md §4.1): an error gives `null` for the field and one item in `errors`,
@@ -348,14 +371,14 @@ extension BoardObject {
     /// fields of the board keep their data.
     ///
     /// - Parameters:
-    ///   - context: The context of the call. It holds the search of the board.
+    ///   - context: The context of the call. It holds the search of the current board, for a view with no source.
     ///   - arguments: The query, the filter, and the largest number of hits.
     /// - Returns: The hits. The value is never `nil`. The optional type makes the GraphQL field nullable.
     /// - Throws: ``KanbanError/invalidFilter(filter:position:detail:example:)`` when the filter is empty or does not
     ///   parse.
     func searchTasks(context: KanbanContext, arguments: SearchTasksArguments) async throws -> [TaskHit]? {
         let tasks = try TaskSelection(searchFiltering: arguments.filter).tasks(in: view)
-        return try await context.search.hits(
+        return try await (view.source?.search ?? context.search).hits(
             for: arguments.query,
             in: view,
             among: tasks,
@@ -513,15 +536,32 @@ extension TaskObject {
         view.liveObjects(at: view.graph.tagSlots(of: state))
     }
 
-    /// The live tasks of this board that the task depends on: the edges and the markers (plan.md §6.1). A task of a
-    /// different board is not in the list until the cross-repo task.
+    /// The live tasks that the task depends on: the edges and the markers (plan.md §6.1). A task of a related board
+    /// is in the list when a loaded board has it (plan.md §6.6). A target that no loaded board has is not in the list.
     var dependsOn: [TaskObject] {
-        view.liveObjects(at: view.graph.dependencies(of: state, inBoard: view.boardKey).compactMap(\.resolvedSlot))
+        view.readiness.dependencies(ofTaskAt: slot).compactMap(liveTask(at:))
     }
 
-    /// The tasks of this board that block the task.
+    /// The live tasks that block the task, also the tasks of related boards.
     var blockedBy: [TaskObject] {
-        view.liveObjects(at: view.readiness.blockers(ofTaskAt: slot).compactMap(\.resolvedSlot))
+        view.readiness.blockers(ofTaskAt: slot).compactMap(liveTask(at:))
+    }
+
+    /// Gives the live task at the target of a dependency.
+    ///
+    /// - Parameter target: The target: a slot of this board, or a ref to a task of a related board.
+    /// - Returns: The task, with the read view of its own board, or `nil` when the target is a tombstone or no loaded
+    ///   board has it.
+    private func liveTask(at target: EdgeTarget) -> TaskObject? {
+        switch target {
+        case .slot(let targetSlot):
+            return view.liveObjects(at: [targetSlot]).first
+        case .unresolved(let ref):
+            guard let found = view.related.task(for: ref), !found.state.fields.isDeleted else {
+                return nil
+            }
+            return TaskObject(view: found.board.view(reading: view.related), slot: found.slot, state: found.state)
+        }
     }
 
     /// The live tasks that depend on the task.

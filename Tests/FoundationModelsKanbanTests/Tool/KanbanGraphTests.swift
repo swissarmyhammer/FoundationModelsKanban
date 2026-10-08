@@ -83,13 +83,15 @@ struct KanbanGraphTests {
     ///   - root: The root directory of the repo.
     ///   - keyReader: Gives the key of the board. The default is ``fakeKey(ofRepoAt:)``.
     ///   - actor: The session actor. The default is ``sessionActor``.
+    ///   - locator: Finds the related boards. The default looks only in the parent directory of the repo.
     ///   - observer: Gets a call when each call starts and ends, or `nil` for no calls.
     ///   - batchObserver: Gets a call when the file watcher applies a batch, or `nil` for no calls.
     /// - Returns: The engine.
     static func makeGraph(
         at root: URL,
-        readingKeyWith keyReader: @escaping @Sendable (URL) throws(BoardKeyError) -> BoardKey = fakeKey,
+        readingKeyWith keyReader: @escaping BoardKeyReader = fakeKey,
         actingAs actor: SessionActor = sessionActor,
+        locatedBy locator: BoardLocator = .default,
         reportingTo observer: (any KanbanCallObserver)? = nil,
         observingBatchesWith batchObserver: (any LiveGraphObserver)? = nil
     ) throws -> KanbanGraph {
@@ -99,6 +101,7 @@ struct KanbanGraphTests {
             timedBy: { time },
             actingAs: actor,
             mintingFrom: mutationIDs,
+            locatedBy: locator,
             reportingTo: observer,
             observingBatchesWith: batchObserver
         )

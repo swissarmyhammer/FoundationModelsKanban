@@ -90,6 +90,18 @@ struct KanbanErrorTests {
         )
     }
 
+    @Test("NOT_FOUND for a board has the code NOT_FOUND, names the reference, and lists the search roots")
+    func boardNotFoundMessage() {
+        let error = KanbanError.boardNotFound(reference: "github.com/o/missing", searchRoots: ["/src", "/work"])
+        #expect(error.code == "NOT_FOUND")
+        #expect(
+            error.message
+                == "No board has the reference \"github.com/o/missing\". The scan looked for git repos in: /src, "
+                + "/work. Use a board key, a repo directory name, or a repo path from these places, "
+                + "and then send the call again."
+        )
+    }
+
     @Test("AMBIGUOUS_ID gives the matching short ids")
     func ambiguousIDMessage() {
         let error = KanbanError.ambiguousID(reference: "01KT6SA", matches: Self.ambiguousMatches)
