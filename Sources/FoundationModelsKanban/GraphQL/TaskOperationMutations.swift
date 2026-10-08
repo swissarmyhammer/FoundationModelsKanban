@@ -285,7 +285,7 @@ extension KanbanResolver {
 
 extension KanbanContext {
     /// Runs one public mutation field that changes a live task at the time of ``clock``, and gives the task after the
-    /// field. The field obeys the rules of ``changeNode(named:_:)``.
+    /// field. The field obeys the rules of ``changeNode(named:on:_:)``, in the board of the task.
     ///
     /// - Parameters:
     ///   - id: The task: a full URI or a short form.
@@ -299,7 +299,7 @@ extension KanbanContext {
         named operation: String,
         _ body: sending (inout WorkingCopy, RefResolver, LocalRef, DateTime) throws -> Void
     ) async throws -> TaskObject? {
-        try await changeNode(named: operation) { work, resolver, time in
+        try await changeNode(named: operation, on: .holding(id)) { work, resolver, time in
             let ref = try resolver.nodeRef(for: id, ofType: .task)
             try body(&work, resolver, ref, time)
             return ref

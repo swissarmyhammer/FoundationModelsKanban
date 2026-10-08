@@ -379,11 +379,37 @@ struct EventLogTests {
         )
         let ordered = EventLog.lockOrder(of: logs)
         #expect(ordered == names.sorted().map { name in EventLog(repositoryAt: directory.url.appending(path: name)) })
+        try await Self.expectOneLockHolds(Array(logs), inOrder: ordered)
+    }
+
+    @Test("The lock of many boards holds two copies of one repo, which have the same key", .timeLimit(.minutes(1)))
+    func twoCopiesWithOneKeyLockBoth() async throws {
+        let directory = try TemporaryDirectory()
+        let key = BoardKey(localDirectoryName: "app")
+        let logs = ["second", "first"].map { name in
+            (key: key, value: EventLog(repositoryAt: directory.url.appending(path: name)))
+        }
+        let ordered = EventLog.lockOrder(of: logs)
+        #expect(ordered == logs.map(\.value).reversed())
+        try await Self.expectOneLockHolds(logs, inOrder: ordered)
+    }
+
+    /// Gets one lock of many boards, and checks that the lock holds each board until the release, and that the
+    /// release frees each board.
+    ///
+    /// - Parameters:
+    ///   - logs: The event log of each board, with its board key.
+    ///   - ordered: The event logs, in lock order.
+    /// - Throws: An error when a board cannot be locked, or the test is cancelled during the wait.
+    static func expectOneLockHolds(
+        _ logs: [(key: BoardKey, value: EventLog)],
+        inOrder ordered: [EventLog]
+    ) async throws {
         let lock = try EventLog.lock(sortedByKey: logs)
-        #expect(ordered.allSatisfy { log in !Self.isLockFree(of: log) })
+        #expect(ordered.allSatisfy { log in !isLockFree(of: log) })
         lock.unlock()
         for log in ordered {
-            #expect(try await Self.isLockReleased(of: log), Self.heldLockMessage(of: log))
+            #expect(try await isLockReleased(of: log), heldLockMessage(of: log))
         }
     }
 }

@@ -35,6 +35,10 @@ private struct AddTagInput: Decodable, Sendable {
 
     /// The Markdown body of the tag: the full text, or `nil` for no body.
     let body: String?
+
+    /// The board of the tag: a board key, a repo directory name, or a path, or `nil` for the current board
+    /// (plan.md §6.6).
+    let board: String?
 }
 
 /// The `input` object of `updateTag` (plan.md §4.2). A field that is not set does not change, and `null` clears the
@@ -60,6 +64,10 @@ private struct RenameTagInput: Decodable, Sendable {
 
     /// The new tag name. Its slug is the slug of the redirect target, also when a rename redirects that slug.
     let to: String
+
+    /// The board of the tag when `from` is not a full URI: a board key, a repo directory name, or a path, or `nil`
+    /// for the current board (plan.md §6.6). A full URI names the tag in its own board.
+    let board: String?
 }
 
 // MARK: - Resolvers
@@ -82,7 +90,7 @@ extension KanbanResolver {
         arguments: InputArguments<AddTagInput>
     ) async throws -> TagObject? {
         let input = arguments.input
-        return try await context.changeNode(named: MutationName.addTag) { work, _, time in
+        return try await context.changeNode(named: MutationName.addTag, on: .named(input.board)) { work, _, time in
             let name = try TagName(normalizing: input.name ?? input.id?.text ?? "")
             let slug = try input.id.map { id in try TagName(normalizing: id.text).slug } ?? name.slug
             let values = [
@@ -107,7 +115,8 @@ extension KanbanResolver {
         arguments: InputArguments<UpdateTagInput>
     ) async throws -> TagObject? {
         let input = arguments.input
-        return try await context.changeNode(named: MutationName.updateTag) { work, resolver, time in
+        let board = MutationBoard.holding(input.id)
+        return try await context.changeNode(named: MutationName.updateTag, on: board) { work, resolver, time in
             let ref = try resolver.nodeRef(for: input.id, ofType: .tag)
             let name = try input.name.map { name in try TagName(normalizing: name).name }
             let values = [
@@ -162,7 +171,8 @@ extension KanbanResolver {
         arguments: InputArguments<RenameTagInput>
     ) async throws -> TagObject? {
         let input = arguments.input
-        return try await context.changeNode(named: MutationName.renameTag) { work, resolver, time in
+        let board = MutationBoard.holding(input.from, orNamed: input.board)
+        return try await context.changeNode(named: MutationName.renameTag, on: board) { work, resolver, time in
             let source = try resolver.nodeRef(for: input.from, ofType: .tag)
             return try work.renameTag(source, to: TagName(normalizing: input.to), at: time)
         }
@@ -278,6 +288,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 InputField("name", at: \.name)
                 InputField("color", at: \.color)
                 InputField("body", at: \.body)
+                InputField("board", at: \.board)
             }
             Input(UpdateTagInput.self) {
                 InputField("id", at: \.id)
@@ -288,6 +299,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             Input(RenameTagInput.self) {
                 InputField("from", at: \.from)
                 InputField("to", at: \.to)
+                InputField("board", at: \.board)
             }
         }
         .addMutation {

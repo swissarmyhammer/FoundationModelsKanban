@@ -117,6 +117,33 @@ private struct BoardInput: Decodable, Sendable {
     /// The new Markdown body of the board: the full text. The mutation writes the diff from the current body
     /// (plan.md §5.5).
     let body: FieldUpdate<String>
+
+    /// The board to change: a board key, a repo directory name, or a path, or `nil` for the current board (plan.md
+    /// §6.6). A related repo with no board gets its board.
+    let board: String?
+}
+
+// MARK: - Board of a field
+
+/// The board that one mutation field writes to, as the input names it (plan.md §4.2, §6.6).
+enum MutationBoard: Sendable {
+    /// The board that the `board` field of the input names, or the current board when the input has no `board`
+    /// field: the board of a mutation that makes a node.
+    case named(String?)
+
+    /// The board of an existing node: the board of the key of a full URI. A short form names a node of the board
+    /// that the `board` field names, or of the current board when the input has no `board` field.
+    case holding(NodeID, orNamed: String? = nil)
+
+    /// The board ref of the board, or `nil` for the current board.
+    var reference: String? {
+        switch self {
+        case .named(let reference):
+            reference
+        case .holding(let id, let reference):
+            (try? NodeURI(parsing: id.text.trimmingCharacters(in: .whitespacesAndNewlines)))?.boardKey ?? reference
+        }
+    }
 }
 
 /// The arguments of `initBoard` and `updateBoard`. The `input` argument is optional, because ``BoardInput`` has no
@@ -188,28 +215,24 @@ extension KanbanResolver {
     ///   - operation: The name of the mutation.
     ///   - context: The context of the call.
     ///   - arguments: The changes to the board.
-    /// - Returns: The board after the change.
-    /// - Throws: An ``EventError`` when a patch breaks a rule of the log.
+    /// - Returns: The board after the change, or `nil` in a run that the engine runs again after it loads the board.
+    /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the `board`
+    ///   field. An ``EventError`` when a patch breaks a rule of the log.
     private func changeBoard(
         as operation: String,
         context: KanbanContext,
         arguments: BoardMutationArguments
     ) async throws -> BoardObject? {
-        try await BoardObject(in: context.store.changeBoard(with: arguments.input, as: operation, at: context.clock()))
+        let view = try await context.store.changeBoard(with: arguments.input, as: operation, at: context.clock())
+        return try view.map(BoardObject.init(in:))
     }
 }
 
 // MARK: - Store
 
 extension BoardStore {
-    /// Runs one public mutation field on the working copy, with the rules that each public mutation obeys (plan.md
-    /// §6).
-    ///
-    /// - Auto-init: when the log has no board, the field writes the default columns before the body, and the board
-    ///   `set name` with the name of the repo directory after the body, when the body set no name. Thus a field that
-    ///   sets the name writes one board patch.
-    /// - Session actor: when the field kept a patch and the board has no node of the session actor, the field also
-    ///   writes an actor `set name` patch. A field that keeps no patch writes no actor patch.
+    /// Runs one public mutation field on the working copy of the current board, with the rules that each public
+    /// mutation obeys (``WorkingCopy/applyMutationRules(actingAs:at:_:)``).
     ///
     /// - Parameters:
     ///   - operation: The name of the public mutation of the field.
@@ -225,38 +248,58 @@ extension BoardStore {
     ) throws -> Value {
         let actor = sessionActor
         return try runField(as: operation) { work in
-            let keptCount = work.kept.count
-            let isNewBoard = !work.hasEvents(of: .board)
-            let directoryName = work.graph.boardNode?.name
-            if isNewBoard {
-                try work.addDefaultColumns(at: time)
-            }
-            let value = try body(&work)
-            if isNewBoard, let directoryName {
-                try work.nameNewBoard(directoryName, at: time)
-            }
-            if work.kept.count > keptCount {
-                try work.addActor(actor, at: time)
-            }
-            return value
+            try work.applyMutationRules(actingAs: actor, at: time, body)
         }
     }
 
-    /// Changes the board with one patch: `set` or `unset` of the name, and an `edit` diff of the body (plan.md §4.2,
+    /// Runs one public mutation field on the working copy of the board that the field names: the current board or
+    /// a related board (plan.md §6.6). The field obeys the rules of each public mutation in that board
+    /// (``WorkingCopy/applyMutationRules(actingAs:at:_:)``), and its refs resolve in that board.
+    ///
+    /// - Parameters:
+    ///   - operation: The name of the public mutation of the field.
+    ///   - board: The board of the field.
+    ///   - time: The time of the change.
+    ///   - body: Makes and applies the patches of the field, and checks the graph rules. It gets the working copy of
+    ///     the board, and a resolver of the forgiving refs of the working graph of the board.
+    /// - Returns: The value of the body and the read view of the board after the field, or `nil` when the engine did
+    ///   not load the board yet. The store then records the request, and the call runs again after the load.
+    /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the ref. The
+    ///   error of the body, or an ``EventError`` when a patch breaks a rule of the log. Then the field keeps none of
+    ///   its patches.
+    func runMutation<Value: Sendable>(
+        named operation: String,
+        on board: MutationBoard,
+        at time: DateTime,
+        _ body: (inout WorkingCopy, RefResolver) throws -> Value
+    ) throws -> (value: Value, view: BoardView)? {
+        guard let target = try target(of: board) else {
+            return nil
+        }
+        let actor = sessionActor
+        return try runField(as: operation, in: target) { work, key in
+            try work.applyMutationRules(actingAs: actor, at: time) { work in
+                try body(&work, RefResolver(graph: work.graph, boardKey: key))
+            }
+        }
+    }
+
+    /// Changes a board with one patch: `set` or `unset` of the name, and an `edit` diff of the body (plan.md §4.2,
     /// §5.5). The patch keeps only the parts that change the board, so a field that changes nothing writes nothing.
     ///
     /// - Parameters:
-    ///   - input: The changes. A field that is not set does not change, and `null` clears the field.
+    ///   - input: The changes and the board. A field that is not set does not change, and `null` clears the field.
     ///   - operation: The name of the public mutation.
     ///   - time: The time of the change.
-    /// - Returns: The read view of the graph after the change.
-    /// - Throws: An ``EventError`` when a patch breaks a rule of the log.
+    /// - Returns: The read view of the board after the change, or `nil` when the engine did not load the board yet.
+    /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the `board`
+    ///   field. An ``EventError`` when a patch breaks a rule of the log.
     fileprivate func changeBoard(
         with input: BoardInput?,
         as operation: String,
         at time: DateTime
-    ) throws -> BoardView {
-        try runMutation(named: operation, at: time) { work in
+    ) throws -> BoardView? {
+        let changed = try runMutation(named: operation, on: .named(input?.board), at: time) { work, _ in
             let patch = try PatchInput(
                 changing: .board,
                 updating: [PropertyName.name: (input?.name ?? .unchanged).map(PatchValue.string)],
@@ -265,7 +308,47 @@ extension BoardStore {
             )
             try work.apply(patch, at: time)
         }
-        return view
+        return changed?.view
+    }
+}
+
+// MARK: - Rules
+
+extension WorkingCopy {
+    /// Runs the body of one public mutation field with the rules that each public mutation obeys in its board
+    /// (plan.md §6, §6.6):
+    ///
+    /// - Auto-init: when the log has no board, the field writes the default columns before the body, and the board
+    ///   `set name` with the name of the repo directory after the body, when the body set no name. Thus a field that
+    ///   sets the name writes one board patch.
+    /// - Session actor: when the field kept a patch and the board has no node of the session actor, the field also
+    ///   writes an actor `set name` patch. A field that keeps no patch writes no actor patch.
+    ///
+    /// - Parameters:
+    ///   - actor: The session actor.
+    ///   - time: The time of the change.
+    ///   - body: Makes and applies the patches of the field, and checks the graph rules.
+    /// - Returns: The value of the body.
+    /// - Throws: The error of the body, or an ``EventError`` when a patch breaks a rule of the log.
+    mutating func applyMutationRules<Value>(
+        actingAs actor: SessionActor,
+        at time: DateTime,
+        _ body: (inout WorkingCopy) throws -> Value
+    ) throws -> Value {
+        let keptCount = kept.count
+        let isNewBoard = !hasEvents(of: .board)
+        let directoryName = graph.boardNode?.name
+        if isNewBoard {
+            try addDefaultColumns(at: time)
+        }
+        let value = try body(&self)
+        if isNewBoard, let directoryName {
+            try nameNewBoard(directoryName, at: time)
+        }
+        if kept.count > keptCount {
+            try addActor(actor, at: time)
+        }
+        return value
     }
 }
 
@@ -423,6 +506,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             Input(BoardInput.self) {
                 InputField("name", at: \.name.value)
                 InputField("body", at: \.body.value)
+                InputField("board", at: \.board)
             }
         }
         .addMutation {

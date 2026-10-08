@@ -21,20 +21,27 @@ extension EventLog {
     /// Gets the write locks of many boards, in the sort order of the board key. Each caller that locks more than one
     /// board uses this order, so that two callers cannot deadlock (plan.md §5.4 step 5).
     ///
-    /// - Parameter logs: The event log of each board, by board key.
+    /// - Parameter logs: The event log of each board, with its board key. Two copies of one repo have the same key,
+    ///   and each copy gets its own lock.
     /// - Returns: One lock that holds the locks of all the boards. When a lock fails, the locks that the call got
     ///   are released.
     /// - Throws: The error of ``lock()`` for the first board that cannot be locked.
-    static func lock(sortedByKey logs: [BoardKey: EventLog]) throws(EventLogError) -> BoardLock {
+    static func lock(
+        sortedByKey logs: some Sequence<(key: BoardKey, value: EventLog)>
+    ) throws(EventLogError) -> BoardLock {
         BoardLock(files: try lockOrder(of: logs).map { log throws(EventLogError) in try LockedFile(of: log) })
     }
 
-    /// Gives the event logs of many boards in the order of the lock: the sort order of the board key text.
+    /// Gives the event logs of many boards in the order of the lock: the sort order of the board key text, and then
+    /// the sort order of the path of the board directory for two copies with the same key.
     ///
-    /// - Parameter logs: The event log of each board, by board key.
+    /// - Parameter logs: The event log of each board, with its board key.
     /// - Returns: The event logs, in lock order.
-    static func lockOrder(of logs: [BoardKey: EventLog]) -> [EventLog] {
-        logs.sorted { lhs, rhs in lhs.key.description < rhs.key.description }.map(\.value)
+    static func lockOrder(of logs: some Sequence<(key: BoardKey, value: EventLog)>) -> [EventLog] {
+        logs.sorted { lhs, rhs in
+            (lhs.key.description, lhs.value.directory.path) < (rhs.key.description, rhs.value.directory.path)
+        }
+        .map(\.value)
     }
 }
 

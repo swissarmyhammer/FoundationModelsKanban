@@ -36,6 +36,10 @@ private struct AddTaskInput: Decodable, Sendable {
 
     /// The tasks that the task waits for, in this board or in a different board.
     let dependsOn: [NodeID]?
+
+    /// The board of the task: a board key, a repo directory name, or a path, or `nil` for the current board (plan.md
+    /// §6.6). The short refs of the input resolve in this board.
+    let board: String?
 }
 
 /// The `input` object of `updateTask` (plan.md §4.2). A field that is not set does not change, and `null` clears the
@@ -93,8 +97,9 @@ extension KanbanResolver {
         arguments: InputArguments<AddTaskInput>
     ) async throws -> TaskObject? {
         let input = arguments.input
-        let knownActor = context.store.knownSessionActor.map { actor in [StoredRef.local(actor)] }
-        return try await context.changeNode(named: MutationName.addTask) { work, resolver, time in
+        let board = MutationBoard.named(input.board)
+        return try await context.changeNode(named: MutationName.addTask, on: board) { work, resolver, time in
+            let knownActor = work.knownSessionActor.map { actor in [StoredRef.local(actor)] }
             let ref = LocalRef.task(work.mintULID())
             let column = try work.graph.columnRef(for: input.column, resolvingWith: resolver)
             let ordinal = try input.ordinal.map(Ordinal.init(parsing:)) ?? work.graph.nextOrdinal(inColumn: column)
@@ -133,7 +138,8 @@ extension KanbanResolver {
         arguments: InputArguments<UpdateTaskInput>
     ) async throws -> TaskObject? {
         let input = arguments.input
-        return try await context.changeNode(named: MutationName.updateTask) { work, resolver, time in
+        let board = MutationBoard.holding(input.id)
+        return try await context.changeNode(named: MutationName.updateTask, on: board) { work, resolver, time in
             let ref = try resolver.nodeRef(for: input.id, ofType: .task)
             let edges = try work.edges(
                 assignees: input.assignees.value(clearingTo: []),
@@ -501,6 +507,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 InputField("assignees", at: \.assignees)
                 InputField("tags", at: \.tags)
                 InputField("dependsOn", at: \.dependsOn)
+                InputField("board", at: \.board)
             }
             Input(UpdateTaskInput.self) {
                 InputField("id", at: \.id)

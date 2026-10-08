@@ -50,6 +50,10 @@ private struct AddColumnInput: Codable, Sendable {
 
     /// The Markdown body of the column: the full text, or `nil` for no body.
     let body: String?
+
+    /// The board of the column: a board key, a repo directory name, or a path, or `nil` for the current board
+    /// (plan.md §6.6).
+    let board: String?
 }
 
 /// The `input` object of `updateColumn` (plan.md §4.2). A field that is not set does not change, and `null` clears
@@ -85,6 +89,10 @@ private struct AddActorInput: Codable, Sendable {
     /// `true` to return the actor that has the id, and write nothing, when the board has that actor. Else that actor
     /// gives `DUPLICATE_ID`.
     let ensure: Bool?
+
+    /// The board of the actor: a board key, a repo directory name, or a path, or `nil` for the current board
+    /// (plan.md §6.6).
+    let board: String?
 }
 
 /// The `input` object of `updateActor` (plan.md §4.2). A field that is not set does not change, and `null` clears
@@ -128,7 +136,7 @@ extension KanbanResolver {
         arguments: InputArguments<AddColumnInput>
     ) async throws -> ColumnObject? {
         let input = arguments.input
-        return try await context.changeNode(named: MutationName.addColumn) { work, _, time in
+        return try await context.changeNode(named: MutationName.addColumn, on: .named(input.board)) { work, _, time in
             let ref = LocalRef.column(slug: try Slug(columnOrActorName: input.id?.text ?? input.name).value)
             let order = input.order ?? work.graph.nextColumnOrder
             let values = [String: PatchValue](
@@ -151,7 +159,8 @@ extension KanbanResolver {
         arguments: InputArguments<UpdateColumnInput>
     ) async throws -> ColumnObject? {
         let input = arguments.input
-        return try await context.changeNode(named: MutationName.updateColumn) { work, resolver, time in
+        let board = MutationBoard.holding(input.id)
+        return try await context.changeNode(named: MutationName.updateColumn, on: board) { work, resolver, time in
             let ref = try resolver.nodeRef(for: input.id, ofType: .column)
             let values = [
                 PropertyName.name: input.name.map(PatchValue.string),
@@ -210,7 +219,7 @@ extension KanbanResolver {
         arguments: InputArguments<AddActorInput>
     ) async throws -> ActorObject? {
         let input = arguments.input
-        return try await context.changeNode(named: MutationName.addActor) { work, _, time in
+        return try await context.changeNode(named: MutationName.addActor, on: .named(input.board)) { work, _, time in
             let ref = LocalRef.actor(slug: try Slug(columnOrActorName: input.id?.text ?? input.name).value)
             if input.ensure == true, work.graph.hasNode(ref) {
                 return ref
@@ -238,7 +247,8 @@ extension KanbanResolver {
         arguments: InputArguments<UpdateActorInput>
     ) async throws -> ActorObject? {
         let input = arguments.input
-        return try await context.changeNode(named: MutationName.updateActor) { work, resolver, time in
+        let board = MutationBoard.holding(input.id)
+        return try await context.changeNode(named: MutationName.updateActor, on: board) { work, resolver, time in
             let ref = try resolver.nodeRef(for: input.id, ofType: .actor)
             let values = [
                 PropertyName.name: input.name.map(PatchValue.string),
@@ -278,7 +288,8 @@ extension KanbanResolver {
     }
 
     /// Writes a `delete` patch on one node: `true` makes a tombstone, `false` makes a tombstone live again (plan.md
-    /// §4.2). A patch that does not change the node is not written.
+    /// §4.2). A patch that does not change the node is not written. The node can be in a related board (plan.md
+    /// §6.6).
     ///
     /// - Parameters:
     ///   - isDeleted: `true` for a delete, `false` for an undelete.
@@ -297,7 +308,7 @@ extension KanbanResolver {
         _ arguments: InputArguments<NodeReferenceInput>
     ) async throws -> Object? {
         let id = arguments.input.id
-        return try await context.changeNode(named: operation) { work, resolver, time in
+        return try await context.changeNode(named: operation, on: .holding(id)) { work, resolver, time in
             let ref = try resolver.nodeRef(for: id, ofType: type, includingTombstones: !isDeleted)
             try work.setDeleted(isDeleted, of: ref, inBoard: resolver.boardKey, at: time)
             return ref
@@ -310,44 +321,49 @@ extension KanbanResolver {
 extension BoardStore {
     /// Runs one public mutation field that changes one node, and gives the object of the node after the field.
     ///
-    /// The field obeys the rules of ``runMutation(named:at:_:)``: the auto-init and the session actor.
+    /// The field obeys the rules of ``runMutation(named:on:at:_:)``: it writes to the board that it names, with the
+    /// auto-init and the session actor of that board.
     ///
     /// - Parameters:
     ///   - operation: The name of the public mutation of the field.
+    ///   - board: The board of the field.
     ///   - time: The time of the change.
     ///   - body: Makes and applies the patches of the field, and gives the local ref of the node. It gets the working
     ///     copy, a resolver of the forgiving refs of the working graph, and the time.
-    /// - Returns: The object of the node, live or tombstoned.
-    /// - Throws: The error of the body, or an ``EventError`` when a patch breaks a rule of the log.
+    /// - Returns: The object of the node, live or tombstoned, or `nil` when the engine did not load the board yet.
+    /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the ref. The
+    ///   error of the body, or an ``EventError`` when a patch breaks a rule of the log.
     func changeNode<Object: SlotNodeObject>(
         named operation: String,
+        on board: MutationBoard,
         at time: DateTime,
         _ body: (inout WorkingCopy, RefResolver, DateTime) throws -> LocalRef
     ) throws -> Object? {
-        let key = boardKey
-        let ref = try runMutation(named: operation, at: time) { work in
-            try body(&work, RefResolver(graph: work.graph, boardKey: key), time)
+        let changed = try runMutation(named: operation, on: board, at: time) { work, resolver in
+            try body(&work, resolver, time)
         }
-        let view = view
-        return view.graph.slot(for: ref).flatMap { slot in view.object(at: slot) }
+        return changed.flatMap { ref, view in view.graph.slot(for: ref).flatMap { slot in view.object(at: slot) } }
     }
 }
 
 extension KanbanContext {
     /// Runs one public mutation field that changes one node at the time of ``clock``, and gives the object of the node
-    /// after the field. The field obeys the rules of ``BoardStore/changeNode(named:at:_:)``.
+    /// after the field. The field obeys the rules of ``BoardStore/changeNode(named:on:at:_:)``.
     ///
     /// - Parameters:
     ///   - operation: The name of the public mutation of the field.
+    ///   - board: The board of the field.
     ///   - body: Makes and applies the patches of the field, and gives the local ref of the node. It gets the working
     ///     copy, a resolver of the forgiving refs of the working graph, and the time.
-    /// - Returns: The object of the node, live or tombstoned.
-    /// - Throws: The error of the body, or an ``EventError`` when a patch breaks a rule of the log.
+    /// - Returns: The object of the node, live or tombstoned, or `nil` when the engine did not load the board yet.
+    /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the ref. The
+    ///   error of the body, or an ``EventError`` when a patch breaks a rule of the log.
     func changeNode<Object: SlotNodeObject>(
         named operation: String,
+        on board: MutationBoard,
         _ body: sending (inout WorkingCopy, RefResolver, DateTime) throws -> LocalRef
     ) async throws -> Object? {
-        try await store.changeNode(named: operation, at: clock(), body)
+        try await store.changeNode(named: operation, on: board, at: clock(), body)
     }
 }
 
@@ -509,6 +525,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 InputField("name", at: \.name)
                 InputField("order", at: \.order)
                 InputField("body", at: \.body)
+                InputField("board", at: \.board)
             }
             Input(UpdateColumnInput.self) {
                 InputField("id", at: \.id)
@@ -522,6 +539,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 InputField("color", at: \.color)
                 InputField("body", at: \.body)
                 InputField("ensure", at: \.ensure)
+                InputField("board", at: \.board)
             }
             Input(UpdateActorInput.self) {
                 InputField("id", at: \.id)

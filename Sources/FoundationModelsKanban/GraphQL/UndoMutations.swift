@@ -103,7 +103,9 @@ extension BoardStore {
             try work.reverse(request, at: time)
         }
         let operations = Array(work.operations)
-        let events = work.kept.dropFirst(keptCount).map { event in event.recording(operations: operations) }
+        let events = work.kept.dropFirst(keptCount).map { event in
+            event.recording(operations: operations, boards: nil)
+        }
         return ChangeBuilder(from: before, to: view).change(of: events, markingUndone: false)
     }
 }

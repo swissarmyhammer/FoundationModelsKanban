@@ -62,7 +62,8 @@ extension KanbanResolver {
     ) async throws -> CommentObject? {
         let input = arguments.input
         let sessionActor = context.store.sessionActor.ref
-        return try await context.changeNode(named: MutationName.addComment) { work, resolver, time in
+        let board = MutationBoard.holding(input.task)
+        return try await context.changeNode(named: MutationName.addComment, on: board) { work, resolver, time in
             let task = try resolver.nodeRef(for: input.task, ofType: .task)
             let author = try work.authorRef(
                 for: input.actor,
@@ -90,7 +91,8 @@ extension KanbanResolver {
         arguments: InputArguments<UpdateCommentInput>
     ) async throws -> CommentObject? {
         let input = arguments.input
-        return try await context.changeNode(named: MutationName.updateComment) { work, resolver, time in
+        let board = MutationBoard.holding(input.id)
+        return try await context.changeNode(named: MutationName.updateComment, on: board) { work, resolver, time in
             let ref = try resolver.nodeRef(for: input.id, ofType: .comment)
             try work.updateNode(ref, updating: [:], body: input.body, at: time)
             return ref

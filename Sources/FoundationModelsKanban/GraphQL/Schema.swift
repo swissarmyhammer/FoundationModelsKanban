@@ -19,11 +19,6 @@ actor BoardStore {
     /// there (plan.md §6).
     let sessionActor: SessionActor
 
-    /// The local ref of the session actor when it is a live actor of the board at the start of the run, else `nil`.
-    /// An `addTask` with no assignee assigns this actor (plan.md §6, "Assignees"). An actor that the call itself makes
-    /// is not known before the call, so it is not assigned.
-    let knownSessionActor: LocalRef?
-
     /// The directory, the search, and the events of the current board, or `nil` for a board in memory only.
     private let source: BoardSource?
 
@@ -33,6 +28,10 @@ actor BoardStore {
     /// The reads of related boards that the run asked for and that ``related`` does not answer yet. After the run,
     /// the engine loads them, and the call runs again (``CommitSession/run(readingRelatedBoardsWith:_:)``).
     private(set) var requests: Set<BoardRequest> = []
+
+    /// The working copy of each related board that a mutation field of the run changed, by the canonical path of its
+    /// repo directory (plan.md §6.6). The commit writes them together with the working copy of the current board.
+    private(set) var relatedWork: [String: RelatedWork] = [:]
 
     /// Makes a store that holds the working copy of a board.
     ///
@@ -55,19 +54,22 @@ actor BoardStore {
         self.sessionActor = sessionActor
         self.source = source
         self.related = related
-        let isKnown = work.graph.node(for: sessionActor.ref)?.state.fields.isDeleted == false
-        knownSessionActor = isKnown ? sessionActor.ref : nil
     }
 
     /// The read view of the working graph now. Its cross-board dependencies read the related boards of the run.
     var view: BoardView {
-        let current = snapshot
-        return current.view(reading: related.with(current: current))
+        snapshot.view(reading: reading)
     }
 
     /// The working graph now, as a read of a related board sees the current board.
     private var snapshot: BoardSnapshot {
         BoardSnapshot(key: boardKey, graph: work.graph, source: source)
+    }
+
+    /// The related boards as the reads of the run see them now: each board that the run changed shows its working
+    /// graph, and the current board shows the working graph of the current board.
+    private var reading: RelatedBoards {
+        related.with(working: relatedWork.values).with(current: snapshot)
     }
 
     /// Gives the read view of the board that a board ref names: `Query.board(id:)` (plan.md §6.6).
@@ -77,9 +79,19 @@ actor BoardStore {
     ///   request, and the call runs again after the load.
     /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the ref.
     func view(ofBoardNamed reference: String) throws(KanbanError) -> BoardView? {
-        let current = view
-        if (try? current.resolver.storedRef(for: reference, ofType: .board)) != nil {
-            return current
+        try resolution(ofBoardNamed: reference).flatMap(view(of:))
+    }
+
+    /// Finds the board that a board ref names, as the run sees it (plan.md §6.6, board refs).
+    ///
+    /// - Parameter reference: The board ref: a board key, a repo directory name, a path, or the URI of a board.
+    /// - Returns: The current board or a copy of a related repo, or `nil` when the engine did not resolve the ref
+    ///   yet. The store then records the request, and the call runs again after the load.
+    /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the ref.
+    private func resolution(ofBoardNamed reference: String) throws(KanbanError) -> BoardResolution? {
+        let resolver = RefResolver(graph: work.graph, boardKey: boardKey)
+        if (try? resolver.storedRef(for: reference, ofType: .board)) != nil {
+            return .current
         }
         guard let resolution = related.resolution(ofBoard: reference) else {
             requests.insert(.board(reference))
@@ -88,7 +100,7 @@ actor BoardStore {
         guard resolution != .notFound else {
             throw .boardNotFound(reference: reference, searchRoots: related.searchRoots.map(\.path))
         }
-        return view(of: resolution)
+        return resolution
     }
 
     /// Finds the nodes of any type that some forgiving refs name, live or tombstoned: `Query.node` and
@@ -160,8 +172,8 @@ actor BoardStore {
         guard resolution != .current else {
             return view
         }
-        let related = related.with(current: snapshot)
-        return related.board(resolvedAs: resolution)?.view(reading: related)
+        let reading = reading
+        return reading.board(resolvedAs: resolution)?.view(reading: reading)
     }
 
     /// Runs one mutation field on the working copy. A field that throws keeps none of its patches.
@@ -177,6 +189,87 @@ actor BoardStore {
     ) throws(Failure) -> Value {
         try work.runField(as: operation, body)
     }
+
+    // MARK: - Boards of the mutation fields
+
+    /// Finds the board that a mutation field writes to (plan.md §6.6).
+    ///
+    /// - Parameter board: The board of the field.
+    /// - Returns: The board, or `nil` when the engine did not load the board yet. The store then records the request,
+    ///   and the call runs again after the load.
+    /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the ref.
+    func target(of board: MutationBoard) throws(KanbanError) -> MutationTarget? {
+        guard let reference = board.reference else {
+            return .current
+        }
+        switch try resolution(ofBoardNamed: reference) {
+        case .none:
+            return nil
+        case .current:
+            return .current
+        case .copy(let copy):
+            return relatedTarget(of: copy, namedBy: reference)
+        case .notFound:
+            throw .boardNotFound(reference: reference, searchRoots: related.searchRoots.map(\.path))
+        }
+    }
+
+    /// Gives the working copy of a copy of a related repo for a mutation field: the working copy of the run when an
+    /// earlier field changed the board, else a new working copy of its session.
+    ///
+    /// - Parameters:
+    ///   - copy: The copy.
+    ///   - reference: The board ref that names the copy.
+    /// - Returns: The board, or `nil` when the engine did not load the copy yet. The store then records the request.
+    private func relatedTarget(of copy: BoardCopy, namedBy reference: String) -> MutationTarget? {
+        let path = copy.directory.canonicalPath
+        if let board = relatedWork[path] {
+            return .related(board)
+        }
+        guard let session = related.session(of: copy) else {
+            requests.insert(.board(reference))
+            return nil
+        }
+        let board = RelatedWork(path: path, session: session, work: session.makeWorkingCopy(stampedBy: work.stamp))
+        return .related(board)
+    }
+
+    /// Runs one mutation field on the working copy of a board: the current board or a related board (plan.md §6.6).
+    /// A field that throws keeps none of its patches.
+    ///
+    /// - Parameters:
+    ///   - operation: The name of the public mutation of the field.
+    ///   - target: The board of the field.
+    ///   - body: Makes and applies the patches of the field, and checks the graph rules. It gets the working copy of
+    ///     the board and the current key of the board.
+    /// - Returns: The value of the body, and the read view of the board after the field.
+    /// - Throws: The error of the body. Then no working copy changes.
+    func runField<Value: Sendable>(
+        as operation: String,
+        in target: MutationTarget,
+        _ body: (inout WorkingCopy, String) throws -> Value
+    ) throws -> (value: Value, view: BoardView) {
+        switch target {
+        case .current:
+            let key = boardKey
+            let value = try work.runField(as: operation) { work in try body(&work, key) }
+            return (value, view)
+        case .related(var board):
+            let key = board.session.key.description
+            let value = try work.runField(as: operation, on: &board.work) { work in try body(&work, key) }
+            relatedWork[board.path] = board
+            return (value, board.snapshot.view(reading: reading))
+        }
+    }
+}
+
+/// The board that one mutation field writes to, as the run sees it (plan.md §6.6).
+enum MutationTarget {
+    /// The current board.
+    case current
+
+    /// A related board, with its working copy in the run.
+    case related(RelatedWork)
 }
 
 /// The context of each resolver of the kanban schemas.

@@ -238,6 +238,9 @@ public actor KanbanGraph {
                 readingRelatedBoardsWith: { related, requests in
                     try await self.relatedBoards(updating: related, toAnswer: requests, currentKey: key)
                 },
+                storingRelatedBoardsWith: { sessions, related in
+                    await self.storeRelatedBoards(sessions, in: related)
+                },
                 { store in
                     try await schema.respond(
                         to: query,
@@ -323,12 +326,50 @@ public actor KanbanGraph {
             for request in pending where !updated.satisfies([request]) {
                 try await answer(request, in: &updated, currentKey: key)
             }
-            updated.install(
-                boards: relatedBoards.mapValues(\.session.snapshot),
-                searchRoots: locator.places(around: root)
-            )
+            updated = withLoadedBoards(updated)
             pending = updated.loadedDependencyRequests.filter { request in !updated.satisfies([request]) }
         }
+        return updated
+    }
+
+    /// Stores the sessions of the related boards after a commit attempt of a call (plan.md §5.4 step 5, §6.6), and
+    /// gives the related boards of the next run.
+    ///
+    /// After a commit, the session holds the new live graph and the new file signatures, so that the file watcher of
+    /// the board finds no change for the write of this process. After a changed log, the session holds the changed
+    /// files, so that the next run reads them.
+    ///
+    /// - Parameters:
+    ///   - sessions: The session of each related board that the call changed, by the canonical path of its repo
+    ///     directory.
+    ///   - related: The related boards of the run.
+    /// - Returns: The related boards with the stored sessions.
+    private func storeRelatedBoards(
+        _ sessions: [String: CommitSession],
+        in related: RelatedBoards
+    ) async -> RelatedBoards {
+        for (path, session) in sessions {
+            guard relatedBoards[path] != nil else {
+                assertionFailure("A call changed the related board at \(path), and the engine did not load it")
+                Log.kanban.error(
+                    "A call changed a related board that the engine did not load",
+                    metadata: ["path": "\(path)"]
+                )
+                continue
+            }
+            relatedBoards[path]?.session = session
+            await session.updateSearch()
+        }
+        return withLoadedBoards(related)
+    }
+
+    /// Gives the related boards of a run with the session of each loaded related board and the places of the scan.
+    ///
+    /// - Parameter related: The related boards of the run.
+    /// - Returns: The related boards with the loaded boards.
+    private func withLoadedBoards(_ related: RelatedBoards) -> RelatedBoards {
+        var updated = related
+        updated.install(boards: relatedBoards.mapValues(\.session), searchRoots: locator.places(around: root))
         return updated
     }
 

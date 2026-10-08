@@ -112,16 +112,23 @@ struct WorkingCopy: Sendable {
     /// The envelope values of the events of the run.
     private(set) var stamp: EventStamp
 
+    /// The local ref of the session actor when it is a live actor of the graph at the start of the run, else `nil`.
+    /// An `addTask` with no assignee assigns this actor (plan.md §6, "Assignees"). An actor that the call itself makes
+    /// is not known before the call, so it is not assigned.
+    let knownSessionActor: LocalRef?
+
     /// Makes the working copy of a run.
     ///
     /// - Parameters:
     ///   - graph: The graph at the start of the run. Each node must be the fold of its events in `events`.
     ///   - events: The events of the graph, in the order of their ids.
-    ///   - stamp: The envelope values of the events of the run.
+    ///   - stamp: The envelope values of the events of the run. Its actor is the session actor.
     init(graph: Graph, events: [Event], stamp: EventStamp) {
         self.graph = graph
         liveEvents = events
         self.stamp = stamp
+        let isKnown = graph.node(for: stamp.actor)?.state.fields.isDeleted == false
+        knownSessionActor = isKnown ? stamp.actor : nil
     }
 
     /// Runs one mutation field on the working copy (plan.md §5.4 step 4).
@@ -145,6 +152,35 @@ struct WorkingCopy: Sendable {
             field.operations.append(operation)
         }
         self = field
+        return value
+    }
+
+    /// Runs one mutation field on the working copy of a different board of the call: a related board (plan.md
+    /// §6.6, one transaction, many boards).
+    ///
+    /// The field continues the stamp of this working copy, so all patches of the call have one `txn` and their
+    /// event ids increase over all boards. This working copy records the operation of the field, because it holds
+    /// the `ops` of the full call. When the body throws, neither working copy changes.
+    ///
+    /// - Parameters:
+    ///   - operation: The name of the public mutation of the field, for the `ops` of the events.
+    ///   - other: The working copy of the board that the field changes.
+    ///   - body: Makes and applies the patches of the field, and checks the graph rules.
+    /// - Returns: The value of the body.
+    /// - Throws: The error of the body. Then the two working copies do not change.
+    mutating func runField<Value, Failure: Error>(
+        as operation: String,
+        on other: inout WorkingCopy,
+        _ body: (inout WorkingCopy) throws(Failure) -> Value
+    ) throws(Failure) -> Value {
+        var field = other
+        field.stamp = stamp
+        let value = try body(&field)
+        if field.kept.count > other.kept.count {
+            operations.append(operation)
+        }
+        stamp = field.stamp
+        other = field
         return value
     }
 
@@ -287,7 +323,7 @@ struct CommitSession: Sendable {
     }
 
     /// The directory, the search, and the events of the board, for its read views.
-    private var source: BoardSource {
+    var source: BoardSource {
         BoardSource(directory: directory, search: search, events: live.events)
     }
 
@@ -313,9 +349,15 @@ struct CommitSession: Sendable {
     /// ref of `Query.board` or a dependency that the run adds, discards its response: the loader loads the board,
     /// and the call runs again before it commits.
     ///
+    /// A call that changes related boards (plan.md §6.6) commits all boards together: one lock of each changed
+    /// board in the sort order of the board key, one check of each changed board under the locks, and then the
+    /// append to each changed board. The engine gets the related sessions after each commit attempt.
+    ///
     /// - Parameters:
     ///   - load: Loads the related boards of some requests, and gives the new related boards of the run. The value
     ///     must answer each request. The default loads no board, so the run reads no related board.
+    ///   - store: Stores the sessions of the related boards that a commit attempt changed, and gives the new related
+    ///     boards of the next run. The default stores nothing.
     ///   - call: Runs the call against the store of the working copy, and gives the response.
     /// - Returns: The response of the run that committed, or of the run that kept no patch.
     /// - Throws: ``KanbanError/boardBusy(attempts:)`` when a log changed before the commit of each of the
@@ -323,18 +365,20 @@ struct CommitSession: Sendable {
     ///   locked, or written. An error of the loader. The error of the call.
     mutating func run<Response: Sendable>(
         readingRelatedBoardsWith load: RelatedBoardLoad = { _, _ in .unavailable },
+        storingRelatedBoardsWith store: RelatedBoardStore = { _, related in related },
         _ call: @Sendable (BoardStore) async throws -> Response
     ) async throws -> Response {
         let initialRequests = RelatedBoards.loadable.dependencyRequests(of: live.graph, inBoard: key.description)
         var related = try await load(.loadable, initialRequests)
         for _ in 1...Self.maximumRuns {
-            let (response, work) = try await runReading(&related, loadingWith: load, call)
-            guard !work.kept.isEmpty else {
+            let (response, work, relatedWork) = try await runReading(&related, loadingWith: load, call)
+            guard !work.kept.isEmpty || relatedWork.contains(where: \.hasPatches) else {
                 return response
             }
-            let isCommitted = try await commit(work)
+            let attempt = try await commit(work, along: relatedWork)
             await updateSearch()
-            if isCommitted {
+            related = await store(attempt.relatedSessions, related)
+            if case .committed = attempt {
                 return response
             }
         }
@@ -351,16 +395,17 @@ struct CommitSession: Sendable {
     ///   - related: The related boards of the run. The loop gives the related boards of the last run back.
     ///   - load: Loads the related boards of some requests.
     ///   - call: Runs the call against the store of the working copy, and gives the response.
-    /// - Returns: The response and the working copy of the last run.
+    /// - Returns: The response, the working copy, and the working copy of each related board that the last run
+    ///   changed, in the sort order of the path of the repo directory.
     /// - Throws: An error of the loader, or the error of the call.
     private mutating func runReading<Response: Sendable>(
         _ related: inout RelatedBoards,
         loadingWith load: RelatedBoardLoad,
         _ call: @Sendable (BoardStore) async throws -> Response
-    ) async throws -> (response: Response, work: WorkingCopy) {
+    ) async throws -> (response: Response, work: WorkingCopy, relatedWork: [RelatedWork]) {
         while true {
             let store = BoardStore(
-                working: makeWorkingCopy(),
+                working: makeWorkingCopy(stampedBy: EventStamp(actingAs: actor.ref, mintingFrom: ids)),
                 boardKey: key.description,
                 actingAs: actor,
                 from: source,
@@ -368,65 +413,192 @@ struct CommitSession: Sendable {
             )
             let response = try await call(store)
             let work = await store.work
+            let relatedWork = await store.relatedWork.values.sorted { lhs, rhs in lhs.path < rhs.path }
             ids = work.stamp.ids
-            let dependencies = related.dependencyRequests(of: work.graph, inBoard: key.description)
+            let changed = related.with(working: relatedWork)
+            let dependencies = changed.dependencyRequests(of: work.graph, inBoard: key.description)
             let requests = await store.requests.union(dependencies)
             guard !related.satisfies(requests) else {
-                return (response, work)
+                return (response, work, relatedWork)
             }
             related = try await load(related, requests)
             guard related.satisfies(requests) else {
                 assertionFailure("The loader of the related boards did not answer the requests \(requests)")
                 Log.kanban.error("The loader of the related boards did not answer each request; the run stays")
-                return (response, work)
+                return (response, work, relatedWork)
             }
         }
     }
 
-    /// Makes the working copy of one run: the live graph, with an empty board in memory when the board has no
-    /// board node.
+    /// Makes a working copy of the live graph, with an empty board in memory when the board has no board node.
     ///
+    /// - Parameter stamp: The envelope values of the events of the run. A working copy of a related board gets the
+    ///   stamp of the run, so that its patches continue the transaction of the call.
     /// - Returns: The working copy.
-    private func makeWorkingCopy() -> WorkingCopy {
-        WorkingCopy(
-            graph: displayGraph,
-            events: live.events,
-            stamp: EventStamp(actingAs: actor.ref, mintingFrom: ids)
-        )
+    func makeWorkingCopy(stampedBy stamp: EventStamp) -> WorkingCopy {
+        WorkingCopy(graph: displayGraph, events: live.events, stamp: stamp)
     }
 
-    /// Writes the kept patches of a run under the lock of the board (plan.md §5.4 step 5).
+    /// Writes the kept patches of a run under the locks of the boards that the run changed (plan.md §5.4 step 5).
     ///
-    /// - Parameter work: The working copy at the end of the run.
-    /// - Returns: `true` when the patches are written and the working copy is the live graph. `false` when a log of
-    ///   the board changed after the live graph read it. Then the changed files are applied to the live graph, and
-    ///   the call must run again.
+    /// The commit locks each changed board in the sort order of the board key. Under the locks, it compares the
+    /// signatures of the log files of each changed board with its live graph. When a log of one board changed, the
+    /// commit applies the changed files to the live graph of each changed board and writes nothing. Else it appends
+    /// the kept patches of each board with the `ops` of the full call and the keys of the other changed boards, and
+    /// each working copy becomes the live graph of its board.
+    ///
+    /// - Parameters:
+    ///   - work: The working copy of the current board at the end of the run.
+    ///   - related: The working copy of each related board that the run changed.
+    /// - Returns: The result: the patches are written, or a log changed and the call must run again. The result
+    ///   holds the session of each related board after the attempt.
     /// - Throws: An ``EventLogError`` when a log file cannot be read, locked, or written.
-    private mutating func commit(_ work: WorkingCopy) async throws(EventLogError) -> Bool {
-        let log = live.log
-        let lock = try EventLog.lock(sortedByKey: [key: log])
+    private mutating func commit(
+        _ work: WorkingCopy,
+        along related: [RelatedWork]
+    ) async throws(EventLogError) -> CommitAttempt {
+        var writes = [BoardWrite(key: key, live: live, work: work)] + related.map(\.boardWrite)
+        let changedBoards = writes.indices.filter { index in writes[index].hasPatches }
+        let lock = try EventLog.lock(sortedByKey: changedBoards.map { index in writes[index].lockEntry })
+        var isLogChanged = false
+        for index in changedBoards {
+            let isChanged = try await writes[index].applyChangedFiles()
+            isLogChanged = isLogChanged || isChanged
+        }
+        if !isLogChanged {
+            let keys = changedBoards.map { index in writes[index].key }
+            for index in changedBoards {
+                try writes[index].append(recording: Array(work.operations), withBoards: keys)
+            }
+        }
+        lock.unlock()
+        live = writes[0].live
+        let sessions = Dictionary(
+            uniqueKeysWithValues: zip(related, writes.dropFirst()).map { board, write in
+                (board.path, board.session.replacing(live: write.live))
+            }
+        )
+        return isLogChanged ? .logChanged(sessions) : .committed(sessions)
+    }
+
+    /// Gives this session with a different live graph.
+    ///
+    /// - Parameter newLive: The live graph after a commit attempt.
+    /// - Returns: The session with the live graph.
+    private func replacing(live newLive: LiveGraph) -> CommitSession {
+        var session = self
+        session.live = newLive
+        return session
+    }
+}
+
+/// The result of one commit attempt of a call (plan.md §5.4 step 5). Each case holds the session of each related
+/// board that the run changed, after the attempt, by the canonical path of its repo directory.
+private enum CommitAttempt {
+    /// The patches are written, and each working copy is the live graph of its board.
+    case committed([String: CommitSession])
+
+    /// A log changed after the live graph read it. The changed files are applied, and the call must run again.
+    case logChanged([String: CommitSession])
+
+    /// The session of each related board that the run changed, after the attempt.
+    var relatedSessions: [String: CommitSession] {
+        switch self {
+        case .committed(let sessions), .logChanged(let sessions): sessions
+        }
+    }
+}
+
+/// One board of a commit: its key, its live graph, and the working copy of the run (plan.md §5.4 step 5).
+private struct BoardWrite {
+    /// The key of the board.
+    let key: BoardKey
+
+    /// The live graph of the board.
+    var live: LiveGraph
+
+    /// The working copy of the board at the end of the run.
+    let work: WorkingCopy
+
+    /// `true` when the run kept a patch of the board, so the commit locks, checks, and writes the board.
+    var hasPatches: Bool {
+        !work.kept.isEmpty
+    }
+
+    /// The key and the event log of the board, for the lock of many boards.
+    var lockEntry: (key: BoardKey, value: EventLog) {
+        (key, live.log)
+    }
+
+    /// Applies the log files of the board that changed after the live graph read them (plan.md §5.4 step 5.2).
+    ///
+    /// - Returns: `true` when a file changed. The changed files are then applied to the live graph.
+    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a directory or a file cannot be read.
+    mutating func applyChangedFiles() async throws(EventLogError) -> Bool {
         let changed = try live.changedRefs()
-        guard changed.isEmpty else {
-            _ = try await live.apply(changedPaths: changed.map(log.fileURL(for:)))
-            lock.unlock()
+        guard !changed.isEmpty else {
             return false
         }
-        let written = work.kept.map { event in event.recording(operations: Array(work.operations)) }
+        _ = try await live.apply(changedPaths: changed.map(live.log.fileURL(for:)))
+        return true
+    }
+
+    /// Appends the kept patches of the board to their node logs, and makes the working copy the live graph (plan.md
+    /// §5.4 steps 5.3 and 5.4).
+    ///
+    /// - Parameters:
+    ///   - operations: The names of the public mutations of the full call.
+    ///   - keys: The keys of all boards that the call changed. Each event records the keys of the other boards.
+    /// - Throws: An ``EventLogError`` when a log file cannot be written or read.
+    mutating func append(recording operations: [String], withBoards keys: [BoardKey]) throws(EventLogError) {
+        let others = Set(keys.filter { other in other != key }.map(\.description)).sorted()
+        let written = work.kept.map { event in
+            event.recording(operations: operations, boards: others.isEmpty ? nil : others)
+        }
         for (ref, events) in OrderedDictionary(grouping: written, by: \.patch.node) {
-            try log.append(contentsOf: events, toLogOf: ref)
+            try live.log.append(contentsOf: events, toLogOf: ref)
         }
         try live.adopt(work.graph, writing: written)
-        lock.unlock()
-        return true
+    }
+}
+
+// MARK: - Related work
+
+/// The working copy of one related board that a run changes (plan.md §6.6).
+struct RelatedWork: Sendable {
+    /// The canonical path of the repo directory of the board.
+    let path: String
+
+    /// The session of the board at the start of the run: its live graph and its key.
+    let session: CommitSession
+
+    /// The working copy of the board.
+    var work: WorkingCopy
+
+    /// `true` when the run kept a patch of the board.
+    var hasPatches: Bool {
+        !work.kept.isEmpty
+    }
+
+    /// The board as the reads of the run see it now: the working graph.
+    var snapshot: BoardSnapshot {
+        BoardSnapshot(key: session.key.description, graph: work.graph, source: session.source)
+    }
+
+    /// The board as the commit writes it.
+    fileprivate var boardWrite: BoardWrite {
+        BoardWrite(key: session.key, live: session.live, work: work)
     }
 }
 
 extension Event {
-    /// Gives this event with the `ops` of the full call.
+    /// Gives this event with the `ops` and the `boards` of the full call.
     ///
-    /// - Parameter operations: The names of the public mutations of the call.
-    /// - Returns: The event with the operations, and the same other values.
-    func recording(operations: [String]) -> Event {
+    /// - Parameters:
+    ///   - operations: The names of the public mutations of the call.
+    ///   - boards: The keys of the other boards that the call changes, or `nil` when the call changes one board.
+    /// - Returns: The event with the operations and the boards, and the same other values.
+    func recording(operations: [String], boards: [String]?) -> Event {
         Event(id: id, txn: txn, ops: operations, at: at, actor: actor, boards: boards, undoes: undoes, patch: patch)
     }
 }

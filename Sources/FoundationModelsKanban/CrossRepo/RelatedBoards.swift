@@ -4,6 +4,10 @@ import Foundation
 /// value must answer each request.
 typealias RelatedBoardLoad = @Sendable (RelatedBoards, Set<BoardRequest>) async throws -> RelatedBoards
 
+/// Stores the sessions of the related boards that a commit attempt changed, by the canonical path of their repo
+/// directory, and gives the related boards of the next run (plan.md §5.4 step 5, §6.6).
+typealias RelatedBoardStore = @Sendable ([String: CommitSession], RelatedBoards) async -> RelatedBoards
+
 /// One read that a run of a call asks of the related boards (plan.md §6.6).
 enum BoardRequest: Hashable, Sendable {
     /// The board that a board ref names: a board key, a repo directory name, a path, or the URI of a board.
@@ -117,8 +121,12 @@ struct RelatedBoards: Sendable {
     /// The list of `Query.boards`, or `nil` until the engine scans for it.
     private var listing: [ListedCopy]?
 
-    /// The loaded related boards, by the canonical path of their repo directory.
+    /// The loaded related boards as the reads of the run see them, by the canonical path of their repo directory.
     private var boards: [String: BoardSnapshot] = [:]
+
+    /// The session of each loaded related board, by the canonical path of its repo directory. A mutation on a
+    /// related board makes its working copy from the session (plan.md §6.6).
+    private var sessions: [String: CommitSession] = [:]
 
     /// The current board as the run sees it now, or `nil` when the value has no current board.
     private var current: BoardSnapshot?
@@ -138,6 +146,27 @@ struct RelatedBoards: Sendable {
         var related = self
         related.current = board
         return related
+    }
+
+    /// Gives this value with the working graph of each related board that the run changed, so that the reads of the
+    /// run see the changes of the run.
+    ///
+    /// - Parameter changed: The working copy of each related board that the run changed.
+    /// - Returns: The value with the working graphs.
+    func with(working changed: some Sequence<RelatedWork>) -> RelatedBoards {
+        var related = self
+        for board in changed {
+            related.boards[board.path] = board.snapshot
+        }
+        return related
+    }
+
+    /// Gives the session of a loaded copy of a related repo.
+    ///
+    /// - Parameter copy: The copy.
+    /// - Returns: The session, or `nil` when the engine did not load the copy.
+    func session(of copy: BoardCopy) -> CommitSession? {
+        sessions[copy.directory.canonicalPath]
     }
 
     // MARK: - Reads
@@ -291,10 +320,11 @@ struct RelatedBoards: Sendable {
     /// Records the loaded related boards and the places of the scan.
     ///
     /// - Parameters:
-    ///   - loaded: The loaded related boards, by the canonical path of their repo directory.
+    ///   - loaded: The session of each loaded related board, by the canonical path of its repo directory.
     ///   - places: The places that the scan looks in, in scan order.
-    mutating func install(boards loaded: [String: BoardSnapshot], searchRoots places: [URL]) {
-        boards = loaded
+    mutating func install(boards loaded: [String: CommitSession], searchRoots places: [URL]) {
+        sessions = loaded
+        boards = loaded.mapValues(\.snapshot)
         searchRoots = places
     }
 }
