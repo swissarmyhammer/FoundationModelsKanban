@@ -73,8 +73,8 @@ struct KanbanCLITests {
     /// - Parameter sandbox: The sandbox of the test.
     /// - Returns: The root directory of the repo. It has no `.kanban/` directory.
     /// - Throws: An error when a git command fails.
-    private static func makeRepo(in sandbox: GitSandbox) throws -> URL {
-        try sandbox.makeRepo(named: repoName)
+    private static func makeRepo(in sandbox: GitSandbox) async throws -> URL {
+        try await sandbox.makeRepo(named: repoName)
     }
 
     /// Waits for the first line of a `watch` run while a second engine adds a task again and again.
@@ -120,7 +120,7 @@ struct KanbanCLITests {
     @Test("kanban '<document>' prints the response with the name of the repo directory")
     func documentPrintsResponse() async throws {
         let sandbox = try GitSandbox()
-        let result = try await Self.run([Self.boardNameQuery], in: try Self.makeRepo(in: sandbox))
+        let result = try await Self.run([Self.boardNameQuery], in: try await Self.makeRepo(in: sandbox))
         #expect(result.output == #"{"data":{"board":{"name":"\#(Self.repoName)"}}}"# + "\n")
         #expect(result.exit == .success)
     }
@@ -129,7 +129,7 @@ struct KanbanCLITests {
     func variablesApplyToDocument() async throws {
         let sandbox = try GitSandbox()
         let arguments = [Self.variableQuery, Self.variablesOption, Self.hideNameVariables]
-        let result = try await Self.run(arguments, in: try Self.makeRepo(in: sandbox))
+        let result = try await Self.run(arguments, in: try await Self.makeRepo(in: sandbox))
         #expect(result.output == #"{"data":{"board":{}}}"# + "\n")
         #expect(result.exit == .success)
     }
@@ -137,7 +137,7 @@ struct KanbanCLITests {
     @Test("A response with a GraphQL error is the response of the engine, and the exit status is 0")
     func graphQLErrorExitsWithSuccess() async throws {
         let sandbox = try GitSandbox()
-        let repo = try Self.makeRepo(in: sandbox)
+        let repo = try await Self.makeRepo(in: sandbox)
         let graph = try GitGraphFixture.makeGraph(at: repo)
         let expected = try await KanbanGraphTests.execute(Self.unknownFieldQuery, on: graph)
         await graph.close()
@@ -157,7 +157,7 @@ struct KanbanCLITests {
     @Test("No document and no --schema are bad arguments: the exit status is EX_USAGE")
     func missingDocumentIsBadArguments() async throws {
         let sandbox = try GitSandbox()
-        let result = try await Self.run([], in: try Self.makeRepo(in: sandbox))
+        let result = try await Self.run([], in: try await Self.makeRepo(in: sandbox))
         #expect(result.output.isEmpty)
         #expect(result.exit == Self.usageExit)
     }
@@ -165,7 +165,10 @@ struct KanbanCLITests {
     @Test("A document together with --schema is bad arguments: the exit status is EX_USAGE")
     func documentWithSchemaIsBadArguments() async throws {
         let sandbox = try GitSandbox()
-        let result = try await Self.run([Self.boardNameQuery, Self.schemaOption], in: try Self.makeRepo(in: sandbox))
+        let result = try await Self.run(
+            [Self.boardNameQuery, Self.schemaOption],
+            in: try await Self.makeRepo(in: sandbox)
+        )
         #expect(result.output.isEmpty)
         #expect(result.exit == Self.usageExit)
     }
@@ -175,7 +178,7 @@ struct KanbanCLITests {
     @Test("kanban --schema prints the generated SDL, which has type Task and no patch field")
     func schemaPrintsSDL() async throws {
         let sandbox = try GitSandbox()
-        let result = try await Self.run([Self.schemaOption], in: try Self.makeRepo(in: sandbox))
+        let result = try await Self.run([Self.schemaOption], in: try await Self.makeRepo(in: sandbox))
         #expect(result.output == KanbanGraph.schemaSDL + "\n")
         #expect(result.output.contains("type Task "))
         #expect(!result.output.contains("patch"))
@@ -187,7 +190,7 @@ struct KanbanCLITests {
     @Test("kanban watch prints one line for a commit of a second process, and SIGINT ends it with the status 0")
     func watchPrintsCommitOfSecondProcess() async throws {
         let sandbox = try GitSandbox()
-        let repo = try Self.makeRepo(in: sandbox)
+        let repo = try await Self.makeRepo(in: sandbox)
         let watch = try KanbanProcess(withArguments: [Self.watchCommand, Self.taskOperations], inDirectory: repo)
         let second = try GitGraphFixture.makeGraph(at: repo, mintingFrom: GitGraphFixture.secondEngineIDs)
         let line = try await Self.firstLine(of: watch, committingWith: second)

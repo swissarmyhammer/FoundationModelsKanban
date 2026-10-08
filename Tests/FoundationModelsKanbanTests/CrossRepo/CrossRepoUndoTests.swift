@@ -125,7 +125,7 @@ struct CrossRepoUndoTests {
 
     @Test("One undo reverses a call that changed two boards, with one txn that undoes the call in both boards")
     func oneUndoReversesBothBoards() async throws {
-        let repos = try CrossRepoFixture.SideBySide()
+        let repos = try await CrossRepoFixture.SideBySide()
         let app = try GitGraphFixture.makeGraph(at: repos.app)
         let tasks = try await Self.addTaskToEachBoard(on: app)
         let original = try Self.lastEvent(ofTask: tasks.app, inRepoAt: repos.app).txn
@@ -141,7 +141,7 @@ struct CrossRepoUndoTests {
 
     @Test("One redo puts back both boards of a call that one undo reversed")
     func oneRedoRestoresBothBoards() async throws {
-        let repos = try CrossRepoFixture.SideBySide()
+        let repos = try await CrossRepoFixture.SideBySide()
         let app = try GitGraphFixture.makeGraph(at: repos.app)
         let tasks = try await Self.addTaskToEachBoard(on: app)
         try await Self.runWithNoErrors(Self.undoField, on: app)
@@ -156,7 +156,7 @@ struct CrossRepoUndoTests {
 
     @Test("undo of a call whose other board is missing gives NOT_FOUND with the board name, and writes nothing")
     func missingBoardGivesNotFoundAndWritesNothing() async throws {
-        let repos = try CrossRepoFixture.SideBySide()
+        let repos = try await CrossRepoFixture.SideBySide()
         let first = try GitGraphFixture.makeGraph(at: repos.app)
         _ = try await Self.addTaskToEachBoard(on: first)
         await first.close()
@@ -177,7 +177,7 @@ struct CrossRepoUndoTests {
 
     @Test("undo with no txn finds a transaction in a loaded related board, and does not load a board")
     func undoWithNoTxnSearchesLoadedBoardsOnly() async throws {
-        let repos = try CrossRepoFixture.SideBySide()
+        let repos = try await CrossRepoFixture.SideBySide()
         let task = try await Self.addLibTask(withEngineClosedIn: repos)
         let app = try GitGraphFixture.makeGraph(at: repos.app, mintingFrom: GitGraphFixture.secondEngineIDs)
         let beforeLoad = try await CommentTests.run(Self.undoField, on: app)
@@ -195,14 +195,14 @@ struct CrossRepoUndoTests {
 
     @Test("undo with txn and board reverses a transaction of a related board that is not loaded")
     func undoWithBoardReachesBoardThatIsNotLoaded() async throws {
-        let repos = try CrossRepoFixture.SideBySide()
+        let repos = try await CrossRepoFixture.SideBySide()
         let task = try await Self.addAndUndoLibTask(in: repos)
         #expect(try Self.lastEvent(ofTask: task, inRepoAt: repos.lib).patch.delete == true)
     }
 
     @Test("redo with txn and board puts back a transaction of a related board that is not loaded")
     func redoWithBoardReachesBoardThatIsNotLoaded() async throws {
-        let repos = try CrossRepoFixture.SideBySide()
+        let repos = try await CrossRepoFixture.SideBySide()
         let task = try await Self.addAndUndoLibTask(in: repos)
         let undo = try Self.lastEvent(ofTask: task, inRepoAt: repos.lib).txn
         // The `txn` of `redo` names the undo transaction: the transaction that the redo reverses.

@@ -254,7 +254,7 @@ struct SubscriptionTests {
 
     @Test("A task of a related board that becomes done sends a DERIVED update to a subscriber on the dependent board")
     func doneTaskOfRelatedBoardSendsDerivedUpdate() async throws {
-        let repos = try CrossRepoFixture.SideBySide()
+        let repos = try await CrossRepoFixture.SideBySide()
         let lib = try GitGraphFixture.makeGraph(at: repos.lib)
         let target = try await CrossRepoFixture.addTask(with: "", on: lib)
         await lib.close()

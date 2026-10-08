@@ -2,7 +2,7 @@ import Foundation
 import OrderedCollections
 
 /// Reads the key of the board of a repo, for example ``BoardKey/read(fromRepoAt:)``.
-typealias BoardKeyReader = @Sendable (URL) throws(BoardKeyError) -> BoardKey
+typealias BoardKeyReader = @Sendable (URL) async throws(BoardKeyError) -> BoardKey
 
 /// Finds the repos of the related boards on the disk (plan.md §6.6, §12 items 13 and 26).
 ///
@@ -52,15 +52,17 @@ public struct BoardLocator: Sendable {
     func scan(
         around root: URL,
         reusing earlier: BoardIndex? = nil,
-        readingKeysWith keyReader: BoardKeyReader
-    ) -> BoardIndex {
+        readingKeysWith keyReader: @escaping BoardKeyReader
+    ) async -> BoardIndex {
         let places = places(around: root)
         let knownKeys = Dictionary(
             (earlier?.copies ?? []).map { copy in (copy.directory.canonicalPath, copy.key) },
             uniquingKeysWith: { first, _ in first }
         )
-        let copies = places.flatMap(Self.repos(in:)).compactMap { directory in
-            Self.copy(at: directory, knownKey: knownKeys[directory.canonicalPath], readingKeysWith: keyReader)
+        let directories = places.flatMap(Self.repos(in:))
+        let keys = await Self.keys(ofReposAt: directories, knowing: knownKeys, readingKeysWith: keyReader)
+        let copies = directories.compactMap { directory in
+            keys[directory.canonicalPath].map { key in BoardCopy(directory: directory, key: key) }
         }
         return BoardIndex(places: places, copies: copies)
     }
@@ -88,20 +90,47 @@ public struct BoardLocator: Sendable {
             }
     }
 
-    /// Makes the copy of a repo.
+    /// Gives the key of each repo. A repo of the earlier scan keeps its key. The keys of the new repos are read at the
+    /// same time, and no read blocks a thread.
+    ///
+    /// - Parameters:
+    ///   - directories: The root directory of each repo.
+    ///   - knownKeys: The keys that the earlier scan read, by the canonical path of the repo directory.
+    ///   - keyReader: Reads the key of a new repo.
+    /// - Returns: The key of each repo whose key is known or can be read, by the canonical path of the repo directory.
+    private static func keys(
+        ofReposAt directories: [URL],
+        knowing knownKeys: [String: BoardKey],
+        readingKeysWith keyReader: @escaping BoardKeyReader
+    ) async -> [String: BoardKey] {
+        await withTaskGroup(of: (path: String, key: BoardKey?).self) { group in
+            for directory in directories {
+                let path = directory.canonicalPath
+                group.addTask {
+                    (path, await key(ofRepoAt: directory, knownKey: knownKeys[path], readingKeysWith: keyReader))
+                }
+            }
+            return await group.reduce(into: [:]) { keys, read in keys[read.path] = read.key }
+        }
+    }
+
+    /// Gives the key of a repo.
     ///
     /// - Parameters:
     ///   - directory: The root directory of the repo.
     ///   - knownKey: The key that the earlier scan read, or `nil` for a new repo.
     ///   - keyReader: Reads the key of a new repo.
-    /// - Returns: The copy, or `nil` when the key of a new repo cannot be read.
-    private static func copy(
-        at directory: URL,
+    /// - Returns: The key, or `nil` when the key of a new repo cannot be read.
+    private static func key(
+        ofRepoAt directory: URL,
         knownKey: BoardKey?,
         readingKeysWith keyReader: BoardKeyReader
-    ) -> BoardCopy? {
+    ) async -> BoardKey? {
+        if let knownKey {
+            return knownKey
+        }
         do {
-            return BoardCopy(directory: directory, key: try knownKey ?? keyReader(directory))
+            return try await keyReader(directory)
         } catch {
             Log.kanban.warning(
                 "The scan for related boards cannot read the key of a repo",

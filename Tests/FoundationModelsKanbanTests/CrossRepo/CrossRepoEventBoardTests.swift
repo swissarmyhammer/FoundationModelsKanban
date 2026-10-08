@@ -28,7 +28,7 @@ struct CrossRepoEventBoardTests {
     ///   limit.
     /// - Throws: An error when a repo, an engine, or a call fails.
     private static func eventOfRelatedBoard(selecting selection: String) async throws -> [String] {
-        let repos = try CrossRepoFixture.SideBySide()
+        let repos = try await CrossRepoFixture.SideBySide()
         let appActor = try KanbanGraph.sessionActor(named: appActorName)
         let app = try GitGraphFixture.makeGraph(at: repos.app, actingAs: appActor)
         let target = try await CrossRepoFixture.addTask(with: "", on: app)
@@ -60,7 +60,7 @@ struct CrossRepoEventBoardTests {
 
     @Test("history of a related board gives the nodes of that board")
     func historyOfRelatedBoardGivesItsNodes() async throws {
-        let repos = try CrossRepoFixture.SideBySide()
+        let repos = try await CrossRepoFixture.SideBySide()
         let lib = try GitGraphFixture.makeGraph(at: repos.lib)
         let target = try await CrossRepoFixture.addTask(with: "", on: lib)
         await lib.close()

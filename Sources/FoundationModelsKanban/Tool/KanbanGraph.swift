@@ -493,7 +493,7 @@ public actor KanbanGraph {
         if case .loaded(let session) = loadState {
             return session
         }
-        let key = try keyReader(root)
+        let key = try await keyReader(root)
         if case .notStarted = watchState {
             watchState = .watching(try startWatch(ofBoardAt: root))
         }
@@ -628,7 +628,7 @@ public actor KanbanGraph {
     /// - Returns: The board.
     /// - Throws: A ``BoardWatcherError`` or an ``EventLogError`` when the board cannot load.
     private func loadBoard(named reference: String, currentKey key: BoardKey) async throws -> BoardResolution {
-        let resolution = resolution(of: reference, currentKey: key)
+        let resolution = await resolution(of: reference, currentKey: key)
         if case .copy(let copy) = resolution {
             try await loadRelatedBoard(copy)
         }
@@ -642,13 +642,13 @@ public actor KanbanGraph {
     ///   - reference: The board ref.
     ///   - key: The current key of the current board.
     /// - Returns: The board, or `nil` when no copy of the index has the ref.
-    private func resolution(of reference: String, currentKey key: BoardKey) -> BoardResolution? {
+    private func resolution(of reference: String, currentKey key: BoardKey) async -> BoardResolution? {
         let root = root
         let resolve = { (index: BoardIndex) in index.resolution(of: reference, currentRoot: root, currentKey: key) }
-        guard case .scanned(let index) = scanState else {
-            return resolve(rescan())
+        if case .scanned(let index) = scanState, let found = resolve(index) {
+            return found
         }
-        return resolve(index) ?? resolve(rescan())
+        return resolve(await rescan())
     }
 
     /// Scans for the copies of `Query.boards`, and loads each copy that is not the current repo.
@@ -656,7 +656,7 @@ public actor KanbanGraph {
     /// - Returns: The copies, in scan order.
     /// - Throws: A ``BoardWatcherError`` or an ``EventLogError`` when a board cannot load.
     private func loadEachCopy() async throws -> [ListedCopy] {
-        let index = rescan()
+        let index = await rescan()
         let resolutions = index.copies.map { copy in index.resolution(of: copy, currentRoot: root) }
         for case .copy(let copy) in resolutions {
             try await loadRelatedBoard(copy)
@@ -669,13 +669,13 @@ public actor KanbanGraph {
     /// Scans the places for repos, and records the new index. A repo of the earlier scan keeps its key.
     ///
     /// - Returns: The new index.
-    private func rescan() -> BoardIndex {
+    private func rescan() async -> BoardIndex {
         let earlier: BoardIndex? =
             switch scanState {
             case .notScanned: nil
             case .scanned(let index): index
             }
-        let scanned = locator.scan(around: root, reusing: earlier, readingKeysWith: keyReader)
+        let scanned = await locator.scan(around: root, reusing: earlier, readingKeysWith: keyReader)
         scanState = .scanned(scanned)
         return scanned
     }

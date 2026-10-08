@@ -125,11 +125,11 @@ extension BoardKey {
     /// - Throws: ``BoardKeyError/gitUnavailable(message:)`` when git cannot start.
     ///   ``BoardKeyError/gitFailed(arguments:status:message:)`` when git fails, for example when the directory is not
     ///   in a git repo. ``BoardKeyError/invalidRemoteURL(url:)`` when the `origin` URL has no host or no path.
-    static func read(fromRepoAt directory: URL) throws(BoardKeyError) -> BoardKey {
-        if let url = try originURL(ofRepoAt: directory) {
+    static func read(fromRepoAt directory: URL) async throws(BoardKeyError) -> BoardKey {
+        if let url = try await originURL(ofRepoAt: directory) {
             return try BoardKey(remoteURL: url)
         }
-        return BoardKey(localDirectoryName: try mainCloneName(ofRepoAt: directory))
+        return BoardKey(localDirectoryName: try await mainCloneName(ofRepoAt: directory))
     }
 
     /// Reads the URL of the `origin` remote with `git config --get remote.origin.url`.
@@ -137,9 +137,9 @@ extension BoardKey {
     /// - Parameter directory: A directory in the repo.
     /// - Returns: The URL, or `nil` when the repo has no `origin` remote.
     /// - Throws: A ``BoardKeyError`` when git cannot start or fails.
-    private static func originURL(ofRepoAt directory: URL) throws(BoardKeyError) -> String? {
+    private static func originURL(ofRepoAt directory: URL) async throws(BoardKeyError) -> String? {
         let arguments = ["config", "--get", originConfigKey]
-        let result = try Git.run(withArguments: arguments, inDirectory: directory)
+        let result = try await Git.run(withArguments: arguments, inDirectory: directory)
         switch result.status {
         case Git.successStatus: return result.output.trimmingCharacters(in: .whitespacesAndNewlines)
         case missingConfigKeyStatus: return nil
@@ -156,9 +156,9 @@ extension BoardKey {
     /// - Parameter directory: A directory in the repo.
     /// - Returns: The name of the directory of the main clone.
     /// - Throws: A ``BoardKeyError`` when git cannot start or fails.
-    private static func mainCloneName(ofRepoAt directory: URL) throws(BoardKeyError) -> String {
+    private static func mainCloneName(ofRepoAt directory: URL) async throws(BoardKeyError) -> String {
         let arguments = ["rev-parse", "--path-format=absolute", "--git-common-dir"]
-        let result = try Git.run(withArguments: arguments, inDirectory: directory)
+        let result = try await Git.run(withArguments: arguments, inDirectory: directory)
         guard result.status == Git.successStatus else {
             throw .gitFailed(arguments: arguments, status: result.status, message: result.errorOutput)
         }
@@ -185,6 +185,9 @@ enum BoardKeyError: Error, Hashable, Sendable {
 
     /// A `git` command did not end in its time limit, so it was stopped.
     case gitTimedOut(arguments: [String])
+
+    /// The task that waited for a `git` command was cancelled, so the command was stopped.
+    case gitCancelled(arguments: [String])
 }
 
 // MARK: - Git
@@ -204,7 +207,7 @@ enum Git {
     private static let defaultTimeLimitSeconds = 30
 
     /// The longest time that a git command can run before it is stopped. A local git command ends in much less time.
-    static let defaultTimeLimit = DispatchTimeInterval.seconds(defaultTimeLimitSeconds)
+    static let defaultTimeLimit = Duration.seconds(defaultTimeLimitSeconds)
 
     /// The result of a git command.
     struct Output: Sendable {
@@ -218,11 +221,14 @@ enum Git {
         let errorOutput: String
     }
 
-    /// Runs git in a directory, and waits until it exits or until its time limit ends.
+    /// Runs git in a directory, and waits until it exits, until its time limit ends, or until the task is cancelled.
     ///
-    /// Git gets an empty standard input, so it never waits for input. Two background reads empty the standard output
-    /// and the standard error at the same time. Thus a large output on one pipe cannot stop git while this function
-    /// waits for the other pipe. One wait with a deadline covers the exit of git and the end of the two reads.
+    /// The wait blocks no thread: the exit of git and the ends of its two pipes resume the caller. Thus many calls at
+    /// the same time do not take the threads of Swift concurrency from other tasks. Git gets an empty standard input,
+    /// so it never waits for input. The standard output and the standard error are read at the same time, so a large
+    /// output on one pipe cannot stop git while the run waits for the other pipe. When the time limit ends or the task
+    /// is cancelled, the run stops git and returns at once. It does not wait for the pipes then, because a child of
+    /// git (for example the shell of an alias) can keep them open.
     ///
     /// - Parameters:
     ///   - arguments: The arguments after `git`.
@@ -231,71 +237,279 @@ enum Git {
     /// - Returns: The exit status and the output of git.
     /// - Throws: ``BoardKeyError/gitUnavailable(message:)`` when git cannot start.
     ///   ``BoardKeyError/gitTimedOut(arguments:)`` when git does not end in the time limit.
+    ///   ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled before git ends.
     static func run(
         withArguments arguments: [String],
         inDirectory directory: URL,
-        timeLimit limit: DispatchTimeInterval = defaultTimeLimit
-    ) throws(BoardKeyError) -> Output {
+        timeLimit limit: Duration = defaultTimeLimit
+    ) async throws(BoardKeyError) -> Output {
+        let record = GitRecord()
+        let process = makeProcess(withArguments: arguments, inDirectory: directory, recordingTo: record)
+        async let _ = record.stop(process, after: limit, with: .gitTimedOut(arguments: arguments))
+        let outcome = await withTaskCancellationHandler {
+            await record.outcome(ofStarting: process)
+        } onCancel: {
+            record.stop(process, with: .gitCancelled(arguments: arguments))
+        }
+        return try outcome.get()
+    }
+
+    /// Makes the git process, and connects its exit and its two pipes to a record.
+    ///
+    /// - Parameters:
+    ///   - arguments: The arguments after `git`.
+    ///   - directory: The directory where git runs.
+    ///   - record: The record that gets the exit status and the bytes of the two pipes.
+    /// - Returns: The process, not started.
+    private static func makeProcess(
+        withArguments arguments: [String],
+        inDirectory directory: URL,
+        recordingTo record: GitRecord
+    ) -> Process {
         let process = Process()
         process.executableURL = URL(filePath: launcherPath)
         process.arguments = [programName] + arguments
         process.currentDirectoryURL = directory
         process.standardInput = FileHandle.nullDevice
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-        let finish = DispatchGroup()
-        finish.enter()
-        process.terminationHandler = { _ in finish.leave() }
-        do {
-            try process.run()
-        } catch {
-            throw .gitUnavailable(message: error.localizedDescription)
-        }
-        let output = PipeReader(reading: outputPipe, in: finish)
-        let errorOutput = PipeReader(reading: errorPipe, in: finish)
-        guard finish.wait(timeout: .now() + limit) == .success else {
-            process.terminate()
-            throw .gitTimedOut(arguments: arguments)
-        }
-        return Output(status: process.terminationStatus, output: output.text, errorOutput: errorOutput.text)
+        process.standardOutput = record.makePipe(for: .output)
+        process.standardError = record.makePipe(for: .errorOutput)
+        process.terminationHandler = { ended in record.recordExit(withStatus: ended.terminationStatus) }
+        return process
     }
 }
 
-/// Reads one pipe of a child process to its end on a background queue.
-///
-/// A child process that writes to a full pipe stops until a reader empties the pipe. Thus each pipe of a child process
-/// needs its own reader, and the readers must run at the same time.
-private final class PipeReader: Sendable {
-    /// The label of the queue of one read.
-    ///
-    /// Each read gets its own serial queue, and not a global queue. A read blocks its thread until the pipe ends. The
-    /// global queues and the tasks of Swift concurrency share one small group of threads. When the callers of
-    /// ``Git/run(withArguments:inDirectory:timeLimit:)`` block all of these threads, a read on a global queue never
-    /// starts, and each call waits until its time limit. A serial queue gets a new thread in this case.
-    private static let queueLabel = "FoundationModelsKanban.Git.PipeReader"
+/// One of the two output streams of a git process.
+private enum GitStream {
+    /// The standard output.
+    case output
 
-    /// The bytes that the read got. The value is empty until the read ends.
-    private let data = Mutex(Data())
+    /// The standard error.
+    case errorOutput
+}
 
-    /// The bytes that the read got, as UTF-8 text. Read this value only after the read ends.
+/// The bytes of one output stream of a git process.
+private struct StreamBytes {
+    /// The bytes that the pipe gave until now.
+    private var data = Data()
+
+    /// `true` after the pipe ended.
+    private(set) var isEnded = false
+
+    /// The bytes as UTF-8 text.
     var text: String {
-        String(decoding: data.withLock { bytes in bytes }, as: UTF8.self)
+        String(decoding: data, as: UTF8.self)
     }
 
-    /// Starts the read of a pipe on a background queue, and returns at once.
+    /// Adds one chunk of the pipe. An empty chunk is the end of the pipe.
+    ///
+    /// - Parameter chunk: The bytes that the pipe gave.
+    mutating func add(_ chunk: Data) {
+        if chunk.isEmpty {
+            isEnded = true
+        } else {
+            data.append(chunk)
+        }
+    }
+}
+
+/// The state of one git run.
+private struct GitRunState {
+    /// The phase of the git process.
+    enum Phase {
+        /// The process did not start.
+        case notStarted
+
+        /// The process runs.
+        case running
+
+        /// The process exited with a status.
+        case exited(status: Int32)
+    }
+
+    /// The phase of the git process.
+    var phase = Phase.notStarted
+
+    /// The bytes of the standard output.
+    var output = StreamBytes()
+
+    /// The bytes of the standard error.
+    var errorOutput = StreamBytes()
+
+    /// The result of the run, or `nil` until git and its pipes end or the run stops. The first result stays.
+    var outcome: GitRecord.Outcome?
+
+    /// The caller that waits for the result, or `nil` before the wait and after the resume.
+    var waiter: GitRecord.Waiter?
+
+    /// Adds one chunk to the bytes of a stream.
     ///
     /// - Parameters:
-    ///   - pipe: The pipe. The reader reads its read end until the last writer closes the pipe.
-    ///   - group: The group that the read joins. The read leaves the group when it ends.
-    init(reading pipe: Pipe, in group: DispatchGroup) {
-        let handle = pipe.fileHandleForReading
-        group.enter()
-        DispatchQueue(label: Self.queueLabel).async {
-            let bytes = handle.readDataToEndOfFile()
-            self.data.withLock { stored in stored = bytes }
-            group.leave()
+    ///   - chunk: The bytes that the pipe gave. An empty chunk is the end of the pipe.
+    ///   - stream: The stream of the pipe.
+    mutating func add(_ chunk: Data, to stream: GitStream) {
+        switch stream {
+        case .output: output.add(chunk)
+        case .errorOutput: errorOutput.add(chunk)
         }
+    }
+
+    /// Starts git, unless the run stopped before the start.
+    ///
+    /// - Parameter process: The git process.
+    mutating func start(_ process: Process) {
+        guard outcome == nil else {
+            return
+        }
+        do {
+            try process.run()
+            phase = .running
+        } catch {
+            outcome = .failure(.gitUnavailable(message: error.localizedDescription))
+        }
+    }
+
+    /// Ends the run with an error, unless the run has a result already.
+    ///
+    /// - Parameter error: The error of the run.
+    /// - Returns: `true` when git runs, so the caller must stop git.
+    mutating func stop(with error: BoardKeyError) -> Bool {
+        guard outcome == nil else {
+            return false
+        }
+        outcome = .failure(error)
+        guard case .running = phase else {
+            return false
+        }
+        return true
+    }
+
+    /// Records the result when git exited and both pipes ended, unless the run has a result already.
+    mutating func settle() {
+        guard outcome == nil, case .exited(let status) = phase, output.isEnded, errorOutput.isEnded else {
+            return
+        }
+        outcome = .success(Git.Output(status: status, output: output.text, errorOutput: errorOutput.text))
+    }
+
+    /// Takes the caller and the result when both are there, so that the caller is resumed one time only.
+    ///
+    /// - Returns: The caller and the result, or `nil` when one of them is not there.
+    mutating func takeReadyWaiter() -> (waiter: GitRecord.Waiter, outcome: GitRecord.Outcome)? {
+        guard let waiter, let outcome else {
+            return nil
+        }
+        self.waiter = nil
+        return (waiter, outcome)
+    }
+}
+
+/// Collects the parts of the result of one git run, and resumes the caller that waits for the result.
+///
+/// The run blocks no thread. The termination handler of the process and the readability handlers of the two pipes
+/// record their parts. The caller waits in a checked continuation, which the record resumes one time: when git exited
+/// and both pipes ended, or at once when the run stops.
+///
+/// A `Mutex` guards the state, and not an actor: the handlers of Foundation and the cancel handler are synchronous, so
+/// each must record its part at once, with no `await`. The record holds no reference to the process, so the handlers
+/// that the process holds make no reference cycle.
+private final class GitRecord: Sendable {
+    /// The result of a run: the output of git, or the error of the run.
+    typealias Outcome = Result<Git.Output, BoardKeyError>
+
+    /// The caller that waits for the result of a run.
+    typealias Waiter = CheckedContinuation<Outcome, Never>
+
+    /// The state of the run.
+    private let state = Mutex(GitRunState())
+
+    /// Makes a pipe whose readability handler records each chunk of one stream of git.
+    ///
+    /// - Parameter stream: The stream that the pipe carries.
+    /// - Returns: The pipe.
+    func makePipe(for stream: GitStream) -> Pipe {
+        let pipe = Pipe()
+        pipe.fileHandleForReading.readabilityHandler = { handle in self.read(from: handle, into: stream) }
+        return pipe
+    }
+
+    /// Reads the data that a pipe has now. At the end of the pipe, the read also removes the readability handler.
+    ///
+    /// - Parameters:
+    ///   - handle: The read end of the pipe.
+    ///   - stream: The stream that the pipe carries.
+    private func read(from handle: FileHandle, into stream: GitStream) {
+        let chunk = handle.availableData
+        if chunk.isEmpty {
+            handle.readabilityHandler = nil
+        }
+        update { state in state.add(chunk, to: stream) }
+    }
+
+    /// Records the exit of git.
+    ///
+    /// - Parameter status: The exit status of git.
+    func recordExit(withStatus status: Int32) {
+        update { state in state.phase = .exited(status: status) }
+    }
+
+    /// Starts git, and waits for the result of the run. The wait blocks no thread.
+    ///
+    /// - Parameter process: The git process.
+    /// - Returns: The result of the run.
+    func outcome(ofStarting process: Process) async -> Outcome {
+        await withCheckedContinuation { waiter in
+            update { state in
+                state.waiter = waiter
+                state.start(process)
+            }
+        }
+    }
+
+    /// Ends the run with an error, and stops git when it runs. A run that has a result already does not change.
+    ///
+    /// - Parameters:
+    ///   - process: The git process.
+    ///   - error: The error of the run.
+    func stop(_ process: Process, with error: BoardKeyError) {
+        if update({ state in state.stop(with: error) }) {
+            process.terminate()
+        }
+    }
+
+    /// Waits for a time limit, and then ends the run with an error.
+    ///
+    /// The cancel of the task of the wait ends the wait with no stop. The task is cancelled when the run ended first,
+    /// or when the caller was cancelled: the cancel handler of the caller then stops the run.
+    ///
+    /// - Parameters:
+    ///   - process: The git process.
+    ///   - limit: The time limit.
+    ///   - error: The error of the run when the time limit ends.
+    func stop(_ process: Process, after limit: Duration, with error: BoardKeyError) async {
+        do {
+            try await Task.sleep(for: limit)
+        } catch {
+            // `Task.sleep` throws only `CancellationError`, so the run ended or the cancel handler stops it.
+            return
+        }
+        stop(process, with: error)
+    }
+
+    /// Changes the state under the lock, records the result when it is complete, and then resumes the waiting
+    /// caller when the result is there.
+    ///
+    /// - Parameter change: The change of the state.
+    /// - Returns: The value of the change.
+    @discardableResult
+    private func update<Value: Sendable>(_ change: (inout GitRunState) -> Value) -> Value {
+        let (value, ready) = state.withLock { state in
+            let value = change(&state)
+            state.settle()
+            return (value, state.takeReadyWaiter())
+        }
+        if let ready {
+            ready.waiter.resume(returning: ready.outcome)
+        }
+        return value
     }
 }

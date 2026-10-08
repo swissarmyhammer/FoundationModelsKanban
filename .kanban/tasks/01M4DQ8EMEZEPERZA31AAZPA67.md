@@ -24,8 +24,24 @@ comments:
     - discovered: new task ^jkr7qm8 (Git.run blocks a Swift cooperative thread while git runs). That is the source of most pool load, in production and in tests.
     - next: /review
   timestamp: 2026-10-08T12:32:52.789311+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: wballard
+  id: 01m4dr7g8yq43eqwhdvcy81c5q
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (24c5e9c). 0 findings, 0 confirmed, 0 refuted. 1 file reviewed. 6 .kanban files not reviewed (.reviewignore).
+    - next: none. The task is in done.
+  timestamp: 2026-10-08T12:36:21.918558+00:00
+- actor: wballard
+  id: 01m4dr7pdnny19603rex6c2c8j
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 1 file (Events/EventLogTests.swift); cause = Task.sleep wake-up waits for a free cooperative-pool thread
+    - test: green — swift test 3 runs, 961 passed each (8.2 s, 7.9 s, 8.3 s); deadline test 1.8 to 2.0 s; build warnings only the 2 accepted kinds
+    - commit: 24c5e9c
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T12:36:28.213506+00:00
+position_column: done
+position_ordinal: b880
 title: 'Flaky: EventLogTests held-lock wait exceeds deadline tolerance under load'
 ---
 ## What

@@ -43,7 +43,7 @@ struct CrossRepoCycleTests {
 
     @Test("A dependsOn edge that closes a cycle through a related board gives DEPENDENCY_CYCLE and writes nothing")
     func crossBoardCycleIsRefused() async throws {
-        let repos = try CrossRepoFixture.SideBySide()
+        let repos = try await CrossRepoFixture.SideBySide()
         let app = try GitGraphFixture.makeGraph(at: repos.app)
         let appTask = try await CrossRepoFixture.addTask(with: "", on: app)
         let libTask = try await CrossRepoWriteTests.addLibTask(
@@ -65,7 +65,7 @@ struct CrossRepoCycleTests {
 
     @Test("Two engines add the two halves of a cross-board cycle: the second one gets DEPENDENCY_CYCLE at its commit")
     func concurrentHalvesOfCycleAreRefusedAtCommit() async throws {
-        let repos = try CrossRepoFixture.SideBySide()
+        let repos = try await CrossRepoFixture.SideBySide()
         let first = try GitGraphFixture.makeGraph(at: repos.app)
         let appTask = try await CrossRepoFixture.addTask(with: "", on: first)
         let libTask = try await CrossRepoWriteTests.addLibTask(on: first)

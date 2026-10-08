@@ -20,10 +20,10 @@ enum CrossRepoFixture {
         /// Makes the sandbox and the repos.
         ///
         /// - Throws: An error when a git command fails.
-        init() throws {
+        init() async throws {
             sandbox = try GitSandbox()
-            app = try sandbox.makeRepo(named: BoardLocatorTests.appName, origin: BoardLocatorTests.appOrigin)
-            lib = try sandbox.makeRepo(named: BoardLocatorTests.libName, origin: BoardLocatorTests.libOrigin)
+            app = try await sandbox.makeRepo(named: BoardLocatorTests.appName, origin: BoardLocatorTests.appOrigin)
+            lib = try await sandbox.makeRepo(named: BoardLocatorTests.libName, origin: BoardLocatorTests.libOrigin)
         }
     }
 

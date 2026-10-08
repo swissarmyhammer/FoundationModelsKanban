@@ -42,10 +42,10 @@ extension Design {
             ///
             /// - Parameter sandbox: The sandbox of the test.
             /// - Returns: The repo directory.
-            func makeRepo(in sandbox: GitSandbox) throws -> URL {
+            func makeRepo(in sandbox: GitSandbox) async throws -> URL {
                 switch self {
-                case .newOrigin: try sandbox.makeRepo(named: Self.repoName, origin: BoardKeyTests.httpsRemote)
-                case .newDirectoryName: try sandbox.makeRepo(named: Self.repoName)
+                case .newOrigin: try await sandbox.makeRepo(named: Self.repoName, origin: BoardKeyTests.httpsRemote)
+                case .newDirectoryName: try await sandbox.makeRepo(named: Self.repoName)
                 }
             }
 
@@ -55,10 +55,13 @@ extension Design {
             ///   - repo: The repo directory before the move.
             ///   - sandbox: The sandbox of the test.
             /// - Returns: The repo directory after the move.
-            func move(_ repo: URL, in sandbox: GitSandbox) throws -> URL {
+            func move(_ repo: URL, in sandbox: GitSandbox) async throws -> URL {
                 switch self {
                 case .newOrigin:
-                    try sandbox.runGit(withArguments: ["remote", "set-url", "origin", Self.newOriginURL], in: repo)
+                    try await sandbox.runGit(
+                        withArguments: ["remote", "set-url", "origin", Self.newOriginURL],
+                        in: repo
+                    )
                     return repo
                 case .newDirectoryName:
                     let moved = sandbox.root.appending(path: Self.movedName, directoryHint: .isDirectory)
@@ -186,12 +189,12 @@ extension Design {
         @Test("A move of the repo changes no log file", arguments: RepoMove.allCases)
         func moveChangesNoLogFile(move: RepoMove) async throws {
             let sandbox = try GitSandbox()
-            let repo = try move.makeRepo(in: sandbox)
+            let repo = try await move.makeRepo(in: sandbox)
             let graph = try GitGraphFixture.makeGraph(at: repo)
             _ = try await Self.writeBoard(on: graph)
             await graph.close()
             let before = try Self.logTexts(inRepoAt: repo)
-            let moved = try move.move(repo, in: sandbox)
+            let moved = try await move.move(repo, in: sandbox)
             _ = try await KanbanGraphTests.execute(Self.boardQuery, on: GitGraphFixture.makeGraph(at: moved))
             #expect(try Self.logTexts(inRepoAt: moved) == before)
         }
@@ -199,15 +202,15 @@ extension Design {
         @Test("After a move of the repo, each id has the new key, and each edge resolves", arguments: RepoMove.allCases)
         func moveGivesNewKeyAndKeepsEdges(move: RepoMove) async throws {
             let sandbox = try GitSandbox()
-            let repo = try move.makeRepo(in: sandbox)
-            let oldKey = try BoardKey.read(fromRepoAt: repo)
+            let repo = try await move.makeRepo(in: sandbox)
+            let oldKey = try await BoardKey.read(fromRepoAt: repo)
             let graph = try GitGraphFixture.makeGraph(at: repo)
             let board = try await Self.writeBoard(on: graph)
             let before = try await KanbanGraphTests.execute(Self.boardQuery, on: graph)
             await graph.close()
-            let moved = try move.move(repo, in: sandbox)
+            let moved = try await move.move(repo, in: sandbox)
             let newKey = try move.movedKey()
-            #expect(try BoardKey.read(fromRepoAt: moved) == newKey)
+            #expect(try await BoardKey.read(fromRepoAt: moved) == newKey)
             let movedGraph = try GitGraphFixture.makeGraph(at: moved)
             let after = try await KanbanGraphTests.execute(Self.boardQuery, on: movedGraph)
             #expect(after == before.replacingOccurrences(of: oldKey.description, with: newKey.description))
@@ -221,8 +224,8 @@ extension Design {
         @Test("After writes through full URIs with the current key, no log line holds the key of its own board")
         func noLogLineHoldsBoardKey() async throws {
             let sandbox = try GitSandbox()
-            let repo = try RepoMove.newOrigin.makeRepo(in: sandbox)
-            let key = try BoardKey.read(fromRepoAt: repo)
+            let repo = try await RepoMove.newOrigin.makeRepo(in: sandbox)
+            let key = try await BoardKey.read(fromRepoAt: repo)
             _ = try await Self.writeBoard(on: GitGraphFixture.makeGraph(at: repo))
             let texts = try Self.logTexts(inRepoAt: repo)
             #expect(!texts.isEmpty)
@@ -235,7 +238,7 @@ extension Design {
         @Test("A full URI with the current key in the input is stored as a local ref")
         func currentKeyURIIsStoredAsLocalRef() async throws {
             let sandbox = try GitSandbox()
-            let repo = try RepoMove.newOrigin.makeRepo(in: sandbox)
+            let repo = try await RepoMove.newOrigin.makeRepo(in: sandbox)
             let board = try await Self.writeBoard(on: GitGraphFixture.makeGraph(at: repo))
             let events = try BoardMutationTests.events(of: .task(board.dependent), inRepoAt: repo)
             let added = try #require(events.first).patch.add
