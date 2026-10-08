@@ -280,13 +280,13 @@ struct KanbanErrorTests {
         #expect(try JSONDecoder().decode(KanbanError.ResponseError.self, from: data) == original)
     }
 
-    /// Encodes a response error and reads the JSON back as an object.
+    /// Encodes a value, for example a response error, and reads the JSON back as an object.
     ///
-    /// - Parameter responseError: The response error to encode.
+    /// - Parameter value: The value to encode.
     /// - Returns: The JSON object.
     /// - Throws: An error when the encode fails or the JSON is not an object.
-    static func jsonObject(of responseError: KanbanError.ResponseError) throws -> [String: Any] {
-        let data = try JSONEncoder().encode(responseError)
+    static func jsonObject(of value: some Encodable) throws -> [String: Any] {
+        let data = try JSONEncoder().encode(value)
         return try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 }

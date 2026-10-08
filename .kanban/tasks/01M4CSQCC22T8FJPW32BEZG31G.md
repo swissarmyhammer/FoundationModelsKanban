@@ -61,8 +61,24 @@ comments:
     - finding marked: BoardKey.swift:204 code-hygiene/magic-numbers-swift — [x]
     - next: /review
   timestamp: 2026-10-08T04:19:07.748592+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: wballard
+  id: 01m4cvyha04h2nzyz4hdxbd7n0
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (3101c19): 0 findings, 7 validator runs, 0 failed. All prior review items are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-08T04:22:07.936871+00:00
+- actor: wballard
+  id: 01m4cvypyp3n083j8fxx18c7jx
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 3 files (Identity/BoardKey.swift, Events/EventLogTests.swift, Identity/BoardKeyTests.swift); 1/1 findings checked
+    - test: green — swift test 3 runs with a 120 s limit, 906 passed each; build warnings only the 2 accepted kinds
+    - commit: 3101c19
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T04:22:13.718250+00:00
+position_column: done
+position_ordinal: af80
 title: 'Tests: bound the blocking flock wait in EventLogTests.isLockReleased'
 ---
 ## What
