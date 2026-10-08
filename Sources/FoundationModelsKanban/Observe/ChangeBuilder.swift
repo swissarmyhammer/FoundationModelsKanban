@@ -120,7 +120,8 @@ struct ChangeBuilder: Sendable {
             type: NodeType(ref.nodeType),
             kind: kind(of: ref),
             source: source,
-            fields: fields
+            fields: fields,
+            boardKey: after.boardKey
         )
     }
 

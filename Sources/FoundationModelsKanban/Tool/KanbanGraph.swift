@@ -408,7 +408,10 @@ public actor KanbanGraph {
                 round.changes(of: session, atPath: path),
                 toBoardAt: path,
                 readingTasksOf: round.view(of: session),
-                resolvingIn: eventBoard(of: session, reading: round.after)
+                resolvingIn: eventBoard(
+                    of: session,
+                    reading: eventRelatedBoards(ofBoardAt: path, in: round, currentKey: current.key)
+                )
             )
         }
     }
@@ -440,6 +443,26 @@ public actor KanbanGraph {
             sessions[root.canonicalPath] = session
         }
         return sessions
+    }
+
+    /// Gives the other boards that the resolvers of the events of a board read: the boards after the operation, as
+    /// that board sees them. For a related board, the related board is the current board of the value, and the
+    /// current board of the engine is a related board (plan.md §6.7). Thus each key reads the board that it names.
+    ///
+    /// - Parameters:
+    ///   - path: The canonical path of the repo directory of the board of the events.
+    ///   - round: The changes of the operation.
+    ///   - key: The current key of the current board.
+    /// - Returns: The other boards.
+    private func eventRelatedBoards(
+        ofBoardAt path: String,
+        in round: ChangeRound,
+        currentKey key: BoardKey
+    ) -> RelatedBoards {
+        guard path != root.canonicalPath else {
+            return round.after
+        }
+        return round.after.centered(onBoardAt: path, movingCurrentTo: BoardCopy(directory: root, key: key))
     }
 
     /// Gives the board that the resolvers of the events of a board read.
@@ -524,7 +547,7 @@ public actor KanbanGraph {
         currentKey key: BoardKey
     ) async throws -> RelatedBoards {
         var updated = withLoadedBoards(related)
-        var pending = requests
+        var pending = requests.union(updated.loadedDependencyRequests)
         while !pending.isEmpty {
             for request in pending where !updated.satisfies([request]) {
                 try await answer(request, in: &updated, currentKey: key)

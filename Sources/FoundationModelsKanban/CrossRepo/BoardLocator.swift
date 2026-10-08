@@ -100,11 +100,8 @@ public struct BoardLocator: Sendable {
         knownKey: BoardKey?,
         readingKeysWith keyReader: BoardKeyReader
     ) -> BoardCopy? {
-        let boardLog = EventLog(repositoryAt: directory).fileURL(for: .board)
-        let isEnabled = FileManager.default.fileExists(atPath: boardLog.path)
         do {
-            let key = try knownKey ?? keyReader(directory)
-            return BoardCopy(directory: directory, key: key, isEnabled: isEnabled)
+            return BoardCopy(directory: directory, key: try knownKey ?? keyReader(directory))
         } catch {
             Log.kanban.warning(
                 "The scan for related boards cannot read the key of a repo",
@@ -127,6 +124,18 @@ struct BoardCopy: Hashable, Sendable {
 
     /// `true` when the copy has `.kanban/board.jsonl`.
     let isEnabled: Bool
+}
+
+extension BoardCopy {
+    /// Makes the copy of a repo whose key is known. The copy is enabled when the repo has `.kanban/board.jsonl` now.
+    ///
+    /// - Parameters:
+    ///   - directory: The root directory of the copy.
+    ///   - key: The key of the board of the copy.
+    init(directory: URL, key: BoardKey) {
+        let boardLog = EventLog(repositoryAt: directory).fileURL(for: .board)
+        self.init(directory: directory, key: key, isEnabled: FileManager.default.fileExists(atPath: boardLog.path))
+    }
 }
 
 /// The repos that a scan found, in scan order (plan.md §6.6).

@@ -112,15 +112,20 @@ struct NodeUpdate: Sendable {
     /// The changes of the public fields of the node, in the order of the fields of the node type.
     let fields: [FieldChange]
 
-    /// Resolves `NodeUpdate.node`: the node now, in the graph of the call. For a `DELETED` update, the node is the
-    /// tombstone with `deleted` set.
+    /// The current key of the board of the node. For a `DERIVED` update that a transaction of a different board makes
+    /// (plan.md §6.7), it is not the first key of ``Change/boards``.
+    let boardKey: String
+
+    /// Resolves `NodeUpdate.node`: the node now, in the graph now of the board of the node: the current board or a
+    /// related board (plan.md §6.6). For a `DELETED` update, the node is the tombstone with `deleted` set.
     ///
     /// - Parameters:
-    ///   - context: The context of the call. Its store gives the graph now.
+    ///   - context: The context of the call. Its store finds the board of the node.
     ///   - arguments: The field has no arguments.
     /// - Returns: The node, or `nil` when the graph does not have the node now.
-    func node(context: KanbanContext, arguments _: NoArguments) async -> (any NodeObject)? {
-        let view = await context.store.view
+    /// - Throws: An error of ``KanbanContext/view(ofBoardOfChange:)``.
+    func node(context: KanbanContext, arguments _: NoArguments) async throws(KanbanError) -> (any NodeObject)? {
+        let view = try await context.view(ofBoardOfChange: boardKey)
         return view.graph.slot(for: ref).flatMap(view.nodeObject(at:))
     }
 }
@@ -193,15 +198,10 @@ struct Change: Sendable {
     ///   - context: The context of the call. Its store finds the board of the transaction.
     ///   - arguments: The field has no arguments.
     /// - Returns: The actor.
-    /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the key of the
-    ///   board of the transaction. ``KanbanError/notFound(type:reference:)`` for the board when the engine did not
-    ///   load the board yet: the store then records the request, and the call runs again after the load. The same
-    ///   error for the actor when the board does not have the actor.
+    /// - Throws: An error of ``KanbanContext/view(ofBoardOfChange:)``. ``KanbanError/notFound(type:reference:)`` for
+    ///   the actor when the board does not have the actor.
     func actor(context: KanbanContext, arguments _: NoArguments) async throws(KanbanError) -> ActorObject {
-        let boardKey = boards[boards.startIndex]
-        guard let view = try await context.store.view(ofBoardNamed: boardKey) else {
-            throw .notFound(type: .board, reference: boardKey)
-        }
+        let view = try await context.view(ofBoardOfChange: boards[boards.startIndex])
         guard let state = view.graph.actor(for: actorRef), let slot = view.graph.slot(for: actorRef) else {
             throw .notFound(type: .actor, reference: view.id(of: actorRef).text)
         }
@@ -226,6 +226,25 @@ struct Change: Sendable {
         return nodeUpdates.filter { update in
             (arguments.type?.contains(update.type) ?? true) && (node.map { ref in ref == update.ref } ?? true)
         }
+    }
+}
+
+// MARK: - Board of a change
+
+extension KanbanContext {
+    /// Gives the read view of a board that a change names by its key: the board of the transaction, or the board of
+    /// a node of an update. It is the current board or a related board (plan.md §6.6).
+    ///
+    /// - Parameter key: The current key of the board.
+    /// - Returns: The read view of the board now.
+    /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the key.
+    ///   ``KanbanError/notFound(type:reference:)`` for the board when the engine did not load the board yet: the
+    ///   store then records the request, and the call runs again after the load.
+    fileprivate func view(ofBoardOfChange key: String) async throws(KanbanError) -> BoardView {
+        guard let view = try await store.view(ofBoardNamed: key) else {
+            throw .notFound(type: .board, reference: key)
+        }
+        return view
     }
 }
 

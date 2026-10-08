@@ -18,8 +18,24 @@ comments:
     - new task: ^9qt2wvv (the event board of a subscription on a related board reads `.current` as the subscriber board; `NodeUpdate.node` of a related history reads the current board).
     - next: /review
   timestamp: 2026-10-08T06:59:12.989606+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: wballard
+  id: 01m4d57fjxmrsqv4mnhm15ge82
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (742e964). 0 findings, 0 confirmed, 0 refuted. 4 files reviewed. 6 .kanban files not reviewed (.reviewignore).
+    - next: none. The task is in done.
+  timestamp: 2026-10-08T07:04:18.269524+00:00
+- actor: wballard
+  id: 01m4d57nhm9bddgevhne7c7vdw
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 4 files (Observe/Change.swift, new CrossRepoActorTests.swift, GitGraphFixture.swift, SubscriptionTests.swift)
+    - test: green — swift test 3 runs with a 120 s limit, 950 passed each (14.4 s, 13.5 s, 13.9 s); build warnings only the 2 accepted kinds
+    - commit: 742e964
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T07:04:24.372860+00:00
+position_column: done
+position_ordinal: b480
 title: 'Change.actor: resolve the actor in the board of the change'
 ---
 ## What

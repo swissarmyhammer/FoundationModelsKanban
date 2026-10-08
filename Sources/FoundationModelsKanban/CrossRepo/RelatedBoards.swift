@@ -170,6 +170,57 @@ struct RelatedBoards: Sendable {
         return related
     }
 
+    /// Gives this value as the reads of one loaded related board see it, for example the resolvers of an event of a
+    /// subscriber on that board (plan.md §6.7): that board is the current board, and the current board of this value
+    /// is a related board. Each key then reads the board that it names: the key of the old current board reads the
+    /// old current board, and the key of the new current board reads the new current board.
+    ///
+    /// The value has no session for the new current board, and no session for the old current board. Thus it serves
+    /// reads only.
+    ///
+    /// - Parameters:
+    ///   - path: The canonical path of the repo directory of the loaded related board.
+    ///   - formerCurrent: The copy of the repo of the current board of this value.
+    /// - Returns: The value with the board at `path` as its current board.
+    func centered(onBoardAt path: String, movingCurrentTo formerCurrent: BoardCopy) -> RelatedBoards {
+        let recenter = { (resolution: BoardResolution) in
+            Self.resolution(resolution, centeredOnBoardAt: path, movingCurrentTo: formerCurrent)
+        }
+        var related = self
+        related.current = boards[path]
+        related.boards[path] = nil
+        related.boards[formerCurrent.directory.canonicalPath] = current
+        related.sessions[path] = nil
+        related.resolutions = resolutions.mapValues(recenter)
+        related.listing = listing?.map { listed in
+            ListedCopy(board: recenter(listed.board), isEnabled: listed.isEnabled)
+        }
+        return related
+    }
+
+    /// Gives a resolution as the reads of one loaded related board see it.
+    ///
+    /// - Parameters:
+    ///   - resolution: The resolution as the reads of the current board see it.
+    ///   - path: The canonical path of the repo directory of the loaded related board.
+    ///   - formerCurrent: The copy of the repo of the current board.
+    /// - Returns: The copy of the old current board for ``BoardResolution/current``, ``BoardResolution/current`` for
+    ///   the copy at `path`, and the same resolution for each other board.
+    private static func resolution(
+        _ resolution: BoardResolution,
+        centeredOnBoardAt path: String,
+        movingCurrentTo formerCurrent: BoardCopy
+    ) -> BoardResolution {
+        switch resolution {
+        case .current:
+            .copy(formerCurrent)
+        case .copy(let copy) where copy.directory.canonicalPath == path:
+            .current
+        case .copy, .notFound:
+            resolution
+        }
+    }
+
     /// Gives the session of a loaded copy of a related repo.
     ///
     /// - Parameter copy: The copy.
