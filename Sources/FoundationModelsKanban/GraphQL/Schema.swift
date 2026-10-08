@@ -823,6 +823,8 @@ private struct RewriteResponse: Encodable {
     /// The `extensions` object of the response.
     private struct Extensions: Encodable {
         /// The changes of the name rewrite.
+        // The synthesized `Encodable` conformance reads this property; periphery sees no reader.
+        // periphery:ignore
         let rewrites: [NameRewrite]
     }
 

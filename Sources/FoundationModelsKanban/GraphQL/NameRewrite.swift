@@ -6,15 +6,21 @@ import OrderedCollections
 /// The agent reads these items to learn the canonical names.
 struct NameRewrite: Encodable, Hashable, Sendable {
     /// The name that the caller wrote, for example `taskAdd`.
+    // The synthesized `Encodable` and `Hashable` conformances read this property; periphery sees no reader.
+    // periphery:ignore
     let from: String
 
     /// The canonical name, for example `addTask`. For a root query field that the rewrite moved into `board`, the
     /// name has the `board.` prefix, for example `board.tasks`.
+    // The synthesized `Encodable` and `Hashable` conformances read this property; periphery sees no reader.
+    // periphery:ignore
     let to: String
 
     /// The path to the name in the document: the response key of each field from the root, then the names of the
     /// argument and of each `input` field, as the caller wrote them. A name in a fragment definition starts with the
     /// name of the fragment.
+    // The synthesized `Encodable` and `Hashable` conformances read this property; periphery sees no reader.
+    // periphery:ignore
     let path: [String]
 }
 
