@@ -300,7 +300,7 @@ extension EventLog {
     ///
     /// - Parameter folder: The directory.
     /// - Returns: `true` when the two paths are the same after the symbolic links resolve.
-    private func isBoardDirectory(at folder: URL) -> Bool {
+    func isBoardDirectory(at folder: URL) -> Bool {
         folder.resolvingSymlinksInPath().path == directory.resolvingSymlinksInPath().path
     }
 

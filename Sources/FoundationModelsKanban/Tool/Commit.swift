@@ -256,6 +256,30 @@ struct CommitSession: Sendable {
         await search.update(from: BoardView(of: live.graph, inBoard: key.description))
     }
 
+    /// Applies one batch of the file watcher to the live graph, and then updates the search (plan.md §5.6, batch).
+    ///
+    /// A file whose signature equals the recorded signature is not read again: a write of this process, or a
+    /// repeated event. A batch with no other file changes nothing, and the search does not change. A batch that holds
+    /// the `.kanban/` directory itself (FSEvents dropped events, or the directory appeared) compares each node file
+    /// of the board, and not only the paths of the batch.
+    ///
+    /// - Parameter paths: The changed paths of the batch.
+    /// - Returns: The node files that the apply read again, in the sort order of their refs. The list is empty when
+    ///   no file changed.
+    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a directory or a file cannot be read. Then the live
+    ///   graph does not change.
+    mutating func apply(watchedPaths paths: [URL]) async throws(EventLogError) -> [URL] {
+        let isFullCheck = paths.contains(where: live.log.isBoardDirectory(at:))
+        let refs = isFullCheck ? try live.changedRefs() : try live.changedRefs(among: paths)
+        guard !refs.isEmpty else {
+            return []
+        }
+        let files = refs.sorted { lhs, rhs in lhs.description < rhs.description }.map(live.log.fileURL(for:))
+        _ = try await live.apply(changedPaths: files)
+        await updateSearch()
+        return files
+    }
+
     /// Runs one call on a working copy of the live graph, and commits the patches that the call kept (plan.md §5.4).
     ///
     /// A call that keeps no patch writes nothing and takes no lock (plan.md §5.4 step 6). A run that finds a changed
@@ -322,19 +346,6 @@ struct CommitSession: Sendable {
         try live.adopt(work.graph, writing: written)
         lock.unlock()
         return true
-    }
-}
-
-extension LiveGraph {
-    /// Lists the node files of the board that changed after the live graph read them (plan.md §5.4 step 5.2): a file
-    /// with a different signature, a new file, and a removed file. The check reads the files, so it does not wait for
-    /// the watcher.
-    ///
-    /// - Returns: The local refs of the nodes of the changed files.
-    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a directory or a file cannot be read.
-    fileprivate func changedRefs() throws(EventLogError) -> Set<LocalRef> {
-        let current = try log.nodeFileSignatures()
-        return Set(current.keys).union(signatures.keys).filter { ref in current[ref] != signatures[ref] }
     }
 }
 

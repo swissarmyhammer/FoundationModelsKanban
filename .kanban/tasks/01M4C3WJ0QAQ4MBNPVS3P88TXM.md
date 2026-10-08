@@ -25,8 +25,24 @@ comments:
     - evidence: 1 file — Sources/FoundationModelsKanban/GraphQL/Errors.swift. `periphery scan --retain-public --report-exclude 'Tests/**' --relative-results -- --build-system native --build-tests` gives "No unused code detected." `swift test` gives 848 tests in 50 suites passed, exit 0. The only build warning is the mlx-swift "missing creator for mutated node" kind that README.md records.
     - next: /review
   timestamp: 2026-10-08T00:47:08.319932+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: wballard
+  id: 01m4cfrs3y9srz6b95z68nrw15
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (e7dfb63): 0 findings, 0 confirmed, 0 refuted; 7 validator runs, 0 failed. 1 file reviewed. 4 .kanban/ files are excluded by .reviewignore.
+    - next: none. The task is in done.
+  timestamp: 2026-10-08T00:49:16.414699+00:00
+- actor: wballard
+  id: 01m4cfrzgpxfgm1a3mnce9xa4y
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 1 file (GraphQL/Errors.swift); periphery: no unused code in the package
+    - test: green — swift test, 848 passed; build warnings only the 2 accepted kinds
+    - commit: e7dfb63
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T00:49:22.966185+00:00
+position_column: done
+position_ordinal: ab80
 title: 'Periphery: assign-only findings in KanbanError.ResponseError and ErrorResponse'
 ---
 ## What

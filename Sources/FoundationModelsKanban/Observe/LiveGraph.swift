@@ -97,6 +97,30 @@ struct LiveGraph: Sendable {
         install(committed, events: EventMerge.merged([events, written]), signatures: newSignatures)
     }
 
+    /// Lists the node files of the board that changed after the live graph read them (plan.md §5.4 step 5.2): a file
+    /// with a different signature, a new file, and a removed file. The check reads the files, so it does not wait for
+    /// the watcher.
+    ///
+    /// - Returns: The local refs of the nodes of the changed files.
+    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a directory or a file cannot be read.
+    func changedRefs() throws(EventLogError) -> Set<LocalRef> {
+        let current = try log.nodeFileSignatures()
+        return Set(current.keys).union(signatures.keys).filter { ref in current[ref] != signatures[ref] }
+    }
+
+    /// Lists the node files among some changed paths whose signature is not the recorded signature (plan.md §5.6,
+    /// file signature). Thus, a write of this process and a repeated FSEvents event are not in the list.
+    ///
+    /// - Parameter paths: The changed paths, for example of one batch of the file watcher. A path that is not a node
+    ///   log of the board (for example the lock file) is not in the list.
+    /// - Returns: The local refs of the nodes of the changed files.
+    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a file cannot be read.
+    func changedRefs(among paths: some Sequence<URL>) throws(EventLogError) -> Set<LocalRef> {
+        let refs = Set(paths.compactMap(log.ref(ofFileAt:)))
+        let current = try refs.map { ref throws(EventLogError) in (ref, try log.signature(of: ref)) }
+        return Set(current.filter { ref, signature in signature != signatures[ref] }.map { ref, _ in ref })
+    }
+
     /// Reads the files of some nodes again, stage by stage, and joins their nodes into the graph.
     ///
     /// - Parameter refs: The local refs of the changed nodes.

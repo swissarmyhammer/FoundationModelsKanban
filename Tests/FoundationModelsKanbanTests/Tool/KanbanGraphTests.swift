@@ -84,12 +84,14 @@ struct KanbanGraphTests {
     ///   - keyReader: Gives the key of the board. The default is ``fakeKey(ofRepoAt:)``.
     ///   - actor: The session actor. The default is ``sessionActor``.
     ///   - observer: Gets a call when each call starts and ends, or `nil` for no calls.
+    ///   - batchObserver: Gets a call when the file watcher applies a batch, or `nil` for no calls.
     /// - Returns: The engine.
     static func makeGraph(
         at root: URL,
         readingKeyWith keyReader: @escaping @Sendable (URL) throws(BoardKeyError) -> BoardKey = fakeKey,
         actingAs actor: SessionActor = sessionActor,
-        reportingTo observer: (any KanbanCallObserver)? = nil
+        reportingTo observer: (any KanbanCallObserver)? = nil,
+        observingBatchesWith batchObserver: (any LiveGraphObserver)? = nil
     ) throws -> KanbanGraph {
         try KanbanGraph(
             root: root,
@@ -97,7 +99,8 @@ struct KanbanGraphTests {
             timedBy: { time },
             actingAs: actor,
             mintingFrom: mutationIDs,
-            reportingTo: observer
+            reportingTo: observer,
+            observingBatchesWith: batchObserver
         )
     }
 
@@ -200,6 +203,18 @@ struct KanbanGraphTests {
         return #"{"node":\#(node)"title":"\#(title)"}}"#
     }
 
+    /// Gives the response to ``boardQuery`` on a board whose one task is in the `todo` column.
+    ///
+    /// - Parameters:
+    ///   - task: The ULID of the task.
+    ///   - title: The title of the task.
+    /// - Returns: The response JSON text, with sorted keys.
+    static func boardResponse(withTask task: ULID, titled title: String) -> String {
+        let tasks = #"{"edges":[\#(edgeJSON(of: task, titled: title))],"totalCount":1}"#
+        let board = #"{"key":"\#(boardKey)","name":"\#(boardName)","tasks":\#(tasks)}"#
+        return #"{"data":{"board":\#(board)}}"#
+    }
+
     /// Reads a response as a JSON object.
     ///
     /// - Parameter response: The response JSON text.
@@ -215,9 +230,7 @@ struct KanbanGraphTests {
         let directory = try TemporaryDirectory()
         let task = try Self.writeFixture(inRepoAt: directory.url).task
         let response = try await Self.execute(Self.boardQuery, on: Self.makeGraph(at: directory.url))
-        let tasks = #"{"edges":[\#(Self.edgeJSON(of: task, titled: Self.taskTitle))],"totalCount":1}"#
-        let board = #"{"key":"\#(Self.boardKey)","name":"\#(Self.boardName)","tasks":\#(tasks)}"#
-        #expect(response == #"{"data":{"board":\#(board)}}"#)
+        #expect(response == Self.boardResponse(withTask: task, titled: Self.taskTitle))
     }
 
     @Test("A query on a repo with no .kanban/ returns an empty board with the repo directory name and writes no file")
@@ -250,6 +263,7 @@ struct KanbanGraphTests {
         var (_, ids) = try Self.writeFixture(inRepoAt: directory.url)
         let graph = try Self.makeGraph(at: directory.url)
         let first = try await Self.execute(Self.boardQuery, on: graph)
+        await graph.close()
         _ = try Self.writeTask(titled: Self.laterTitle, mintingFrom: &ids, to: EventLog(repositoryAt: directory.url))
         let second = try await Self.execute(Self.boardQuery, on: graph)
         #expect(second == first)
