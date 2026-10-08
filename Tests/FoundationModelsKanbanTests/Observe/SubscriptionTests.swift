@@ -143,7 +143,19 @@ struct SubscriptionTests {
     ///   - operation: The one public mutation of the transaction.
     /// - Returns: The response JSON text.
     static func titleEvent(of task: ULID, txn: String, operation: String) -> String {
-        event(txn: txn, operation: operation, updates: [update(ofTask: id(of: task), from: .patch)])
+        patchEvent(of: task, kind: .updated, txn: txn, operation: operation)
+    }
+
+    /// Gives the response of an event with one update of a task from a patch line.
+    ///
+    /// - Parameters:
+    ///   - task: The ULID of the task.
+    ///   - kind: The kind of the update.
+    ///   - txn: The transaction ULID text.
+    ///   - operation: The one public mutation of the transaction.
+    /// - Returns: The response JSON text.
+    private static func patchEvent(of task: ULID, kind: UpdateKind, txn: String, operation: String) -> String {
+        event(txn: txn, operation: operation, updates: [update(ofTask: id(of: task), kind: kind, from: .patch)])
     }
 
     /// Gives the newest transaction of the current board.
@@ -166,8 +178,8 @@ struct SubscriptionTests {
     ///   - graph: The engine.
     /// - Returns: The response JSON text of the event, with the transaction of the call.
     static func changeTitle(of task: ULID, to title: String, on graph: KanbanGraph) async throws -> String {
-        _ = try await CommentTests.run(UndoTests.titleField(title, of: task), on: graph)
-        return titleEvent(of: task, txn: try await latestTxn(on: graph), operation: updateTask)
+        let field = UndoTests.titleField(title, of: task)
+        return try await runMutation(field, operation: updateTask, of: task, kind: .updated, on: graph)
     }
 
     /// Deletes a task with a `deleteTask` call, and gives the event that the call sends.
@@ -177,9 +189,28 @@ struct SubscriptionTests {
     ///   - graph: The engine.
     /// - Returns: The response JSON text of the event, with the transaction of the call.
     static func deleteTask(_ task: ULID, on graph: KanbanGraph) async throws -> String {
-        _ = try await CommentTests.run(TaskOperationTests.taskField(MutationName.deleteTask, of: task), on: graph)
-        let deleted = update(ofTask: id(of: task), kind: .deleted, from: .patch)
-        return event(txn: try await latestTxn(on: graph), operation: MutationName.deleteTask, updates: [deleted])
+        let field = TaskOperationTests.taskField(MutationName.deleteTask, of: task)
+        return try await runMutation(field, operation: MutationName.deleteTask, of: task, kind: .deleted, on: graph)
+    }
+
+    /// Runs one mutation field that changes one task, and gives the event that the call sends.
+    ///
+    /// - Parameters:
+    ///   - field: The mutation field.
+    ///   - operation: The public mutation of the field.
+    ///   - task: The ULID of the task that the mutation changes.
+    ///   - kind: The kind of the update of the task.
+    ///   - graph: The engine.
+    /// - Returns: The response JSON text of the event, with the transaction of the call.
+    private static func runMutation(
+        _ field: String,
+        operation: String,
+        of task: ULID,
+        kind: UpdateKind,
+        on graph: KanbanGraph
+    ) async throws -> String {
+        _ = try await CommentTests.run(field, on: graph)
+        return patchEvent(of: task, kind: kind, txn: try await latestTxn(on: graph), operation: operation)
     }
 
     /// Gives the transaction ULID of the next event that ``KanbanGraphTests/append(_:mintingFrom:to:)`` writes with a

@@ -60,6 +60,38 @@ comments:
     - evidence: 5 test files — Tests/FoundationModelsKanbanTests/Search/TaskSearchTests.swift, GraphQL/NodeQueryTests.swift, Mutations/TaskOperationTests.swift, Undo/HistoryTests.swift, Observe/SubscriptionTests.swift. `swift build --build-tests` clean (only the accepted "missing creator" warning). `timeout 120 swift test --skip-build` 3 runs: 976/976 pass each (7.53 s, 7.57 s, 7.50 s). Finding `TaskSearchTests.swift:263` is checked.
     - next: /review
   timestamp: 2026-10-08T16:05:08.730838+00:00
+- actor: claude-code
+  id: 01m4e4da6rns7cx8n7v4jwmmxm
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (41a3bf5); 1 finding (1 confirmed, 0 refuted) — Tests/FoundationModelsKanbanTests/Observe/SubscriptionTests.swift:179 `reuse/reuse`
+    - next: make the deleteTask and changeTitle helpers use one shared helper, then review again. The task stays in review.
+  timestamp: 2026-10-08T16:09:15.224748+00:00
+- actor: claude-code
+  id: 01m4e4djq4yy4pmy8rb5ss0wfw
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 5 test files (undelete checks, QueryFixture.undelete(nodeAt:)); 1/1 prior findings checked
+    - test: green — swift test 3 runs, 976 passed each (7.5 s, 7.4 s, 7.6 s); build warnings only the 2 accepted kinds
+    - commit: 41a3bf5
+    - review: findings — Tests/FoundationModelsKanbanTests/Observe/SubscriptionTests.swift:179
+  timestamp: 2026-10-08T16:09:23.940486+00:00
+- actor: claude-code
+  id: 01m4e4hjeqvczbxmkfta1dhdnc
+  text: |-
+    Fix of the finding `reuse/reuse` (SubscriptionTests.swift:179). Cause: `changeTitle` and `deleteTask` each ran a mutation with `CommentTests.run`, read `latestTxn`, and built the event. Also `titleEvent` and `deleteTask` each built the same one-update patch event.
+    - New private `runMutation(_:operation:of:kind:on:)`: runs the mutation field, reads `latestTxn`, and gives the event. `changeTitle` and `deleteTask` both call it. The names that the tests use did not change.
+    - New private `patchEvent(of:kind:txn:operation:)`: builds an event with one patch update of a task. `titleEvent` and `runMutation` both use it.
+    - Other flows in the file: the undeleteTask call in `deletedFilterLeavesOutUndelete` runs a mutation but builds no event, so it is not the same flow. The DERIVED event in `doneTaskOfRelatedBoardSendsDerivedUpdate` uses a URI and the `.derived` source, so it uses `event` directly. No test assertion changed.
+    - Note: the `dump validators` rules file is 754 K characters; I used the rules that the coordinator listed.
+  timestamp: 2026-10-08T16:11:34.743065+00:00
+- actor: claude-code
+  id: 01m4e4hktv1wq9r53b6nzfmq47
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsKanbanTests/Observe/SubscriptionTests.swift. `swift build --build-tests` clean (only the accepted "missing creator" warning). `timeout 120 swift test --skip-build` 3 runs: 976/976 pass each (7.42 s, 7.44 s, 7.49 s). Finding `SubscriptionTests.swift:179` is checked.
+    - next: /review
+  timestamp: 2026-10-08T16:11:36.155145+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'Replace tasks(deleted:) with the #DELETED virtual tag'
@@ -99,3 +131,12 @@ Files: `Derived/VirtualTags.swift`, `Filter/FilterParser.swift` and `FilterEvalu
 > - `plan.md` — no validator matches this file
 
 - [x] `Tests/FoundationModelsKanbanTests/Search/TaskSearchTests.swift:263` `completeness/inverse-operation-coverage` — The new test proves that a deleted task is a search hit only for the #DELETED filter. It never checks the inverse: after the task is undeleted, the #DELETED filter must no longer hit it. The one-way test leaves the restore direction of the new filter rule unproven. Add an undelete step to this test, or a sibling test, and assert that the #DELETED search no longer returns the task while the plain title search returns it again.
+
+## Review Findings (2026-10-08 11:08)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 5 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Tests/FoundationModelsKanbanTests/Observe/SubscriptionTests.swift:179` `reuse/reuse` — The new deleteTask helper repeats the shape of the existing changeTitle helper: it runs a mutation call with CommentTests.run, reads latestTxn, and builds the event with event(...). The only differences are the operation, the update kind, and the mutation field. changeTitle was not extended to take those parameters, so there are now two parallel copies of the same flow that can drift apart. Generalize the existing helper instead of adding a parallel one. For example, give changeTitle (or a shared private helper) a parameter for the mutation field and the update kind, so changeTitle and deleteTask both call it. Keep the public names the tests use.
