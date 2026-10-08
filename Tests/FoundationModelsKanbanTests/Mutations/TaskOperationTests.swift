@@ -88,12 +88,20 @@ struct TaskOperationTests {
     /// The `after` place field of a `moveTask` input.
     private static let afterField = "after"
 
-    /// Each set of two or more place fields of a `moveTask` input, in the order of the input type.
+    /// The second sentence of the message of `CONFLICTING_PLACEMENT`: the same text for each set of place fields.
+    private static let conflictingPlacementCorrection = "Give only one of ordinal, before, and after, or give none of "
+        + "them to put the task at the end of the column."
+
+    /// Each set of two or more place fields of a `moveTask` input, in the order of the input type, with the first
+    /// sentence of the message of the error that the input gives.
     private static let conflictingPlacements = [
-        [beforeField, afterField],
-        [ordinalField, beforeField],
-        [ordinalField, afterField],
-        [ordinalField, beforeField, afterField],
+        ([beforeField, afterField], "The input gives more than one place field: before, after. "),
+        ([ordinalField, beforeField], "The input gives more than one place field: ordinal, before. "),
+        ([ordinalField, afterField], "The input gives more than one place field: ordinal, after. "),
+        (
+            [ordinalField, beforeField, afterField],
+            "The input gives more than one place field: ordinal, before, after. "
+        ),
     ]
 
     /// The code of the error for a `moveTask` input that gives more than one place field.
@@ -206,15 +214,6 @@ struct TaskOperationTests {
             field == ordinalField ? #"\#(field): "\#(Ordinal.first.value)""# : neighbor(field, of: task)
         }
         .joined(separator: " ")
-    }
-
-    /// Gives the message of the error for a `moveTask` input that gives more than one place field.
-    ///
-    /// - Parameter fields: The names of the place fields that the input gives, in the order of the input type.
-    /// - Returns: The message.
-    private static func conflictingPlacementMessage(naming fields: [String]) -> String {
-        "The input gives more than one place field: \(fields.joined(separator: ", ")). Give only one of ordinal, "
-            + "before, and after, or give none of them to put the task at the end of the column."
     }
 
     /// Makes the `actor` part of an `assignTask` or an `unassignTask` input.
@@ -488,12 +487,12 @@ struct TaskOperationTests {
         "moveTask with more than one place field gives CONFLICTING_PLACEMENT, names the fields, and writes nothing",
         arguments: conflictingPlacements
     )
-    func moveTaskConflictingPlacement(fields: [String]) async throws {
+    func moveTaskConflictingPlacement(fields: [String], fieldSentence: String) async throws {
         let input = Self.moveInput(placing: try Self.placementInput(giving: fields))
         let move = try Self.fixtureField("moveTask", with: input)
         let error = try await CommentTests.failure(of: move, in: try TemporaryDirectory())
         #expect(error.code == Self.conflictingPlacementCode)
-        #expect(error.message == Self.conflictingPlacementMessage(naming: fields))
+        #expect(error.message == fieldSentence + Self.conflictingPlacementCorrection)
     }
 
     @Test("moveTask to a slug that no column has makes the column with the slug words in title case")
