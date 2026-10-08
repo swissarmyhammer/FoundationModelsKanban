@@ -63,6 +63,9 @@ struct ModelVariablesTests {
         Give the variable \(variableName) the value "\(taskTitle)".
         """
 
+    /// The name of the test attachment that holds the arguments of the `kanban` call, as JSON text.
+    private static let argumentsAttachmentName = "kanban-arguments.json"
+
     /// A query that reads the title of the next task of the board.
     private static let nextTaskQuery = "{ board { nextTask { title } } }"
 
@@ -105,7 +108,6 @@ struct ModelVariablesTests {
     )
     func modelSendsTheValuesOfTheVariables() async throws {
         try #require(MTLCreateSystemDefaultDevice() != nil, "This machine has no Metal device, thus MLX cannot run.")
-        let started = ContinuousClock.now
         let turn = try await TemporaryGitRepo.withRepo(named: Self.repoName) { root in
             let graph = try KanbanGraph(root: root, actor: Self.actorName)
             let tool = KanbanTool(graph: graph)
@@ -118,9 +120,11 @@ struct ModelVariablesTests {
         }
 
         let call = try #require(turn.calls.first, "The model did not call the kanban tool.")
-        // The record of the run: what the model sent, and the time of the load and the answer.
-        print("QWEN38 arguments: \(call.arguments.jsonString) time: \(ContinuousClock.now - started)")
-        #expect(try Self.variableValue(in: call.arguments) == Self.taskTitle)
+        // The record of the run: the arguments that the model sent. Swift Testing keeps the attachment, also when
+        // `variableValue` throws, and the comment of the expectation shows the same text when the value is wrong.
+        let arguments = call.arguments.jsonString
+        Attachment.record(arguments, named: Self.argumentsAttachmentName)
+        #expect(try Self.variableValue(in: call.arguments) == Self.taskTitle, "The model sent: \(arguments)")
         #expect(turn.board.contains(Self.taskTitle), "\(turn.board)")
     }
 }

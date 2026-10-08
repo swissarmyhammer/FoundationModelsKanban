@@ -196,6 +196,31 @@ comments:
     - New task ^qg3rt2m: plan.md §7.1 and §12 item 8, and the `KanbanArguments` doc comment, still name the on-device model for this test.
     - next: /review.
   timestamp: 2026-10-08T15:16:23.474550+00:00
+- actor: claude-code
+  id: 01m4e1pcg1myy4zx7j6v5gvbpt
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (247ecb6); 1 finding — IntegrationTests/Tests/FoundationModelsKanbanIntegrationTests/ModelVariablesTests.swift:122 (code-hygiene/disallowed-constructs-swift, no_direct_standard_out_logs)
+    - next: Remove the print to standard out in ModelVariablesTests.swift. Then do the review again.
+  timestamp: 2026-10-08T15:21:46.753437+00:00
+- actor: claude-code
+  id: 01m4e1pqsxfeezseysy7qwa4cb
+  text: |-
+    ### finish iteration 3 — findings
+    - implement: changed — Package.swift, 2 Package.resolved, IntegrationTests/Package.swift, CodeModeTests.swift, ModelVariablesTests.swift (Qwen 3.8, mlx-community/Qwen3.8-27B-mxfp4)
+    - test: green — root swift test 3 runs, 965 passed each (8.3 s, 7.9 s, 7.5 s); IntegrationTests 2 passed, Qwen test 10.4 s, variables sent as the string {"title": "Write the release notes"}; resolve leaves both Package.resolved unchanged; build warnings only the 2 accepted kinds
+    - commit: 247ecb6
+    - review: findings — IntegrationTests/Tests/FoundationModelsKanbanIntegrationTests/ModelVariablesTests.swift:122
+  timestamp: 2026-10-08T15:21:58.333311+00:00
+- actor: claude-code
+  id: 01m4e1vfr2cnhq5eevvkzyxek1
+  text: |-
+    ### implement — changed
+    - Finding fixed: `ModelVariablesTests.swift` `code-hygiene/disallowed-constructs-swift` (no_direct_standard_out_logs). The `print` is removed. The `started` clock value is also removed, because only the `print` used it. The test now records the arguments that the model sent with `Attachment.record(arguments, named: "kanban-arguments.json")` (the name is the constant `argumentsAttachmentName`), and the `#expect` of the variable value has the comment "The model sent: <arguments>". The attachment stays also when `variableValue` throws. No `swiftlint:disable`. The checks of the test did not change.
+    - Scan: the file has no other `print`, `debugPrint`, `dump` or `_printChanges`. `Tests/FoundationModelsKanbanTests/Multitool/CodeModeTests.swift` has none and no other write to standard out.
+    - evidence: 1 file — IntegrationTests/Tests/FoundationModelsKanbanIntegrationTests/ModelVariablesTests.swift. Root: `swift build --build-tests` OK (only the accepted `missing creator for mutated node` warning); `swift test --skip-build` 3 runs, each exit 0, 965 tests in 68 suites passed (7.6 s, 7.8 s, 7.5 s). IntegrationTests: `swift build --build-tests && swift test` exit 0, only the accepted warning, 2 tests in 2 suites passed; Qwen 3.8 test passed after 8.3 s, and Swift Testing reported "Attached 'kanban-arguments.json'".
+    - next: /review.
+  timestamp: 2026-10-08T15:24:33.922952+00:00
 depends_on:
 - 01M4DPPYA338NYS7JAA7J3AAR6
 - 01M4DYAT2V3CEKMMZ8SBHJSNMM
@@ -220,3 +245,16 @@ Prove that the tool works in code mode. The basis is plan.md §9 and §10 step 1
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-08 10:20)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 8 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+> 2 file(s) not reviewed — no validator matched:
+> - `IntegrationTests/Package.resolved` — no validator matches this file
+> - `Package.resolved` — no validator matches this file
+
+- [x] `IntegrationTests/Tests/FoundationModelsKanbanIntegrationTests/ModelVariablesTests.swift:122` `code-hygiene/disallowed-constructs-swift` — no_direct_standard_out_logs: Do not commit print(…), debugPrint(…), dump(…) or _printChanges(), which write to standard out in release. Log to a dedicated logging system, or silence one debug-only line with // swiftlint:disable:next no_direct_standard_out_logs and the reason after it.
