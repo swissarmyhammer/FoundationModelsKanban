@@ -183,16 +183,25 @@ struct Change: Sendable {
         )
     }
 
-    /// Resolves `Change.actor`: the actor of the transaction, in the graph of the call. A tombstoned actor resolves to
-    /// the tombstone, with `deleted` set (plan.md §5.3, step 5).
+    /// Resolves `Change.actor`: the actor of the transaction, in the graph now of the board of the transaction. The
+    /// first key of ``boards`` names that board: the current board or a related board (plan.md §6.6). The ref of the
+    /// actor is local to that board, also for a `DERIVED`-only change that a board gets for a transaction of a board
+    /// that it depends on (plan.md §6.7). A tombstoned actor resolves to the tombstone, with `deleted` set (plan.md
+    /// §5.3, step 5).
     ///
     /// - Parameters:
-    ///   - context: The context of the call. Its store gives the graph now.
+    ///   - context: The context of the call. Its store finds the board of the transaction.
     ///   - arguments: The field has no arguments.
     /// - Returns: The actor.
-    /// - Throws: ``KanbanError/notFound(type:reference:)`` when the graph does not have the actor.
+    /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the key of the
+    ///   board of the transaction. ``KanbanError/notFound(type:reference:)`` for the board when the engine did not
+    ///   load the board yet: the store then records the request, and the call runs again after the load. The same
+    ///   error for the actor when the board does not have the actor.
     func actor(context: KanbanContext, arguments _: NoArguments) async throws(KanbanError) -> ActorObject {
-        let view = await context.store.view
+        let boardKey = boards[boards.startIndex]
+        guard let view = try await context.store.view(ofBoardNamed: boardKey) else {
+            throw .notFound(type: .board, reference: boardKey)
+        }
         guard let state = view.graph.actor(for: actorRef), let slot = view.graph.slot(for: actorRef) else {
             throw .notFound(type: .actor, reference: view.id(of: actorRef).text)
         }

@@ -24,6 +24,7 @@ enum GitGraphFixture {
     ///
     /// - Parameters:
     ///   - root: The root directory of the repo.
+    ///   - actor: The session actor. The default is ``KanbanGraphTests/sessionActor``.
     ///   - ids: The source of the transaction ULIDs and the event ids. The default is
     ///     ``KanbanGraphTests/mutationIDs``.
     ///   - locator: Finds the related boards. The default looks only in the parent directory of the repo.
@@ -31,6 +32,7 @@ enum GitGraphFixture {
     /// - Returns: The engine.
     static func makeGraph(
         at root: URL,
+        actingAs actor: SessionActor = KanbanGraphTests.sessionActor,
         mintingFrom ids: FixedULIDSource = KanbanGraphTests.mutationIDs,
         locatedBy locator: BoardLocator = .default,
         recordedBy recorder: BatchRecorder? = nil
@@ -38,6 +40,7 @@ enum GitGraphFixture {
         try KanbanGraphTests.makeGraph(
             at: root,
             readingKeyWith: BoardKey.read(fromRepoAt:),
+            actingAs: actor,
             mintingFrom: ids,
             locatedBy: locator,
             observingBatchesWith: recorder

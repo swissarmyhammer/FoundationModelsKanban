@@ -69,14 +69,30 @@ comments:
     - evidence: Sources/FoundationModelsKanban/GraphQL/Schema.swift, Sources/FoundationModelsKanban/Observe/ChangeSubscription.swift, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift, Tests/FoundationModelsKanbanTests/Observe/StreamWait.swift, Tests/FoundationModelsKanbanTests/Observe/SubscriptionTests.swift. `swift build --build-tests`: only the accepted SwiftPM "missing creator" warning. Full `swift test --skip-build` 3 times (120 s limit): 948 tests in 64 suites passed in 8.663 s, 8.445 s, 7.915 s. swiftlint no_magic_numbers (allowed 0, 1, -1, 100) on the 5 changed files: 0 violations. periphery --retain-public: Sources clean. No line is longer than 120 characters.
     - next: /review
   timestamp: 2026-10-08T06:45:14.836631+00:00
+- actor: wballard
+  id: 01m4d4ck12yr6d7jwf6wh4fkc7
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (6aa85a2). 5 files reviewed. 0 findings, 0 confirmed, 0 refuted. All prior review items are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-08T06:49:37.058147+00:00
+- actor: wballard
+  id: 01m4d4cs0mgjw3fqnjstdt312g
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 5 files (Schema.swift, ChangeSubscription.swift, KanbanGraph.swift, StreamWait.swift, SubscriptionTests.swift); 5/5 findings checked
+    - test: green — swift test 3 runs with a 120 s limit, 948 passed each (13.4 s, 10.5 s, 15.2 s); build warnings only the 2 accepted kinds
+    - commit: 6aa85a2
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T06:49:43.188543+00:00
 depends_on:
 - 01M4B41VDXZ3NKEG4554PVXWQN
 - 01M4B412DB2BSB0FAQEA72WN8T
 - 01M4B3Z67TC96REJGDHD2DFH0R
 - 01M4B421JA8K0E8GAC3EMWCZ5Z
 - 01M4B433B8HKKXX0A08K77YCNF
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: b380
 title: 'Subscriptions: changes feed and kanban watch support'
 ---
 ## What

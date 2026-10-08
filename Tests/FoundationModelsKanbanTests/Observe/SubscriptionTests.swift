@@ -17,7 +17,7 @@ private let subscriptionSuiteMinutes = 1
 @Suite("Subscriptions: the change feed", .timeLimit(.minutes(subscriptionSuiteMinutes)))
 struct SubscriptionTests {
     /// The number of events that a test reads when it expects the event of one change.
-    private static let oneEvent = 1
+    static let oneEvent = 1
 
     /// The number of events that a test reads when it expects the events of two changes.
     private static let twoEvents = 2
