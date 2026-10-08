@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// The key of a board: the current `origin` remote of its repo, normalized to `host/owner/repo` (plan.md §3.2, §12
 /// item 4).
@@ -181,6 +182,9 @@ enum BoardKeyError: Error, Hashable, Sendable {
 
     /// A `git` command exited with a failure status.
     case gitFailed(arguments: [String], status: Int32, message: String)
+
+    /// A `git` command did not end in its time limit, so it was stopped.
+    case gitTimedOut(arguments: [String])
 }
 
 // MARK: - Git
@@ -196,6 +200,9 @@ enum Git {
     /// The name of the git program, which ``launcherPath`` finds.
     static let programName = "git"
 
+    /// The longest time that a git command can run before it is stopped. A local git command ends in much less time.
+    static let defaultTimeLimit = DispatchTimeInterval.seconds(30)
+
     /// The result of a git command.
     struct Output: Sendable {
         /// The exit status.
@@ -208,34 +215,84 @@ enum Git {
         let errorOutput: String
     }
 
-    /// Runs git in a directory, and waits until it exits.
+    /// Runs git in a directory, and waits until it exits or until its time limit ends.
+    ///
+    /// Git gets an empty standard input, so it never waits for input. Two background reads empty the standard output
+    /// and the standard error at the same time. Thus a large output on one pipe cannot stop git while this function
+    /// waits for the other pipe. One wait with a deadline covers the exit of git and the end of the two reads.
     ///
     /// - Parameters:
     ///   - arguments: The arguments after `git`.
     ///   - directory: The directory where git runs.
+    ///   - limit: The longest time that git can run. When this time ends, git is stopped.
     /// - Returns: The exit status and the output of git.
     /// - Throws: ``BoardKeyError/gitUnavailable(message:)`` when git cannot start.
-    static func run(withArguments arguments: [String], inDirectory directory: URL) throws(BoardKeyError) -> Output {
+    ///   ``BoardKeyError/gitTimedOut(arguments:)`` when git does not end in the time limit.
+    static func run(
+        withArguments arguments: [String],
+        inDirectory directory: URL,
+        timeLimit limit: DispatchTimeInterval = defaultTimeLimit
+    ) throws(BoardKeyError) -> Output {
         let process = Process()
         process.executableURL = URL(filePath: launcherPath)
         process.arguments = [programName] + arguments
         process.currentDirectoryURL = directory
+        process.standardInput = FileHandle.nullDevice
         let outputPipe = Pipe()
         let errorPipe = Pipe()
         process.standardOutput = outputPipe
         process.standardError = errorPipe
+        let finish = DispatchGroup()
+        finish.enter()
+        process.terminationHandler = { _ in finish.leave() }
         do {
             try process.run()
         } catch {
             throw .gitUnavailable(message: error.localizedDescription)
         }
-        let output = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        let errorOutput = errorPipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return Output(
-            status: process.terminationStatus,
-            output: String(decoding: output, as: UTF8.self),
-            errorOutput: String(decoding: errorOutput, as: UTF8.self)
-        )
+        let output = PipeReader(reading: outputPipe, in: finish)
+        let errorOutput = PipeReader(reading: errorPipe, in: finish)
+        guard finish.wait(timeout: .now() + limit) == .success else {
+            process.terminate()
+            throw .gitTimedOut(arguments: arguments)
+        }
+        return Output(status: process.terminationStatus, output: output.text, errorOutput: errorOutput.text)
+    }
+}
+
+/// Reads one pipe of a child process to its end on a background queue.
+///
+/// A child process that writes to a full pipe stops until a reader empties the pipe. Thus each pipe of a child process
+/// needs its own reader, and the readers must run at the same time.
+private final class PipeReader: Sendable {
+    /// The label of the queue of one read.
+    ///
+    /// Each read gets its own serial queue, and not a global queue. A read blocks its thread until the pipe ends. The
+    /// global queues and the tasks of Swift concurrency share one small group of threads. When the callers of
+    /// ``Git/run(withArguments:inDirectory:timeLimit:)`` block all of these threads, a read on a global queue never
+    /// starts, and each call waits until its time limit. A serial queue gets a new thread in this case.
+    private static let queueLabel = "FoundationModelsKanban.Git.PipeReader"
+
+    /// The bytes that the read got. The value is empty until the read ends.
+    private let data = Mutex(Data())
+
+    /// The bytes that the read got, as UTF-8 text. Read this value only after the read ends.
+    var text: String {
+        String(decoding: data.withLock { bytes in bytes }, as: UTF8.self)
+    }
+
+    /// Starts the read of a pipe on a background queue, and returns at once.
+    ///
+    /// - Parameters:
+    ///   - pipe: The pipe. The reader reads its read end until the last writer closes the pipe.
+    ///   - group: The group that the read joins. The read leaves the group when it ends.
+    init(reading pipe: Pipe, in group: DispatchGroup) {
+        let handle = pipe.fileHandleForReading
+        group.enter()
+        DispatchQueue(label: Self.queueLabel).async {
+            let bytes = handle.readDataToEndOfFile()
+            self.data.withLock { stored in stored = bytes }
+            group.leave()
+        }
     }
 }

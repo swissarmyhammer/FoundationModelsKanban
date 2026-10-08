@@ -59,13 +59,29 @@ comments:
     - evidence: 2 files: Sources/FoundationModelsKanban/Tool/KanbanGraph.swift and Sources/FoundationModelsKanban/Tool/Commit.swift. `swift build --build-tests`: the only warning is the accepted mlx-swift "missing creator" warning. `swift test` run 1: 902 tests in 58 suites passed. `swift test --skip-build` run 2: 902 passed. `swift test --skip-build` run 3: 902 passed. `periphery scan --retain-public --quiet -- --build-tests --build-system native`: no item in Sources. It reports 7 items, all in test files that this change did not touch. These items were there before. No line is longer than 120 characters. All 4 of 4 findings are checked.
     - next: /review
   timestamp: 2026-10-08T02:51:37.413043+00:00
+- actor: wballard
+  id: 01m4css8zr5ww1c8nf1b0qykvk
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (013be15). 0 findings, 0 confirmed, 0 refuted. 7 validator runs attempted, 0 failed. 2 files reviewed. All 4 items in the prior Review Findings section are checked.
+    - next: None. The task is in done.
+  timestamp: 2026-10-08T03:44:18.424814+00:00
+- actor: wballard
+  id: 01m4cssenasxkd56nagmbyd90p
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 2 files (Tool/KanbanGraph.swift, Tool/Commit.swift); 4/4 findings checked
+    - test: green — swift test 3 runs, 902 passed each; one earlier run hung for 30 min; 65 more runs did not hang; possible cause recorded as ^bezg31g
+    - commit: 013be15
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T03:44:24.234244+00:00
 depends_on:
 - 01M4B3VKJ8W42AXVFVMH6WN5VQ
 - 01M4B3YYXT069TKADQ93CBAA93
 - 01M4B406Z7RVSBJKKJ8KJW0CY2
 - 01M4B41VDXZ3NKEG4554PVXWQN
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ae80
 title: 'Cross-repo: BoardLocator and board refs'
 ---
 ## What

@@ -146,6 +146,79 @@ struct BoardKeyTests {
             if case .gitFailed = error as? BoardKeyError { true } else { false }
         }
     }
+
+    // MARK: - Git process
+
+    /// The number of bytes that the flood command writes to the standard error. This is more than the buffer of a
+    /// pipe, so a writer that nobody reads stops until a reader empties the pipe.
+    static let floodSize = 200_000
+
+    /// The word that the flood command writes to the standard output, on one line, after it writes the standard
+    /// error.
+    static let floodWord = "done"
+
+    /// The arguments of a git alias that writes ``floodSize`` bytes to the standard error, and then ``floodWord`` to
+    /// the standard output.
+    static let floodArguments = ["-c", "alias.flood=!head -c \(floodSize) /dev/zero >&2; echo \(floodWord)", "flood"]
+
+    /// The time that the slow command runs. This is much longer than ``shortGitLimit``.
+    static let slowCommandDuration = Duration.seconds(5)
+
+    /// The arguments of a git alias that runs for ``slowCommandDuration``.
+    static let slowArguments = ["-c", "alias.slow=!sleep \(slowCommandDuration.components.seconds)", "slow"]
+
+    /// The time limit of the slow command.
+    static let shortGitLimit = DispatchTimeInterval.milliseconds(300)
+
+    /// The time limit of each git command in the test that runs many git commands at the same time. A git command
+    /// that can run ends in much less time.
+    static let parallelGitLimit = DispatchTimeInterval.seconds(10)
+
+    /// The number of git commands for each processor in the test that runs many git commands at the same time. Each
+    /// command blocks the thread of its task, so more commands than processors block each thread of Swift
+    /// concurrency.
+    static let commandsPerProcessor = 4
+
+    /// The arguments of a git command that ends at once and writes to the standard output.
+    static let versionArguments = ["--version"]
+
+    @Test("A large standard error of git does not block the read of the standard output", .timeLimit(.minutes(1)))
+    func largeErrorOutputDoesNotBlock() throws {
+        let sandbox = try GitSandbox()
+        let result = try Git.run(withArguments: Self.floodArguments, inDirectory: sandbox.root)
+        #expect(result.status == Git.successStatus)
+        #expect(result.output == "\(Self.floodWord)\n")
+        #expect(result.errorOutput.utf8.count == Self.floodSize)
+    }
+
+    @Test("A git command that runs longer than its time limit stops with a time-out error", .timeLimit(.minutes(1)))
+    func slowCommandTimesOut() throws {
+        let sandbox = try GitSandbox()
+        let clock = ContinuousClock()
+        let start = clock.now
+        #expect(throws: BoardKeyError.gitTimedOut(arguments: Self.slowArguments)) {
+            try Git.run(withArguments: Self.slowArguments, inDirectory: sandbox.root, timeLimit: Self.shortGitLimit)
+        }
+        #expect(start.duration(to: clock.now) < Self.slowCommandDuration)
+    }
+
+    @Test("Git commands in more tasks than processors all end, also when each task blocks its thread")
+    func parallelCommandsAllEnd() async throws {
+        let sandbox = try GitSandbox()
+        let directory = sandbox.root
+        let count = ProcessInfo.processInfo.activeProcessorCount * Self.commandsPerProcessor
+        let statuses = try await withThrowingTaskGroup(of: Int32.self) { group in
+            for _ in 0..<count {
+                group.addTask {
+                    let limit = Self.parallelGitLimit
+                    return try Git.run(withArguments: Self.versionArguments, inDirectory: directory, timeLimit: limit)
+                        .status
+                }
+            }
+            return try await group.reduce(into: []) { statuses, status in statuses.append(status) }
+        }
+        #expect(statuses == Array(repeating: Git.successStatus, count: count))
+    }
 }
 
 // MARK: - Temporary repos

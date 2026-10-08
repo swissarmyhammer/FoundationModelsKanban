@@ -13,6 +13,21 @@ struct EventLogTests {
     /// the lock in this time.
     static let holdDuration = Duration.milliseconds(200)
 
+    /// The longest time that a test waits for a lock to be released. A child process that another test starts at the
+    /// same time can hold a copy of the lock file for a short time, until its `exec` closes the copy. This limit is
+    /// much longer than that time.
+    static let lockWaitLimit = Duration.seconds(10)
+
+    /// The deadline of the lock wait in the test that holds the lock for all of the wait.
+    static let heldLockWaitLimit = Duration.milliseconds(300)
+
+    /// The longest time that a deadline wait can continue after its deadline: one pause, and the scheduling delay of
+    /// a busy machine.
+    static let deadlineTolerance = Duration.seconds(2)
+
+    /// The pause between two tries of a wait with a deadline.
+    static let retryPause = Duration.milliseconds(10)
+
     /// The record of the lock test when the first lock is released.
     static let releasedRecord = "first released"
 
@@ -81,17 +96,46 @@ struct EventLogTests {
         return flock(descriptor, LOCK_EX | LOCK_NB) == 0
     }
 
-    /// Tells if the lock of a board is released. A child process that another test starts at the same time can hold
-    /// a copy of the lock file for a short time, until its `exec` closes the copy. The check waits for the lock,
-    /// without a timer, so that this short time does not fail the test. A lock that is never released stops the
-    /// test with its time limit.
+    /// Tells if the lock of a board is released before a deadline. A child process that another test starts at the
+    /// same time can hold a copy of the lock file for a short time, until its `exec` closes the copy. Thus the check
+    /// tries again until the deadline, so that this short time does not fail the test. A lock that is not released
+    /// ends the wait at the deadline.
+    ///
+    /// - Parameters:
+    ///   - log: The event log of the board.
+    ///   - limit: The longest time that the check waits.
+    /// - Returns: `true` when the lock is released before the deadline.
+    /// - Throws: `CancellationError` when the test is cancelled during the wait.
+    static func isLockReleased(of log: EventLog, within limit: Duration = lockWaitLimit) async throws -> Bool {
+        try await becomesTrue(within: limit) { isLockFree(of: log) }
+    }
+
+    /// Makes the message of a failed check when the lock of a board stays held after the deadline.
     ///
     /// - Parameter log: The event log of the board.
-    /// - Returns: `true` when the lock is released.
-    static func isLockReleased(of log: EventLog) -> Bool {
-        let descriptor = open(log.lockFileURL.path, O_RDWR | O_CREAT | O_CLOEXEC, EventLog.lockFileMode)
-        defer { close(descriptor) }
-        return flock(descriptor, LOCK_EX) == 0
+    /// - Returns: The message, which names the lock file.
+    static func heldLockMessage(of log: EventLog) -> Comment {
+        "The lock file \(log.lockFileURL.path) stays held after \(lockWaitLimit)"
+    }
+
+    /// Does a check again and again, with a short pause between two tries, until the check is true or a deadline
+    /// passes. A blocking call has no deadline and the time limit of a test cannot stop it, so a test that waits for
+    /// a different thread or process uses this wait.
+    ///
+    /// - Parameters:
+    ///   - limit: The longest time that the wait continues.
+    ///   - condition: The check. It must not block.
+    /// - Returns: `true` when the check is true before the deadline, or `false` when the deadline passes first.
+    /// - Throws: `CancellationError` when the test is cancelled during the wait.
+    static func becomesTrue(within limit: Duration, _ condition: () -> Bool) async throws -> Bool {
+        let deadline = ContinuousClock.now + limit
+        while ContinuousClock.now < deadline {
+            if condition() {
+                return true
+            }
+            try await Task.sleep(for: retryPause)
+        }
+        return condition()
     }
 
     // MARK: - Paths
@@ -266,13 +310,28 @@ struct EventLogTests {
     // MARK: - Lock
 
     @Test("A different file descriptor cannot lock the board while the lock is held", .timeLimit(.minutes(1)))
-    func lockExcludesOtherDescriptor() throws {
+    func lockExcludesOtherDescriptor() async throws {
         let directory = try TemporaryDirectory()
         let log = EventLog(repositoryAt: directory.url)
         let lock = try log.lock()
         #expect(!Self.isLockFree(of: log))
         lock.unlock()
-        #expect(Self.isLockReleased(of: log))
+        #expect(try await Self.isLockReleased(of: log), Self.heldLockMessage(of: log))
+    }
+
+    @Test("The wait for a released lock ends at its deadline while a different descriptor holds the lock")
+    func lockWaitEndsAtDeadline() async throws {
+        let directory = try TemporaryDirectory()
+        let log = EventLog(repositoryAt: directory.url)
+        let lock = try log.lock()
+        let clock = ContinuousClock()
+        let start = clock.now
+        let isReleased = try await Self.isLockReleased(of: log, within: Self.heldLockWaitLimit)
+        let waited = start.duration(to: clock.now)
+        lock.unlock()
+        #expect(!isReleased)
+        #expect(waited >= Self.heldLockWaitLimit)
+        #expect(waited < Self.heldLockWaitLimit + Self.deadlineTolerance)
     }
 
     @Test("A second lock of the same board waits until the first lock is released")
@@ -289,12 +348,16 @@ struct EventLogTests {
         try await Task.sleep(for: Self.holdDuration)
         records.withLock { list in list.append(Self.releasedRecord) }
         first.unlock()
+        let isAcquired = try await Self.becomesTrue(within: Self.lockWaitLimit) {
+            records.withLock { list in list.contains(Self.acquiredRecord) }
+        }
+        try #require(isAcquired, Self.heldLockMessage(of: log))
         try await waiter.value
         #expect(records.withLock { list in list } == [Self.releasedRecord, Self.acquiredRecord])
     }
 
     @Test("The lock of many boards takes the boards in the sort order of the board key", .timeLimit(.minutes(1)))
-    func manyBoardsLockInKeyOrder() throws {
+    func manyBoardsLockInKeyOrder() async throws {
         let directory = try TemporaryDirectory()
         let names = ["zeta", "alpha", "mid"]
         let logs = Dictionary(
@@ -307,7 +370,9 @@ struct EventLogTests {
         let lock = try EventLog.lock(sortedByKey: logs)
         #expect(ordered.allSatisfy { log in !Self.isLockFree(of: log) })
         lock.unlock()
-        #expect(ordered.allSatisfy { log in Self.isLockReleased(of: log) })
+        for log in ordered {
+            #expect(try await Self.isLockReleased(of: log), Self.heldLockMessage(of: log))
+        }
     }
 }
 
