@@ -166,6 +166,23 @@ struct Change: Sendable {
     /// updates in slot order.
     let nodeUpdates: [NodeUpdate]
 
+    /// Gives this change with different node updates. This is the one place that copies each field of the envelope.
+    ///
+    /// - Parameter updates: The node updates of the new change.
+    /// - Returns: The change with the same envelope and these updates.
+    func replacingNodeUpdates(_ updates: [NodeUpdate]) -> Change {
+        Change(
+            txn: txn,
+            at: at,
+            actorRef: actorRef,
+            ops: ops,
+            boards: boards,
+            undone: undone,
+            undoes: undoes,
+            nodeUpdates: updates
+        )
+    }
+
     /// Resolves `Change.actor`: the actor of the transaction, in the graph of the call. A tombstoned actor resolves to
     /// the tombstone, with `deleted` set (plan.md §5.3, step 5).
     ///

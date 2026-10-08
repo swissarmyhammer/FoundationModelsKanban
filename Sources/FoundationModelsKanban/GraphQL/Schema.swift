@@ -128,7 +128,8 @@ actor BoardStore {
     ///   - current: The read view of the current board.
     /// - Returns: The node, or `nil` when no node has the ref, when the scan finds no board for the key of a URI, or
     ///   when the engine did not load the board of the URI yet.
-    /// - Throws: ``KanbanError/ambiguousID(reference:matches:)`` when the ref is a prefix of more than one ULID.
+    /// - Throws: ``KanbanError/ambiguousID(reference:matches:)`` when the ref is a prefix of more than one ULID. Each
+    ///   error of ``view(ofBoardNamed:)`` other than ``KanbanError/boardNotFound(reference:searchRoots:)``, unchanged.
     private func node(
         for reference: String,
         readingFirst current: BoardView
@@ -137,15 +138,18 @@ actor BoardStore {
             return node
         }
         let text = reference.trimmingCharacters(in: .whitespacesAndNewlines)
-        // A URI of a board that the scan cannot find names no node: the same as an id that names no node.
-        guard
-            let uri = try? NodeURI(parsing: text),
-            uri.boardKey != boardKey,
-            let board = try? view(ofBoardNamed: uri.boardKey)
-        else {
+        // A text that is not a URI names no node of a different board: each parse error means "not a URI".
+        guard let uri = try? NodeURI(parsing: text), uri.boardKey != boardKey else {
             return nil
         }
-        return try board.node(for: text)
+        let board: BoardView?
+        do throws(KanbanError) {
+            board = try view(ofBoardNamed: uri.boardKey)
+        } catch .boardNotFound {
+            // A URI of a board that the scan cannot find names no node: the same as an id that names no node.
+            return nil
+        }
+        return try board?.node(for: text)
     }
 
     /// Gives the read views of the copies of `Query.boards` (plan.md §6.6).

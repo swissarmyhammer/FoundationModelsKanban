@@ -60,6 +60,7 @@ struct CrossRepoCycleTests {
             coded: "DEPENDENCY_CYCLE"
         )
         #expect(try Design.PortabilityTests.logTexts(inRepoAt: repos.app) == before)
+        await app.close()
     }
 
     @Test("Two engines add the two halves of a cross-board cycle: the second one gets DEPENDENCY_CYCLE at its commit")
@@ -85,5 +86,6 @@ struct CrossRepoCycleTests {
             coded: "DEPENDENCY_CYCLE"
         )
         #expect(try Design.PortabilityTests.logTexts(inRepoAt: repos.lib) == before)
+        await first.close()
     }
 }

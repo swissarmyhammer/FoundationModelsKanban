@@ -214,16 +214,7 @@ extension Change {
     /// - Parameter updates: The updates to keep.
     /// - Returns: The change with the same envelope and only these updates.
     fileprivate func keeping(only updates: [NodeUpdate]) -> Change {
-        Change(
-            txn: txn,
-            at: at,
-            actorRef: actorRef,
-            ops: ops,
-            boards: boards,
-            undone: undone,
-            undoes: undoes,
-            nodeUpdates: updates
-        )
+        replacingNodeUpdates(updates)
     }
 }
 

@@ -13,6 +13,13 @@ enum GitGraphFixture {
     /// fixed source would mint the same ids.
     static let secondEngineIDs = FixedULIDSource(at: ReplayTests.date(atStep: secondEngineStep))
 
+    /// The time step of the ULIDs of a third engine on the same repos. It is after ``secondEngineStep``, so the ids of
+    /// the third engine sort after the ids of the second engine.
+    private static let thirdEngineStep = secondEngineStep + 1
+
+    /// The ULID source of a third engine on the same repos, for example a third process.
+    static let thirdEngineIDs = FixedULIDSource(at: ReplayTests.date(atStep: thirdEngineStep))
+
     /// Makes an engine for a repo that reads the board keys from git.
     ///
     /// - Parameters:

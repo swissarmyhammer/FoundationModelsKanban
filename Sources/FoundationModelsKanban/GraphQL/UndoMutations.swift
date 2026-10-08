@@ -141,22 +141,42 @@ extension BoardStore {
     ///   - text: The `txn` of the input, or `nil` for the newest target of the session actor.
     ///   - boards: The boards to search.
     /// - Returns: The transaction, and a board whose log has it.
-    /// - Throws: ``KanbanError/nothingToUndo`` when no board has a target.
+    /// - Throws: ``KanbanError/nothingToUndo`` when no board has a target. Each other error of
+    ///   ``UndoLog/target(of:named:by:)``, unchanged.
     private func newestTarget(
         of direction: ReverseDirection,
         named text: String?,
         in boards: [MutationTarget]
     ) throws(KanbanError) -> (txn: ULID, board: MutationTarget) {
-        let actor = sessionActor.ref
-        let found = boards.compactMap { board -> (txn: ULID, board: MutationTarget)? in
-            let log = UndoLog(of: workingCopy(of: board).liveEvents)
-            // A board whose log has no target is not an error: the search goes on in the next board.
-            return (try? log.target(of: direction, named: text, by: actor)).map { txn in (txn, board) }
+        let found = try boards.map { board throws(KanbanError) in
+            try reverseTarget(of: direction, named: text, in: board).map { txn in (txn: txn, board: board) }
         }
-        guard let newest = found.max(by: { lhs, rhs in lhs.txn < rhs.txn }) else {
+        guard let newest = found.compactMap(\.self).max(by: { lhs, rhs in lhs.txn < rhs.txn }) else {
             throw .nothingToUndo
         }
         return newest
+    }
+
+    /// Finds the target transaction of a reverse field in the log of one board.
+    ///
+    /// - Parameters:
+    ///   - direction: `undo` or `redo`.
+    ///   - text: The `txn` of the input, or `nil` for the newest target of the session actor.
+    ///   - board: The board to search.
+    /// - Returns: The transaction, or `nil` when the log of the board has no target. A board with no target is not an
+    ///   error: the search goes on in the next board.
+    /// - Throws: Each error of ``UndoLog/target(of:named:by:)`` other than ``KanbanError/nothingToUndo``, unchanged.
+    private func reverseTarget(
+        of direction: ReverseDirection,
+        named text: String?,
+        in board: MutationTarget
+    ) throws(KanbanError) -> ULID? {
+        let log = UndoLog(of: workingCopy(of: board).liveEvents)
+        do throws(KanbanError) {
+            return try log.target(of: direction, named: text, by: sessionActor.ref)
+        } catch .nothingToUndo {
+            return nil
+        }
     }
 
     /// Gives each board that a transaction changed: the board where the field found it, and each board that its
@@ -208,16 +228,7 @@ extension Change {
     /// - Parameter others: The changes of the transaction in the other boards.
     /// - Returns: The change, with the updates of this board first.
     fileprivate func adding(updatesOf others: ArraySlice<Change>) -> Change {
-        Change(
-            txn: txn,
-            at: at,
-            actorRef: actorRef,
-            ops: ops,
-            boards: boards,
-            undone: undone,
-            undoes: undoes,
-            nodeUpdates: nodeUpdates + others.flatMap(\.nodeUpdates)
-        )
+        replacingNodeUpdates(nodeUpdates + others.flatMap(\.nodeUpdates))
     }
 }
 
