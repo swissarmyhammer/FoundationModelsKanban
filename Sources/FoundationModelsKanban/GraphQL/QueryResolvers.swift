@@ -13,9 +13,9 @@ struct BoardView: Sendable {
     /// The current key of the board.
     let boardKey: String
 
-    /// The slots of the live tasks, in board order: by the position of the column where the task shows, then by
-    /// ordinal, then by ULID. A task with no live column to show in comes last.
-    let taskOrder: [Int]
+    /// The slots of the tasks, live and tombstoned, in board order: by the position of the column where the task
+    /// shows, then by ordinal, then by ULID. A task with no live column to show in comes last.
+    private let taskOrder: [Int]
 
     /// The directory, the search, and the events of the board, or `nil` for a view that only a graph rule, the
     /// history replay, or a test fixture reads.
@@ -38,7 +38,7 @@ struct BoardView: Sendable {
         readiness = Readiness(of: graph, inBoard: boardKey, reading: related)
         self.boardKey = boardKey
         self.source = source
-        taskOrder = Self.boardOrder(of: readiness, deleted: false)
+        taskOrder = Self.boardOrder(of: readiness)
     }
 
     /// The graph of the board.
@@ -64,17 +64,15 @@ struct BoardView: Sendable {
         NodeID(text: NodeURI(boardKey: boardKey, ref: ref).description)
     }
 
-    /// Sorts the live tasks or the tombstoned tasks of a board in board order.
+    /// Sorts the tasks of a board, live and tombstoned, in board order.
     ///
-    /// - Parameters:
-    ///   - readiness: The readiness of the tasks of the board.
-    ///   - deleted: `true` for the tombstoned tasks, `false` for the live tasks.
+    /// - Parameter readiness: The readiness of the tasks of the board.
     /// - Returns: The slots of the tasks, in board order.
-    private static func boardOrder(of readiness: Readiness, deleted: Bool) -> [Int] {
+    private static func boardOrder(of readiness: Readiness) -> [Int] {
         let columnSlots = readiness.columnOrder.slots
         let positions = Dictionary(uniqueKeysWithValues: zip(columnSlots, columnSlots.indices))
         let tasks = readiness.graph.allSlots.compactMap { slot -> (slot: Int, position: Int, task: TaskNode)? in
-            guard let task = readiness.graph.node(at: slot, as: TaskNode.self), task.fields.isDeleted == deleted else {
+            guard let task = readiness.graph.node(at: slot, as: TaskNode.self) else {
                 return nil
             }
             let position = readiness.column(ofTaskAt: slot).flatMap { column in positions[column] } ?? positions.count
@@ -201,12 +199,13 @@ extension BoardView {
     /// - Parameter isIncluded: Tells if a task is in the result.
     /// - Returns: The tasks that `isIncluded` accepts, in board order.
     func orderedTasks(where isIncluded: (TaskObject) -> Bool = { _ in true }) -> [TaskObject] {
-        taskOrder.compactMap { slot in object(at: slot) }.filter(isIncluded)
+        liveObjects(at: taskOrder).filter(isIncluded)
     }
 
-    /// The tombstoned tasks of the board in board order: the list of `tasks(deleted: true)` (plan.md §3.3, rule 3).
-    var deletedTasks: [TaskObject] {
-        Self.boardOrder(of: readiness, deleted: true).compactMap { slot in object(at: slot) }
+    /// The tasks of the board, live and tombstoned, in board order. A task list selects from them with a
+    /// ``TaskFilter``, which leaves out the tombstones unless the filter names `#DELETED` (plan.md §3.3, rule 3).
+    var allTasks: [TaskObject] {
+        taskOrder.compactMap { slot in object(at: slot) }
     }
 
     /// Finds the task that a forgiving ref names.
@@ -350,8 +349,8 @@ extension BoardObject {
         try view.task(for: arguments.id.text)
     }
 
-    /// Resolves `Board.nextTask` (plan.md §6): the first task in board order that is not done, is ready, and matches
-    /// the filter.
+    /// Resolves `Board.nextTask` (plan.md §6): the first task in board order that has the virtual tag `READY` and
+    /// matches the filter. `READY` is live, not done, and ready, so a filter that names `#DELETED` gives no tombstone.
     ///
     /// - Parameters:
     ///   - context: The context of the call. The field does not read it.
@@ -360,12 +359,13 @@ extension BoardObject {
     /// - Throws: ``KanbanError/invalidFilter(filter:position:detail:example:)`` when the filter is empty or does not
     ///   parse.
     func nextTask(context _: KanbanContext, arguments: FilterArguments) throws(KanbanError) -> TaskObject? {
-        try TaskSelection(filtering: arguments.filter, excludingDone: true).tasks(in: view, where: \.ready).first
+        let isReady: (TaskObject) -> Bool = { task in view.readiness.hasVirtualTag(.ready, taskAt: task.slot) }
+        return try TaskSelection(filtering: arguments.filter, excludingDone: true).tasks(in: view, where: isReady).first
     }
 
-    /// Resolves `Board.searchTasks` (plan.md §6.4): the live tasks that the search ranks for the query, highest score
-    /// first. The filter applies, and the done tasks are not hits unless the filter names a column, the same as in
-    /// `Board.tasks`.
+    /// Resolves `Board.searchTasks` (plan.md §6.4): the tasks that the search ranks for the query, highest score
+    /// first. The selection is the same as in `Board.tasks`: the filter applies, a tombstone is a hit only when the
+    /// filter names `#DELETED`, and the done tasks are not hits unless the filter names a column or `#DELETED`.
     ///
     /// The GraphQL field is nullable: an error gives `null` for the field and one item in `errors`, and the other
     /// fields of the board keep their data.
@@ -386,8 +386,8 @@ extension BoardObject {
         )
     }
 
-    /// Resolves `Board.tasks`: one page of the live tasks, or of the tombstoned tasks, that the filter and the scoping
-    /// arguments select, in board order (plan.md §3.3 rule 3, §6.3).
+    /// Resolves `Board.tasks`: one page of the tasks that the filter and the scoping arguments select, in board order
+    /// (plan.md §3.3 rule 3, §6.3). The list has a tombstone only when the filter names `#DELETED`.
     ///
     /// The GraphQL field is nullable: an error gives `null` for the field and one item in `errors`, and the other
     /// fields of the board keep their data.
@@ -404,7 +404,8 @@ extension BoardObject {
         let tasks = try TaskSelection(for: arguments).tasks(in: view)
         var start = tasks.startIndex
         if let cursor = arguments.after {
-            let after = try view.task(for: cursor, includingTombstones: arguments.listsDeleted)
+            // The cursor can name a tombstone of a `#DELETED` list. A task that the list does not hold is not found.
+            let after = try view.task(for: cursor, includingTombstones: true)
             guard let position = tasks.firstIndex(where: { task in task.slot == after.slot }) else {
                 throw .notFound(type: .task, reference: cursor)
             }

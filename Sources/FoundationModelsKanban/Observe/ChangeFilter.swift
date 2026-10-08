@@ -24,7 +24,8 @@ extension HistoryArguments: ChangeFilterArguments {}
 /// The filters of the change feed (plan.md §6.7, filters), with their refs resolved and their task filter parsed.
 ///
 /// `type` keeps only the updates of the node types, `node` only the updates of the node, and `filter` only the
-/// updates of the tasks that match it and of the comments on those tasks. `derived: false` leaves out the `DERIVED`
+/// updates of the tasks that match it and of the comments on those tasks. As in a task list, a tombstoned task matches
+/// only a filter that names `#DELETED` (``TaskFilter``). `derived: false` leaves out the `DERIVED`
 /// updates. `actor` keeps only the transactions of the actor. A change with no update after the filters is left out.
 ///
 /// The refs resolve one time, against the graph of the call that makes the filter. The task filter reads the graph
@@ -96,14 +97,15 @@ struct ChangeFilter: Sendable {
         return change.replacingNodeUpdates(updates)
     }
 
-    /// The test of the updates of the changes against one graph: the filters, and the evaluator of the task filter
-    /// over the graph.
+    /// The test of the updates of the changes against one graph: the filters, and the test of the task filter over
+    /// the graph.
     private struct UpdateMatcher {
         /// The filters.
         let filter: ChangeFilter
 
-        /// The evaluator of the task filter, or `nil` for no filter.
-        let evaluator: FilterEvaluator?
+        /// The test of the task filter, or `nil` for no filter. A tombstoned task passes it only when the filter names
+        /// `#DELETED`, the same as in a task list (``TaskFilter``).
+        let taskFilter: TaskFilter?
 
         /// The graph whose tasks the task filter tests.
         let graph: Graph
@@ -115,8 +117,8 @@ struct ChangeFilter: Sendable {
         ///   - view: The read view of the graph whose tasks the task filter tests.
         init(filter: ChangeFilter, view: BoardView) {
             self.filter = filter
-            evaluator = filter.expression.map { expression in
-                FilterEvaluator(evaluating: expression, over: view.readiness, inBoard: view.boardKey)
+            taskFilter = filter.expression.map { expression in
+                TaskFilter(filtering: expression, over: view.readiness, inBoard: view.boardKey)
             }
             graph = view.graph
         }
@@ -138,10 +140,10 @@ struct ChangeFilter: Sendable {
         /// - Parameter update: The update.
         /// - Returns: `true` when there is no task filter, or when the task of the update matches it.
         private func matchesTaskFilter(for update: NodeUpdate) -> Bool {
-            guard let evaluator else {
+            guard let taskFilter else {
                 return true
             }
-            return taskSlot(of: update).map(evaluator.matches(taskAt:)) ?? false
+            return taskSlot(of: update).map(taskFilter.matches(taskAt:)) ?? false
         }
 
         /// Gives the slot of the task that the task filter tests for an update: the task itself, or the task of a

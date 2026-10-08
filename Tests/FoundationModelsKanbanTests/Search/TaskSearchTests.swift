@@ -260,6 +260,19 @@ struct TaskSearchTests {
         #expect(!after.map(\.task.id).contains(deleted))
     }
 
+    @Test("A deleted task is a hit only when the filter names #DELETED")
+    func deletedTaskIsHitOnlyForDeletedFilter() async throws {
+        var fixture = try QueryFixture()
+        try fixture.delete(nodeAt: .task(DependencyMarkersTests.ulid(of: ReadinessFixture.second)))
+        let search = await fixture.makeSearch()
+        let deleted = Self.id(ofTask: ReadinessFixture.second)
+        let live = try await Self.hits(searchingWith: Self.query(Self.titleWord), in: fixture, using: search)
+        #expect(!live.map(\.task.id).contains(deleted))
+        let arguments = ##"\##(Self.query(Self.titleWord)), filter: "#DELETED""##
+        let tombstones = try await Self.hits(searchingWith: arguments, in: fixture, using: search)
+        #expect(tombstones.map(\.task.id) == [deleted])
+    }
+
     @Test("The first argument keeps only the first hits")
     func firstLimitsHits() async throws {
         let all = try await Self.hits(searchingWith: Self.query(Self.sharedWord))

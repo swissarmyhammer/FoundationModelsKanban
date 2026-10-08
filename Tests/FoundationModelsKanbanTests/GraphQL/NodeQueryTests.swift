@@ -29,6 +29,35 @@ struct NodeQueryTests {
         }
     }
 
+    /// One filter that names `#DELETED`, the task that the test deletes first, and the titles that the list gives.
+    struct DeletedFilterCase: Sendable, CustomTestStringConvertible {
+        /// The filter.
+        let filter: String
+
+        /// The ULID text of the task that the test deletes.
+        let deletedTask: String
+
+        /// The titles of the listed tasks, in board order.
+        let titles: [String]
+
+        /// Makes a case.
+        ///
+        /// - Parameters:
+        ///   - filter: The filter.
+        ///   - deletedTask: The ULID text of the task that the test deletes.
+        ///   - titles: The titles of the listed tasks, in board order.
+        init(filter: String, deleting deletedTask: String, titles: [String]) {
+            self.filter = filter
+            self.deletedTask = deletedTask
+            self.titles = titles
+        }
+
+        /// The name of the case in the test output.
+        var testDescription: String {
+            filter
+        }
+    }
+
     /// One node of each of the six node types of the fixture board.
     static let nodeCases = [
         NodeCase(typeName: GraphQLTypeName.board, ref: "board", shortForm: DependencyMarkersTests.boardKey),
@@ -231,16 +260,61 @@ struct NodeQueryTests {
         #expect(response == expected)
     }
 
-    @Test("tasks(deleted: true) lists only the deleted tasks")
-    func deletedTasksListsOnlyTombstones() async throws {
+    @Test("tasks(filter: \"#DELETED\") lists only the deleted tasks, also a deleted task in the done column")
+    func deletedFilterListsOnlyTombstones() async throws {
         var fixture = try QueryFixture()
         try fixture.delete(nodeAt: .task(DependencyMarkersTests.ulid(of: ReadinessFixture.third)))
         let response = try await fixture.respond(
-            to: "{ board { tasks(deleted: true) { totalCount edges { node { title deleted } } } } }"
+            to: ##"{ board { tasks(filter: "#DELETED") { totalCount edges { node { title deleted } } } } }"##
         )
         let expected = #"{"data":{"board":{"tasks":{"totalCount":1,"edges":[{"node":"#
             + #"{"title":"\#(QueryFixture.thirdTitle)","deleted":"\#(Self.deletedTime)"}}]}}}}"#
         #expect(response == expected)
+    }
+
+    @Test(
+        "A filter that names #DELETED selects from the live and the deleted tasks, and the filter decides",
+        arguments: [
+            DeletedFilterCase(
+                filter: "#DELETED || #\(QueryFixture.tagSlug)",
+                deleting: ReadinessFixture.third,
+                titles: [QueryFixture.firstTitle, QueryFixture.thirdTitle]
+            ),
+            DeletedFilterCase(
+                filter: "!#DELETED",
+                deleting: ReadinessFixture.first,
+                titles: [QueryFixture.secondTitle, QueryFixture.thirdTitle]
+            ),
+        ]
+    )
+    func deletedFilterCombines(filterCase: DeletedFilterCase) async throws {
+        var fixture = try QueryFixture()
+        try fixture.delete(nodeAt: .task(DependencyMarkersTests.ulid(of: filterCase.deletedTask)))
+        let response = try await fixture.respond(
+            to: #"{ board { tasks(filter: "\#(filterCase.filter)") { edges { node { title } } } } }"#
+        )
+        let edges = filterCase.titles.map { title in #"{"node":{"title":"\#(title)"}}"# }
+        #expect(response == #"{"data":{"board":{"tasks":{"edges":[\#(edges.joined(separator: ","))]}}}}"#)
+    }
+
+    @Test(
+        "A deleted task shows DELETED in virtualTags, and none of READY, BLOCKED, and BLOCKING",
+        arguments: [ReadinessFixture.first, ReadinessFixture.second]
+    )
+    func deletedTaskHasOnlyDeletedVirtualTag(task: String) async throws {
+        var fixture = try QueryFixture()
+        try fixture.delete(nodeAt: .task(DependencyMarkersTests.ulid(of: task)))
+        let response = try await fixture.respond(
+            to: #"{ node(id: "\#(QueryFixture.sigilRef(of: task))") { ... on Task { virtualTags } } }"#
+        )
+        #expect(response == #"{"data":{"node":{"virtualTags":["DELETED"]}}}"#)
+    }
+
+    @Test("The schema has no deleted argument on Board.tasks")
+    func tasksFieldHasNoDeletedArgument() throws {
+        let sdl = try PublicSchema().sdl
+        #expect(sdl.contains("  tasks(filter: String"))
+        #expect(!sdl.contains("deleted: Boolean"))
     }
 
     @Test("Comment.author returns a deleted author as the tombstone, with deleted set")

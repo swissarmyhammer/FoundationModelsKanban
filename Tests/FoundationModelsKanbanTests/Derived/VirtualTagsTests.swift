@@ -3,8 +3,8 @@ import Testing
 
 @testable import FoundationModelsKanban
 
-/// Tests the virtual tags of a task: `READY`, `BLOCKED`, `BLOCKING`, and `CONFLICT` (plan.md §5.5, §6). The tests in
-/// the "Rust" sections are the port of the tests of the Rust `virtual_tags.rs`.
+/// Tests the virtual tags of a task: `READY`, `BLOCKED`, `BLOCKING`, `CONFLICT`, and `DELETED` (plan.md §5.5, §6).
+/// The tests in the "Rust" sections are the port of the tests of the Rust `virtual_tags.rs`.
 @Suite("Virtual tags")
 struct VirtualTagsTests {
     /// Gives the virtual tags of one task of a board.
@@ -20,9 +20,9 @@ struct VirtualTagsTests {
 
     // MARK: - Rust: registry
 
-    @Test("The virtual tags are READY, BLOCKED, BLOCKING, and CONFLICT, in this order (Rust registry order)")
+    @Test("The virtual tags are READY, BLOCKED, BLOCKING, CONFLICT, and DELETED, in this order (Rust registry order)")
     func tagsInRegistryOrder() {
-        #expect(VirtualTag.allCases.map(\.rawValue) == ["READY", "BLOCKED", "BLOCKING", "CONFLICT"])
+        #expect(VirtualTag.allCases.map(\.rawValue) == ["READY", "BLOCKED", "BLOCKING", "CONFLICT", "DELETED"])
     }
 
     @Test("A virtual tag slug is upper case, and the match is case-sensitive (Rust test_is_virtual_slug)")

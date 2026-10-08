@@ -3,20 +3,42 @@ import Foundation
 /// A virtual tag: a tag that the projection calculates for a task at read time, from the board state (plan.md §5.5,
 /// §6). No patch writes it. The filter `#READY` and the other `#` atoms match it.
 ///
-/// The cases are in the order of the Rust virtual tag registry, and `CONFLICT` comes last. The raw value is the slug
-/// of the tag, and the match is case-sensitive.
+/// The cases are in the order of the Rust virtual tag registry. The new tags `CONFLICT` and `DELETED` come last. The
+/// raw value is the slug of the tag, and the match is case-sensitive.
 enum VirtualTag: String, CaseIterable, Sendable {
-    /// The task is not done, and all its dependencies are done.
+    /// The task is live, it is not done, and all its dependencies are done.
     case ready = "READY"
 
-    /// At least one dependency of the task is not done.
+    /// The task is live, and at least one dependency of the task is not done.
     case blocked = "BLOCKED"
 
-    /// The task is not done, and a live task depends on it.
+    /// The task is live, it is not done, and a live task depends on it.
     case blocking = "BLOCKING"
 
     /// The body of the task has a conflict block from a diff that could not apply.
     case conflict = "CONFLICT"
+
+    /// The task is a tombstone: it has a `deleted` time (plan.md §3.3, rule 3).
+    case deleted = "DELETED"
+}
+
+extension VirtualTag {
+    /// The virtual tags of the task states that a task list leaves out by default (plan.md §3.3 rule 3, §6.3).
+    ///
+    /// A task with one of these tags is in a list only when the filter names the tag (``FilterExpr/names(_:)``).
+    /// Then the filter decides. Thus `#DELETED` lists only the deleted tasks, and `!#DELETED` lists the live tasks.
+    static let hiddenUnlessNamed: [VirtualTag] = [.deleted]
+
+    /// Finds the virtual tag that a tag name names.
+    ///
+    /// - Parameter name: The name as a filter writes it, in any case, for example `ready`.
+    init?(named name: String) {
+        let isNamed: (Self) -> Bool = { tag in tag.rawValue.caseInsensitiveCompare(name) == .orderedSame }
+        guard let tag = Self.allCases.first(where: isNamed) else {
+            return nil
+        }
+        self = tag
+    }
 }
 
 extension Readiness {
@@ -26,30 +48,34 @@ extension Readiness {
     /// - Returns: The virtual tags that apply to the task, in the order of ``VirtualTag/allCases``. A slot that holds
     ///   no task gives no tags, because the other node types do not have virtual tags.
     func virtualTags(ofTaskAt slot: Int) -> [VirtualTag] {
-        guard graph.node(at: slot, as: TaskNode.self) != nil else {
-            return []
-        }
-        return VirtualTag.allCases.filter { tag in
-            applies(tag, toTaskAt: slot)
+        VirtualTag.allCases.filter { tag in
+            hasVirtualTag(tag, taskAt: slot)
         }
     }
 
-    /// Tells if one virtual tag applies to a task.
+    /// Tells if one virtual tag applies to a task. A tombstone has the tag `DELETED`, and it can have `CONFLICT`. It
+    /// never has `READY`, `BLOCKED`, or `BLOCKING`.
     ///
     /// - Parameters:
     ///   - tag: The virtual tag.
     ///   - slot: The slot of the task.
-    /// - Returns: `true` when the tag applies.
-    private func applies(_ tag: VirtualTag, toTaskAt slot: Int) -> Bool {
+    /// - Returns: `true` when the tag applies. A slot that holds no task gives `false`.
+    func hasVirtualTag(_ tag: VirtualTag, taskAt slot: Int) -> Bool {
+        guard let task = graph.node(at: slot, as: TaskNode.self) else {
+            return false
+        }
+        let isLive = !task.fields.isDeleted
         switch tag {
         case .ready:
-            !isDone(taskAt: slot) && isReady(taskAt: slot)
+            return isLive && !isDone(taskAt: slot) && isReady(taskAt: slot)
         case .blocked:
-            !isReady(taskAt: slot)
+            return isLive && !isReady(taskAt: slot)
         case .blocking:
-            !isDone(taskAt: slot) && !dependents(ofTaskAt: slot).isEmpty
+            return isLive && !isDone(taskAt: slot) && !dependents(ofTaskAt: slot).isEmpty
         case .conflict:
-            graph.node(at: slot)?.state.fields.hasConflict == true
+            return task.fields.hasConflict
+        case .deleted:
+            return task.fields.isDeleted
         }
     }
 }

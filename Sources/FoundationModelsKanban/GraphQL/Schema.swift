@@ -450,14 +450,8 @@ struct TasksArguments: Codable, Sendable {
     /// The number of tasks of a page when the call does not give `first`.
     static let defaultPageSize = 10
 
-    /// The list when the call does not give `deleted`: the live tasks.
-    static let listsDeletedByDefault = false
-
-    /// `true` to list only the tombstoned tasks (plan.md §3.3, rule 3). `false` or an explicit `null` lists the live
-    /// tasks.
-    let deleted: Bool?
-
-    /// The filter, for example `#bug && @alice`, or `nil` for no filter.
+    /// The filter, for example `#bug && @alice`, or `nil` for no filter. The filter `#DELETED` lists the tombstoned
+    /// tasks (plan.md §3.3, rule 3).
     let filter: String?
 
     /// The column that the tasks show in: the same as the atom `%x` in the filter.
@@ -469,8 +463,8 @@ struct TasksArguments: Codable, Sendable {
     /// The actor that the tasks are assigned to: the same as the atom `@x` in the filter.
     let assignee: NodeID?
 
-    /// `true` to leave out the done tasks. No value is `true`, or `false` when the call names a column or lists the
-    /// tombstoned tasks.
+    /// `true` to leave out the done tasks. No value is `true`, or `false` when the call names a column or the filter
+    /// names a hidden state such as `#DELETED`.
     let excludeDone: Bool?
 
     /// The maximum number of tasks of the page. A negative value gives no task. An explicit `null` gives
@@ -480,11 +474,6 @@ struct TasksArguments: Codable, Sendable {
     /// The cursor of the task before the page, or `nil` for the first page. A cursor is the `id` of a task, and a
     /// short form of the task also works.
     let after: String?
-
-    /// `true` when the call lists the tombstoned tasks.
-    var listsDeleted: Bool {
-        deleted == true
-    }
 }
 
 /// The arguments of `Board.searchTasks` (plan.md §6.4).
@@ -838,7 +827,6 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                     Argument("tag", at: \.tag)
                     Argument("assignee", at: \.assignee)
                     Argument("excludeDone", at: \.excludeDone)
-                    Argument("deleted", at: \.deleted).defaultValue(TasksArguments.listsDeletedByDefault)
                     Argument("first", at: \.first).defaultValue(TasksArguments.defaultPageSize)
                     Argument("after", at: \.after)
                 }

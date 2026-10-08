@@ -254,6 +254,32 @@ struct HistoryTests {
         #expect(Self.values(named: "id", of: taskUpdates) == [ColumnActorTests.id(of: .task(base.task))])
     }
 
+    @Test("history(filter: \"#DELETED\") keeps the DELETED update of a deleted task")
+    func historyDeletedFilterKeepsDeletedUpdate() async throws {
+        let directory = try TemporaryDirectory()
+        let base = try await ChangeBuilderTests.baseSession(inRepoAt: directory)
+        var session = base.session
+        let refs = ChangeBuilderTests.refs(of: base.task, in: session)
+        try await Self.run(eachOf: [ChangeBuilderTests.deleteTaskField(refs)], in: &session)
+        let changes = try await Self.history(with: ##"(filter: "#DELETED")"##, in: session)
+        let task = ColumnActorTests.id(of: .task(base.task))
+        #expect(Self.updateTexts(of: changes.first) == ["TASK DELETED \(task)"])
+    }
+
+    @Test("history(filter:) with a tag leaves out the updates of a deleted task, the same as a task list")
+    func historyTagFilterLeavesOutDeletedTask() async throws {
+        let directory = try TemporaryDirectory()
+        let base = try await ChangeBuilderTests.baseSession(inRepoAt: directory)
+        var session = base.session
+        let refs = ChangeBuilderTests.refs(of: base.task, in: session)
+        try await Self.run(
+            eachOf: [ChangeBuilderTests.tagField(of: refs), ChangeBuilderTests.deleteTaskField(refs)],
+            in: &session
+        )
+        let changes = try await Self.history(with: ##"(filter: "#\##(TagMutationTests.bug)")"##, in: session)
+        #expect(changes.isEmpty)
+    }
+
     @Test("history(derived: false) leaves out the DERIVED updates")
     func historyWithoutDerivedLeavesOutDerivedUpdates() async throws {
         let directory = try TemporaryDirectory()

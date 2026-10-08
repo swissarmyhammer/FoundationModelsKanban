@@ -179,7 +179,7 @@ extension FilterCompiler {
     /// - Parameter name: The tag name, the slug, or the name of a virtual tag, in any case.
     /// - Returns: The test.
     private func tagTest(named name: String) -> TaskTest {
-        let virtualTag = VirtualTag.allCases.first { tag in tag.rawValue.caseInsensitiveCompare(name) == .orderedSame }
+        let virtualTag = VirtualTag(named: name)
         let tagSlot = liveTagSlot(named: name)
         return { slot in isTagged(taskAt: slot, with: virtualTag) || isTagged(taskAt: slot, withTagAt: tagSlot) }
     }
@@ -206,7 +206,7 @@ extension FilterCompiler {
         guard let virtualTag else {
             return false
         }
-        return readiness.virtualTags(ofTaskAt: slot).contains(virtualTag)
+        return readiness.hasVirtualTag(virtualTag, taskAt: slot)
     }
 
     /// Tells if a task has a real tag, from an edge or a marker.
@@ -355,7 +355,7 @@ extension FilterCompiler {
     }
 }
 
-// MARK: - Names a column
+// MARK: - Names a column or a virtual tag
 
 extension FilterExpr {
     /// `true` when the filter names a column: it has a `%` atom or a column URL at any depth, also under a NOT.
@@ -363,13 +363,44 @@ extension FilterExpr {
     /// The `excludeDone` default of a task list is `false` for such a filter, so that `%done` lists the done tasks
     /// (plan.md §6.3, scoping arguments).
     var namesColumn: Bool {
+        containsAtom { kind, _ in kind == .column }
+    }
+
+    /// Tells if the filter names a virtual tag: it has a `#` atom or a tag URL with the name of the tag, in any case,
+    /// at any depth, also under a NOT.
+    ///
+    /// A task list uses this test for each tag of ``VirtualTag/hiddenUnlessNamed`` (``TaskFilter``).
+    ///
+    /// - Parameter virtualTag: The virtual tag.
+    /// - Returns: `true` when an atom of the filter names the tag.
+    func names(_ virtualTag: VirtualTag) -> Bool {
+        containsAtom { kind, value in kind == .tag && value.localName.flatMap(VirtualTag.init(named:)) == virtualTag }
+    }
+
+    /// Walks the filter, and tells if one of its atoms satisfies a condition.
+    ///
+    /// - Parameter predicate: The condition on the kind and the value of an atom.
+    /// - Returns: `true` when an atom at any depth, also under a NOT, satisfies the condition.
+    private func containsAtom(where predicate: (FilterAtomKind, FilterValue) -> Bool) -> Bool {
         switch self {
-        case .atom(let kind, _):
-            kind == .column
+        case .atom(let kind, let value):
+            predicate(kind, value)
         case .and(let lhs, let rhs), .or(let lhs, let rhs):
-            lhs.namesColumn || rhs.namesColumn
+            lhs.containsAtom(where: predicate) || rhs.containsAtom(where: predicate)
         case .not(let operand):
-            operand.namesColumn
+            operand.containsAtom(where: predicate)
+        }
+    }
+}
+
+extension FilterValue {
+    /// The name that the value gives in its board: the name as the filter writes it, or the local id of a URL, or
+    /// `nil` for a board URL, which has no local id. A URL of any board counts, the same as for
+    /// ``FilterExpr/namesColumn``.
+    fileprivate var localName: String? {
+        switch self {
+        case .name(let name): name
+        case .uri(let uri): uri.ref.localID
         }
     }
 }

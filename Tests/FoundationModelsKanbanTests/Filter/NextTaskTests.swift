@@ -124,6 +124,22 @@ struct NextTaskTests {
         #expect(try await fixture.nextTaskULID() == Self.second)
     }
 
+    /// Each filter that names `#DELETED`, with the next task when the first task is deleted and the second task is
+    /// assigned to ``alice``.
+    static let deletedFilterCases: [(filter: String, next: String?)] = [
+        ("#DELETED", nil),
+        ("#DELETED || @alice", second),
+    ]
+
+    @Test("A filter that names #DELETED gives no deleted task as next", arguments: deletedFilterCases)
+    func deletedFilterGivesNoTombstone(filter: String, next: String?) async throws {
+        var fixture = TaskQueryFixture()
+        fixture.board.addActor(withSlug: Self.alice, named: "Alice")
+        try fixture.board.addTask(withULID: Self.first, fields: ReadinessFixture.fields(isDeleted: true))
+        try fixture.board.addTask(withULID: Self.second, assignedTo: [Self.alice])
+        #expect(try await fixture.nextTaskULID(withFilter: filter) == next)
+    }
+
     @Test("A board where each task is deleted has no next task")
     func allDeleted() async throws {
         var fixture = TaskQueryFixture()

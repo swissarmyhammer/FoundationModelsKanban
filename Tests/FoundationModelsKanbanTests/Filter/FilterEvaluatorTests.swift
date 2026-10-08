@@ -459,4 +459,27 @@ struct FilterEvaluatorTests {
     func namesNoColumn(filter: String) throws {
         #expect(try !FilterExpr(parsing: filter).namesColumn)
     }
+
+    // MARK: - Names a virtual tag
+
+    /// Each filter of the "names DELETED" test, with `true` when it has a `#DELETED` atom at some depth.
+    static let deletedNamings: [(String, Bool)] = [
+        ("#DELETED", true),
+        ("!#deleted", true),
+        ("#bug || (@alice && #Deleted)", true),
+        (url(ofType: .tag, withID: "DELETED"), true),
+        ("#bug", false),
+        ("#READY", false),
+        ("%deleted", false),
+        ("@deleted", false),
+        ("^\(first)", false),
+    ]
+
+    @Test(
+        "A filter names the virtual tag DELETED only with a #DELETED atom, at any depth and in any case",
+        arguments: deletedNamings
+    )
+    func namesDeleted(filter: String, isNamed: Bool) throws {
+        #expect(try FilterExpr(parsing: filter).names(.deleted) == isNamed)
+    }
 }

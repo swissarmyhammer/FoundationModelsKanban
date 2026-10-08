@@ -79,8 +79,7 @@ struct TaskOperationTests {
     private static let thirdOrdinal = Ordinal(after: Ordinal(after: .first))
 
     /// A query that lists the tombstoned tasks of the board.
-    private static let deletedTasksQuery =
-        "{ board { tasks(deleted: true, excludeDone: false) { edges { node { id } } } } }"
+    private static let deletedTasksQuery = ##"{ board { tasks(filter: "#DELETED") { edges { node { id } } } } }"##
 
     /// The `input` field that names the actor ``AddUpdateTaskTests/alice``.
     static let aliceInput = actorInput(naming: AddUpdateTaskTests.alice)
@@ -680,7 +679,7 @@ struct TaskOperationTests {
 
     // MARK: - deleteTask and undeleteTask
 
-    @Test("deleteTask writes delete true, the board lists do not show the task, and tasks(deleted: true) does")
+    @Test("deleteTask writes delete true, the board lists do not show the task, and the #DELETED filter does")
     func deleteTaskHidesTask() async throws {
         let directory = try TemporaryDirectory()
         let fixture = try ColumnActorTests.makeFixtureGraph(in: directory)

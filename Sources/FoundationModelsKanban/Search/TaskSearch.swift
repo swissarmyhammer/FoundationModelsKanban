@@ -1,7 +1,8 @@
 import FoundationModelsExtras
 import FoundationModelsMetadataRegistry
 
-/// The ranked search over the live tasks of one board (plan.md §6.4, §12 item 6).
+/// The ranked search over the tasks of one board (plan.md §6.4, §12 item 6). The selection of the call
+/// (``TaskSelection``) removes a tombstone from the hits unless the filter names `#DELETED`.
 ///
 /// The search holds one `MetadataSearcher` in `.retrieval` mode: BM25, trigram, and embedding cosine (only with an
 /// embedder), fused with reciprocal rank fusion. `.selection` is not used, because it calls a language model and its
@@ -13,7 +14,7 @@ import FoundationModelsMetadataRegistry
 /// When the embedder fails, the searcher falls back to BM25 and trigram, and it records the diagnostic with swift-log.
 /// The search gives no error.
 struct TaskSearch: Sendable {
-    /// The searcher over the catalog of the live tasks.
+    /// The searcher over the catalog of the tasks, live and tombstoned.
     private let searcher: MetadataSearcher<TaskSearchItem>
 
     /// `true` when the search has an embedder. Without one, each hit gives no cosine score.
@@ -27,18 +28,19 @@ struct TaskSearch: Sendable {
         hasEmbedder = embedder != nil
     }
 
-    /// Replaces the catalog with the live tasks of a board. A task that did not change keeps its embedding.
+    /// Replaces the catalog with the tasks of a board, live and tombstoned, so that a filter that names `#DELETED`
+    /// can find a tombstone. A task that did not change keeps its embedding.
     ///
     /// - Parameter view: The read view of the board.
     func update(from view: BoardView) async {
-        await searcher.update(items: view.orderedTasks().map(TaskSearchItem.init(of:)))
+        await searcher.update(items: view.allTasks.map(TaskSearchItem.init(of:)))
     }
 
     /// Ranks the tasks for a query, and keeps the selected tasks only (plan.md §6.4, filter).
     ///
     /// `MetadataSearcher` has no filter. Thus the search asks for one match for each task of the board, and then
-    /// removes each match whose task is not in `tasks`: a task that does not pass the filter, a done task, and a task
-    /// that the view does not show live.
+    /// removes each match whose task is not in `tasks`: a task that does not pass the filter, a done task, a
+    /// tombstone when the filter does not name `#DELETED`, and a task that the view does not have.
     ///
     /// - Parameters:
     ///   - query: The search text.
