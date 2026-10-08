@@ -407,7 +407,7 @@ public actor KanbanGraph {
             feed.publish(
                 round.changes(of: session, atPath: path),
                 toBoardAt: path,
-                readingTasksOf: round.view(of: session),
+                readingNodesOf: round.view(of: session),
                 resolvingIn: eventBoard(
                     of: session,
                     reading: eventRelatedBoards(ofBoardAt: path, in: round, currentKey: current.key)

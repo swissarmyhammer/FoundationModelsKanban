@@ -21,7 +21,7 @@ struct CrossRepoEventBoardTests {
 
     /// Subscribes, on the engine of the current repo, to the task changes of the related board. A task of the related
     /// board depends on a task of the current board. Then the engine completes the task of the current board, and the
-    /// task of the related board gets a `DERIVED`-only change.
+    /// related board gets a change with the update of its task.
     ///
     /// - Parameter selection: The selection of each change.
     /// - Returns: The response of the first event, in a list. The list is empty when no event comes before the time
@@ -36,7 +36,7 @@ struct CrossRepoEventBoardTests {
         _ = try await CrossRepoFixture.addTask(dependingOn: target, on: lib)
         await lib.close()
         let libKey = try CrossRepoFixture.keyText(of: BoardLocatorTests.libOrigin)
-        let document = #"subscription { changes(board: "\#(libKey)", type: [TASK]) \#(selection) }"#
+        let document = #"subscription { changes(board: "\#(libKey)", filter: "~task") \#(selection) }"#
         let stream = try await SubscriptionTests.subscribe(document, on: app)
         _ = try await CommentTests.run(CommentTests.nodeField(MutationName.completeTask, naming: target), on: app)
         let events = try await SubscriptionTests.events(SubscriptionTests.oneEvent, of: stream)
@@ -66,7 +66,7 @@ struct CrossRepoEventBoardTests {
         await lib.close()
         let app = try GitGraphFixture.makeGraph(at: repos.app)
         let libKey = try CrossRepoFixture.keyText(of: BoardLocatorTests.libOrigin)
-        let query = #"{ board(id: "\#(libKey)") { history(first: 1) { updates(type: [TASK]) { node { id } } } } }"#
+        let query = #"{ board(id: "\#(libKey)") { history(first: 1) { updates(filter: "~task") { node { id } } } } }"#
         let response = try await KanbanGraphTests.execute(query, on: app)
         #expect(response == #"{"data":{"board":{"history":[{"updates":[{"node":{"id":"\#(target)"}}]}]}}}"#)
         await app.close()

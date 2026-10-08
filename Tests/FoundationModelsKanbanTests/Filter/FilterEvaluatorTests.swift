@@ -107,6 +107,30 @@ struct FilterEvaluatorTests {
         return board
     }
 
+    /// Evaluates a parsed filter against each node of a board, of each node type.
+    ///
+    /// - Parameters:
+    ///   - filter: The parsed filter.
+    ///   - board: The board.
+    /// - Returns: The local refs of the nodes that match, in slot order.
+    static func matchingRefs(of filter: FilterExpr, in board: ReadinessFixture) -> [LocalRef] {
+        let evaluator = FilterEvaluator(evaluating: filter, over: board.readiness, inBoard: boardKey)
+        return board.graph.allSlots.compactMap { slot in
+            evaluator.matches(nodeAt: slot) ? board.graph.node(at: slot)?.ref : nil
+        }
+    }
+
+    /// Parses a filter and evaluates it against each node of a board, of each node type.
+    ///
+    /// - Parameters:
+    ///   - filter: The text of the filter.
+    ///   - board: The board.
+    /// - Returns: The text of the local ref of each node that matches, in slot order, for example `column/todo`.
+    /// - Throws: An error when the filter does not parse.
+    static func nodeMatches(of filter: String, in board: ReadinessFixture) throws -> [String] {
+        matchingRefs(of: try FilterExpr(parsing: filter), in: board).map(\.description)
+    }
+
     /// Evaluates a parsed filter against each task of a board.
     ///
     /// - Parameters:
@@ -114,12 +138,11 @@ struct FilterEvaluatorTests {
     ///   - board: The board.
     /// - Returns: The ULID texts of the tasks that match, in slot order.
     static func matches(of filter: FilterExpr, in board: ReadinessFixture) -> [String] {
-        let evaluator = FilterEvaluator(evaluating: filter, over: board.readiness, inBoard: boardKey)
-        return board.graph.allSlots.compactMap { slot in
-            guard let task = board.graph.node(at: slot, as: TaskNode.self), evaluator.matches(taskAt: slot) else {
+        matchingRefs(of: filter, in: board).compactMap { ref in
+            guard case .task(let ulid) = ref else {
                 return nil
             }
-            return task.id.ulidString
+            return ulid.ulidString
         }
     }
 
@@ -433,7 +456,7 @@ struct FilterEvaluatorTests {
     /// Each URL after a sigil of a different kind, with the atom that has the correct sigil.
     static let wrongTypeURLs: [(String, String)] = [
         ("#\(url(ofType: .task, withID: first))", "^\(url(ofType: .task, withID: first))"),
-        ("^\(url(ofType: .tag, withID: "bug"))", "#\(url(ofType: .tag, withID: "bug"))"),
+        ("~\(url(ofType: .tag, withID: "bug"))", "#\(url(ofType: .tag, withID: "bug"))"),
         ("%\(url(ofType: .actor, withID: alice))", "@\(url(ofType: .actor, withID: alice))"),
         ("@\(url(ofType: .column, withID: "doing"))", "%\(url(ofType: .column, withID: "doing"))"),
     ]
@@ -453,9 +476,82 @@ struct FilterEvaluatorTests {
         #expect(Self.matches(of: .atom(.tag, .uri(uri)), in: try Self.sampleBoard()).isEmpty)
     }
 
+    // MARK: - Nodes of each type
+
+    /// The text of the local ref of each column of the sample board, in slot order.
+    static let sampleColumns = ReadinessFixture.defaultColumns.map { slug in LocalRef.column(slug: slug).description }
+
+    /// Gives the text of the local ref of a task.
+    ///
+    /// - Parameter text: The ULID text of the task.
+    /// - Returns: The text, for example `task/01KT6R…`.
+    /// - Throws: An error when the text is not a ULID.
+    static func taskRef(_ text: String) throws -> String {
+        LocalRef.task(try DependencyMarkersTests.ulid(of: text)).description
+    }
+
+    /// Makes a board with one task and one comment on the task.
+    ///
+    /// - Returns: The board.
+    /// - Throws: An error when a test ULID is not valid.
+    static func commentBoard() throws -> ReadinessFixture {
+        var board = ReadinessFixture()
+        board.addActor(withSlug: ReadinessFixture.author)
+        try board.addTask(withULID: first)
+        try board.addComment(withULID: ReadinessFixture.firstComment, onTask: first)
+        return board
+    }
+
+    @Test("A node type atom matches each node of the type, in any case", arguments: ["~column", "~COLUMN", "~Column"])
+    func nodeTypeAtomMatchesNodesOfType(filter: String) throws {
+        #expect(try Self.nodeMatches(of: filter, in: try Self.sampleBoard()) == Self.sampleColumns)
+    }
+
+    @Test("~task matches the tasks and no other node, and ~actor the actors")
+    func nodeTypeAtomOfTasksAndActors() throws {
+        let board = try Self.sampleBoard()
+        let tasks = try [Self.first, Self.second, Self.third, Self.fourth].map(Self.taskRef)
+        #expect(try Self.nodeMatches(of: "~task", in: board) == tasks)
+        let actors = [Self.alice, Self.will].map { slug in LocalRef.actor(slug: slug).description }
+        #expect(try Self.nodeMatches(of: "~actor", in: board) == actors)
+    }
+
+    @Test("A node type atom that names no node type matches nothing")
+    func unknownNodeTypeMatchesNothing() throws {
+        #expect(try Self.nodeMatches(of: "~project", in: try Self.sampleBoard()).isEmpty)
+    }
+
+    @Test("A task atom does not match a node of a different type, so its NOT matches each such node")
+    func taskAtomOnOtherNode() throws {
+        let board = try Self.sampleBoard()
+        #expect(try Self.nodeMatches(of: "#bug", in: board) == [try Self.taskRef(Self.first)])
+        #expect(try Self.nodeMatches(of: "%todo || @alice || #READY", in: board) == [
+            try Self.taskRef(Self.first), try Self.taskRef(Self.fourth),
+        ])
+        #expect(try Self.nodeMatches(of: "!#bug && ~column", in: board) == Self.sampleColumns)
+    }
+
+    @Test("A ref atom matches a node of a different type by its slug or its URL, and only that node", arguments: [
+        "^doing", "^\(url(ofType: .column, withID: ReadinessFixture.doing))",
+    ])
+    func refAtomMatchesColumn(filter: String) throws {
+        let doing = LocalRef.column(slug: ReadinessFixture.doing).description
+        #expect(try Self.nodeMatches(of: filter, in: try Self.sampleBoard()) == [doing])
+    }
+
+    @Test("A ref atom of a comment matches the comment, and a ref atom of the task does not match its comment")
+    func refAtomOfComment() throws {
+        let board = try Self.commentBoard()
+        let comment = LocalRef.comment(try DependencyMarkersTests.ulid(of: ReadinessFixture.firstComment))
+        let commentShortID = ShortID(ofULIDString: ReadinessFixture.firstComment).value
+        #expect(try Self.nodeMatches(of: "^\(commentShortID)", in: board) == [comment.description])
+        #expect(try Self.nodeMatches(of: "^\(Self.first)", in: board) == [try Self.taskRef(Self.first)])
+    }
+
     // MARK: - Names a virtual tag
 
-    /// Each filter of the "names DONE" test, with `true` when it has a `#DONE` atom or a column atom at some depth.
+    /// Each filter of the "names DONE" test, with `true` when it has a `#DONE` atom, a column atom, a ref atom, or a
+    /// `~task` atom at some depth.
     static let doneNamings: [(String, Bool)] = [
         ("#DONE", true),
         ("@alice && !#done", true),
@@ -464,36 +560,41 @@ struct FilterEvaluatorTests {
         ("#bug && !%done", true),
         ("(@alice || %todo) #bug", true),
         (url(ofType: .column, withID: "doing"), true),
+        ("^\(first) || #READY", true),
+        ("#bug && ~Task", true),
         ("#bug", false),
-        ("^\(first) || #READY", false),
         ("#DELETED", false),
         ("@done", false),
+        ("~column", false),
         (url(ofType: .tag, withID: "bug"), false),
     ]
 
     @Test(
-        "A filter names the virtual tag DONE with a #DONE atom or a column atom, at any depth and in any case",
+        "A filter names the virtual tag DONE with a #DONE, column, ref, or ~task atom, at any depth and in any case",
         arguments: doneNamings
     )
     func namesDone(filter: String, isNamed: Bool) throws {
         #expect(try FilterExpr(parsing: filter).names(.done) == isNamed)
     }
 
-    /// Each filter of the "names DELETED" test, with `true` when it has a `#DELETED` atom at some depth.
+    /// Each filter of the "names DELETED" test, with `true` when it has a `#DELETED` atom, a ref atom, or a `~task`
+    /// atom at some depth.
     static let deletedNamings: [(String, Bool)] = [
         ("#DELETED", true),
         ("!#deleted", true),
         ("#bug || (@alice && #Deleted)", true),
         (url(ofType: .tag, withID: "DELETED"), true),
+        ("^\(first)", true),
+        ("!~TASK", true),
         ("#bug", false),
         ("#READY", false),
         ("%deleted", false),
         ("@deleted", false),
-        ("^\(first)", false),
+        ("~comment", false),
     ]
 
     @Test(
-        "A filter names the virtual tag DELETED only with a #DELETED atom, at any depth and in any case",
+        "A filter names the virtual tag DELETED with a #DELETED, ref, or ~task atom, at any depth and in any case",
         arguments: deletedNamings
     )
     func namesDeleted(filter: String, isNamed: Bool) throws {

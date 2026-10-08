@@ -1,169 +1,64 @@
 import Foundation
 
-/// The filter arguments that `Board.history` and `Subscription.changes` share (plan.md §6.7, arguments). A client can
-/// catch up with `history(since:)` and then subscribe with the same arguments.
-protocol ChangeFilterArguments {
-    /// The node types to keep, or `nil` for all types.
-    var type: [NodeType]? { get }
-
-    /// The node to keep: a full URI or a short form, or `nil` for all nodes.
-    var node: NodeID? { get }
-
-    /// The actor of the transactions to keep: a full URI or a short form, or `nil` for all actors.
-    var actor: NodeID? { get }
-
-    /// The filter of the tasks to keep, for example `#bug`, or `nil` for no filter.
-    var filter: String? { get }
-
-    /// `false` to leave out the `DERIVED` updates. An explicit `null` keeps them.
-    var derived: Bool? { get }
-}
-
-extension HistoryArguments: ChangeFilterArguments {}
-
-/// The filters of the change feed (plan.md §6.7, filters), with their refs resolved and their task filter parsed.
+/// The filter of the change feed: the `filter` argument of `Board.history`, `Subscription.changes`, and
+/// `Change.updates` (plan.md §6.7, filters).
 ///
-/// `type` keeps only the updates of the node types, `node` only the updates of the node, and `filter` only the
-/// updates of the tasks that match it and of the comments on those tasks. As in a task list, a tombstoned task matches
-/// only a filter that names `#DELETED`, and a done task only a filter that names `#DONE` or a column
-/// (``TaskFilter``). `derived: false` leaves out the `DERIVED`
-/// updates. `actor` keeps only the transactions of the actor. A change with no update after the filters is left out.
+/// The filter keeps the updates whose node matches it. The test of a node is the test of a task list (``TaskFilter``),
+/// with the same parser, the same evaluator, and the same "hidden unless named" rule. A task atom (`#`, `@`, `%`, or a
+/// virtual tag) matches only a task. `^id` matches the node with the id, and `~type` matches each node of the type. A
+/// change with no update after the filter is left out, so a change is in the result when one update or more matches.
 ///
-/// The refs resolve one time, against the graph of the call that makes the filter. The task filter reads the graph
-/// that ``applied(to:readingTasksOf:)`` gets, so a subscription tests each task as the task is after the change.
+/// The filter reads the graph that ``applied(to:readingNodesOf:)`` gets, so a subscription tests each node as the node
+/// is after the change.
 struct ChangeFilter: Sendable {
-    /// The node types to keep, or `nil` for all types.
-    private let types: Set<NodeType>?
-
-    /// The nodes to keep, or `nil` for all nodes. A `node` argument that names no node gives an empty set.
-    private let nodes: Set<LocalRef>?
-
-    /// The stored ref of the actor of the transactions to keep, or `nil` for all actors.
-    private let actor: StoredRef?
-
-    /// The task filter, or `nil` for no filter.
+    /// The parsed filter, or `nil` for no filter.
     private let expression: FilterExpr?
 
-    /// `true` when the `DERIVED` updates stay in.
-    private let includesDerived: Bool
-
-    /// Resolves the filters of a call.
+    /// Parses the filter of a call.
     ///
-    /// - Parameters:
-    ///   - arguments: The arguments of the call.
-    ///   - view: The read view of the graph of the call. The `node` and `actor` refs resolve in it.
+    /// - Parameter filter: The filter text, for example `#bug || ~column`, or `nil` for no filter.
     /// - Throws: ``KanbanError/invalidFilter(filter:position:detail:example:)`` when the filter is empty or does not
-    ///   parse. ``KanbanError/notFound(type:reference:)`` when the `actor` names no actor.
-    ///   ``KanbanError/ambiguousID(reference:matches:)`` when the `node` is a prefix of more than one ULID.
-    init(for arguments: some ChangeFilterArguments, in view: BoardView) throws(KanbanError) {
-        let resolver = view.resolver
-        types = arguments.type.map(Set.init)
-        nodes = try arguments.node.map { id throws(KanbanError) in
-            Set(try resolver.anyLocalRef(for: id.text).map { ref in [ref] } ?? [])
-        }
-        actor = try arguments.actor.map { id throws(KanbanError) in
-            try resolver.storedRef(for: id.text, ofType: .actor, includingTombstones: true)
-        }
-        expression = try arguments.filter.map { text throws(KanbanError) in try FilterExpr(parsing: text) }
-        includesDerived = arguments.derived ?? HistoryArguments.includesDerivedByDefault
+    ///   parse.
+    init(parsing filter: String?) throws(KanbanError) {
+        expression = try filter.map { text throws(KanbanError) in try FilterExpr(parsing: text) }
     }
 
-    /// Applies the filters to some changes.
+    /// Applies the filter to some changes.
     ///
     /// - Parameters:
     ///   - changes: The changes, each of one transaction.
-    ///   - view: The read view of the graph whose tasks the task filter tests.
-    /// - Returns: Each change with the updates that the filters keep, in the order of `changes`. A change of a
-    ///   different actor, and a change with no update after the filters, is not in the list.
-    func applied(to changes: some Sequence<Change>, readingTasksOf view: BoardView) -> [Change] {
-        let matcher = UpdateMatcher(filter: self, view: view)
-        return changes.compactMap { change in applied(to: change, matching: matcher) }
+    ///   - view: The read view of the graph whose nodes the filter tests.
+    /// - Returns: Each change with the updates that the filter keeps, in the order of `changes`. A change with no
+    ///   update after the filter is not in the list.
+    func applied(to changes: some Sequence<Change>, readingNodesOf view: BoardView) -> [Change] {
+        let keeps = test(over: view)
+        return changes.compactMap { change in
+            let updates = change.nodeUpdates.filter(keeps)
+            return updates.isEmpty ? nil : change.replacingNodeUpdates(updates)
+        }
     }
 
-    /// Applies the filters to one change.
+    /// Applies the filter to the updates of one change.
     ///
     /// - Parameters:
-    ///   - change: The change of one transaction.
-    ///   - matcher: The test of each update.
-    /// - Returns: The change with the updates that the filters keep, or `nil` when the actor does not match or no
-    ///   update stays.
-    private func applied(to change: Change, matching matcher: UpdateMatcher) -> Change? {
-        guard actor.map({ actor in actor == .local(change.actorRef) }) ?? true else {
-            return nil
-        }
-        let updates = change.nodeUpdates.filter(matcher.keeps(update:))
-        guard !updates.isEmpty else {
-            return nil
-        }
-        return change.replacingNodeUpdates(updates)
+    ///   - updates: The updates.
+    ///   - view: The read view of the graph whose nodes the filter tests.
+    /// - Returns: The updates that the filter keeps, in the order of `updates`.
+    func updates(of updates: [NodeUpdate], readingNodesOf view: BoardView) -> [NodeUpdate] {
+        updates.filter(test(over: view))
     }
 
-    /// The test of the updates of the changes against one graph: the filters, and the test of the task filter over
-    /// the graph.
-    private struct UpdateMatcher {
-        /// The filters.
-        let filter: ChangeFilter
-
-        /// The test of the task filter, or `nil` for no filter. A tombstoned task passes it only when the filter names
-        /// `#DELETED`, and a done task only when it names `#DONE` or a column, the same as in a task list
-        /// (``TaskFilter``).
-        let taskFilter: TaskFilter?
-
-        /// The graph whose tasks the task filter tests.
-        let graph: Graph
-
-        /// Makes the test of the updates against the graph of a read view.
-        ///
-        /// - Parameters:
-        ///   - filter: The filters.
-        ///   - view: The read view of the graph whose tasks the task filter tests.
-        init(filter: ChangeFilter, view: BoardView) {
-            self.filter = filter
-            taskFilter = filter.expression.map { expression in
-                TaskFilter(filtering: expression, over: view.readiness, inBoard: view.boardKey)
-            }
-            graph = view.graph
+    /// Makes the test of the updates against the graph of a read view.
+    ///
+    /// - Parameter view: The read view of the graph whose nodes the filter tests.
+    /// - Returns: The test. With no filter, it keeps each update. Else it keeps an update when the graph has the node
+    ///   of the update and the node passes the filter.
+    private func test(over view: BoardView) -> (NodeUpdate) -> Bool {
+        guard let expression else {
+            return { _ in true }
         }
-
-        /// Tells if the filters keep one update.
-        ///
-        /// - Parameter update: The update.
-        /// - Returns: `true` when the update passes the type, the node, the source, and the task filter.
-        func keeps(update: NodeUpdate) -> Bool {
-            (filter.types?.contains(update.type) ?? true)
-                && (filter.nodes?.contains(update.ref) ?? true)
-                && (filter.includesDerived || update.source != .derived)
-                && matchesTaskFilter(for: update)
-        }
-
-        /// Tells if an update passes the task filter: the update is of a task that matches the filter, or of a
-        /// comment on such a task.
-        ///
-        /// - Parameter update: The update.
-        /// - Returns: `true` when there is no task filter, or when the task of the update matches it.
-        private func matchesTaskFilter(for update: NodeUpdate) -> Bool {
-            guard let taskFilter else {
-                return true
-            }
-            return taskSlot(of: update).map(taskFilter.matches(taskAt:)) ?? false
-        }
-
-        /// Gives the slot of the task that the task filter tests for an update: the task itself, or the task of a
-        /// comment.
-        ///
-        /// - Parameter update: The update.
-        /// - Returns: The slot of the task, or `nil` for an update of a different node type or a node that the graph
-        ///   does not have.
-        private func taskSlot(of update: NodeUpdate) -> Int? {
-            let slot = graph.slot(for: update.ref)
-            switch update.type {
-            case .task:
-                return slot
-            case .comment:
-                return slot.flatMap { slot in graph.node(at: slot, as: CommentNode.self) }?.task?.resolvedSlot
-            case .board, .column, .tag, .actor:
-                return nil
-            }
-        }
+        let nodeFilter = TaskFilter(filtering: expression, over: view.readiness, inBoard: view.boardKey)
+        let graph = view.graph
+        return { update in graph.slot(for: update.ref).map(nodeFilter.matches(nodeAt:)) ?? false }
     }
 }

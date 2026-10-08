@@ -10,17 +10,18 @@ typealias ChangeEvents = AsyncMapSequence<AsyncStream<ChangeEvent>, Change>
 extension KanbanResolver {
     /// Resolves the source of `Subscription.changes`: a new subscriber of the change feed (plan.md §6.7).
     ///
-    /// The subscriber observes the current board, or the board that `board` names. Its filters resolve against the
-    /// board now. GraphQLSwift runs each event with the context of this call, so before an event runs, the store of
-    /// the context gets the board of the event: the board as the engine read it through the serial gate.
+    /// The subscriber observes the current board, or the board that `board` names. Its filter tests the nodes of each
+    /// change in the board after the change. GraphQLSwift runs each event with the context of this call, so before an
+    /// event runs, the store of the context gets the board of the event: the board as the engine read it through the
+    /// serial gate.
     ///
     /// - Parameters:
     ///   - context: The context of the `subscribe` call. Its store is the store of each event.
-    ///   - arguments: The board and the filters.
+    ///   - arguments: The board and the filter.
     /// - Returns: The changes. In a run that the engine runs again after it loads the board, the stream has ended
     ///   and the subscriber is not added.
     /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for `board`. An
-    ///   error of ``ChangeFilter/init(for:in:)``. ``KanbanError/notFound(type:reference:)`` when the board has no
+    ///   error of ``ChangeFilter/init(parsing:)``. ``KanbanError/notFound(type:reference:)`` when the board has no
     ///   repo directory to watch.
     func changes(context: KanbanContext, arguments: ChangesArguments) async throws(KanbanError) -> ChangeEvents {
         let store = context.store
@@ -31,15 +32,15 @@ extension KanbanResolver {
         }
     }
 
-    /// Adds a subscriber to the change feed for the board and the filters of a `changes` field.
+    /// Adds a subscriber to the change feed for the board and the filter of a `changes` field.
     ///
     /// - Parameters:
-    ///   - arguments: The board and the filters.
-    ///   - store: The store of the `subscribe` call. It resolves the board and the filters.
+    ///   - arguments: The board and the filter.
+    ///   - store: The store of the `subscribe` call. It resolves the board.
     ///   - feed: The change feed.
     /// - Returns: The events of the subscriber, or a stream that has ended when the engine did not load the board
     ///   yet. The engine then runs the call again after the load.
-    /// - Throws: An error of ``BoardStore/view(ofBoard:)`` or of ``ChangeFilter/init(for:in:)``.
+    /// - Throws: An error of ``BoardStore/view(ofBoard:)`` or of ``ChangeFilter/init(parsing:)``.
     ///   ``KanbanError/notFound(type:reference:)`` for the board when the board has no repo directory to watch, for
     ///   example a board in memory only. The subscription then gives one response with the error, and ends.
     private static func events(
@@ -50,7 +51,7 @@ extension KanbanResolver {
         guard let view = try await store.view(ofBoard: arguments.board) else {
             return endedEvents()
         }
-        let filter = try ChangeFilter(for: arguments, in: view)
+        let filter = try ChangeFilter(parsing: arguments.filter)
         guard let directory = view.source?.directory else {
             Log.kanban.error(
                 "A subscription names a board in memory only; the subscription ends",
@@ -79,11 +80,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
         addSubscription {
             SubscriptionField("changes", as: Change.self, atSub: KanbanResolver.changes) {
                 Argument("board", at: \.board)
-                Argument("type", at: \.type)
-                Argument("node", at: \.node)
-                Argument("actor", at: \.actor)
                 Argument("filter", at: \.filter)
-                Argument("derived", at: \.derived).defaultValue(HistoryArguments.includesDerivedByDefault)
             }
         }
     }

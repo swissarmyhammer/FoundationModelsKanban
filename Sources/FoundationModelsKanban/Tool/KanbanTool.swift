@@ -16,16 +16,25 @@ public struct KanbanTool: Tool {
         { board { name nextTask { id shortId title } tasks(filter: "#bug") { edges { node { id title } } } } }
         """
 
+    /// The history example of the description: the newest changes of the tasks. The filter keeps the updates whose
+    /// node matches it: `~task` keeps the task updates, and `^id` keeps the updates of one node. A test runs it.
+    static let historyExample = """
+        { board { history(filter: "~task", first: 5) { txn ops updates { id type kind } } } }
+        """
+
     /// The name of the tool.
     public let name = "kanban"
 
-    /// The short description of the tool: its purpose, the root fields, and one example query. The description does
-    /// not hold the schema. The agent learns the schema with introspection (plan.md §12 item 10).
+    /// The short description of the tool: its purpose, the root fields, one example query, and one example of the
+    /// history filter. The description does not hold the schema. The agent learns the schema with introspection
+    /// (plan.md §12 item 10).
     public let description = """
         Reads and changes the kanban task graph of this repo with GraphQL. Send one GraphQL document in query. \
         The root query fields are board, boards, node, and nodes. Mutations, for example addTask and moveTask, \
         change the board. To learn the schema, query __schema or __type. Send the variables as a JSON object, \
-        or as a string that holds a JSON object. Example: \(KanbanTool.exampleQuery)
+        or as a string that holds a JSON object. Example: \(KanbanTool.exampleQuery) \
+        To see the changes, query board history. Its filter keeps the updates whose node matches: ~task for a node \
+        type, ^id for one node. Example: \(KanbanTool.historyExample)
         """
 
     /// The schema of the arguments: ``KanbanArguments/generationSchema``.

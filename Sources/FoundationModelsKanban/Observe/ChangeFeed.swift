@@ -87,12 +87,12 @@ final class ChangeFeed: Sendable {
     /// - Parameters:
     ///   - changes: The changes, each of one transaction, in the order of their transactions.
     ///   - path: The canonical path of the repo directory of the board.
-    ///   - view: The read view of the board now. The task filter of each subscriber tests its tasks.
+    ///   - view: The read view of the board now. The filter of each subscriber tests its nodes.
     ///   - board: The board that the resolvers of the changes read.
     func publish(
         _ changes: [Change],
         toBoardAt path: String,
-        readingTasksOf view: BoardView,
+        readingNodesOf view: BoardView,
         resolvingIn board: EventBoard
     ) {
         let subscribers = state.withLock { state in
@@ -102,7 +102,7 @@ final class ChangeFeed: Sendable {
             return subscribers.byID.values.filter { subscriber in subscriber.boardPath == path }
         }
         for subscriber in subscribers {
-            for change in subscriber.filter.applied(to: changes, readingTasksOf: view) {
+            for change in subscriber.filter.applied(to: changes, readingNodesOf: view) {
                 subscriber.continuation.yield(ChangeEvent(change: change, board: board))
             }
         }

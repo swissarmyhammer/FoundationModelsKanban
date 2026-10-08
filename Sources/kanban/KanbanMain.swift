@@ -91,8 +91,13 @@ struct WatchCommand: AsyncParsableCommand {
         abstract: "Print one JSON line for each event of a GraphQL subscription, until SIGINT (Control-C)."
     )
 
-    /// The GraphQL subscription document.
-    @Argument(help: "The GraphQL subscription document.")
+    /// The GraphQL subscription document. The help gives an example with the filter of the change feed.
+    @Argument(
+        help: """
+            The GraphQL subscription document, for example: subscription { changes(filter: "~task") { txn ops } }. \
+            The filter keeps the updates whose node matches: ~type for a node type, ^id for one node, #tag for a task.
+            """
+    )
     var subscription: String
 
     /// Prints each event of the subscription as one line, until the stream ends or SIGINT comes.

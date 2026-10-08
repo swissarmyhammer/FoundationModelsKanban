@@ -54,15 +54,6 @@ enum UpdateKind: String, Codable, Sendable, CaseIterable {
     case restored = "RESTORED"
 }
 
-/// Why a node is in a ``Change``: the GraphQL `UpdateSource` enum (plan.md §4.1, §6.7).
-enum UpdateSource: String, Codable, Sendable, CaseIterable {
-    /// A patch of the transaction changed a stored property of the node.
-    case patch = "PATCH"
-
-    /// No patch changed the node, but a derived field of the node changed.
-    case derived = "DERIVED"
-}
-
 // MARK: - Field change
 
 /// The change of one public field of a node in a transaction: the GraphQL `FieldChange` type (plan.md §4.1, §6.7).
@@ -106,14 +97,11 @@ struct NodeUpdate: Sendable {
     /// How the transaction changed the node.
     let kind: UpdateKind
 
-    /// `PATCH` when a patch changed the node, `DERIVED` when only a derived field changed.
-    let source: UpdateSource
-
     /// The changes of the public fields of the node, in the order of the fields of the node type.
     let fields: [FieldChange]
 
-    /// The current key of the board of the node. For a `DERIVED` update that a transaction of a different board makes
-    /// (plan.md §6.7), it is not the first key of ``Change/boards``.
+    /// The current key of the board of the node. For an update that a transaction of a different board makes
+    /// (plan.md §6.7, updates across boards), it is not the first key of ``Change/boards``.
     let boardKey: String
 
     /// Resolves `NodeUpdate.node`: the node now, in the graph now of the board of the node: the current board or a
@@ -132,19 +120,11 @@ struct NodeUpdate: Sendable {
 
 // MARK: - Change
 
-/// The arguments of `Change.updates`: the filters of the updates (plan.md §4.1).
-struct UpdatesArguments: Codable, Sendable {
-    /// The node types to keep, or `nil` for all types.
-    let type: [NodeType]?
-
-    /// The node to keep: a full URI or a short form, or `nil` for all nodes.
-    let node: NodeID?
-}
-
 /// One transaction (one tool call): the GraphQL `Change` type (plan.md §4.1, §6.5, §6.7).
 ///
-/// A change has one ``NodeUpdate`` for each node that the transaction changed, and one `DERIVED` update for each node
-/// whose derived fields changed. ``ChangeBuilder`` makes it from the projection before and after the transaction.
+/// A change has one ``NodeUpdate`` for each node that the transaction changed: each node that a patch of the
+/// transaction wrote, and each other node whose fields changed because of the transaction. One node has at most one
+/// update. ``ChangeBuilder`` makes it from the projection before and after the transaction.
 struct Change: Sendable {
     /// The transaction ULID.
     let txn: NodeID
@@ -167,8 +147,8 @@ struct Change: Sendable {
     /// The transaction that this transaction reverses, only for `undo` and `redo`.
     let undoes: NodeID?
 
-    /// The updates of the nodes: the `PATCH` updates in the order of the first patch of each node, then the `DERIVED`
-    /// updates in slot order.
+    /// The updates of the nodes: the updates of the patched nodes in the order of the first patch of each node, then
+    /// the updates of the other nodes in slot order.
     let nodeUpdates: [NodeUpdate]
 
     /// Gives this change with different node updates. This is the one place that copies each field of the envelope.
@@ -190,8 +170,8 @@ struct Change: Sendable {
 
     /// Resolves `Change.actor`: the actor of the transaction, in the graph now of the board of the transaction. The
     /// first key of ``boards`` names that board: the current board or a related board (plan.md §6.6). The ref of the
-    /// actor is local to that board, also for a `DERIVED`-only change that a board gets for a transaction of a board
-    /// that it depends on (plan.md §6.7). A tombstoned actor resolves to the tombstone, with `deleted` set (plan.md
+    /// actor is local to that board, also for a change that a board gets for a transaction of a board that it depends
+    /// on (plan.md §6.7). A tombstoned actor resolves to the tombstone, with `deleted` set (plan.md
     /// §5.3, step 5).
     ///
     /// - Parameters:
@@ -208,24 +188,25 @@ struct Change: Sendable {
         return ActorObject(view: view, slot: slot, state: state)
     }
 
-    /// Resolves `Change.updates`: the updates that match the filters.
+    /// Resolves `Change.updates`: the updates whose node matches the filter (``ChangeFilter``).
     ///
-    /// The GraphQL field is nullable: an error gives `null` for the field and one item in `errors`, and the other
-    /// fields keep their data.
+    /// The filter tests each node in the graph now of the board of the updates: the current board or a related board
+    /// (plan.md §6.6). The GraphQL field is nullable: an error gives `null` for the field and one item in `errors`,
+    /// and the other fields keep their data.
     ///
     /// - Parameters:
-    ///   - context: The context of the call. Its store resolves the `node` filter.
-    ///   - arguments: The filters.
-    /// - Returns: The updates, in the order of ``nodeUpdates``. The value is never `nil`. The optional type makes the
-    ///   GraphQL field nullable.
-    /// - Throws: ``KanbanError/ambiguousID(reference:matches:)`` when the `node` filter is a prefix of more than one
-    ///   ULID.
-    func updates(context: KanbanContext, arguments: UpdatesArguments) async throws(KanbanError) -> [NodeUpdate]? {
-        let view = await context.store.view
-        let node = try arguments.node.map { id throws(KanbanError) in try view.resolver.anyLocalRef(for: id.text) }
-        return nodeUpdates.filter { update in
-            (arguments.type?.contains(update.type) ?? true) && (node.map { ref in ref == update.ref } ?? true)
+    ///   - context: The context of the call. Its store finds the board of the updates.
+    ///   - arguments: The filter.
+    /// - Returns: The updates that the filter keeps, in the order of ``nodeUpdates``. With no filter, each update. The
+    ///   value is never `nil`. The optional type makes the GraphQL field nullable.
+    /// - Throws: An error of ``ChangeFilter/init(parsing:)`` or of ``KanbanContext/view(ofBoardOfChange:)``.
+    func updates(context: KanbanContext, arguments: FilterArguments) async throws(KanbanError) -> [NodeUpdate]? {
+        let filter = try ChangeFilter(parsing: arguments.filter)
+        guard arguments.filter != nil, let first = nodeUpdates.first else {
+            return nodeUpdates
         }
+        let view = try await context.view(ofBoardOfChange: first.boardKey)
+        return filter.updates(of: nodeUpdates, readingNodesOf: view)
     }
 }
 
@@ -259,7 +240,6 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
         add {
             Self.enumType(NodeType.self)
             Self.enumType(UpdateKind.self)
-            Self.enumType(UpdateSource.self)
             Type(Change.self) {
                 Field("txn", at: \.txn)
                 Field("at", at: \.at)
@@ -269,15 +249,13 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Field("undone", at: \.undone)
                 Field("undoes", at: \.undoes)
                 Field("updates", at: Change.updates) {
-                    Argument("type", at: \.type)
-                    Argument("node", at: \.node)
+                    Argument("filter", at: \.filter)
                 }
             }
             Type(NodeUpdate.self) {
                 Field("id", at: \.id)
                 Field("type", at: \.type)
                 Field("kind", at: \.kind)
-                Field("source", at: \.source)
                 Field("fields", at: \.fields)
                 Field("node", at: NodeUpdate.node)
             }

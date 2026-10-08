@@ -42,8 +42,8 @@ struct CrossRepoActorTests {
         await app.close()
     }
 
-    @Test("A DERIVED-only change of a subscription gives the actor of the board of the transaction")
-    func derivedChangeGivesActorOfTransactionBoard() async throws {
+    @Test("A change of a subscription for a transaction of a related board gives the actor of that board")
+    func otherBoardChangeGivesActorOfTransactionBoard() async throws {
         let repos = try await CrossRepoFixture.SideBySide.make()
         let lib = try Self.makeLibGraph(in: repos)
         let target = try await CrossRepoFixture.addTask(with: "", on: lib)

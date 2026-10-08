@@ -9,6 +9,26 @@ command-line tool. Each board is an event log in the `.kanban/` directory of
 its git repo. The port is not complete. See [plan.md](plan.md) for the design
 and the port order.
 
+## Examples
+
+Each list takes one `filter` (plan.md §6.3). The same filter selects the tasks
+of a list and the updates of the change feed:
+
+```sh
+kanban '{ board { tasks(filter: "#bug && @alice") { edges { node { id title } } } } }'
+kanban '{ board { history(filter: "~column", first: 5) { txn ops updates { id kind } } } }'
+kanban '{ board { history(filter: "^01jabcd") { txn actor { name } updates { fields { name before after } } } } }'
+kanban watch 'subscription { changes(filter: "#bug || ~comment") { txn ops updates { id type kind } } }'
+```
+
+- `~type` keeps the updates of one node type: `~task`, `~column`, `~tag`,
+  `~actor`, `~comment`, or `~board`.
+- `^id` keeps the updates of one node. On a task, it also keeps the updates of
+  the tasks that depend on it.
+- A task atom (`#tag`, `@actor`, `%column`) matches only a task.
+- `history` and `changes` take no `type`, `node`, `actor`, or `derived`
+  argument. To get the author of a change, read `actor` of the `Change`.
+
 ## Run the tests
 
 A package boundary separates the two test suites:

@@ -194,20 +194,19 @@ type Board implements Node {
   searchTasks(query: String!, filter: String, first: Int = 10): [TaskHit!]!   # §6.4
   summary: BoardSummary!              # counts: total, ready, blocked, done, percent
   path: String                        # repo directory of this copy (§6.6); null only for a board in memory
-  history(type: [NodeType!], node: ID, actor: ID, filter: String, derived: Boolean = true,
-          since: ID, first: Int = 20): [Change!]!   # §6.5, newest first; since = only after that txn (§6.7)
+  history(filter: String, since: ID, first: Int = 20): [Change!]!
+                                      # §6.5, newest first; since = only after that txn (§6.7)
 }
 
 type Change {                         # one transaction (one tool call); §6.5, §6.7
   txn: ID!  at: DateTime!  actor: Actor!  ops: [String!]!  boards: [String!]!
   undone: Boolean!  undoes: ID
-  updates(type: [NodeType!], node: ID): [NodeUpdate!]!   # one item for each node that changed
+  updates(filter: String): [NodeUpdate!]!   # one item for each node that changed; at most one for each node
 }
 type NodeUpdate {
   id: ID!                             # the node URI; always set, also for a deleted node
   type: NodeType!                     # BOARD | COLUMN | TASK | TAG | ACTOR | COMMENT
   kind: UpdateKind!                   # CREATED | UPDATED | DELETED | RESTORED
-  source: UpdateSource!               # PATCH (a stored property changed) | DERIVED (only a derived field changed)
   fields: [FieldChange!]!
   node: Node                          # the node now; for DELETED, the tombstone with `deleted` set
 }
@@ -218,7 +217,8 @@ type FieldChange {
   diff: String                        # only for "body": a unified diff from before to after (§5.5)
 }
 # Change.boards has one key when the transaction changed one board.
-# history(node:) and changes(node:) match a Change that has an update for that node.
+# The filter of history, changes, and Change.updates keeps the updates whose node matches it (§6.3, §6.7). For
+# example, history(filter: "^<id>") gives the Changes that have an update of that node.
 
 type Column implements Node { id: ID!  body: String!  name: String!  order: Int!  tasks(filter: String): [Task!]! }
 type Actor  implements Node { id: ID!  body: String!  name: String!  color: String  tasks(filter: String): [Task!]! }
@@ -250,8 +250,7 @@ type Task implements Node {
 type Comment implements Node { id: ID!  body: String!  shortId: String!  task: Task!  author: Actor!  created: DateTime!  updated: DateTime! }
 
 type Subscription {
-  changes(board: String, type: [NodeType!], node: ID, actor: ID, filter: String,
-          derived: Boolean = true): Change!   # §6.7; the live form of history
+  changes(board: String, filter: String): Change!   # §6.7; the live form of history
 }
 
 type Query {
@@ -650,10 +649,11 @@ and_expr = not_expr (("&&"|"and"|"AND")? not_expr)*      // two terms next to ea
 not_expr = ("!"|"not"|"NOT") not_expr | atom
 atom     = "#" body | "@" body | "^" body                 // the Rust atoms, unchanged
          | "%" body                                      // new: column
+         | "~" body                                      // new: node type
          | url                                           // new: a bare kanban:// URL
          | "(" expr ")"
 url      = "kanban://" body
-body     = [^ \t\n\r#@^%$()&|!]+
+body     = [^ \t\n\r#@^%~$()&|!]+
 ```
 
 `$` stays out of `body`, so that `$x` is a clear parse error and not part of an atom.
@@ -664,7 +664,7 @@ body     = [^ \t\n\r#@^%$()&|!]+
 |---|---|
 | `#tag` | Tasks with this tag, from an edge or a `#marker` (§6.1), after the rename redirect (§6.2). Also the virtual tags `READY`, `BLOCKED`, `BLOCKING`, and the new `CONFLICT`, `DELETED`, and `DONE`. `#DELETED` also lets the list select the tombstones, and `#DONE` the done tasks (§3.3, rule 3). |
 | `@user` | Tasks assigned to this actor, by actor slug or by the slug of the actor name. |
-| `^id` | The task itself, or a task with this `dependsOn` target (from an edge or a marker). `id` can be a full ULID, a 7-character short id, `^short`, or a unique ULID prefix. |
+| `^id` | The task itself, or a task with this `dependsOn` target (from an edge or a marker). `id` can be a full ULID, a 7-character short id, `^short`, or a unique ULID prefix. In the change feed (§6.7), `^id` also matches a node of a different type: a column or tag slug, an actor slug, a comment id, or the URL of the node. `^id` names `DONE` and `DELETED`, so `^id` also selects a done task or a tombstone. |
 | `&&` / `and` / `AND` | Both sides. |
 | `\|\|` / `or` / `OR` | Either side. AND binds tighter than OR. |
 | `!` / `not` / `NOT` | Negation. The keywords need a word boundary, so `nothing` is not `not`. |
@@ -687,6 +687,17 @@ body     = [^ \t\n\r#@^%$()&|!]+
 - Thus, `%review || (%todo && #READY)` is one filter. In Rust, it needed two calls with the `column` param.
 - A `%` atom (or a column URL) names `DONE` (see **Default selection**). Thus, `%done` lists the done tasks.
 
+**New: `~type`.** The prefix `~` was free in the Rust grammar. `$` was not used, because `$x` must stay the clear error of the removed `$project`.
+
+| Syntax | Matches |
+|---|---|
+| `~task`, `~column`, `~tag`, `~actor`, `~comment`, `~board` | Each node of this type. The match ignores case. A name that is not a node type matches nothing. |
+
+- `~type` is for the change feed (§6.7): `history(filter: "~column")` gives the column updates. In a task list, `~task` matches each task, and the other types match nothing.
+- `~task` names `DONE` and `DELETED`, so `~task` also selects a done task or a tombstone. The other types name no hidden tag.
+- A task atom (`#`, `@`, `%`, and the virtual tags) matches only a task. On a node of a different type it is false, so its NOT is true. Thus `#bug` gives no comment update; use `#bug || ~comment`.
+- `~` takes no URL. Use `^` with a URL, or a bare URL.
+
 **New: `kanban://` URLs.** A URL can be the body of an atom, or it can be an atom by itself. The `body` rule already accepts `:` and `/`, so the Rust grammar needs only the bare `url` atom.
 
 | Syntax | Matches |
@@ -702,7 +713,7 @@ body     = [^ \t\n\r#@^%$()&|!]+
 
 - Thus, an agent can copy an `id` from a GraphQL result directly into a filter.
 - A URL whose key is the current key of the board resolves in that board, the same as a local ref (§3.2). A tag, actor, or column URL with the key of a different board matches nothing, because those edges stay in one board (§6.6).
-- A URL of the wrong type for its sigil (for example `#kanban://…/task/…`), or a board or comment URL, gives `INVALID_FILTER`. The message gives the correct form.
+- A URL of the wrong type for its sigil (for example `#kanban://…/task/…`) gives `INVALID_FILTER`. The message gives the correct form. A bare board or comment URL also gives `INVALID_FILTER`: the message tells the agent to put `^` before it. `^` takes a URL of each node type.
 
 **Only the filter selects.** A task list takes only `filter`, and `first` and `after` for paging. The Rust `list tasks` params `tag`, `assignee`, `column`, `project`, and `excludeDone` are removed, and there is no `deleted` argument. The agent writes the atom instead: `#x`, `@x`, `%x`. The shortcut mutations (for example `completeTask`) stay.
 
@@ -715,7 +726,7 @@ body     = [^ \t\n\r#@^%$()&|!]+
 
 The same rule applies to each place where `filter` applies (below). The `tasks` field of a `Column`, an `Actor`, or a `Tag` is `Board.tasks` with the filter `<atom of the node> && (<filter>)`. Thus a column lists its done tasks, and an actor or a tag lists a done task only when the filter names `#DONE`.
 
-**Where `filter` applies:** `tasks`, `nextTask`, `searchTasks`, the `tasks` fields of `Column`, `Actor`, and `Tag`, `history`, and `Subscription.changes`.
+**Where `filter` applies:** `tasks`, `nextTask`, `searchTasks`, the `tasks` fields of `Column`, `Actor`, and `Tag`, `history`, `Subscription.changes`, and `Change.updates`. In the last three, the filter tests the node of each update (§6.7).
 
 ### 6.4 Search
 
@@ -761,7 +772,7 @@ Undo uses the event log. It never deletes or changes a line in the log. It appen
 - **Conflict.** A later transaction that is not undone can change the same property of the same node (for a set: the same member). For a node that the transaction made, a later edge to that node is also a conflict. For the body, the rule is different: a later edit to the body is a conflict only if the reversed diff does not apply to the current body with the rules of §5.5. Thus, an undo of a body change works after a later change to other lines. In a conflict, `undo` writes nothing and returns `UNDO_CONFLICT`. The error gives the later transactions. `undo(txn: <id>, force: true)` writes the inverse anyway, and the undo then wins (last write wins).
 - **Graph rules still apply.** An inverse that breaks a rule in §3.3 is refused. For example, an undo of `deleteColumn` that would put back a column is accepted, but an undo of `addColumn` when the column now has tasks gives `COLUMN_NOT_EMPTY`.
 - **Many boards.** A transaction that changes more than one board records the keys of the other boards in `boards` on each of its patches (§5.1). This is possible because the call writes all its patches at the end (§5.4). `undo` and `redo` of such a transaction need all those boards. If one board is not in the index, they write nothing and return `NOT_FOUND`, and the message names the missing board.
-- **`history`** (on `Board`) lists the transactions that changed that board, newest first, with `txn`, time, actor, `ops`, `boards`, `undone`, and the `updates` of each node (§6.7). It can filter by node and by actor. The agent uses it to find a `txn` to undo.
+- **`history`** (on `Board`) lists the transactions that changed that board, newest first, with `txn`, time, actor, `ops`, `boards`, `undone`, and the `updates` of each node (§6.7). It takes only a filter (§6.3), and `since` and `first` for paging. For example, `history(filter: "^<id>")` gives the transactions that changed one node, and `history(filter: "~column")` the transactions that changed a column. The actor of a transaction is `Change.actor`: there is no actor filter, because `@x` means only "assigned to x". The agent uses it to find a `txn` to undo.
 - **Result.** `undo` and `redo` return the `Change` that they wrote. The caller can select its `updates` (§6.7).
 
 See §12, item 12.
@@ -803,18 +814,21 @@ GraphQL has a standard operation to observe changes: `subscription`. `KanbanGrap
 ```graphql
 subscription { changes(board: "FoundationModelsMultitool", filter: "#kanban") {
   txn at actor { name } ops
-  updates { id type kind source fields { name before after added removed }
+  updates { id type kind fields { name before after added removed }
             node { ... on Task { title column { name } ready } } } } }
 ```
+
+More filters: `filter: "~column"` gives the column updates, `filter: "^<id>"` the updates of one node, and
+`filter: "#bug || ~comment"` the updates of the tasks with the tag `bug` and of each comment.
 
 - **One event type.** A subscription sends `Change`, the same type that `history` returns (§6.5). Thus, a subscription is the live form of `history`, and there is no second event type.
 - **All node types.** A `Change` has one `NodeUpdate` for each node that the transaction changed: `Board`, `Column`, `Task`, `Tag`, `Actor`, and `Comment`. A client can show each update without one more query.
 - **Kind.** `CREATED` for the first patch of a node. `DELETED` for `delete: true`. `RESTORED` for `delete: false`. `UPDATED` for each other change.
 - **Fields.** Each `FieldChange` gives the public field name and the values before and after the transaction. A list field (for example `tags`, `assignees`, `dependsOn`) gives `added` and `removed`. The `body` field gives only `diff`, a unified diff from the body before the transaction to the body after it (§5.5). `before` and `after` are null for `body`, so that a large body is not sent two times. A client that needs the full text selects `node { body }`. `KanbanGraph` calculates the values from the projection just before and just after the transaction. Thus, the values are the same that a query shows, not the raw patch.
-- **Derived updates.** A change to one node can change derived fields of other nodes. For example, `completeTask` on task A can make task B `ready`, change `blockedBy` and `virtualTags` of B, and change `Board.summary`. Also, a tag rename or a tag delete changes `tags` of each task that uses the tag. `KanbanGraph` compares the derived fields (§5.3, step 4) and the read-time tags (§6.1) of each task in the changed boards, before and after. It adds a `NodeUpdate` with `source: DERIVED` for each node whose values changed. The data is small, so a full compare is fast enough. `derived: false` on `changes` leaves these updates out.
-- **Derived updates across boards.** A `dependsOn` edge can point to a task in a related board. When that task changes, the tasks that depend on it can become ready. Each loaded board has its own watcher (§5.6). Thus, `KanbanGraph` loads, and so watches, each board that a `dependsOn` edge of a board with a subscriber reaches.
-- **Filters.** `type` keeps only updates of these node types. `node` keeps only updates of this node. `filter` (§6.3) keeps only updates of tasks that match it, and of the comments on those tasks. A tombstoned task matches only a filter that names `#DELETED`, and a done task only a filter that names `#DONE` or a column, the same as in a task list (§3.3 rule 3, §6.3). Thus `filter: "#DELETED"` keeps the `DELETED` update of a task, and `filter: "#DONE"` keeps the updates of a done task. A `Change` with no update after the filters is not sent.
-- **Arguments.** `board` (no value = the current repo), `type`, `node`, `actor`, `filter`, and `derived`. `history` takes the same filters, so that a client can catch up with `history(since:)` and then subscribe with the same arguments.
+- **Updates of other nodes.** A change to one node can change derived fields of other nodes. For example, `completeTask` on task A can make task B `ready`, change `blockedBy` and `virtualTags` of B, and change `Board.summary`. Also, a tag rename or a tag delete changes `tags` of each task that uses the tag. `KanbanGraph` compares the derived fields (§5.3, step 4) and the read-time tags (§6.1) of each task in the changed boards, before and after. It adds a `NodeUpdate` for each node whose values changed. The data is small, so a full compare is fast enough. An update does not tell if a patch or a derived field changed the node: an update is an update. One node has at most one update in one `Change`, with all its changed fields. These updates are always in the result when their node matches the filter.
+- **Updates across boards.** A `dependsOn` edge can point to a task in a related board. When that task changes, the tasks that depend on it can become ready. Each loaded board has its own watcher (§5.6). Thus, `KanbanGraph` loads, and so watches, each board that a `dependsOn` edge of a board with a subscriber reaches.
+- **Filter.** `filter` (§6.3) keeps the updates whose node matches it. The parser, the evaluator, and the "hidden unless named" rule are the ones of a task list. `~type` keeps the updates of a node type, and `^id` the updates of one node (on a task, also of the tasks that depend on it). A task atom matches only a task, so `#bug` keeps no comment update. A tombstoned task matches only a filter that names `#DELETED` (or `^` or `~task`), and a done task only a filter that names `#DONE`, a column, `^`, or `~task` (§3.3 rule 3, §6.3). Thus `filter: "#DELETED"` keeps the `DELETED` update of a task, and `filter: "#DONE"` keeps the updates of a done task. A `Change` is in the result when one update or more matches. A `Change` with no update after the filter is not sent. `Change.updates(filter:)` applies the same filter to the updates of one `Change`.
+- **Arguments.** `changes` takes `board` (no value = the current repo) and `filter`. `history` takes the same `filter`, and `since` and `first` for paging, so that a client can catch up with `history(since:)` and then subscribe with the same filter. There is no `type`, `node`, `actor`, or `derived` argument: `~type` and `^id` replace `type` and `node`. A client that wants the author of a change reads `Change.actor`, for example to drop its own changes.
 - **Changes from this process.** When `KanbanGraph` commits a call (§5.4), it sends the `Change` to each matching subscriber at once.
 - **Changes from other processes, `git pull`, or a merge.** The file watcher of the board (§5.6) applies the changed files to the live graph and finds the event ids that are new. It does not use file positions, because a `union` merge can rewrite a file. It groups the new events by `txn` and sends one `Change` for each transaction, in `txn` order. The values before and after come from the live graph before and after the batch.
 - **Serial gate.** A subscription stream does not hold the serial gate of `execute` (§7.2). Each `Change` is resolved through the gate, one at a time.
@@ -988,7 +1002,7 @@ Each step must compile and pass its tests before the next step starts.
 13. **Search.** `searchTasks` with `MetadataSearcher` (§6.4). Test it first with no embedder, then with an injected fake embedder.
 14. **Undo and redo.** The inverse table, the undone state derived from the log, conflict detection, `force`, and the `history` query (§6.5), in one board.
 15. **Cross-repo.** `BoardLocator` (scan, search roots, index), board refs, `Query.board(id:)` and `boards`, the `board` field on mutations, multi-board locks, the replay scope (§5.4), enabling a related repo, and `undo` of a transaction that spans boards (§6.6). Unknown targets count as not done.
-16. **Observe changes.** `Change` with `NodeUpdate` and `FieldChange` for all node types, the before-and-after compare with derived updates, `Subscription.changes` with its filters, `history(since:)`, the change feed for commits in this process and for batches from the file watcher, and `kanban watch` (§6.7).
+16. **Observe changes.** `Change` with `NodeUpdate` and `FieldChange` for all node types, the before-and-after compare with the updates of derived fields, `Subscription.changes` with its filter, `history(since:)`, the change feed for commits in this process and for batches from the file watcher, and `kanban watch` (§6.7).
 17. **Tool and CLI.** `KanbanTool`, `KanbanArguments`, the short tool description with its tested example, and the `kanban` CLI.
 18. **Multitool proof.** A test that registers the tool in a `MultiTool.Builder` and runs a `runCode` script that adds a task, reads `nextTask`, and moves the task. The script passes `variables` once as an object and once as a JSON string.
 
@@ -1042,7 +1056,7 @@ Each step must compile and pass its tests before the next step starts.
   - Two temporary repos side by side: `addTask(board: "<related>")` writes to the related log. A related repo with no `.kanban/` gets a new board on its first mutation. A task in one board depends on a task in the other, and `ready` changes when the other task is done. One call that changes both boards is reversed by one `undo`.
   - A `dependsOn` cycle is refused.
   - Broken merged states (§5.3): two branches each add half of a dependency cycle; one branch deletes a column while another moves a task into it; two branches make a rename cycle. After a `union` merge, replay succeeds and the projection follows §5.3.
-  - Updates of all node types: for each public mutation, the `Change` has one `NodeUpdate` for each changed node, with the correct `kind`, and `FieldChange` values that equal a query before and after. `completeTask` on A gives a `DERIVED` update for B (`ready`, `blockedBy`, `virtualTags`) and for the board (`summary`). A tag rename gives `DERIVED` `tags` updates for the tasks that use the tag. `derived: false` leaves them out.
+  - Updates of all node types: for each public mutation, the `Change` has one `NodeUpdate` for each changed node, with the correct `kind`, and `FieldChange` values that equal a query before and after. `completeTask` on A gives an update for B (`ready`, `blockedBy`, `virtualTags`) and for the board (`summary`). A tag rename gives `tags` updates for the tasks that use the tag. One node has at most one update in one `Change`. `filter: "~board"` keeps only the board update, and `filter: "^<id>"` only the updates of that node.
   - Subscriptions: a commit in this process sends one `Change` to a matching subscriber. A log line that another process appends sends one `Change`. A `union` merge that rewrites a file sends only the new transactions. A `subscription` sent through the tool gives `SUBSCRIPTION_NOT_IN_TOOL`. `history(since:)` returns only the later transactions.
   - Two concurrent `execute` calls on one `KanbanGraph` run one at a time (the serial gate of §7.2).
   - Two processes add the two halves of a `dependsOn` cycle across two boards at the same time: one call gets `DEPENDENCY_CYCLE` after its commit check.
@@ -1089,12 +1103,12 @@ The owner made each decision below.
 14. **Mutation name order. — DECIDED.** Each mutation has the noun in its name. A generic mutation with the type as a parameter is not used, because GraphQL has no generics. The tool accepts both orders, verbNoun (`addTask`) and nounVerb (`taskAdd`), and also the verb synonyms. The SDL uses verbNoun as the one canonical form. A rewrite step before validation does the mapping (§4.5).
 15. **Tag rename. — DECIDED.** Tags use the slug as identifier. A rename makes a redirect (§6.2): the old tag gets `renamedTo`, and the projection follows it for edges and for `#markers`. No task patches are necessary, and concurrent branches stay correct. A rename that changes only `name`, and a rename that changes the edge on each task, are not used.
 16. **Forgiving names. — DECIDED.** The rewrite of §4.5 applies to every name: mutations, selection fields, arguments and `input` fields, enum values, and root query fields. It matches by style and case, singular and plural, an alias table, and one wrong letter. It never guesses on a tie, and it reports each change in `extensions.rewrites`.
-17. **Observe changes. — DECIDED.** Use GraphQL subscriptions (`Subscription.changes`) on `KanbanGraph`. The event is `Change`, the same type as `history`. It has one `NodeUpdate` for each changed node of all six types, with field values before and after, and `DERIVED` updates for nodes whose derived fields changed (for example a task that becomes ready). Commits in this process are sent at once. Changes from other processes and merges come from the file watcher of the board (§5.6, item 25). The tool takes a `KanbanGraph` in its constructor and does not run subscriptions; an agent polls with `history(since:)`.
+17. **Observe changes. — DECIDED.** Use GraphQL subscriptions (`Subscription.changes`) on `KanbanGraph`. The event is `Change`, the same type as `history`. It has one `NodeUpdate` for each changed node of all six types, with field values before and after, also for nodes whose derived fields changed (for example a task that becomes ready). An update has no flag that tells a patch from a derived change. `history` and `changes` take only a filter (§6.3); `board`, `since`, and `first` stay. Commits in this process are sent at once. Changes from other processes and merges come from the file watcher of the board (§5.6, item 25). The tool takes a `KanbanGraph` in its constructor and does not run subscriptions; an agent polls with `history(since:)`.
 18. **Local ids in the log. — DECIDED.** The GraphQL `ID` is the full `kanban://<board-key>/<type>/<local-id>` URI, in input and in output. The log stores a ref to a node in the same board as a local ref (`task/<ULID>`, `tag/bug`), with no scheme and no board key (§3.2). Only a ref to a node in a different board is stored as a full URI: a cross-repo `dependsOn` edge and the envelope `boards`. Body text is stored as the agent wrote it, so a `kanban://` URL in the text stays fully qualified. A task URL in the body of a task is a dependency marker, the same as a `#tag` marker (§6.1). Thus, a repo can move in git (a new remote, owner, or directory) with no change to its data.
 19. **Documents with a Markdown body. — DECIDED.** Each node is a document: properties plus one Markdown `body`. The field is `body` on all six node types. It replaces `description` (Board, Tag, Task) and `text` (Comment); these old names are aliases (§4.5). The log stores each change to a body as a unified diff in an `edit` patch, not as the full text (§5.5). Thus, the log stays small, and two branches that change different lines of one body merge. A hunk that cannot apply after a merge makes a git-style conflict block in the body and the virtual tag `CONFLICT`. `FieldChange` for `body` gives `diff`, not `before` and `after`. Undo writes the reversed diff.
 20. **Time values are derived. — DECIDED.** The Rust `due` and `scheduled` fields are removed, together with the `Date` scalar and `INVALID_DATE`. All six node types have `created`, `updated`, and `deleted` (on the `Node` interface). A task also has `started` and `completed`. All these values are derived from the envelope `at` of the patches during replay (§5.3). No patch stores a time value, and no mutation accepts one. A tombstone is not in lists, but `node(id:)` returns it with `deleted` set.
 21. **No archive; delete and undelete. — DECIDED.** The Rust archive (`archived`, `archiveTask`, `unarchiveTask`) is removed. A delete is a `delete: true` patch in the log, and an undelete is a `delete: false` patch. Each node type that has a delete mutation also has an undelete mutation (`undeleteTask`, `undeleteColumn`, `undeleteActor`, `undeleteTag`, `undeleteComment`). `tasks(filter: "#DELETED")` lists the deleted tasks (§3.3, rule 3). The verbs `archive` and `unarchive` / `restore` map to `delete` and `undelete` (§4.5).
-22. **Filter language. — DECIDED.** Keep the Rust filter language (`#tag`, `@user`, `^id`, `&&`/`and`, `||`/`or`, `!`/`not`, `()`, implicit AND), so that the filters in the existing tool description and skills still work. Remove `$project`; `$x` gives `INVALID_FILTER` with a correction. Add the column atom `%column`. The language also accepts `kanban://` URLs: as the body of `^`, `#`, `@`, and `%`, and as a bare atom whose node type gives the meaning (task, tag, actor, or column). The Rust scoping params `tag`, `assignee`, `column`, and `excludeDone` are removed: a task list takes only the filter. The virtual tag `DONE` replaces the `excludeDone` default: a list leaves out the done tasks unless the filter names `#DONE` or a column (§6.3).
+22. **Filter language. — DECIDED.** Keep the Rust filter language (`#tag`, `@user`, `^id`, `&&`/`and`, `||`/`or`, `!`/`not`, `()`, implicit AND), so that the filters in the existing tool description and skills still work. Remove `$project`; `$x` gives `INVALID_FILTER` with a correction. Add the column atom `%column`, and the node-type atom `~type` for the change feed. The language also accepts `kanban://` URLs: as the body of `^`, `#`, `@`, and `%`, and as a bare atom whose node type gives the meaning (task, tag, actor, or column). The Rust scoping params `tag`, `assignee`, `column`, and `excludeDone` are removed: a task list takes only the filter. The virtual tag `DONE` replaces the `excludeDone` default: a list leaves out the done tasks unless the filter names `#DONE` or a column (§6.3).
 23. **Parallel load, no cache. — DECIDED.** There is no cache and no snapshot on disk. `KanbanGraph` loads each board from the logs the first time that a call needs it, and then keeps it live (item 25). A parallel loader reads the node files with a work queue and a fixed set of workers. It reads in stages, in entity order: board, actors, columns, tags, tasks, comments. At the end of each stage, it joins the new nodes to the nodes of the earlier stages, so that the in-memory graph has direct edges. Each worker folds one node from its own file, because each patch changes one node (§5.3).
 24. **Filter parser. — DECIDED.** Use `pointfreeco/swift-parsing` for the filter DSL. It is the Swift parser-combinator library that is most like `chumsky`, which the Rust code uses. Thus, the Swift grammar has the same shape as the Rust grammar, and the language can grow. The tool writes its own `INVALID_FILTER` messages from the failure position; it does not show the library error text.
 25. **Live graph with a file watcher. — DECIDED.** `KanbanGraph` keeps the `Graph` of each loaded board in memory. An FSEvents watcher on the `.kanban/` directory of each loaded board runs for the life of `KanbanGraph`, also when there is no subscriber. A manual edit, a `git pull`, a merge, a branch switch, or a write from a different process makes a batch of changed files. The batch goes through the serial gate, and the tool reads each changed file again, folds its node again, and joins it in entity order (§5.6). Edges hold stable slots, so a reload of one node does not break other nodes. File signatures let the tool ignore its own writes. The commit check compares signatures under the lock, so a write never depends on the timing of FSEvents. A query can show old data until the watcher has processed the events; this is accepted. A mutation works on a copy-on-write working copy, which becomes the live graph only after the commit.

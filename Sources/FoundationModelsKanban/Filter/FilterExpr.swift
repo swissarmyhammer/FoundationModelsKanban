@@ -52,11 +52,14 @@ enum FilterAtomKind: CaseIterable, Hashable, Sendable {
     /// `@user`: tasks assigned to an actor.
     case assignee
 
-    /// `^id`: a task, or the tasks that depend on it.
+    /// `^id`: a node of any type. On a task, it also matches the tasks that depend on the task.
     case ref
 
     /// `%column`: tasks in a column.
     case column
+
+    /// `~type`: the nodes of a node type, for example `~task` or `~comment`.
+    case type
 }
 
 // MARK: - Spelling
@@ -67,8 +70,8 @@ extension FilterAtomKind {
         /// The character before the body of the atom.
         let sigil: Character
 
-        /// The node type of a URL that the atom accepts.
-        let nodeType: PatchNodeType
+        /// The node type of a bare URL that gives the atom, or `nil` when the atom takes no URL.
+        let bareURLType: PatchNodeType?
 
         /// The name of the body in a message, with its article, for example `a tag name`.
         let bodyNoun: String
@@ -82,9 +85,10 @@ extension FilterAtomKind {
         spelling.sigil
     }
 
-    /// The node type of a URL that the atom accepts, for example ``PatchNodeType/actor`` for `@`.
-    var nodeType: PatchNodeType {
-        spelling.nodeType
+    /// The node type of a bare URL that gives the atom, for example ``PatchNodeType/actor`` for `@`. It is `nil` for
+    /// `~`, which takes a node type name and no URL.
+    var bareURLType: PatchNodeType? {
+        spelling.bareURLType
     }
 
     /// The name of the body in a message, with its article, for example `a tag name`.
@@ -100,11 +104,21 @@ extension FilterAtomKind {
     /// The text forms of the kind.
     private var spelling: Spelling {
         switch self {
-        case .tag: Spelling(sigil: "#", nodeType: .tag, bodyNoun: "a tag name", example: "#bug")
-        case .assignee: Spelling(sigil: "@", nodeType: .actor, bodyNoun: "an actor name", example: "@alice")
-        case .ref: Spelling(sigil: "^", nodeType: .task, bodyNoun: "a task id", example: "^ajv8v4t")
-        case .column: Spelling(sigil: "%", nodeType: .column, bodyNoun: "a column name", example: "%doing")
+        case .tag: Spelling(sigil: "#", bareURLType: .tag, bodyNoun: "a tag name", example: "#bug")
+        case .assignee: Spelling(sigil: "@", bareURLType: .actor, bodyNoun: "an actor name", example: "@alice")
+        case .ref: Spelling(sigil: "^", bareURLType: .task, bodyNoun: "a node id", example: "^ajv8v4t")
+        case .column: Spelling(sigil: "%", bareURLType: .column, bodyNoun: "a column name", example: "%doing")
+        case .type: Spelling(sigil: "~", bareURLType: nil, bodyNoun: "a node type name", example: "~task")
         }
+    }
+
+    /// Tells if the atom accepts a URL of a node type after its sigil. `^` accepts a URL of each node type. `#`, `@`,
+    /// and `%` accept only the URL of their own node type, and `~` accepts no URL.
+    ///
+    /// - Parameter type: The node type of the URL.
+    /// - Returns: `true` when the atom accepts the URL.
+    func acceptsURL(of type: PatchNodeType) -> Bool {
+        self == .ref || bareURLType == type
     }
 
     /// Finds the kind of atom of a sigil.
@@ -115,12 +129,12 @@ extension FilterAtomKind {
         self.init(firstWhere: { $0.sigil == sigil })
     }
 
-    /// Finds the kind of atom of a URL with a node type.
+    /// Finds the kind of atom of a bare URL with a node type.
     ///
     /// - Parameter nodeType: The node type of the URL.
-    /// - Returns: The kind, or `nil` for the board and for a comment, which no atom accepts.
+    /// - Returns: The kind, or `nil` for the board and for a comment, which need `^` before the URL.
     init?(nodeType: PatchNodeType) {
-        self.init(firstWhere: { $0.nodeType == nodeType })
+        self.init(firstWhere: { $0.bareURLType == nodeType })
     }
 
     /// Finds the first kind that satisfies a condition.

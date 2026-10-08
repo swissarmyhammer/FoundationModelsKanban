@@ -33,8 +33,8 @@ struct BoardChanges: Sendable {
 /// A board that changed gets one `Change` for each new transaction, in `txn` order. The values before and after come
 /// from the live graph before and after each change of the board, so a watcher batch with many transactions gives
 /// each of them the values before and after the batch. A board that did not change, but whose tasks depend on a task
-/// of a board that changed, gets the `DERIVED` updates of each transaction of that board (plan.md §6.7, derived
-/// updates across boards).
+/// of a board that changed, gets the updates of its nodes whose fields changed in each transaction of that board
+/// (plan.md §6.7, updates across boards).
 ///
 /// The cross-board dependencies of each view read the other boards: before the operation for the view before, and
 /// after the operation for the view after.
@@ -84,7 +84,7 @@ struct ChangeRound {
     ///   leave it out.
     func changes(of session: CommitSession, atPath path: String) -> [Change] {
         guard let own = changed[path] else {
-            return derivedChanges(of: session)
+            return changesOfOtherBoards(in: session)
         }
         let undone = UndoneState(of: session.live.events)
         return own.changes.flatMap { change in
@@ -98,7 +98,7 @@ struct ChangeRound {
         }
     }
 
-    /// Gives the read view of a board after the operation. The task filter of each subscriber tests its tasks.
+    /// Gives the read view of a board after the operation. The filter of each subscriber tests its nodes.
     ///
     /// - Parameter session: The session of the board after the operation.
     /// - Returns: The read view.
@@ -106,19 +106,19 @@ struct ChangeRound {
         view(of: session, reading: after)
     }
 
-    /// Makes the `DERIVED` changes of a board that did not change: one for each transaction of each board that
-    /// changed.
+    /// Makes the changes of a board that did not change: one for each transaction of each board that changed, with
+    /// the updates of the nodes of this board whose fields changed.
     ///
     /// - Parameter session: The session of the board.
     /// - Returns: The changes, in `txn` order.
-    private func derivedChanges(of session: CommitSession) -> [Change] {
+    private func changesOfOtherBoards(in session: CommitSession) -> [Change] {
         let builder = ChangeBuilder(from: view(of: session, reading: before), to: view(of: session))
         let changes = changed.values.flatMap { board in
             let undone = UndoneState(of: board.session.live.events)
             let key = board.session.key.description
             return board.changes.flatMap { change in
                 change.events.groupedByTransaction().compactMap { txn, events in
-                    builder.derivedChange(of: events, inBoard: key, markingUndone: undone.isUndone(txn: txn))
+                    builder.changeOfOtherBoard(of: events, inBoard: key, markingUndone: undone.isUndone(txn: txn))
                 }
             }
         }

@@ -1,4 +1,5 @@
 import Foundation
+import GraphQL
 import Testing
 
 @testable import FoundationModelsKanban
@@ -225,10 +226,32 @@ struct NameRewriteTests {
         arguments: [("task", "TASK"), ("Comment", "COMMENT"), ("Comments", "COMMENT"), ("COMENT", "COMMENT")]
     )
     func enumValueGetsCanonicalValue(written: String, canonical: String) throws {
-        let rewritten = try Self.rewritten(from: "fragment F on Change { updates(type: [\(written)]) { id } }")
-        #expect(rewritten.text == "fragment F on Change { updates(type: [\(canonical)]) { id } }")
-        let path = ["F", "updates", "type", written]
+        let rewriter = DocumentRewriter(for: try Self.enumArgumentSchema())
+        let rewritten = try rewriter.rewrittenDocument(from: "fragment F on Query { nodes(type: [\(written)]) }")
+        #expect(rewritten.text == "fragment F on Query { nodes(type: [\(canonical)]) }")
+        let path = ["F", "nodes", "type", written]
         #expect(rewritten.rewrites == [NameRewrite(from: written, to: canonical, path: path)])
+    }
+
+    /// Makes a schema with one enum argument. The public schema has no enum argument, so the enum value test uses
+    /// this schema: the query field `nodes` takes `type: [NodeType]`, with the values of the `NodeType` output enum.
+    ///
+    /// - Returns: The schema.
+    /// - Throws: An error from GraphQL when a type is not valid.
+    private static func enumArgumentSchema() throws -> GraphQLSchema {
+        let nodeType = try GraphQLEnumType(
+            name: "NodeType",
+            values: [
+                "BOARD": GraphQLEnumValue(value: "BOARD"),
+                "COLUMN": GraphQLEnumValue(value: "COLUMN"),
+                "TASK": GraphQLEnumValue(value: "TASK"),
+                "TAG": GraphQLEnumValue(value: "TAG"),
+                "ACTOR": GraphQLEnumValue(value: "ACTOR"),
+                "COMMENT": GraphQLEnumValue(value: "COMMENT"),
+            ]
+        )
+        let nodes = GraphQLField(type: GraphQLString, args: ["type": GraphQLArgument(type: GraphQLList(nodeType))])
+        return try GraphQLSchema(query: GraphQLObjectType(name: "Query", fields: ["nodes": nodes]))
     }
 
     // MARK: - Root query field

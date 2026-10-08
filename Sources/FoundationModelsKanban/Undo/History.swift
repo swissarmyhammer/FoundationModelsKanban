@@ -103,26 +103,26 @@ private struct Projection {
 
 extension BoardObject {
     /// Resolves `Board.history` (plan.md §6.5, §6.7): the transactions that changed the board, newest first, with the
-    /// filters of the change feed.
+    /// filter of the change feed.
     ///
     /// The list reads the committed log of the board: the global event list of the board of the view. For the current
     /// board, it is the global event list of the working copy, and for a related board, it is the event list of
     /// that loaded board (plan.md §6.6). A patch of the same call is not in the log yet, so it is not in the list.
-    /// The filters resolve against the graph of the call: the graph now. The GraphQL field is nullable: an error gives
-    /// `null` for the field and one item in `errors`, and the other fields of the board keep their data.
+    /// The filter tests the nodes in the graph of the call: the graph now. The GraphQL field is nullable: an error
+    /// gives `null` for the field and one item in `errors`, and the other fields of the board keep their data.
     ///
     /// - Parameters:
     ///   - context: The context of the call. Its store holds the global event list of a board in memory only.
-    ///   - arguments: The filters, the start, and the page size.
-    /// - Returns: The newest `first` changes after `since` that the filters keep. The value is never `nil`. The
+    ///   - arguments: The filter, the start, and the page size.
+    /// - Returns: The newest `first` changes after `since` that the filter keeps. The value is never `nil`. The
     ///   optional type makes the GraphQL field nullable.
-    /// - Throws: An error of ``ChangeFilter/init(for:in:)``.
+    /// - Throws: An error of ``ChangeFilter/init(parsing:)``.
     func history(context: KanbanContext, arguments: HistoryArguments) async throws(KanbanError) -> [Change]? {
-        let filter = try ChangeFilter(for: arguments, in: view)
+        let filter = try ChangeFilter(parsing: arguments.filter)
         let currentEvents = await context.store.work.liveEvents
         let events = view.source?.events ?? currentEvents
         let changes = History(of: events, inBoard: view.boardKey).changes(after: arguments.since?.text)
         let pageSize = max(arguments.first ?? HistoryArguments.defaultPageSize, .zero)
-        return Array(filter.applied(to: changes.reversed(), readingTasksOf: view).prefix(pageSize))
+        return Array(filter.applied(to: changes.reversed(), readingNodesOf: view).prefix(pageSize))
     }
 }

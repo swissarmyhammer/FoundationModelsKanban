@@ -11,9 +11,9 @@ import Parsing
 /// or_expr  = and_expr (("||"|"or"|"OR") and_expr)*
 /// and_expr = not_expr (("&&"|"and"|"AND")? not_expr)*      // two terms next to each other = AND
 /// not_expr = ("!"|"not"|"NOT") not_expr | atom
-/// atom     = ("#"|"@"|"^"|"%") body | url | "(" expr ")"
+/// atom     = ("#"|"@"|"^"|"%"|"~") body | url | "(" expr ")"
 /// url      = "kanban://" body
-/// body     = [^ whitespace #@^%$()&|!]+
+/// body     = [^ whitespace #@^%~$()&|!]+
 /// ```
 ///
 /// The rules throw ``FilterSyntaxError``, which holds the range of the problem. The `swift-parsing` error type is
@@ -211,8 +211,8 @@ extension FilterParser {
         ///   - kind: The kind of the sigil.
         ///   - input: The rest of the filter, at the sigil.
         /// - Returns: The atom, with a name or a URL as its value.
-        /// - Throws: ``FilterSyntaxError/Problem/missingBody(kind:)`` when no body follows the sigil, or the error of
-        ///   a URL body.
+        /// - Throws: ``FilterSyntaxError/Problem/missingBody(kind:)`` when no body follows the sigil, the error of a
+        ///   URL body, or the error of a URL that the sigil does not accept (``FilterAtomKind/acceptsURL(of:)``).
         private static func sigilAtom(of kind: FilterAtomKind, in input: inout Substring) throws(FilterSyntaxError)
             -> FilterExpr
         {
@@ -225,9 +225,9 @@ extension FilterParser {
                 return .atom(kind, .name(String(body)))
             }
             let atom = start[..<input.startIndex]
-            let (urlKind, uri) = try urlTarget(of: body, at: atom)
-            guard urlKind == kind else {
-                throw FilterSyntaxError(problem: .wrongURLType(sigilKind: kind, urlKind: urlKind, uri: uri), at: atom)
+            let uri = try parsedURL(of: body, at: atom)
+            guard kind.acceptsURL(of: uri.ref.nodeType) else {
+                throw FilterSyntaxError(problem: urlProblem(of: uri, after: kind), at: atom)
             }
             return .atom(kind, .uri(uri))
         }
@@ -246,28 +246,39 @@ extension FilterParser {
                 let shown = text.isEmpty ? start.prefix(1) : text
                 throw FilterSyntaxError(problem: .notATerm(text: String(shown)), at: shown)
             }
-            let (kind, uri) = try urlTarget(of: body, at: body)
+            let uri = try parsedURL(of: body, at: body)
+            guard let kind = FilterAtomKind(nodeType: uri.ref.nodeType) else {
+                throw FilterSyntaxError(problem: .unusableURL(uri: uri), at: body)
+            }
             return .atom(kind, .uri(uri))
         }
 
-        /// Reads the URL of a URL atom, and finds the kind of atom of its node type.
+        /// Reads the URL of a URL atom.
         ///
         /// - Parameters:
         ///   - body: The body that starts with `kanban://`.
         ///   - atom: The text of the full atom, for the position of an error.
-        /// - Returns: The kind of atom that accepts the URL, and the URL.
+        /// - Returns: The URL.
         /// - Throws: ``FilterSyntaxError/Problem/invalidURL(url:)`` when the body is not a node URL.
-        ///   ``FilterSyntaxError/Problem/unusableURL(uri:)`` when no atom accepts the node type of the URL.
-        private static func urlTarget(of body: Substring, at atom: Substring) throws(FilterSyntaxError)
-            -> (FilterAtomKind, NodeURI)
-        {
+        private static func parsedURL(of body: Substring, at atom: Substring) throws(FilterSyntaxError) -> NodeURI {
             guard let uri = try? NodeURI(parsing: String(body)) else {
                 throw FilterSyntaxError(problem: .invalidURL(url: String(body)), at: atom)
             }
-            guard let kind = FilterAtomKind(nodeType: uri.ref.nodeType) else {
-                throw FilterSyntaxError(problem: .unusableURL(uri: uri), at: atom)
+            return uri
+        }
+
+        /// Gives the problem of a URL that a sigil does not accept.
+        ///
+        /// - Parameters:
+        ///   - uri: The URL.
+        ///   - kind: The kind of the sigil before the URL.
+        /// - Returns: The wrong sigil, with the kind of atom that a bare URL of the node type gives, or a URL that
+        ///   needs `^` before it: a board or a comment URL.
+        private static func urlProblem(of uri: NodeURI, after kind: FilterAtomKind) -> FilterSyntaxError.Problem {
+            guard let urlKind = FilterAtomKind(nodeType: uri.ref.nodeType) else {
+                return .unusableURL(uri: uri)
             }
-            return (kind, uri)
+            return .wrongURLType(sigilKind: kind, urlKind: urlKind, uri: uri)
         }
     }
 

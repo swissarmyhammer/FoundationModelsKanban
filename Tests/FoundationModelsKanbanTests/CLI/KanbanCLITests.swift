@@ -38,7 +38,7 @@ struct KanbanCLITests {
     private static let watchCommand = "watch"
 
     /// The subscription of the tests: the operations of each change of a task.
-    private static let taskOperations = "subscription { changes(type: [TASK]) { ops } }"
+    private static let taskOperations = #"subscription { changes(filter: "~task") { ops } }"#
 
     /// The event line of a change that adds a task.
     private static let addTaskEvent = #"{"data":{"changes":{"ops":["addTask"]}}}"#

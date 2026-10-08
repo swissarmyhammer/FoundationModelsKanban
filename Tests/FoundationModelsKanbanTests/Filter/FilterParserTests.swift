@@ -33,6 +33,9 @@ struct FilterParserTests {
     /// The URL of the board.
     static let boardURL = "kanban://\(boardKey)/board"
 
+    /// The URL of a comment.
+    static let commentURL = "kanban://\(boardKey)/comment/\(taskULID)"
+
     /// The example of each error of an operator with no term after it.
     static let operatorExample = "#bug && @alice"
 
@@ -59,6 +62,16 @@ struct FilterParserTests {
     @Test("A column atom")
     func columnAtom() throws {
         #expect(try FilterExpr(parsing: "%doing") == .atom(.column, .name("doing")))
+    }
+
+    @Test("A node type atom")
+    func nodeTypeAtom() throws {
+        #expect(try FilterExpr(parsing: "~task") == .atom(.type, .name("task")))
+    }
+
+    @Test("A ~ ends the body of the atom before it, so two atoms with no space make an AND")
+    func nodeTypeSigilEndsBody() throws {
+        #expect(try FilterExpr(parsing: "#bug~task") == .and(.atom(.tag, .name("bug")), .atom(.type, .name("task"))))
     }
 
     @Test("A tag name keeps hyphens, dots, and underscores", arguments: ["bug-fix", "v2.0", "my_tag"])
@@ -182,6 +195,8 @@ struct FilterParserTests {
 
     @Test("A URL after a sigil gives the atom of the sigil", arguments: [
         ("^", taskURL, FilterAtomKind.ref), ("#", tagURL, .tag), ("@", actorURL, .assignee), ("%", columnURL, .column),
+        ("^", columnURL, .ref), ("^", tagURL, .ref), ("^", actorURL, .ref), ("^", boardURL, .ref),
+        ("^", commentURL, .ref),
     ])
     func urlAfterSigil(sigil: String, url: String, kind: FilterAtomKind) throws {
         #expect(try FilterExpr(parsing: "\(sigil)\(url)") == .atom(kind, .uri(try NodeURI(parsing: url))))
@@ -219,26 +234,41 @@ struct FilterParserTests {
         }
     }
 
-    @Test("A bare board URL is not a filter term")
-    func bareBoardURL() throws {
+    @Test("A bare board or comment URL is not a filter term, and the error gives the ^ atom", arguments: [
+        ("board", boardURL), ("comment", commentURL),
+    ])
+    func bareURLOfNoAtom(type: String, url: String) throws {
         #expect(throws: KanbanError.invalidFilter(
-            filter: Self.boardURL,
-            position: 0..<Self.boardURL.count,
-            detail: "a board URL is not a filter term; use a tag, actor, task, or column URL",
-            example: "kanban://\(Self.boardKey)/tag/bug"
+            filter: url,
+            position: 0..<url.count,
+            detail: "a `\(type)` URL needs `^` before it",
+            example: "^\(url)"
         )) {
-            try FilterExpr(parsing: Self.boardURL)
+            try FilterExpr(parsing: url)
         }
     }
 
-    @Test("A comment URL after a sigil is not a filter term")
-    func commentURLAfterSigil() throws {
-        let filter = "^kanban://\(Self.boardKey)/comment/\(Self.taskULID)"
+    @Test("A comment URL after # is not a filter term, and the error gives the ^ atom")
+    func commentURLAfterTagSigil() throws {
+        let filter = "#\(Self.commentURL)"
         #expect(throws: KanbanError.invalidFilter(
             filter: filter,
             position: 0..<filter.count,
-            detail: "a comment URL is not a filter term; use a tag, actor, task, or column URL",
-            example: "kanban://\(Self.boardKey)/tag/bug"
+            detail: "a `comment` URL needs `^` before it",
+            example: "^\(Self.commentURL)"
+        )) {
+            try FilterExpr(parsing: filter)
+        }
+    }
+
+    @Test("A URL after ~ gives the correct form, because ~ needs a node type name")
+    func urlAfterNodeTypeSigil() throws {
+        let filter = "~\(Self.columnURL)"
+        #expect(throws: KanbanError.invalidFilter(
+            filter: filter,
+            position: 0..<filter.count,
+            detail: "`~` needs a node type name, but this URL is a `column` URL; use `%` for a `column` URL",
+            example: "%\(Self.columnURL)"
         )) {
             try FilterExpr(parsing: filter)
         }
@@ -369,8 +399,8 @@ struct FilterParserTests {
     }
 
     @Test("A sigil with no body needs a name", arguments: [
-        ("#", "a tag name", "#bug"), ("@", "an actor name", "@alice"), ("^", "a task id", "^ajv8v4t"),
-        ("%", "a column name", "%doing"),
+        ("#", "a tag name", "#bug"), ("@", "an actor name", "@alice"), ("^", "a node id", "^ajv8v4t"),
+        ("%", "a column name", "%doing"), ("~", "a node type name", "~task"),
     ])
     func sigilWithoutBody(sigil: String, noun: String, example: String) throws {
         let filter = "#bug && \(sigil)"
@@ -467,6 +497,7 @@ struct FilterParserTests {
     /// - Parameter text: The text at the position of the error.
     /// - Returns: The detail text.
     static func notATermDetail(for text: String) -> String {
-        "`\(text)` cannot start a filter term; a term starts with `#`, `@`, `^`, `%`, `(`, `!`, `not`, or `kanban://`"
+        "`\(text)` cannot start a filter term; "
+            + "a term starts with `#`, `@`, `^`, `%`, `~`, `(`, `!`, `not`, or `kanban://`"
     }
 }

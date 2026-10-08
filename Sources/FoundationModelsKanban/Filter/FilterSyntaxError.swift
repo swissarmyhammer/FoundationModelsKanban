@@ -32,10 +32,11 @@ struct FilterSyntaxError: Error, Hashable, Sendable {
         /// A body that starts with `kanban://` but is not a valid node URL.
         case invalidURL(url: String)
 
-        /// A URL after a sigil of a different kind. The URL kind is the kind of atom that accepts the URL.
+        /// A URL after a sigil that does not accept it. The URL kind is the kind of atom that a bare URL of the node
+        /// type gives.
         case wrongURLType(sigilKind: FilterAtomKind, urlKind: FilterAtomKind, uri: NodeURI)
 
-        /// A URL of a node type that no atom accepts: the board or a comment.
+        /// A board or a comment URL with no `^` before it. Only the `^` atom accepts such a URL.
         case unusableURL(uri: NodeURI)
     }
 
@@ -167,33 +168,31 @@ extension FilterSyntaxError {
         return choices.dropLast().joined(separator: separator) + "\(separator)\(lastChoiceWord) \(last)"
     }
 
-    /// Explains a URL after a sigil of a different kind.
+    /// Explains a URL after a sigil that does not accept it.
     ///
     /// - Parameters:
     ///   - uri: The URL.
     ///   - sigilKind: The kind of the sigil before the URL.
-    ///   - urlKind: The kind of atom that accepts the URL.
+    ///   - urlKind: The kind of atom that a bare URL of the node type gives.
     /// - Returns: The detail, and the atom with the correct sigil as the example.
     private static func wrongURLTypeExplanation(
         of uri: NodeURI,
         after sigilKind: FilterAtomKind,
         acceptedBy urlKind: FilterAtomKind
     ) -> (detail: String, example: String) {
-        let needed = sigilKind.nodeType.pathSegment
-        let found = urlKind.nodeType.pathSegment
-        let detail = "`\(sigilKind.sigil)` needs a `\(needed)` URL, but this URL is a `\(found)` URL; "
+        let needed = sigilKind.bareURLType.map { type in "a `\(type.pathSegment)` URL" } ?? sigilKind.bodyNoun
+        let found = uri.ref.nodeType.pathSegment
+        let detail = "`\(sigilKind.sigil)` needs \(needed), but this URL is a `\(found)` URL; "
             + "use `\(urlKind.sigil)` for a `\(found)` URL"
         return (detail, "\(urlKind.sigil)\(uri)")
     }
 
-    /// Explains a URL of a node type that no atom accepts.
+    /// Explains a board or a comment URL with no `^` before it.
     ///
     /// - Parameter uri: The URL.
-    /// - Returns: The detail, and a tag URL of the same board as the example.
+    /// - Returns: The detail, and the `^` atom of the URL as the example.
     private static func unusableURLExplanation(of uri: NodeURI) -> (detail: String, example: String) {
-        let accepted = choiceList(of: FilterAtomKind.allCases.map(\.nodeType.pathSegment))
-        let detail = "a \(uri.ref.nodeType.pathSegment) URL is not a filter term; use a \(accepted) URL"
-        let example = NodeURI(boardKey: uri.boardKey, ref: .tag(slug: "bug"))
-        return (detail, example.description)
+        let ref = FilterAtomKind.ref.sigil
+        return ("a `\(uri.ref.nodeType.pathSegment)` URL needs `\(ref)` before it", "\(ref)\(uri)")
     }
 }

@@ -24,8 +24,8 @@ struct ChangeBuilderTests {
         let comment: String
     }
 
-    /// One public mutation of the change test: the setup fields, the field of the transaction, and the `PATCH`
-    /// updates that the transaction must give.
+    /// One public mutation of the change test: the setup fields, the field of the transaction, and the updates of the
+    /// patched nodes that the transaction must give.
     struct MutationCase: Sendable, CustomTestStringConvertible {
         /// The name of the case: the name of the mutation, and the variant.
         let testDescription: String
@@ -36,7 +36,7 @@ struct ChangeBuilderTests {
         /// The mutation field of the transaction.
         let field: @Sendable (CaseRefs) -> String
 
-        /// The type and the kind of each `PATCH` update of the transaction, in sorted order.
+        /// The type and the kind of each update of a patched node of the transaction, in sorted order.
         let updates: [String]
 
         /// Makes a case.
@@ -45,7 +45,7 @@ struct ChangeBuilderTests {
         ///   - name: The name of the case.
         ///   - setup: The mutation fields that run before the transaction.
         ///   - field: The mutation field of the transaction.
-        ///   - updates: The type and the kind of each `PATCH` update of the transaction.
+        ///   - updates: The type and the kind of each update of a patched node of the transaction.
         init(
             _ name: String,
             after setup: [@Sendable (CaseRefs) -> String] = [],
@@ -120,7 +120,7 @@ struct ChangeBuilderTests {
 
     // MARK: - Cases
 
-    /// Each public mutation of plan.md §4.2, with the `PATCH` updates that it gives on the fixture board.
+    /// Each public mutation of plan.md §4.2, with the updates of the patched nodes that it gives on the fixture board.
     static let mutationCases: [MutationCase] = taskCases + columnActorCases + tagCases + commentCases
 
     /// The board and the task mutations.
@@ -510,14 +510,16 @@ struct ChangeBuilderTests {
         return Recorded(directory: directory, before: before, after: session, events: events, change: change)
     }
 
-    /// Gives the updates of a change from one source.
+    /// Gives the updates of a transaction of the nodes that a patch of the transaction changed, or of the other nodes:
+    /// the nodes whose fields changed because of a write to a different node.
     ///
     /// - Parameters:
-    ///   - change: The change.
-    ///   - source: The source.
+    ///   - recorded: The transaction.
+    ///   - isPatched: `true` for the updates of the patched nodes, `false` for the updates of the other nodes.
     /// - Returns: The updates, in the order of the change.
-    static func updates(of change: Change, from source: UpdateSource) -> [NodeUpdate] {
-        change.nodeUpdates.filter { update in update.source == source }
+    static func updates(of recorded: Recorded, ofPatchedNodes isPatched: Bool) -> [NodeUpdate] {
+        let patched = Set(recorded.events.map(\.patch.node))
+        return recorded.change.nodeUpdates.filter { update in patched.contains(update.ref) == isPatched }
     }
 
     /// Gives the field change of an update with a name.
@@ -620,12 +622,12 @@ struct ChangeBuilderTests {
     // MARK: - Each public mutation
 
     @Test(
-        "Each public mutation gives one PATCH update for each node that it changed, with the kind of the change",
+        "Each public mutation gives one update for each node that it changed, with the kind of the change",
         arguments: mutationCases
     )
     func mutationGivesPatchUpdates(mutationCase: MutationCase) async throws {
         let recorded = try await Self.record(mutationCase)
-        let patchUpdates = Self.updates(of: recorded.change, from: .patch)
+        let patchUpdates = Self.updates(of: recorded, ofPatchedNodes: true)
         let signatures = patchUpdates.map { update in Self.signature(update.type, update.kind) }
         #expect(signatures.sorted() == mutationCase.updates)
         #expect(Set(patchUpdates.map(\.ref)) == Set(recorded.events.map(\.patch.node)))
@@ -663,7 +665,7 @@ struct ChangeBuilderTests {
     func bodyChangeGivesOnlyDiff() async throws {
         let updateTask = try #require(Self.taskCases.first { $0.testDescription == "updateTask" })
         let recorded = try await Self.record(updateTask)
-        let update = try #require(Self.updates(of: recorded.change, from: .patch).first)
+        let update = try #require(Self.updates(of: recorded, ofPatchedNodes: true).first)
         let body = try Self.field(named: Self.bodyField, in: update)
         let checked = "- [x] read the grammar\n"
         let expected = FieldChange(
@@ -677,12 +679,12 @@ struct ChangeBuilderTests {
         #expect(body == expected)
     }
 
-    // MARK: - Derived updates
+    // MARK: - Updates of the nodes that no patch changed
 
-    @Test("completeTask gives DERIVED updates of ready, blockedBy, and virtualTags for a task that depends on it")
+    @Test("completeTask gives updates of ready, blockedBy, and virtualTags for a task that depends on it")
     func completeTaskUpdatesDependentTask() async throws {
         let recorded = try await Self.record(Self.completeWithDependent)
-        let derived = Self.updates(of: recorded.change, from: .derived).filter { update in update.type == .task }
+        let derived = Self.updates(of: recorded, ofPatchedNodes: false).filter { update in update.type == .task }
         let dependent = try #require(derived.first)
         #expect(derived.count == 1)
         #expect(dependent.kind == .updated)
@@ -709,18 +711,18 @@ struct ChangeBuilderTests {
         #expect(try Self.field(named: "virtualTags", in: dependent) == virtualTags)
     }
 
-    @Test("completeTask gives a DERIVED update of the summary of the board")
+    @Test("completeTask gives an update of the summary of the board")
     func completeTaskUpdatesBoardSummary() async throws {
         let recorded = try await Self.record(Self.completeWithDependent)
-        let board = Self.updates(of: recorded.change, from: .derived).filter { update in update.type == .board }
+        let board = Self.updates(of: recorded, ofPatchedNodes: false).filter { update in update.type == .board }
         #expect(board.map { update in update.fields.map(\.name) } == [["summary"]])
         try await Self.expectFieldsEqualQueries(of: recorded)
     }
 
-    @Test("renameTag gives a DERIVED tags update of a task that has the old tag")
+    @Test("renameTag gives a tags update of a task that has the old tag")
     func renameTagUpdatesTaskTags() async throws {
         let recorded = try await Self.record(Self.renameWithTaggedTask)
-        let derived = Self.updates(of: recorded.change, from: .derived)
+        let derived = Self.updates(of: recorded, ofPatchedNodes: false)
         let task = try #require(derived.first { update in update.type == .task })
         let tags = FieldChange(
             name: "tags",
@@ -750,27 +752,40 @@ struct ChangeBuilderTests {
     func deletedUpdateGivesTombstone() async throws {
         let deleteTask = try #require(Self.taskCases.first { $0.testDescription == "deleteTask" })
         let recorded = try await Self.record(deleteTask)
-        let update = try #require(Self.updates(of: recorded.change, from: .patch).first)
+        let update = try #require(Self.updates(of: recorded, ofPatchedNodes: true).first)
         let node = try #require(await update.node(context: Self.context(of: recorded.after), arguments: NoArguments()))
         #expect(node.id == update.id)
         #expect(node.deleted == CommitTests.callTime)
     }
 
-    @Test("Change.updates keeps only the updates of the given types")
-    func updatesFilterByType() async throws {
-        let recorded = try await Self.record(Self.completeWithDependent)
-        let arguments = UpdatesArguments(type: [.board], node: nil)
-        let updates = try await recorded.change.updates(context: Self.context(of: recorded.after), arguments: arguments)
-        #expect(updates?.map(\.type) == [.board])
+    /// Runs `Change.updates` of a transaction with a filter, in the board after the transaction.
+    ///
+    /// - Parameters:
+    ///   - filter: The filter, or `nil` for no filter.
+    ///   - recorded: The transaction.
+    /// - Returns: The local refs of the updates that the field gives, in order.
+    static func updateRefs(filteredBy filter: String?, of recorded: Recorded) async throws -> [LocalRef] {
+        let context = context(of: recorded.after)
+        let updates = try await recorded.change.updates(context: context, arguments: FilterArguments(filter: filter))
+        return try #require(updates).map(\.ref)
     }
 
-    @Test("Change.updates keeps only the update of the given node, by a short form")
-    func updatesFilterByNode() async throws {
+    @Test("Change.updates(filter: \"~board\") keeps only the updates of the node type, and no filter keeps each one")
+    func updatesFilterByNodeType() async throws {
         let recorded = try await Self.record(Self.completeWithDependent)
-        let task = try AddUpdateTaskTests.fixtureTask()
-        let arguments = UpdatesArguments(type: nil, node: NodeID(text: AddUpdateTaskTests.sigilRef(of: task)))
-        let updates = try await recorded.change.updates(context: Self.context(of: recorded.after), arguments: arguments)
-        #expect(updates?.map(\.ref) == [.task(task)])
+        #expect(try await Self.updateRefs(filteredBy: "~board", of: recorded) == [.board])
+        #expect(try await Self.updateRefs(filteredBy: nil, of: recorded) == recorded.change.nodeUpdates.map(\.ref))
+    }
+
+    @Test("Change.updates(filter: \"^id\") keeps the update of the node, and on a task also of its dependent tasks")
+    func updatesFilterByRef() async throws {
+        let recorded = try await Self.record(Self.completeWithDependent)
+        let board = "^\(ColumnActorTests.id(of: .board))"
+        #expect(try await Self.updateRefs(filteredBy: board, of: recorded) == [.board])
+        let task = AddUpdateTaskTests.sigilRef(of: try AddUpdateTaskTests.fixtureTask())
+        let tasks = recorded.change.nodeUpdates.filter { update in update.type == .task }.map(\.ref)
+        #expect(tasks.count > 1)
+        #expect(try await Self.updateRefs(filteredBy: task, of: recorded) == tasks)
     }
 
     // MARK: - Schema
@@ -781,10 +796,9 @@ struct ChangeBuilderTests {
         let lines = [
             "type Change {",
             "  actor: Actor!",
-            "  updates(type: [NodeType!], node: ID): [NodeUpdate!]",
+            "  updates(filter: String): [NodeUpdate!]",
             "type NodeUpdate {",
             "  kind: UpdateKind!",
-            "  source: UpdateSource!",
             "  node: Node",
             "type FieldChange {",
             "  before: JSON",
@@ -792,10 +806,11 @@ struct ChangeBuilderTests {
             "  diff: String",
             "enum NodeType {",
             "enum UpdateKind {",
-            "enum UpdateSource {",
         ]
         for line in lines {
             #expect(sdl.contains(line), "\(line)")
         }
+        #expect(!sdl.contains("UpdateSource"))
+        #expect(!sdl.contains("  source: "))
     }
 }

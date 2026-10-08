@@ -476,29 +476,14 @@ struct SearchTasksArguments: Codable, Sendable {
     let first: Int?
 }
 
-/// The arguments of `Board.history`: the filters of the change feed, the start, and the page size (plan.md §4.1,
+/// The arguments of `Board.history`: the filter of the change feed, the start, and the page size (plan.md §4.1,
 /// §6.7).
 struct HistoryArguments: Codable, Sendable {
     /// The number of changes when the call does not give `first`.
     static let defaultPageSize = 20
 
-    /// The value of `derived` when the call does not give it: the list keeps the `DERIVED` updates.
-    static let includesDerivedByDefault = true
-
-    /// The node types to keep, or `nil` for all types.
-    let type: [NodeType]?
-
-    /// The node to keep: a full URI or a short form, or `nil` for all nodes.
-    let node: NodeID?
-
-    /// The actor of the transactions to keep: a full URI or a short form, or `nil` for all actors.
-    let actor: NodeID?
-
-    /// The filter of the tasks to keep, for example `#bug`, or `nil` for no filter.
+    /// The filter of the updates to keep, for example `#bug || ~column`, or `nil` for no filter.
     let filter: String?
-
-    /// `false` to leave out the `DERIVED` updates. An explicit `null` keeps them.
-    let derived: Bool?
 
     /// The transaction after which the list starts, or `nil` for all transactions.
     let since: NodeID?
@@ -508,27 +493,15 @@ struct HistoryArguments: Codable, Sendable {
     let first: Int?
 }
 
-/// The arguments of `Subscription.changes`: the board to observe and the filters of the change feed (plan.md §4.1,
-/// §6.7). `Board.history` takes the same filters.
-struct ChangesArguments: Codable, Sendable, ChangeFilterArguments {
+/// The arguments of `Subscription.changes`: the board to observe and the filter of the change feed (plan.md §4.1,
+/// §6.7). `Board.history` takes the same filter.
+struct ChangesArguments: Codable, Sendable {
     /// The board to observe: a board key, a repo directory name, a path, or the URI of a board (plan.md §6.6). No
     /// value observes the current board.
     let board: String?
 
-    /// The node types to keep, or `nil` for all types.
-    let type: [NodeType]?
-
-    /// The node to keep: a full URI or a short form, or `nil` for all nodes.
-    let node: NodeID?
-
-    /// The actor of the transactions to keep: a full URI or a short form, or `nil` for all actors.
-    let actor: NodeID?
-
-    /// The filter of the tasks to keep, for example `#bug`, or `nil` for no filter.
+    /// The filter of the updates to keep, for example `#bug || ~column`, or `nil` for no filter.
     let filter: String?
-
-    /// `false` to leave out the `DERIVED` updates. An explicit `null` keeps them.
-    let derived: Bool?
 }
 
 /// The arguments of a task list that has only a filter: `Board.nextTask`, and the `tasks` fields of `Column`,
@@ -851,11 +824,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Field("summary", at: \.summary)
                 Field("path", at: \.path)
                 Field("history", at: BoardObject.history) {
-                    Argument("type", at: \.type)
-                    Argument("node", at: \.node)
-                    Argument("actor", at: \.actor)
                     Argument("filter", at: \.filter)
-                    Argument("derived", at: \.derived).defaultValue(HistoryArguments.includesDerivedByDefault)
                     Argument("since", at: \.since)
                     Argument("first", at: \.first).defaultValue(HistoryArguments.defaultPageSize)
                 }

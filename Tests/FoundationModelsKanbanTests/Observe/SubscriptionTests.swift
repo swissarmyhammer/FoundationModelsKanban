@@ -26,13 +26,13 @@ struct SubscriptionTests {
     /// the fixture.
     private static let linesBeforeBranchLine = 1
 
-    /// The selection of each event of the tests: the transaction, the operations, and the id, the kind, and the source
-    /// of each update.
-    static let selection = "{ txn ops updates { id kind source } }"
+    /// The selection of each event of the tests: the transaction, the operations, and the id and the kind of each
+    /// update.
+    static let selection = "{ txn ops updates { id kind } }"
 
     /// The arguments of a subscription to the task updates only. A mutation also writes the session actor, and this
     /// filter leaves out that update.
-    static let taskArguments = "(type: [TASK])"
+    static let taskArguments = #"(filter: "~task")"#
 
     /// The query of the newest transaction of the current board.
     static let latestTxnQuery = "{ board { history(first: 1) { txn } } }"
@@ -44,9 +44,11 @@ struct SubscriptionTests {
 
     /// Makes a subscription document with ``selection``.
     ///
-    /// - Parameter arguments: The arguments of the `changes` field, for example `(type: [TASK])`, or `""` for none.
+    /// - Parameters:
+    ///   - arguments: The arguments of the `changes` field, for example `(filter: "~task")`, or `""` for none.
+    ///   - selection: The selection of each event. The default is ``selection``.
     /// - Returns: The document.
-    static func subscription(_ arguments: String) -> String {
+    static func subscription(_ arguments: String, selecting selection: String = selection) -> String {
         "subscription { changes\(arguments) \(selection) }"
     }
 
@@ -120,11 +122,10 @@ struct SubscriptionTests {
     ///
     /// - Parameters:
     ///   - task: The full URI of the task.
-    ///   - kind: The kind of the update. The default is `UPDATED`.
-    ///   - source: The source of the update.
+    ///   - kind: The kind of the update.
     /// - Returns: The JSON object, with sorted keys.
-    static func update(ofTask task: String, kind: UpdateKind = .updated, from source: UpdateSource) -> String {
-        #"{"id":"\#(task)","kind":"\#(kind.rawValue)","source":"\#(source.rawValue)"}"#
+    static func update(ofTask task: String, kind: UpdateKind) -> String {
+        #"{"id":"\#(task)","kind":"\#(kind.rawValue)"}"#
     }
 
     /// Gives the full URI of a task of the fixture board.
@@ -155,7 +156,7 @@ struct SubscriptionTests {
     ///   - operation: The one public mutation of the transaction.
     /// - Returns: The response JSON text.
     private static func patchEvent(of task: ULID, kind: UpdateKind, txn: String, operation: String) -> String {
-        event(txn: txn, operation: operation, updates: [update(ofTask: id(of: task), kind: kind, from: .patch)])
+        event(txn: txn, operation: operation, updates: [update(ofTask: id(of: task), kind: kind)])
     }
 
     /// Gives the newest transaction of the current board.
@@ -238,12 +239,12 @@ struct SubscriptionTests {
         await graph.close()
     }
 
-    @Test("A change with no update after the node filter is not sent")
+    @Test("A change with no update that matches the ^id filter is not sent")
     func changeWithNoMatchingUpdateIsNotSent() async throws {
         let directory = try TemporaryDirectory()
         let task = try KanbanGraphTests.writeFixture(inRepoAt: directory.url).task
         let graph = try KanbanGraphTests.makeGraph(at: directory.url)
-        let arguments = #"(node: "\#(AddUpdateTaskTests.sigilRef(of: task))")"#
+        let arguments = #"(filter: "\#(AddUpdateTaskTests.sigilRef(of: task))")"#
         let stream = try await Self.subscribe(Self.subscription(arguments), on: graph)
         _ = try await CrossRepoFixture.addTask(with: "", on: graph)
         let expected = try await Self.changeTitle(of: task, to: KanbanGraphTests.laterTitle, on: graph)
@@ -309,8 +310,8 @@ struct SubscriptionTests {
 
     // MARK: - Related boards
 
-    @Test("A task of a related board that becomes done sends a DERIVED update to a subscriber on the dependent board")
-    func doneTaskOfRelatedBoardSendsDerivedUpdate() async throws {
+    @Test("A task of a related board that becomes done sends a ready update to a subscriber on the dependent board")
+    func doneTaskOfRelatedBoardSendsReadyUpdate() async throws {
         let repos = try await CrossRepoFixture.SideBySide.make()
         let lib = try GitGraphFixture.makeGraph(at: repos.lib)
         let target = try await CrossRepoFixture.addTask(with: "", on: lib)
@@ -319,7 +320,9 @@ struct SubscriptionTests {
         let task = try await CrossRepoFixture.addTask(dependingOn: target, on: app)
         await app.close()
         let watcher = try GitGraphFixture.makeGraph(at: repos.app, mintingFrom: GitGraphFixture.secondEngineIDs)
-        let stream = try await Self.subscribe(Self.subscription(Self.taskArguments), on: watcher)
+        let fieldSelection = "{ txn ops updates { id kind fields { name before after } } }"
+        let document = Self.subscription(Self.taskArguments, selecting: fieldSelection)
+        let stream = try await Self.subscribe(document, on: watcher)
         let done = try #require(DefaultColumn.all.last).slug
         let patch = try PatchInput(
             node: .task(AddUpdateTaskTests.firstTask(in: target)),
@@ -328,9 +331,10 @@ struct SubscriptionTests {
         var ids = GitGraphFixture.thirdEngineIDs
         let txn = Self.nextTxn(of: ids)
         try KanbanGraphTests.append(patch, mintingFrom: &ids, to: EventLog(repositoryAt: repos.lib))
-        let updates = [Self.update(ofTask: task, from: .derived)]
-        let expected = Self.event(txn: txn, operation: KanbanGraphTests.fixtureOperation, updates: updates)
-        #expect(try await Self.events(Self.oneEvent, of: stream) == [expected])
+        let event = try #require(try await Self.events(Self.oneEvent, of: stream).first)
+        #expect(event.contains(#""txn":"\#(txn)""#))
+        #expect(event.contains(#""id":"\#(task)","kind":"\#(UpdateKind.updated.rawValue)""#))
+        #expect(event.contains(#"{"after":true,"before":false,"name":"ready"}"#))
         await watcher.close()
     }
 

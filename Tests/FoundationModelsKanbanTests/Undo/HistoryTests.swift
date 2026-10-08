@@ -24,9 +24,12 @@ struct HistoryTests {
     /// The page size of the `first` test.
     static let pageSize = 2
 
-    /// The selection of each change in most tests: the transaction and the id, the type, the kind, and the source of
-    /// each update.
-    static let updateSelection = "txn updates { id type kind source }"
+    /// The selection of each change in most tests: the transaction and the id, the type, and the kind of each update.
+    static let updateSelection = "txn updates { id type kind }"
+
+    /// The selection of each change in the tests of the field changes: the transaction, and the id, the type, and the
+    /// name and the values of each field change of each update.
+    static let fieldSelection = "txn updates { id type fields { name before after } }"
 
     /// The arguments of a `history` call that keeps the updates of the tasks with the tag ``TagMutationTests/bug``.
     static let bugFilterArguments = ##"(filter: "#\##(TagMutationTests.bug)")"##
@@ -231,52 +234,60 @@ struct HistoryTests {
 
     // MARK: - Filters
 
-    @Test("history(type:) keeps only the updates of the types, and leaves out a Change with no update left")
-    func historyTypeKeepsUpdatesOfTypes() async throws {
+    @Test("history(filter: \"~column\") keeps only the updates of the node type, and leaves out a Change with none")
+    func historyNodeTypeKeepsUpdatesOfType() async throws {
         let directory = try TemporaryDirectory()
         let session = try await ChangeBuilderTests.baseSession(inRepoAt: directory).session
-        let changes = try await Self.history(with: "(type: [COLUMN])", in: session)
+        let changes = try await Self.history(with: #"(filter: "~column")"#, in: session)
         #expect(changes.count == Self.columnTransactionCount)
         #expect(Self.values(named: "type", of: Self.updates(of: changes)) == [NodeType.column.rawValue])
     }
 
-    @Test("history(node:) keeps only the updates of the node")
-    func historyNodeKeepsUpdatesOfNode() async throws {
+    @Test("history(filter: \"~task\") keeps each update of a task, also the completion that makes the task done")
+    func historyTaskTypeKeepsDoneTask() async throws {
+        let directory = try TemporaryDirectory()
+        let completed = try await Self.completedSession(inRepoAt: directory)
+        let changes = try await Self.history(with: #"(filter: "~task")"#, in: completed.session)
+        let task = ColumnActorTests.id(of: .task(completed.task))
+        #expect(Self.values(named: "type", of: Self.updates(of: changes)) == [NodeType.task.rawValue])
+        #expect(Self.updateTexts(of: changes.first) == ["TASK UPDATED \(task)"])
+    }
+
+    @Test("history(filter: \"^id\") keeps only the updates of the node, also when the task is done now")
+    func historyRefKeepsUpdatesOfNode() async throws {
         let directory = try TemporaryDirectory()
         let completed = try await Self.completedSession(inRepoAt: directory)
         let node = AddUpdateTaskTests.sigilRef(of: completed.task)
-        let changes = try await Self.history(with: #"(node: "\#(node)")"#, in: completed.session)
+        let changes = try await Self.history(with: #"(filter: "\#(node)")"#, in: completed.session)
         let task = ColumnActorTests.id(of: .task(completed.task))
         #expect(Self.values(named: "id", of: Self.updates(of: changes)) == [task])
         #expect(Self.updateTexts(of: changes.first) == ["TASK UPDATED \(task)"])
         #expect(Self.updateTexts(of: changes.last) == ["TASK CREATED \(task)"])
     }
 
-    @Test("history(node:) with a ref that names no node gives no transaction")
-    func historyUnknownNodeGivesNoTransaction() async throws {
+    @Test("history(filter: \"^id\") with a ref that names no node gives no transaction")
+    func historyUnknownRefGivesNoTransaction() async throws {
         let directory = try TemporaryDirectory()
         let session = try await ChangeBuilderTests.baseSession(inRepoAt: directory).session
-        let changes = try await Self.history(with: #"(node: "\#(AddUpdateTaskTests.unknownTask)")"#, in: session)
+        let changes = try await Self.history(with: #"(filter: "\#(AddUpdateTaskTests.unknownTask)")"#, in: session)
         #expect(changes.isEmpty)
     }
 
-    @Test("history(actor:) keeps only the transactions of the actor")
-    func historyActorKeepsTransactionsOfActor() async throws {
+    @Test("Change.actor gives the actor of each transaction, so a client can select the changes of one actor")
+    func historyGivesActorOfEachTransaction() async throws {
         let directory = try TemporaryDirectory()
         let alice = LocalRef.actor(slug: AddUpdateTaskTests.alice)
         let byAlice = try UndoneStateTests.transaction(atStep: UndoneStateTests.Step.original.rawValue, by: alice)
         let base = try await ChangeBuilderTests.baseSession(inRepoAt: directory, writing: [byAlice])
-        let changes = try await Self.history(
-            with: #"(actor: "\#(AddUpdateTaskTests.alice)")"#,
-            selecting: "txn actor { id }",
-            in: base.session
-        )
-        #expect(Self.transactions(of: changes) == [byAlice.txn.ulidString])
-        #expect(changes.first?["actor"]["id"].string == ColumnActorTests.id(of: alice))
+        let changes = try await Self.history(selecting: "txn actor { id }", in: base.session)
+        let aliceID = ColumnActorTests.id(of: alice)
+        let byAliceChanges = changes.filter { change in change["actor"]["id"].string == aliceID }
+        #expect(Self.transactions(of: byAliceChanges) == [byAlice.txn.ulidString])
+        #expect(changes.count > byAliceChanges.count)
     }
 
-    @Test("history(filter:) keeps only the updates of the tasks that match, and of the comments on those tasks")
-    func historyFilterKeepsMatchingTasksAndComments() async throws {
+    @Test("history(filter:) with a tag keeps only the task updates; a comment update needs ~comment in the filter")
+    func historyFilterKeepsMatchingTasks() async throws {
         let directory = try TemporaryDirectory()
         let base = try await Self.taggedSession(inRepoAt: directory) { refs in
             [
@@ -284,11 +295,13 @@ struct HistoryTests {
                 AddUpdateTaskTests.addTask(with: AddUpdateTaskTests.dependsOn(refs.task)),
             ]
         }
-        let changes = try await Self.history(with: Self.bugFilterArguments, in: base.session)
-        let updates = Self.updates(of: changes)
-        #expect(Self.values(named: "type", of: updates) == [NodeType.task.rawValue, NodeType.comment.rawValue])
-        let taskUpdates = updates.filter { update in update["type"].string == NodeType.task.rawValue }
-        #expect(Self.values(named: "id", of: taskUpdates) == [ColumnActorTests.id(of: .task(base.task))])
+        let task = ColumnActorTests.id(of: .task(base.task))
+        let tagged = Self.updates(of: try await Self.history(with: Self.bugFilterArguments, in: base.session))
+        #expect(Self.values(named: "type", of: tagged) == [NodeType.task.rawValue])
+        #expect(Self.values(named: "id", of: tagged) == [task])
+        let withComments = try await Self.history(with: ##"(filter: "#bug || ~comment")"##, in: base.session)
+        let types = Self.values(named: "type", of: Self.updates(of: withComments))
+        #expect(types == [NodeType.task.rawValue, NodeType.comment.rawValue])
     }
 
     @Test("history(filter: \"#DELETED\") keeps the DELETED update of a deleted task")
@@ -361,29 +374,35 @@ struct HistoryTests {
         #expect(Self.updateTexts(of: tagged.first).contains("TASK UPDATED \(task)"))
     }
 
-    @Test("history(derived: false) leaves out the DERIVED updates")
-    func historyWithoutDerivedLeavesOutDerivedUpdates() async throws {
+    @Test("history keeps the update of a task that the completion of a different task makes ready, one per node")
+    func historyKeepsUpdateOfDependentTask() async throws {
         let directory = try TemporaryDirectory()
-        let session = try await Self.session(inRepoAt: directory) { refs in
+        let base = try await Self.session(inRepoAt: directory) { refs in
             [
                 AddUpdateTaskTests.addTask(with: AddUpdateTaskTests.dependsOn(refs.task)),
                 TaskOperationTests.taskField(MutationName.completeTask, of: refs.task),
             ]
-        }.session
-        let derived = UpdateSource.derived.rawValue
-        let withDerived = try await Self.history(in: session)
-        #expect(Self.values(named: "source", of: Self.updates(of: withDerived)).contains(derived))
-        let withoutDerived = try await Self.history(with: "(derived: false)", in: session)
-        #expect(!Self.values(named: "source", of: Self.updates(of: withoutDerived)).contains(derived))
-        #expect(Self.transactions(of: withoutDerived) == Self.transactions(of: withDerived))
+        }
+        let changes = try await Self.history(selecting: Self.fieldSelection, in: base.session)
+        let completion = try #require(changes.first)["updates"].array ?? []
+        let completed = ColumnActorTests.id(of: .task(base.task))
+        let dependents = completion.filter { update in
+            update["type"].string == NodeType.task.rawValue && update["id"].string != completed
+        }
+        let ready = dependents.flatMap { update in update["fields"].array ?? [] }.filter { field in
+            field["name"].string == "ready"
+        }
+        #expect(ready == [["name": "ready", "before": false, "after": true]])
+        for change in changes {
+            let ids = Self.updates(of: [change]).compactMap { update in update["id"].string }
+            #expect(Set(ids).count == ids.count)
+        }
     }
 
     // MARK: - Schema
 
-    @Test("The Board type has the history field with the arguments and the defaults of plan.md §4.1")
+    @Test("The Board type has the history field with only the filter and the paging arguments of plan.md §4.1")
     func schemaHasHistoryField() {
-        let field = "  history(type: [NodeType!], node: ID, actor: ID, filter: String, derived: Boolean = true, "
-            + "since: ID, first: Int = 20): [Change!]"
-        #expect(KanbanGraph.schemaSDL.contains(field))
+        #expect(KanbanGraph.schemaSDL.contains("  history(filter: String, since: ID, first: Int = 20): [Change!]"))
     }
 }

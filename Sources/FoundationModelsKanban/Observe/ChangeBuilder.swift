@@ -7,11 +7,11 @@ import OrderedCollections
 /// Makes the ``Change`` of one transaction from the projection before and after the transaction (plan.md §5.3 step 5,
 /// §6.7).
 ///
-/// The change has one `PATCH` update for each node that a patch of the transaction changed, in the order of the first
-/// patch of each node. Then it has one `DERIVED` update for each other live node whose field values changed, in slot
-/// order: for example a task that becomes ready when the task that it depends on is done, a task whose tags change
-/// with a tag rename, and the board, whose summary changes. The values are the values that a query shows before and
-/// after the transaction (``NodeObject/trackedFields``), not the raw patches.
+/// The change has one update for each node that a patch of the transaction changed, in the order of the first patch of
+/// each node. Then it has one update for each other live node whose field values changed, in slot order: for example
+/// a task that becomes ready when the task that it depends on is done, a task whose tags change with a tag rename, and
+/// the board, whose summary changes. One node has at most one update. The values are the values that a query shows
+/// before and after the transaction (``NodeObject/trackedFields``), not the raw patches.
 struct ChangeBuilder: Sendable {
     /// The read view of the graph before the transaction.
     private let before: BoardView
@@ -40,16 +40,16 @@ struct ChangeBuilder: Sendable {
         return change(of: events, patching: patched, inBoard: after.boardKey, markingUndone: isUndone)
     }
 
-    /// Makes the change that a transaction of a different board makes in this board: only the `DERIVED` updates
-    /// (plan.md §6.7, derived updates across boards). For example, a task of a related board becomes done, and a task
-    /// of this board that depends on it becomes ready.
+    /// Makes the change that a transaction of a different board makes in this board: only the updates of the nodes of
+    /// this board whose fields changed (plan.md §6.7, updates across boards). For example, a task of a related board
+    /// becomes done, and a task of this board that depends on it becomes ready.
     ///
     /// - Parameters:
     ///   - events: The events of the transaction in the other board, in the order of their ids.
     ///   - key: The current key of the other board. It is the first key of `boards`.
     ///   - isUndone: `true` when a later transaction that is not undone reverses this transaction (plan.md §6.5).
     /// - Returns: The change, or `nil` when there are no events.
-    func derivedChange(of events: [Event], inBoard key: String, markingUndone isUndone: Bool) -> Change? {
+    func changeOfOtherBoard(of events: [Event], inBoard key: String, markingUndone isUndone: Bool) -> Change? {
         change(of: events, patching: [], inBoard: key, markingUndone: isUndone)
     }
 
@@ -70,8 +70,8 @@ struct ChangeBuilder: Sendable {
         guard let first = events.first else {
             return nil
         }
-        let patchUpdates = patched.compactMap { ref in update(of: ref, from: .patch) }
-        let derivedUpdates = after.graph.allSlots.compactMap { slot in derivedUpdate(ofNodeAt: slot, besides: patched) }
+        let patchedUpdates = patched.compactMap { ref in update(of: ref, keepingNoFieldChange: true) }
+        let otherUpdates = after.graph.allSlots.compactMap { slot in update(ofNodeAt: slot, besides: patched) }
         return Change(
             txn: NodeID(text: first.txn.ulidString),
             at: first.at,
@@ -80,38 +80,40 @@ struct ChangeBuilder: Sendable {
             boards: [key] + (first.boards ?? []),
             undone: isUndone,
             undoes: first.undoes.map { txn in NodeID(text: txn.ulidString) },
-            nodeUpdates: patchUpdates + derivedUpdates
+            nodeUpdates: patchedUpdates + otherUpdates
         )
     }
 
-    /// Makes the `DERIVED` update of the node in a slot.
+    /// Makes the update of the node in a slot that no patch of the transaction changed.
     ///
     /// - Parameters:
     ///   - slot: A slot of the graph after the transaction.
-    ///   - patched: The local refs of the nodes that a patch of the transaction changed.
+    ///   - patched: The local refs of the nodes that a patch of the transaction changed. Each one already has its
+    ///     update, so one node never gets two updates.
     /// - Returns: The update, or `nil` when a patch changed the node, the node is a tombstone, the slot holds no
     ///   node, or no field value of the node changed.
-    private func derivedUpdate(ofNodeAt slot: Int, besides patched: OrderedSet<LocalRef>) -> NodeUpdate? {
+    private func update(ofNodeAt slot: Int, besides patched: OrderedSet<LocalRef>) -> NodeUpdate? {
         guard let node = after.graph.node(at: slot), !patched.contains(node.ref), !node.state.fields.isDeleted else {
             return nil
         }
-        return update(of: node.ref, from: .derived)
+        return update(of: node.ref, keepingNoFieldChange: false)
     }
 
     /// Makes the update of one node: the change of each field value from before to after the transaction.
     ///
     /// - Parameters:
     ///   - ref: The local ref of the node.
-    ///   - source: `PATCH` when a patch of the transaction changed the node, else `DERIVED`.
-    /// - Returns: The update, or `nil` when the graph after the transaction does not have the node, or when a
-    ///   `DERIVED` update has no field change.
-    private func update(of ref: LocalRef, from source: UpdateSource) -> NodeUpdate? {
+    ///   - keepsEmpty: `true` to give an update also when no field value changed: a patch of the transaction
+    ///     changed the node.
+    /// - Returns: The update, or `nil` when the graph after the transaction does not have the node, or when no field
+    ///   value changed and `keepsEmpty` is `false`.
+    private func update(of ref: LocalRef, keepingNoFieldChange keepsEmpty: Bool) -> NodeUpdate? {
         guard let newFields = after.trackedFields(of: ref) else {
             return nil
         }
         let oldFields = before.trackedFields(of: ref)
         let fields = newFields.compactMap { name, value in FieldChange(named: name, from: oldFields?[name], to: value) }
-        guard source == .patch || !fields.isEmpty else {
+        guard keepsEmpty || !fields.isEmpty else {
             return nil
         }
         return NodeUpdate(
@@ -119,7 +121,6 @@ struct ChangeBuilder: Sendable {
             id: after.id(of: ref),
             type: NodeType(ref.nodeType),
             kind: kind(of: ref),
-            source: source,
             fields: fields,
             boardKey: after.boardKey
         )
