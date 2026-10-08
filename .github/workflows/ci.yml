@@ -1,0 +1,41 @@
+name: CI
+
+# Delegates to the shared swift-ci workflow, the same as the sibling packages.
+#
+# The org test contract (the README of swissarmyhammer/workflows) applies here in
+# full, and this repository satisfies it with a nested integration package:
+#
+# - `swift test` at the root runs each unit test of this repository, and only
+#   unit tests. The tests that need a real external system live in the nested
+#   `IntegrationTests/` package. The root manifest does not name that package,
+#   so the root run cannot see it.
+# - No environment variable selects a suite. The package path selects the
+#   suite by the build graph.
+# - The unit job of the shared workflow builds the nested package on each run,
+#   because the root build does not compile it, and a broken integration test
+#   must not stay unseen between runs. The integration job then builds and runs
+#   that package, after the unit job.
+# - MLX is in this dependency graph: `searchTasks` uses
+#   FoundationModelsMetadataRegistry, which depends on FoundationModelsExtras
+#   and mlx-swift. Thus this workflow gives `integration-metallib-glob`, the
+#   same as the sibling packages: the shared workflow copies the
+#   `default.metallib` that SwiftPM puts in the Cmlx bundle beside each
+#   `.xctest` bundle before the run. Thus an integration test that loads an
+#   MLX embedder finds the shader library.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    uses: swissarmyhammer/workflows/.github/workflows/swift-ci.yaml@main
+    with:
+      integration-package-path: IntegrationTests
+      integration-metallib-glob: "*Cmlx*/default.metallib"

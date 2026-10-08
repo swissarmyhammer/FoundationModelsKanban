@@ -39,10 +39,29 @@ comments:
     - commit: none on main. The partial work is parked on the local branch `wip/qjfsmrp-multitool` (Package.swift with the Multitool test dependency, Multitool/CodeModeTests.swift, which is red).
     - review: not run
   timestamp: 2026-10-08T04:45:21.842450+00:00
+- actor: wballard
+  id: 01m4dpq2h0ks4kk5stg82snsw0
+  text: |-
+    ### Decisions from the user (2026-10-08)
+    1. **Output:** the script must get the tool result as a JS object. Multitool will change: when a plain `Tool` returns a `String` that holds JSON, the script gets the parsed value. `KanbanTool` keeps its `String` output (plan.md §7.1 stays) and does not conform to `OperationDescribing`. The Multitool session (foundationmodelsmultitool-34) got the request. This task waits for that Multitool commit, and for the user to push it, because Kanban gets Multitool by URL.
+    2. **Input:** a code mode script can give `variables` as a JS object or as a JSON string. Both forms must work, and the test must prove both.
+    3. **On-device model test:** it goes in the nested `IntegrationTests/` package (task ^7j3aar6), not in the unit target. The unit target keeps the code mode test that needs no model.
+    - The partial work is on the local branch `wip/qjfsmrp-multitool` (931b3ea).
+  timestamp: 2026-10-08T12:09:54.976824+00:00
+- actor: wballard
+  id: 01m4dq5t7sz72hteqst9jtdn7h
+  text: |-
+    ### Multitool dependency ready (local only)
+    - **Commit:** FoundationModelsMultitool 5bbaec4. `ArgumentMarshaler.renderOutput` gives a runCode script the parsed JS value when a `String` output holds one JSON object or array. Other text, also JSON scalars, stays a string.
+    - **Input:** no Multitool change was necessary. An `anyOf` [string, object with no properties] field with no top-level `type` passes a JS object as an object, and a JSON string as a string.
+    - **Tests:** 5 Multitool tests cover the change, and its review found 0 findings.
+    - **Blocked:** the commit is NOT pushed. This task can use it only after the user pushes it, because Kanban gets Multitool by URL. After the push, run `swift package update FoundationModelsMultitool` here.
+    - **Other failures:** 4 Multitool tests (HostAndEmitter, RunBinding, InnerTerminalEvent) fail. They also fail on 1155c16 without this change.
+  timestamp: 2026-10-08T12:17:58.009097+00:00
 depends_on:
-- 01M4B42S72SRF2PEZR5603JKBR
-position_column: doing
-position_ordinal: '80'
+- 01M4DPPYA338NYS7JAA7J3AAR6
+position_column: todo
+position_ordinal: b480
 title: 'Multitool proof: code mode end to end'
 ---
 ## What

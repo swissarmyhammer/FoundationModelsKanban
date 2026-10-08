@@ -9,6 +9,27 @@ command-line tool. Each board is an event log in the `.kanban/` directory of
 its git repo. The port is not complete. See [plan.md](plan.md) for the design
 and the port order.
 
+## Run the tests
+
+A package boundary separates the two test suites:
+
+- `swift test` runs the unit suite. The unit tests need no model and no
+  network.
+- `swift test --package-path IntegrationTests` runs the integration suite in
+  the nested [`IntegrationTests`](IntegrationTests) package. These tests use
+  real external systems, for example a real git repo. A test that uses the
+  on-device model needs a Mac with Apple Intelligence turned on.
+
+The package structure selects the suite. No environment variable changes it.
+The root `Package.swift` declares one test target, the unit suite, so a root
+`swift test` cannot run an integration test. The integration target is only in
+the nested package. CI runs the two suites through the shared `swift-ci`
+workflow (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+
+The nested package commits its own `Package.resolved`, with the same pins as
+the root `Package.resolved`. When you change the root pins, copy them to
+`IntegrationTests/Package.resolved`.
+
 ## Known build warnings
 
 A clean `swift build --build-tests` shows two kinds of warnings. These
