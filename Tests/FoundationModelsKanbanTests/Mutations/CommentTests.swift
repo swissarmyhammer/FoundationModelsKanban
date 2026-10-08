@@ -125,8 +125,17 @@ struct CommentTests {
         selecting selection: String,
         on graph: KanbanGraph
     ) async throws -> String {
-        let query = #"{ board { task(id: "\#(AddUpdateTaskTests.sigilRef(of: task))") \#(selection) } }"#
-        return try await KanbanGraphTests.execute(query, on: graph)
+        try await KanbanGraphTests.execute(taskQuery(of: task, selecting: selection), on: graph)
+    }
+
+    /// Makes a query of one task of the board, `Board.task`.
+    ///
+    /// - Parameters:
+    ///   - task: The ULID of the task. The query names it by `^` and the short id.
+    ///   - selection: The selection of the task field.
+    /// - Returns: The query document.
+    static func taskQuery(of task: ULID, selecting selection: String) -> String {
+        #"{ board { task(id: "\#(AddUpdateTaskTests.sigilRef(of: task))") \#(selection) } }"#
     }
 
     /// Gives the bodies of the comments of a task, as `Task.comments` lists them.

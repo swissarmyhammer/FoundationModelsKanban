@@ -17,7 +17,7 @@ import ULID
 @Suite("Column and actor mutations")
 struct ColumnActorTests {
     /// The slug of the column that a test adds.
-    private static let qaSlug = "qa"
+    static let qaSlug = "qa"
 
     /// The name of the column that a test adds.
     private static let qaName = "QA"

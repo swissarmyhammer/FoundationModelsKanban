@@ -72,12 +72,28 @@ comments:
     - evidence: 4 files — Sources/FoundationModelsKanban/Observe/LiveGraph.swift, Sources/FoundationModelsKanban/Observe/BoardWatcher.swift, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift, Tests/FoundationModelsKanbanTests/Observe/BoardWatcherTests.swift. RED: compile failure on missing `activeWatch`/`isRunning`; GREEN: `swift test --filter BoardWatcherTests` 7/7. Red proof: close() without end() -> closeStopsWatcher failed at `await !watch.watcher.isRunning`; restored. `swift test` x3 (`--skip-build` on runs 2 and 3): 855 tests in 51 suites passed each run; only build warning is the accepted mlx-swift "missing creator". periphery scan (--retain-public, tests indexed and report-excluded): No unused code detected. 2 of 2 findings checked.
     - next: /review
   timestamp: 2026-10-08T01:15:34.313437+00:00
+- actor: wballard
+  id: 01m4che9yfndpm1xnq5w5jwrr3
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (e5c3932). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. 4 files reviewed. All prior Review Findings items are checked.
+    - next: None. The task is in done.
+  timestamp: 2026-10-08T01:18:30.351982+00:00
+- actor: wballard
+  id: 01m4chegj18grx9b8geakgk5r5
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 4 files (Observe/LiveGraph.swift, Observe/BoardWatcher.swift, Tool/KanbanGraph.swift, BoardWatcherTests.swift); 2/2 findings checked; red proof for close test
+    - test: green — swift test 3 runs, 855 passed each; build warnings only the 2 accepted kinds
+    - commit: e5c3932
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T01:18:37.121470+00:00
 depends_on:
 - 01M4B3ZDK527CRVKQQRT87RGHJ
 - 01M4B4ADV9EPW7N9VGBVBVV8WM
 - 01M4B4180ZBKH8RSE3FA9REHS7
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ac80
 title: 'Live graph: FSEvents watcher and batches'
 ---
 ## What

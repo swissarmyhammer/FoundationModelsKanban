@@ -83,7 +83,7 @@ struct TaskOperationTests {
         "{ board { tasks(deleted: true, excludeDone: false) { edges { node { id } } } } }"
 
     /// The `input` field that names the actor ``AddUpdateTaskTests/alice``.
-    static let aliceInput = #"actor: "\#(AddUpdateTaskTests.alice)""#
+    static let aliceInput = actorInput(naming: AddUpdateTaskTests.alice)
 
     /// Each mutation of this suite, with the other fields of its `input` object, for the not-found test.
     private static let mutationInputs = [
@@ -159,6 +159,14 @@ struct TaskOperationTests {
     /// - Returns: The `input` field.
     private static func neighbor(_ side: String, of task: ULID) -> String {
         neighbor(side, naming: AddUpdateTaskTests.sigilRef(of: task))
+    }
+
+    /// Makes the `actor` part of an `assignTask` or an `unassignTask` input.
+    ///
+    /// - Parameter actor: The actor ref, for example the slug.
+    /// - Returns: The `input` field.
+    static func actorInput(naming actor: String) -> String {
+        #"actor: "\#(actor)""#
     }
 
     /// Makes the `tags` part of a `tagTask` or an `untagTask` input.
