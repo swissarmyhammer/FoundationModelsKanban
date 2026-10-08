@@ -20,7 +20,8 @@ extension KanbanResolver {
     /// - Returns: The changes. In a run that the engine runs again after it loads the board, the stream has ended
     ///   and the subscriber is not added.
     /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for `board`. An
-    ///   error of ``ChangeFilter/init(for:in:)``.
+    ///   error of ``ChangeFilter/init(for:in:)``. ``KanbanError/notFound(type:reference:)`` when the board has no
+    ///   repo directory to watch.
     func changes(context: KanbanContext, arguments: ChangesArguments) async throws(KanbanError) -> ChangeEvents {
         let store = context.store
         let events = try await Self.events(of: arguments, readIn: store, from: context.feed)
@@ -39,6 +40,8 @@ extension KanbanResolver {
     /// - Returns: The events of the subscriber, or a stream that has ended when the engine did not load the board
     ///   yet. The engine then runs the call again after the load.
     /// - Throws: An error of ``BoardStore/view(ofBoard:)`` or of ``ChangeFilter/init(for:in:)``.
+    ///   ``KanbanError/notFound(type:reference:)`` for the board when the board has no repo directory to watch, for
+    ///   example a board in memory only. The subscription then gives one response with the error, and ends.
     private static func events(
         of arguments: ChangesArguments,
         readIn store: BoardStore,
@@ -49,12 +52,11 @@ extension KanbanResolver {
         }
         let filter = try ChangeFilter(for: arguments, in: view)
         guard let directory = view.source?.directory else {
-            assertionFailure("The board \(view.boardKey) of a subscription has no repo directory")
             Log.kanban.error(
                 "A subscription names a board in memory only; the subscription ends",
                 metadata: ["board": "\(view.boardKey)"]
             )
-            return endedEvents()
+            throw .notFound(type: .board, reference: view.boardKey)
         }
         return feed.subscribe(toBoardAt: directory.canonicalPath, filteredBy: filter)
     }

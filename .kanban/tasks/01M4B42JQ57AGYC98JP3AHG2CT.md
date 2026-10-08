@@ -36,6 +36,39 @@ comments:
     - follow-up: ^0ahzwrz (Change.actor in the board of the change).
     - next: /review
   timestamp: 2026-10-08T06:29:29.597521+00:00
+- actor: wballard
+  id: 01m4d3mxphzsaks8xeecpntbvw
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (8a9f38f); 5 findings (5 confirmed, 10 refuted) — Sources/FoundationModelsKanban/GraphQL/Schema.swift:1167, Sources/FoundationModelsKanban/Observe/ChangeSubscription.swift:57, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift:262, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift:263, Tests/FoundationModelsKanbanTests/Observe/StreamWait.swift:11
+    - next: correct all 5 items in "Review Findings (2026-10-08 01:32)", then do the review again.
+  timestamp: 2026-10-08T06:36:41.553271+00:00
+- actor: wballard
+  id: 01m4d3n8myn8f2sgagk90ae8jv
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 4 new Observe sources, 7 changed sources, 4 test files (new SubscriptionTests.swift, StreamWait.swift)
+    - test: green — swift test 3 runs with a 120 s limit, 947 passed each (8.6 s, 8.1 s, 8.6 s); build warnings only the 2 accepted kinds
+    - commit: 8a9f38f
+    - review: findings — Sources/FoundationModelsKanban/GraphQL/Schema.swift:1167, Sources/FoundationModelsKanban/Observe/ChangeSubscription.swift:57, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift:262, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift:263, Tests/FoundationModelsKanbanTests/Observe/StreamWait.swift:11
+  timestamp: 2026-10-08T06:36:52.766181+00:00
+- actor: wballard
+  id: 01m4d44g901a052jkxvw6f2myd
+  text: |-
+    Review findings (2026-10-08 01:32) are corrected. Notes for the next agent:
+    1. Schema.swift: one private helper `rewriting(_:formattedWith:answeringFailureWith:_:)` does the name rewrite and makes the parse-error response for `respond` and `subscribe`. One private static `errorResponse(_:formattedWith:)` makes the one-error response. `respond` uses it also for a GraphQLError from `result(of:...)`, as before.
+    2. ChangeSubscription.swift: a board with no repo directory now throws `KanbanError.notFound(type: .board, reference: <board key>)` from `events`. The log line stays. The `assertionFailure` is removed. The subscription gives one NOT_FOUND response and ends. I used the existing NOT_FOUND code, because plan.md §4.4 fixes the code catalog. I did not make the state impossible in the types: `BoardView.source` is optional for graph rules, history replay, and test fixtures, and a test reaches this path with `GraphQLEngineTests.makeContext()`. New test: `SubscriptionTests.boardWithNoDirectoryGivesOneErrorAndEnds`. RED: the test process stopped at the `assertionFailure` (signal 5). GREEN: pass.
+    3. KanbanGraph.swift: one private helper `runSchemaCall(answeringFailureWith:_:)` holds the only `catch let error as KanbanError` around `runCall`. `respond` and `startSubscription` call it.
+    4. Tests: `StreamWait.timeLimitSeconds`; in SubscriptionTests `oneEvent`, `twoEvents`, `linesBeforeBranchLine`, and the file-scope `subscriptionSuiteMinutes`. A `@Suite` attribute cannot read a static member of its own type (the compiler reports "circular reference resolving attached macro 'Suite'"), so that constant is at file scope. The INVALID_FILTER test and the new test share `errorCode(of:)`.
+    5. periphery with `--retain-public --skip-build --index-store-path .build/out`: Sources has no finding. It still reports 7 items in test files that this change did not touch (MergeTests.swift, ChangeBuilderTests.swift, TaskSearchTests.swift, KanbanGraphTests.swift).
+  timestamp: 2026-10-08T06:45:12.096692+00:00
+- actor: wballard
+  id: 01m4d44jym1x4tmrm92f6jxbda
+  text: |-
+    ### implement — changed
+    - evidence: Sources/FoundationModelsKanban/GraphQL/Schema.swift, Sources/FoundationModelsKanban/Observe/ChangeSubscription.swift, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift, Tests/FoundationModelsKanbanTests/Observe/StreamWait.swift, Tests/FoundationModelsKanbanTests/Observe/SubscriptionTests.swift. `swift build --build-tests`: only the accepted SwiftPM "missing creator" warning. Full `swift test --skip-build` 3 times (120 s limit): 948 tests in 64 suites passed in 8.663 s, 8.445 s, 7.915 s. swiftlint no_magic_numbers (allowed 0, 1, -1, 100) on the 5 changed files: 0 violations. periphery --retain-public: Sources clean. No line is longer than 120 characters.
+    - next: /review
+  timestamp: 2026-10-08T06:45:14.836631+00:00
 depends_on:
 - 01M4B41VDXZ3NKEG4554PVXWQN
 - 01M4B412DB2BSB0FAQEA72WN8T
@@ -65,3 +98,16 @@ GraphQL subscriptions on `KanbanGraph`. The basis is plan.md §6.7 and §12 item
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-08 01:32)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 15 file(s) reviewed, 6 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+- [x] `Sources/FoundationModelsKanban/GraphQL/Schema.swift:1167` `duplication/duplication` — The `subscribe` function repeats the rewrite-or-error block that `respond` already has. Both call `DocumentRewriter(for:).rewrittenDocument(from:)`, catch a `GraphQLError`, and wrap it in `RewriteResponse(result: GraphQLResult(errors: [error]), rewrites: [])`. A change to how rewrite errors are reported has to be made in two places. Move the rewrite step into one private helper that returns either the rewritten document or the one-error response JSON. Use it from both `respond` and `subscribe`.
+- [x] `Sources/FoundationModelsKanban/Observe/ChangeSubscription.swift:57` `completeness/public-output-contract` — When a subscription names a board that has no repo directory, the resolver returns an ended stream with no response and no errors. The Schema.swift `subscribe` doc says a subscription that cannot start gives one response with the errors and then ends. In a release build the `assertionFailure` does nothing, so the client gets an empty stream with no error and no reason. The error is logged but never returned. Return a stream that yields one GraphQL error response before it ends, for example by throwing a KanbanError from `events` so that `subscribe` returns `.single(...)` through the existing failure path. Keep the log line. Do not rely on `assertionFailure` alone to reach the client.
+- [x] `Sources/FoundationModelsKanban/Tool/KanbanGraph.swift:262` `reuse/reuse` — `respond` and `startSubscription` repeat the same wrapper: call `runCall` with a schema method, then catch `KanbanError` and turn it into a response. The new subscription path copies the wrapper instead of sharing it. The two copies can diverge in how errors are handled. Add one private helper that takes the schema call and an error-mapping closure, or make `startSubscription` call `respond` and wrap the result with `.single` where needed. Keep one place that catches `KanbanError` for the gate-level calls.
+- [x] `Sources/FoundationModelsKanban/Tool/KanbanGraph.swift:263` `duplication/duplication` — `respond` and `startSubscription` repeat the same wrapper: `do { return try await runCall { context in try await schema.<op>(to: query, variables: variables, operationName: operationName, formattedWith: .sortedKeys, context: context) } } catch let error as KanbanError { ... }`. Only the schema operation (`respond` vs `subscribe`) and the error wrapper (`responseJSON()` vs `.single(...)`) differ. If one copy changes, for example the formatting argument or the `runCall` arguments, the other copy drifts. Extract one private helper that takes the schema call as a closure and the error mapping as a parameter, for example `runSchemaCall(_ call: (PublicSchema, KanbanContext) async throws -> Response, onError: (KanbanError) throws -> Output)`. Call it from `respond` and `startSubscription`, and delete the second copy of the do/catch.
+- [x] `Tests/FoundationModelsKanbanTests/Observe/StreamWait.swift:11` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.

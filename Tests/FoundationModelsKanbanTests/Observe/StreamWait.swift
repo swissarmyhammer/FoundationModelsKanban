@@ -7,8 +7,11 @@ import Foundation
 /// stops a test that would wait forever. The wait cancels the task that reads the stream when the time limit ends, and
 /// a read of an `AsyncStream` or an `AsyncThrowingStream` ends at a cancel. Thus, no wait blocks past its limit.
 enum StreamWait {
+    /// The number of seconds of ``timeLimit``.
+    private static let timeLimitSeconds = 10
+
     /// The longest time that a test waits for a value.
-    static let timeLimit = Duration.seconds(10)
+    private static let timeLimit = Duration.seconds(timeLimitSeconds)
 
     /// Runs an operation that reads a stream, and stops it when the time limit ends first.
     ///

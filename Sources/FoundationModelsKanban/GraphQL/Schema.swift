@@ -1123,20 +1123,20 @@ extension API {
         formattedWith formatting: GraphQLJSONEncoder.OutputFormatting = [],
         context: ContextType
     ) async throws -> String {
-        let response: RewriteResponse
-        do {
-            let rewritten = try DocumentRewriter(for: schema.schema).rewrittenDocument(from: document)
-            let result = try await result(
-                of: rewritten,
-                variables: variables,
-                operationName: operationName,
-                context: context
-            )
-            response = RewriteResponse(result: result, rewrites: rewritten.rewrites)
-        } catch let error as GraphQLError {
-            response = RewriteResponse(result: GraphQLResult(errors: [error]), rewrites: [])
+        try await rewriting(document, formattedWith: formatting, answeringFailureWith: { $0 }) { rewritten in
+            let result: GraphQLResult
+            do {
+                result = try await self.result(
+                    of: rewritten,
+                    variables: variables,
+                    operationName: operationName,
+                    context: context
+                )
+            } catch let error as GraphQLError {
+                return try Self.errorResponse(error, formattedWith: formatting)
+            }
+            return try RewriteResponse(result: result, rewrites: rewritten.rewrites).encoded(formattedWith: formatting)
         }
-        return try response.encoded(formattedWith: formatting)
     }
 
     /// Starts one subscription document, and gives the response of each event as JSON text (plan.md §6.7).
@@ -1160,32 +1160,67 @@ extension API {
         formattedWith formatting: GraphQLJSONEncoder.OutputFormatting,
         context: ContextType
     ) async throws -> AsyncThrowingStream<String, Error> {
+        let single: (String) -> AsyncThrowingStream<String, Error> = AsyncThrowingStream.single
+        return try await rewriting(document, formattedWith: formatting, answeringFailureWith: single) { rewritten in
+            let encode: @Sendable (GraphQLResult) throws -> String = { result in
+                try RewriteResponse(result: rewritten.codedCallerResult(from: result), rewrites: rewritten.rewrites)
+                    .encoded(formattedWith: formatting)
+            }
+            guard rewritten.ties.isEmpty else {
+                return .single(try encode(GraphQLResult(errors: rewritten.ties)))
+            }
+            let started = try await subscribe(
+                request: rewritten.text,
+                context: context,
+                variables: variables,
+                operationName: operationName
+            )
+            switch started {
+            case .success(let results):
+                return .encoding(results, with: encode)
+            case .failure(let failure):
+                return .single(try encode(GraphQLResult(errors: failure.errors)))
+            }
+        }
+    }
+
+    /// Applies the name rewrite of plan.md §4.5 to a document, and runs the rewritten document. A document that does
+    /// not parse gives the response with the one parse error and no `data`, and the document does not run.
+    ///
+    /// - Parameters:
+    ///   - document: The GraphQL document as the caller wrote it.
+    ///   - formatting: The formatting of the JSON text of the error response.
+    ///   - wrap: Gives the output of the response JSON text of the parse error.
+    ///   - run: Runs the rewritten document, and gives the output.
+    /// - Returns: The output of `run`, or the wrapped error response when the document does not parse.
+    /// - Throws: An error of `run`, or an error from the JSON encoder.
+    private func rewriting<Output>(
+        _ document: String,
+        formattedWith formatting: GraphQLJSONEncoder.OutputFormatting,
+        answeringFailureWith wrap: (String) -> Output,
+        _ run: (RewrittenDocument) async throws -> Output
+    ) async throws -> Output {
         let rewritten: RewrittenDocument
         do {
             rewritten = try DocumentRewriter(for: schema.schema).rewrittenDocument(from: document)
         } catch let error as GraphQLError {
-            let response = RewriteResponse(result: GraphQLResult(errors: [error]), rewrites: [])
-            return .single(try response.encoded(formattedWith: formatting))
+            return wrap(try Self.errorResponse(error, formattedWith: formatting))
         }
-        let encode: @Sendable (GraphQLResult) throws -> String = { result in
-            try RewriteResponse(result: rewritten.codedCallerResult(from: result), rewrites: rewritten.rewrites)
-                .encoded(formattedWith: formatting)
-        }
-        guard rewritten.ties.isEmpty else {
-            return .single(try encode(GraphQLResult(errors: rewritten.ties)))
-        }
-        let started = try await subscribe(
-            request: rewritten.text,
-            context: context,
-            variables: variables,
-            operationName: operationName
-        )
-        switch started {
-        case .success(let results):
-            return .encoding(results, with: encode)
-        case .failure(let failure):
-            return .single(try encode(GraphQLResult(errors: failure.errors)))
-        }
+        return try await run(rewritten)
+    }
+
+    /// Gives the response of one GraphQL error, with no `data` and no rewrites.
+    ///
+    /// - Parameters:
+    ///   - error: The error.
+    ///   - formatting: The formatting of the JSON text.
+    /// - Returns: The response as JSON text.
+    /// - Throws: An error from the JSON encoder.
+    private static func errorResponse(
+        _ error: GraphQLError,
+        formattedWith formatting: GraphQLJSONEncoder.OutputFormatting
+    ) throws -> String {
+        try RewriteResponse(result: GraphQLResult(errors: [error]), rewrites: []).encoded(formattedWith: formatting)
     }
 
     /// Runs a rewritten document, and gives the result in the form of the

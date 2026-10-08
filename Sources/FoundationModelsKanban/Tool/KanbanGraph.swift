@@ -258,19 +258,14 @@ public actor KanbanGraph {
         variables: [String: Map],
         operationName: String?
     ) async throws -> String {
-        let schema = schema
-        do {
-            return try await runCall { context in
-                try await schema.respond(
-                    to: query,
-                    variables: variables,
-                    operationName: operationName,
-                    formattedWith: .sortedKeys,
-                    context: context
-                )
-            }
-        } catch let error as KanbanError {
-            return try error.responseJSON()
+        try await runSchemaCall(answeringFailureWith: { $0 }) { schema, context in
+            try await schema.respond(
+                to: query,
+                variables: variables,
+                operationName: operationName,
+                formattedWith: .sortedKeys,
+                context: context
+            )
         }
     }
 
@@ -288,19 +283,37 @@ public actor KanbanGraph {
         variables: [String: Map],
         operationName: String?
     ) async throws -> AsyncThrowingStream<String, Error> {
+        try await runSchemaCall(answeringFailureWith: AsyncThrowingStream.single) { schema, context in
+            try await schema.subscribe(
+                to: query,
+                variables: variables,
+                operationName: operationName,
+                formattedWith: .sortedKeys,
+                context: context
+            )
+        }
+    }
+
+    /// Runs one call of the public schema on the session of the current board, and gives a ``KanbanError`` of the run
+    /// or of the commit as one error response (plan.md §4.4, §5.4).
+    ///
+    /// - Parameters:
+    ///   - wrap: Gives the output of the response JSON text of a ``KanbanError``.
+    ///   - call: Runs the document against the schema and the context of one run, and gives the output.
+    /// - Returns: The output of the run that committed or kept no patch, or the wrapped error response.
+    /// - Throws: A ``BoardKeyError``, a ``BoardWatcherError``, or an ``EventLogError`` when a board cannot load or a
+    ///   commit cannot write.
+    private func runSchemaCall<Output: Sendable>(
+        answeringFailureWith wrap: (String) -> Output,
+        _ call: @Sendable (PublicSchema, KanbanContext) async throws -> Output
+    ) async throws -> Output {
         let schema = schema
         do {
             return try await runCall { context in
-                try await schema.subscribe(
-                    to: query,
-                    variables: variables,
-                    operationName: operationName,
-                    formattedWith: .sortedKeys,
-                    context: context
-                )
+                try await call(schema, context)
             }
         } catch let error as KanbanError {
-            return .single(try error.responseJSON())
+            return wrap(try error.responseJSON())
         }
     }
 
