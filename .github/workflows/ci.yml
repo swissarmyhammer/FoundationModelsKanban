@@ -17,11 +17,15 @@ name: CI
 #   that package, after the unit job.
 # - MLX is in this dependency graph: `searchTasks` uses
 #   FoundationModelsMetadataRegistry, which depends on FoundationModelsExtras
-#   and mlx-swift. Thus this workflow gives `integration-metallib-glob`, the
-#   same as the sibling packages: the shared workflow copies the
-#   `default.metallib` that SwiftPM puts in the Cmlx bundle beside each
-#   `.xctest` bundle before the run. Thus an integration test that loads an
-#   MLX embedder finds the shader library.
+#   and mlx-swift. The integration package runs the real model
+#   `mlx-community/Qwen3.8-27B-mxfp4` through `PooledModel` of
+#   FoundationModelsExtras, and MLX needs its shader library for that model.
+#   Thus this workflow gives `integration-metallib-glob`, the same as the
+#   sibling packages: the shared workflow copies the `default.metallib` that
+#   SwiftPM puts in the Cmlx bundle beside each `.xctest` bundle before the
+#   run.
+#   `CIWorkflowTests` pins the delegation, the two inputs, the triggers and
+#   the one job from this side.
 
 on:
   push:
