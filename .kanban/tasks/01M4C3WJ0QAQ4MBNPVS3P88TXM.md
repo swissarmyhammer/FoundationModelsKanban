@@ -11,8 +11,22 @@ comments:
 
     The same run also reports four findings outside Errors.swift (NameRewrite `from`/`to`/`path`, `RewriteResponse.Extensions.rewrites`). ^cwazjga tracks them. This card is not moved or closed.
   timestamp: 2026-10-08T00:36:45.278070+00:00
-position_column: todo
-position_ordinal: b380
+- actor: wballard
+  id: 01m4cfmsg2fmsed6qxe7ma6s0h
+  text: |-
+    Research: the scan before the change reported 2 findings, both in Errors.swift: `ResponseError.path` and `ErrorResponse.errors`. Production code reads both, but only through the synthesized `encode(to:)`: `KanbanGraph.execute` catches a `KanbanError` and returns `responseJSON()`, which encodes `ErrorResponse(errors: [responseError()])`. That writes `errors`, and for each `ResponseError` it writes `path` (an empty list). `KanbanErrorTests.responseJSONHasOnlyErrors` holds that exact output (`{"errors":[{...,"path":[]}]}`), so the reads are real. Removing a property would change the error response JSON, so removal is not correct.
+
+    Fix: `// periphery:ignore` above each property, with the reason on its own comment line above the marker. This is the same form as NameRewrite.swift and Schema.swift (`RewriteResponse.Extensions.rewrites`). `path`: "The synthesized `Encodable` and `Hashable` conformances read this property; periphery sees no reader." `errors`: "The synthesized `Encodable` conformance reads this property; periphery sees no reader." No code behavior changed, so no new test (only comments changed; the existing tests hold the JSON).
+  timestamp: 2026-10-08T00:47:05.730938+00:00
+- actor: wballard
+  id: 01m4cfmw0zg61e0jyb7k7jscet
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Sources/FoundationModelsKanban/GraphQL/Errors.swift. `periphery scan --retain-public --report-exclude 'Tests/**' --relative-results -- --build-system native --build-tests` gives "No unused code detected." `swift test` gives 848 tests in 50 suites passed, exit 0. The only build warning is the mlx-swift "missing creator for mutated node" kind that README.md records.
+    - next: /review
+  timestamp: 2026-10-08T00:47:08.319932+00:00
+position_column: doing
+position_ordinal: '80'
 title: 'Periphery: assign-only findings in KanbanError.ResponseError and ErrorResponse'
 ---
 ## What
@@ -25,5 +39,5 @@ The synthesized `Codable` and `Hashable` code reads these properties, and periph
 Add `// periphery:ignore` with a reason line to each property (the project rule for a property that only synthesized code reads), or set the periphery option that keeps `Codable` properties. Choose the form that the other periphery exemptions of the project use.
 
 ## Acceptance Criteria
-- [ ] The periphery scan reports no finding in `Errors.swift`.
-- [ ] `swift test` passes.
+- [x] The periphery scan reports no finding in `Errors.swift`.
+- [x] `swift test` passes.

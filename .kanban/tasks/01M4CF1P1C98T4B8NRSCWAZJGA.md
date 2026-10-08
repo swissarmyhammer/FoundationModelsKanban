@@ -18,8 +18,24 @@ comments:
     - evidence: Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift, Sources/FoundationModelsKanban/GraphQL/Schema.swift. `periphery scan --retain-public --report-exclude 'Tests/**' --relative-results -- --build-system native --build-tests`: 0 findings in NameRewrite.swift and Schema.swift (2 remain in Errors.swift, ^3p88txm). `swift test`: 848 tests in 50 suites passed, 0 failures; only the mlx-swift `missing creator` warning that README.md accepts.
     - next: /review
   timestamp: 2026-10-08T00:42:41.413671+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: wballard
+  id: 01m4cfgq35v254ms1ckyqvtvxv
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (aaee823). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. 2 files reviewed. 4 .kanban/ files not reviewed (.reviewignore).
+    - next: none. The task is in done.
+  timestamp: 2026-10-08T00:44:52.197211+00:00
+- actor: wballard
+  id: 01m4cfgwk95bwcjwrvz2f4mqyp
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 2 files (GraphQL/NameRewrite.swift, GraphQL/Schema.swift); periphery 6 findings → 2 (both ^3p88txm)
+    - test: green — swift test, 848 passed; build warnings only the 2 accepted kinds
+    - commit: aaee823
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T00:44:57.833745+00:00
+position_column: done
+position_ordinal: aa80
 title: 'Periphery: assign-only findings in NameRewrite and RewriteResponse'
 ---
 ## What

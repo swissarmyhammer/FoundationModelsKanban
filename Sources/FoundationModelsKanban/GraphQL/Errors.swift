@@ -224,6 +224,8 @@ extension KanbanError {
         let message: String
 
         /// The path to the response field of the error. The path is empty when no field caused the error.
+        // The synthesized `Encodable` and `Hashable` conformances read this property; periphery sees no reader.
+        // periphery:ignore
         let path: [PathComponent]
 
         /// The `extensions` object, which holds the code.
@@ -242,6 +244,8 @@ extension KanbanError {
     /// The JSON of a response that holds only errors, and no `data`.
     private struct ErrorResponse: Encodable {
         /// The errors of the response.
+        // The synthesized `Encodable` conformance reads this property; periphery sees no reader.
+        // periphery:ignore
         let errors: [ResponseError]
     }
 
