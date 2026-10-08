@@ -33,6 +33,39 @@ comments:
     - evidence: new files CrossRepoWriteTests.swift and CrossRepoFixture.swift; changed Commit.swift, Schema.swift, MutationResolvers.swift, ColumnActorMutations.swift, TaskMutations.swift, TaskOperationMutations.swift, TagMutations.swift, CommentMutations.swift, UndoMutations.swift, RelatedBoards.swift, BoardLock.swift, KanbanGraph.swift, CrossRepoReadTests.swift, EventLogTests.swift. `swift build --build-tests`: no new warnings. Periphery: no unused code. Full `swift test --skip-build` 3 times: 932 tests in 61 suites pass each time (about 7 s each).
     - next: /review
   timestamp: 2026-10-08T05:10:07.449378+00:00
+- actor: wballard
+  id: 01m4cz0jp3p4066mvc9r08cq5t
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (85198b5); 1 finding (1 confirmed, 1 refuted) — Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoFixture.swift:37 (reuse/reuse)
+    - next: implement the open item in "Review Findings (2026-10-08 00:12)", then review again.
+  timestamp: 2026-10-08T05:15:40.611076+00:00
+- actor: wballard
+  id: 01m4cz0tektg0xk6dtdfh13nf3
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 12 source files and 4 test files (new CrossRepoWriteTests.swift and CrossRepoFixture.swift)
+    - test: green — swift test 3 runs with a 120 s limit, 932 passed each; build warnings only the 2 accepted kinds
+    - commit: 85198b5
+    - review: findings — Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoFixture.swift:37
+  timestamp: 2026-10-08T05:15:48.563416+00:00
+- actor: wballard
+  id: 01m4cz8mwm0hqc7kvck6nehq4g
+  text: |-
+    Review finding reuse/reuse (CrossRepoFixture.swift:37) is fixed.
+    - New shared test helper `GitGraphFixture.makeGraph(at:locatedBy:recordedBy:)` in Tests/FoundationModelsKanbanTests/Tool/GitGraphFixture.swift. `locatedBy` defaults to `.default` and `recordedBy` defaults to `nil`. It is now the only test helper that connects `BoardKey.read(fromRepoAt:)` to a `KanbanGraph`.
+    - Removed `CrossRepoFixture.makeGraph` and `Design.PortabilityTests.makeGraph(at:)`. PortabilityTests, CrossRepoReadTests and CrossRepoWriteTests call `GitGraphFixture.makeGraph` now. The CrossRepoFixture doc comment names the new helper.
+    - I searched the whole test target for `BoardKey.read(fromRepoAt:)` and `readingKeyWith:`. No other helper builds a KanbanGraph with the git key reader. `BoardLocatorTests.scan(around:with:)` connects the reader to a `BoardLocator` scan, not to a KanbanGraph, so it stays as it is.
+    - Tool note: in the `files` tool, `edit file` with `replace_all: true` changed only the first match each time. Each match needed its own edit.
+    - No test assertion or test behavior changed.
+  timestamp: 2026-10-08T05:20:05.012517+00:00
+- actor: wballard
+  id: 01m4cz8qh4ybs74hrhk15dg1qy
+  text: |-
+    ### implement — changed
+    - evidence: new Tests/FoundationModelsKanbanTests/Tool/GitGraphFixture.swift; changed CrossRepo/CrossRepoFixture.swift, CrossRepo/CrossRepoReadTests.swift, CrossRepo/CrossRepoWriteTests.swift, Design/PortabilityTests.swift. `swift build --build-tests`: pass, only the accepted SwiftPM "missing creator" warning. `swift test --skip-build` 3 times with a 120 s limit: 932 tests in 61 suites passed each time (about 7.0 s each).
+    - next: /review
+  timestamp: 2026-10-08T05:20:07.716251+00:00
 depends_on:
 - 01M4B421JA8K0E8GAC3EMWCZ5Z
 - 01M4B4002GZV6E43G5CQ74BJNZ
@@ -57,3 +90,12 @@ Change related boards in one call. The basis is plan.md §6.6 and §5.4 (multi-b
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-08 00:12)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 16 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoFixture.swift:37` `reuse/reuse` — The new `CrossRepoFixture.makeGraph(at:locatedBy:recordedBy:)` repeats the existing `PortabilityTests.makeGraph(at:)`, which already wraps `KanbanGraphTests.makeGraph` with the same `BoardKey.read(fromRepoAt:)` key reader. The new helper is a near-match that was written beside the old one, not an extension of it, so the key-reader wiring now lives in two places. Keep one `makeGraph` helper with the `locatedBy` and `recordedBy` parameters, and have the Portability helper call it (or move the parameters into the shared fixture and make the Portability call site use it). Do not change the unmarked Portability code in this change unless the merge is wanted; the fixture can at least delegate to a single shared definition.

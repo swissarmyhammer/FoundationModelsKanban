@@ -88,8 +88,8 @@ struct CrossRepoReadTests {
     func readyAfterCompleteInSameProcess() async throws {
         let repos = try CrossRepoFixture.SideBySide()
         let recorder = BatchRecorder()
-        let app = try CrossRepoFixture.makeGraph(at: repos.app, recordedBy: recorder)
-        let lib = try CrossRepoFixture.makeGraph(at: repos.lib)
+        let app = try GitGraphFixture.makeGraph(at: repos.app, recordedBy: recorder)
+        let lib = try GitGraphFixture.makeGraph(at: repos.lib)
         let target = try await CrossRepoFixture.addTask(with: "", on: lib)
         let task = try await CrossRepoFixture.addTask(dependingOn: target, on: app)
         let query = try Self.query(of: task, selecting: Self.readySelection)
@@ -104,8 +104,8 @@ struct CrossRepoReadTests {
     func readyAfterWriteOfDifferentProcess() async throws {
         let repos = try CrossRepoFixture.SideBySide()
         let recorder = BatchRecorder()
-        let app = try CrossRepoFixture.makeGraph(at: repos.app, recordedBy: recorder)
-        let lib = try CrossRepoFixture.makeGraph(at: repos.lib)
+        let app = try GitGraphFixture.makeGraph(at: repos.app, recordedBy: recorder)
+        let lib = try GitGraphFixture.makeGraph(at: repos.lib)
         let target = try await CrossRepoFixture.addTask(with: "", on: lib)
         await lib.close()
         let task = try await CrossRepoFixture.addTask(dependingOn: target, on: app)
@@ -125,8 +125,8 @@ struct CrossRepoReadTests {
     @Test("dependsOn and blockedBy of a task list the task of the related board that it depends on")
     func dependsOnListsTaskOfRelatedBoard() async throws {
         let repos = try CrossRepoFixture.SideBySide()
-        let app = try CrossRepoFixture.makeGraph(at: repos.app)
-        let target = try await CrossRepoFixture.addTask(with: "", on: CrossRepoFixture.makeGraph(at: repos.lib))
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
+        let target = try await CrossRepoFixture.addTask(with: "", on: GitGraphFixture.makeGraph(at: repos.lib))
         let task = try await CrossRepoFixture.addTask(dependingOn: target, on: app)
         let response = try await KanbanGraphTests.execute(
             Self.query(of: task, selecting: "{ dependsOn { id } blockedBy { id } }"),
@@ -139,16 +139,16 @@ struct CrossRepoReadTests {
     @Test("node(id:) with the URI of a node of a related board gives that node")
     func nodeReadsRelatedBoard() async throws {
         let repos = try CrossRepoFixture.SideBySide()
-        let target = try await CrossRepoFixture.addTask(with: "", on: CrossRepoFixture.makeGraph(at: repos.lib))
+        let target = try await CrossRepoFixture.addTask(with: "", on: GitGraphFixture.makeGraph(at: repos.lib))
         let query = #"{ node(id: "\#(target)") { id ... on Task { title } } }"#
-        let response = try await KanbanGraphTests.execute(query, on: CrossRepoFixture.makeGraph(at: repos.app))
+        let response = try await KanbanGraphTests.execute(query, on: GitGraphFixture.makeGraph(at: repos.app))
         #expect(response == #"{"data":{"node":{"id":"\#(target)","title":"\#(AddUpdateTaskTests.title)"}}}"#)
     }
 
     @Test("A dependency on a task of a board that the scan cannot find counts as not done, with no error")
     func missingBoardDependencyIsNotDone() async throws {
         let repos = try CrossRepoFixture.SideBySide()
-        let app = try CrossRepoFixture.makeGraph(at: repos.app)
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
         let target = NodeURI(boardKey: Self.missingKey, ref: .task(ULID())).description
         let task = try await CrossRepoFixture.addTask(dependingOn: target, on: app)
         let response = try await KanbanGraphTests.execute(Self.query(of: task, selecting: Self.readySelection), on: app)
@@ -161,7 +161,7 @@ struct CrossRepoReadTests {
     func currentKeyGivesCurrentDirectory() async throws {
         let sandbox = try GitSandbox()
         let repos = try BoardLocatorTests.TwoCopies(in: sandbox)
-        let graph = try CrossRepoFixture.makeGraph(at: repos.current)
+        let graph = try GitGraphFixture.makeGraph(at: repos.current)
         let key = try CrossRepoFixture.keyText(of: BoardLocatorTests.appOrigin)
         #expect(try await Self.board("path", of: key, on: graph) == repos.current.path)
     }
@@ -170,7 +170,7 @@ struct CrossRepoReadTests {
     func relatedKeyGivesFirstCopyOnEachCall() async throws {
         let sandbox = try GitSandbox()
         let repos = try BoardLocatorTests.TwoCopies(in: sandbox)
-        let graph = try CrossRepoFixture.makeGraph(at: repos.current)
+        let graph = try GitGraphFixture.makeGraph(at: repos.current)
         let key = try CrossRepoFixture.keyText(of: BoardLocatorTests.libOrigin)
         #expect(try await Self.board("path", of: key, on: graph) == repos.firstCopy.path)
         #expect(try await Self.board("path", of: key, on: graph) == repos.firstCopy.path)
@@ -180,7 +180,7 @@ struct CrossRepoReadTests {
     func pathSelectsCopy() async throws {
         let sandbox = try GitSandbox()
         let repos = try BoardLocatorTests.TwoCopies(in: sandbox)
-        let graph = try CrossRepoFixture.makeGraph(at: repos.current)
+        let graph = try GitGraphFixture.makeGraph(at: repos.current)
         #expect(try await Self.board("path", of: repos.secondCopy.path, on: graph) == repos.secondCopy.path)
     }
 
@@ -188,7 +188,7 @@ struct CrossRepoReadTests {
     func directoryNameSelectsCopy() async throws {
         let sandbox = try GitSandbox()
         let repos = try BoardLocatorTests.TwoCopies(in: sandbox)
-        let graph = try CrossRepoFixture.makeGraph(at: repos.current)
+        let graph = try GitGraphFixture.makeGraph(at: repos.current)
         let path = try await Self.board("path", of: BoardLocatorTests.secondCopyName, on: graph)
         #expect(path == repos.secondCopy.path)
     }
@@ -197,7 +197,7 @@ struct CrossRepoReadTests {
     func boardThatIsNotEnabledShowsDirectoryName() async throws {
         let sandbox = try GitSandbox()
         let repos = try BoardLocatorTests.TwoCopies(in: sandbox)
-        let graph = try CrossRepoFixture.makeGraph(at: repos.current)
+        let graph = try GitGraphFixture.makeGraph(at: repos.current)
         let key = try CrossRepoFixture.keyText(of: BoardLocatorTests.libOrigin)
         #expect(try await Self.board("name", of: key, on: graph) == BoardLocatorTests.firstCopyName)
     }
@@ -206,7 +206,7 @@ struct CrossRepoReadTests {
     func unknownKeyScansAgain() async throws {
         let sandbox = try GitSandbox()
         let repos = try BoardLocatorTests.TwoCopies(in: sandbox)
-        let graph = try CrossRepoFixture.makeGraph(at: repos.current)
+        let graph = try GitGraphFixture.makeGraph(at: repos.current)
         let key = try CrossRepoFixture.keyText(of: BoardLocatorTests.libOrigin)
         #expect(try await Self.board("path", of: key, on: graph) == repos.firstCopy.path)
         let newRepo = try sandbox.makeRepo(named: "e-new-lib", origin: BoardLocatorTests.newOrigin)
@@ -219,7 +219,7 @@ struct CrossRepoReadTests {
         let repos = try CrossRepoFixture.SideBySide()
         let root = repos.sandbox.root.appending(path: "src", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let graph = try CrossRepoFixture.makeGraph(at: repos.app, locatedBy: BoardLocator(searchRoots: [root]))
+        let graph = try GitGraphFixture.makeGraph(at: repos.app, locatedBy: BoardLocator(searchRoots: [root]))
         let query = #"{ board(id: "\#(Self.missingKey)") { name } }"#
         let response = try await KanbanGraphTests.execute(query, on: graph)
         let roots = [repos.sandbox.root.path, root.path]
@@ -233,7 +233,7 @@ struct CrossRepoReadTests {
     func boardsListsEachCopy() async throws {
         let sandbox = try GitSandbox()
         let repos = try BoardLocatorTests.TwoCopies(in: sandbox)
-        let graph = try CrossRepoFixture.makeGraph(at: repos.current)
+        let graph = try GitGraphFixture.makeGraph(at: repos.current)
         let expected = [repos.worktree, repos.current, repos.firstCopy, repos.secondCopy].map(\.path)
         #expect(try await Self.boardPaths(on: graph) == expected)
     }
@@ -243,7 +243,7 @@ struct CrossRepoReadTests {
         let sandbox = try GitSandbox()
         let repos = try BoardLocatorTests.TwoCopies(in: sandbox)
         _ = try KanbanGraphTests.writeFixture(inRepoAt: repos.secondCopy)
-        let graph = try CrossRepoFixture.makeGraph(at: repos.current)
+        let graph = try GitGraphFixture.makeGraph(at: repos.current)
         #expect(try await Self.boardPaths(with: "(enabled: true)", on: graph) == [repos.secondCopy.path])
         let notEnabled = [repos.worktree, repos.current, repos.firstCopy].map(\.path)
         #expect(try await Self.boardPaths(with: "(enabled: false)", on: graph) == notEnabled)

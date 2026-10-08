@@ -3,8 +3,8 @@ import Testing
 
 @testable import FoundationModelsKanban
 
-/// The shared parts of the cross-repo suites (plan.md §6.6): two real git repos side by side, the engines that read
-/// the board keys from git, and the fields that add tasks.
+/// The shared parts of the cross-repo suites (plan.md §6.6): two real git repos side by side and the fields that add
+/// tasks. ``GitGraphFixture`` makes the engines that read the board keys from git.
 enum CrossRepoFixture {
     /// The repos of a sandbox with the current repo and one related repo, side by side.
     struct SideBySide {
@@ -25,26 +25,6 @@ enum CrossRepoFixture {
             app = try sandbox.makeRepo(named: BoardLocatorTests.appName, origin: BoardLocatorTests.appOrigin)
             lib = try sandbox.makeRepo(named: BoardLocatorTests.libName, origin: BoardLocatorTests.libOrigin)
         }
-    }
-
-    /// Makes an engine for a repo that reads the board keys from git.
-    ///
-    /// - Parameters:
-    ///   - root: The root directory of the repo.
-    ///   - locator: Finds the related boards. The default looks only in the parent directory of the repo.
-    ///   - recorder: Records each batch that the file watchers apply, or `nil` for no record.
-    /// - Returns: The engine.
-    static func makeGraph(
-        at root: URL,
-        locatedBy locator: BoardLocator = .default,
-        recordedBy recorder: BatchRecorder? = nil
-    ) throws -> KanbanGraph {
-        try KanbanGraphTests.makeGraph(
-            at: root,
-            readingKeyWith: BoardKey.read(fromRepoAt:),
-            locatedBy: locator,
-            observingBatchesWith: recorder
-        )
     }
 
     /// Adds a task with an `addTask` input, and gives its id.

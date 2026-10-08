@@ -173,7 +173,7 @@ struct CrossRepoWriteTests {
     @Test("addTask with the board field writes the task to the log of the related board, and nothing to the current")
     func addTaskWritesRelatedLog() async throws {
         let repos = try CrossRepoFixture.SideBySide()
-        let app = try CrossRepoFixture.makeGraph(at: repos.app)
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
         let task = try await Self.addLibTask(on: app)
         #expect(try NodeURI(parsing: task).boardKey == Self.libKey())
         let patch = try #require(try Self.events(ofTask: task, inRepoAt: repos.lib).first?.patch)
@@ -184,7 +184,7 @@ struct CrossRepoWriteTests {
     @Test("The first mutation on a related repo with no .kanban/ makes its board with default columns and the actor")
     func firstMutationEnablesRelatedRepo() async throws {
         let repos = try CrossRepoFixture.SideBySide()
-        _ = try await Self.addLibTask(on: CrossRepoFixture.makeGraph(at: repos.app))
+        _ = try await Self.addLibTask(on: GitGraphFixture.makeGraph(at: repos.app))
         let log = EventLog(repositoryAt: repos.lib)
         let refs = Set(try log.nodeFileSignatures().keys)
         let columns = DefaultColumn.all.map { column in LocalRef.column(slug: column.slug) }
@@ -196,7 +196,7 @@ struct CrossRepoWriteTests {
     @Test("A query on a related repo with no .kanban/ writes nothing")
     func queryOnRelatedRepoWritesNothing() async throws {
         let repos = try CrossRepoFixture.SideBySide()
-        let app = try CrossRepoFixture.makeGraph(at: repos.app)
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
         _ = try await CrossRepoReadTests.board("name", of: Self.libKey(), on: app)
         #expect(!Self.hasBoardDirectory(inRepoAt: repos.lib))
     }
@@ -204,7 +204,7 @@ struct CrossRepoWriteTests {
     @Test("Each mutation with the board field writes its node to the related board", arguments: boardFieldCases)
     func boardFieldWritesRelatedBoard(mutation: BoardFieldCase) async throws {
         let repos = try CrossRepoFixture.SideBySide()
-        let app = try CrossRepoFixture.makeGraph(at: repos.app)
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
         let reference = try Self.libKey()
         if let setup = mutation.setup {
             _ = try await CommentTests.run(setup.replacingOccurrences(of: Self.boardMarker, with: reference), on: app)
@@ -218,7 +218,7 @@ struct CrossRepoWriteTests {
     @Test("The session actor is the assignee of a new task in a related board that knew the actor before the call")
     func knownActorOfRelatedBoardIsAssignee() async throws {
         let repos = try CrossRepoFixture.SideBySide()
-        let app = try CrossRepoFixture.makeGraph(at: repos.app)
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
         _ = try await Self.addLibTask(on: app)
         let task = try await Self.addLibTask(on: app)
         let patch = try #require(try Self.events(ofTask: task, inRepoAt: repos.lib).first?.patch)
@@ -235,7 +235,7 @@ struct CrossRepoWriteTests {
     )
     func missingBoardGivesNotFound(field: String) async throws {
         let repos = try CrossRepoFixture.SideBySide()
-        let response = try await CommentTests.run(field, on: CrossRepoFixture.makeGraph(at: repos.app))
+        let response = try await CommentTests.run(field, on: GitGraphFixture.makeGraph(at: repos.app))
         let name = try #require(field.split(separator: "(").first).description
         let expected = KanbanError.boardNotFound(
             reference: CrossRepoReadTests.missingKey,
@@ -249,7 +249,7 @@ struct CrossRepoWriteTests {
     @Test("A mutation on a node of a related board writes to that board, and its short refs resolve there")
     func mutationOnRelatedNodeWritesRelatedLog() async throws {
         let repos = try CrossRepoFixture.SideBySide()
-        let app = try CrossRepoFixture.makeGraph(at: repos.app)
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
         let task = try await Self.addLibTask(on: app)
         let column = #", column: "\#(Self.doingSlug)""#
         let response = try await CommentTests.run(
@@ -265,7 +265,7 @@ struct CrossRepoWriteTests {
     @Test("updateTask on a task of a related board writes the new title to the related log")
     func updateTaskOnRelatedNode() async throws {
         let repos = try CrossRepoFixture.SideBySide()
-        let app = try CrossRepoFixture.makeGraph(at: repos.app)
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
         let task = try await Self.addLibTask(on: app)
         let update = CommentTests.nodeField(
             MutationName.updateTask,
@@ -280,7 +280,7 @@ struct CrossRepoWriteTests {
     @Test("addComment on a task of a related board writes the comment to the related log")
     func addCommentOnRelatedTask() async throws {
         let repos = try CrossRepoFixture.SideBySide()
-        let app = try CrossRepoFixture.makeGraph(at: repos.app)
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
         let task = try await Self.addLibTask(on: app)
         let comment = try await Design.PortabilityTests.id(
             runningField: CommentTests.addComment(to: task),
@@ -297,7 +297,7 @@ struct CrossRepoWriteTests {
     @Test("One call that changes two boards writes one txn to both, with the key of the other board in boards")
     func oneCallWritesOneTransactionToBothBoards() async throws {
         let repos = try CrossRepoFixture.SideBySide()
-        let app = try CrossRepoFixture.makeGraph(at: repos.app)
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
         let (appKey, libKey) = (try Self.appKey(), try Self.libKey())
         let mutation = AddUpdateTaskTests.mutation(
             of: "a: " + AddUpdateTaskTests.addTask(with: ""),
@@ -317,7 +317,7 @@ struct CrossRepoWriteTests {
     @Test("A dependsOn edge from the current board to a related board is stored as the full URI of the target")
     func crossBoardEdgeIsFullURI() async throws {
         let repos = try CrossRepoFixture.SideBySide()
-        let app = try CrossRepoFixture.makeGraph(at: repos.app)
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
         let target = try await Self.addLibTask(on: app)
         let task = try await CrossRepoFixture.addTask(dependingOn: target, on: app)
         let patch = try #require(try Self.events(ofTask: task, inRepoAt: repos.app).first?.patch)
@@ -327,7 +327,7 @@ struct CrossRepoWriteTests {
     @Test("After writes across two boards, no log line holds the key of its own board")
     func noLogLineHoldsKeyOfItsOwnBoard() async throws {
         let repos = try CrossRepoFixture.SideBySide()
-        let app = try CrossRepoFixture.makeGraph(at: repos.app)
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
         let appTask = try await CrossRepoFixture.addTask(with: "", on: app)
         let libTask = try await Self.addLibTask(with: "dependsOn: \(AddUpdateTaskTests.list(of: [appTask]))", on: app)
         _ = try await CrossRepoFixture.addTask(dependingOn: libTask, on: app)

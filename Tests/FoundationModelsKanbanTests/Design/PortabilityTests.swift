@@ -96,14 +96,6 @@ extension Design {
 
         // MARK: - Helpers
 
-        /// Makes an engine for a repo that reads the board key from git.
-        ///
-        /// - Parameter root: The root directory of the repo.
-        /// - Returns: The engine.
-        static func makeGraph(at root: URL) throws -> KanbanGraph {
-            try KanbanGraphTests.makeGraph(at: root, readingKeyWith: BoardKey.read(fromRepoAt:))
-        }
-
         /// Runs one mutation field on an engine, and gives the id that the field returns.
         ///
         /// - Parameters:
@@ -195,12 +187,12 @@ extension Design {
         func moveChangesNoLogFile(move: RepoMove) async throws {
             let sandbox = try GitSandbox()
             let repo = try move.makeRepo(in: sandbox)
-            let graph = try Self.makeGraph(at: repo)
+            let graph = try GitGraphFixture.makeGraph(at: repo)
             _ = try await Self.writeBoard(on: graph)
             await graph.close()
             let before = try Self.logTexts(inRepoAt: repo)
             let moved = try move.move(repo, in: sandbox)
-            _ = try await KanbanGraphTests.execute(Self.boardQuery, on: Self.makeGraph(at: moved))
+            _ = try await KanbanGraphTests.execute(Self.boardQuery, on: GitGraphFixture.makeGraph(at: moved))
             #expect(try Self.logTexts(inRepoAt: moved) == before)
         }
 
@@ -209,14 +201,14 @@ extension Design {
             let sandbox = try GitSandbox()
             let repo = try move.makeRepo(in: sandbox)
             let oldKey = try BoardKey.read(fromRepoAt: repo)
-            let graph = try Self.makeGraph(at: repo)
+            let graph = try GitGraphFixture.makeGraph(at: repo)
             let board = try await Self.writeBoard(on: graph)
             let before = try await KanbanGraphTests.execute(Self.boardQuery, on: graph)
             await graph.close()
             let moved = try move.move(repo, in: sandbox)
             let newKey = try move.movedKey()
             #expect(try BoardKey.read(fromRepoAt: moved) == newKey)
-            let movedGraph = try Self.makeGraph(at: moved)
+            let movedGraph = try GitGraphFixture.makeGraph(at: moved)
             let after = try await KanbanGraphTests.execute(Self.boardQuery, on: movedGraph)
             #expect(after == before.replacingOccurrences(of: oldKey.description, with: newKey.description))
             let edgesQuery = CommentTests.taskQuery(of: board.dependent, selecting: "{ \(Self.edgeFields) }")
@@ -231,7 +223,7 @@ extension Design {
             let sandbox = try GitSandbox()
             let repo = try RepoMove.newOrigin.makeRepo(in: sandbox)
             let key = try BoardKey.read(fromRepoAt: repo)
-            _ = try await Self.writeBoard(on: Self.makeGraph(at: repo))
+            _ = try await Self.writeBoard(on: GitGraphFixture.makeGraph(at: repo))
             let texts = try Self.logTexts(inRepoAt: repo)
             #expect(!texts.isEmpty)
             for (ref, text) in texts {
@@ -244,7 +236,7 @@ extension Design {
         func currentKeyURIIsStoredAsLocalRef() async throws {
             let sandbox = try GitSandbox()
             let repo = try RepoMove.newOrigin.makeRepo(in: sandbox)
-            let board = try await Self.writeBoard(on: Self.makeGraph(at: repo))
+            let board = try await Self.writeBoard(on: GitGraphFixture.makeGraph(at: repo))
             let events = try BoardMutationTests.events(of: .task(board.dependent), inRepoAt: repo)
             let added = try #require(events.first).patch.add
             #expect(added[PropertyName.tags] == AddUpdateTaskTests.tagRefs(TagMutationTests.bug))
