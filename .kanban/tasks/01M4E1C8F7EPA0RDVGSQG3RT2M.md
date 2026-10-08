@@ -12,8 +12,24 @@ comments:
     - evidence: 3 files — plan.md (§7.1 schema text with a "Measured result" list, §7.1 "Tests for this schema", §12 item 8; changed paragraphs wrapped to 120 characters), Sources/FoundationModelsKanban/Tool/KanbanArguments.swift (doc comment only), README.md (the model test needs a Metal device, not Apple Intelligence). No added line is longer than 120 characters. `swift build --build-tests` exit 0, only the accepted `missing creator for mutated node` warning. `swift test --skip-build` (120 s limit) exit 0, 965 tests in 68 suites passed after 7.6 s.
     - next: /review.
   timestamp: 2026-10-08T15:30:38.871227+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4e2dv10wtrtpwwh7s3b673g
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (e75cd07). 0 findings, 0 confirmed, 0 refuted. 1 file reviewed. The engine did not review plan.md and README.md because no validator applies to them. The .reviewignore rule excluded the 4 .kanban/ files.
+    - next: none. The task is in done.
+  timestamp: 2026-10-08T15:34:35.296555+00:00
+- actor: claude-code
+  id: 01m4e2e2c4qbfqqgezhzw1xt7w
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — plan.md, README.md, Tool/KanbanArguments.swift (doc comment only)
+    - test: green — swift test 3 runs, 965 passed each (8.5 s, 7.7 s, 8.1 s); build warnings only the 2 accepted kinds
+    - commit: e75cd07
+    - review: clean — 0 findings (no validator applies to plan.md or README.md)
+  timestamp: 2026-10-08T15:34:42.820197+00:00
+position_column: done
+position_ordinal: bc80
 title: 'plan.md: the variables model test uses Qwen 3.8, not the on-device model'
 ---
 ## What
