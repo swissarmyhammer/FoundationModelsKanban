@@ -63,17 +63,15 @@ public actor KanbanGraph {
     /// Gets a call when a file watcher applies a batch, or `nil` for no calls.
     private let batchObserver: (any LiveGraphObserver)?
 
-    /// The live graph of the current board and its commit path, or `nil` until the first call loads the board.
-    private var session: CommitSession?
-
-    /// The current key of the current board, or `nil` until the first call reads it.
-    private var currentKey: BoardKey?
+    /// The load state of the current board: its live graph and its commit path after the first call loads it.
+    private var loadState = LoadState.notLoaded
 
     /// The state of the file watcher of the current board.
     private var watchState = WatchState.notStarted
 
-    /// The index of the last scan for related boards, or `nil` before the first scan (plan.md §6.6, index life).
-    private var index: BoardIndex?
+    /// The state of the scan for related boards: the index of the last scan after the first scan (plan.md §6.6,
+    /// index life).
+    private var scanState = ScanState.notScanned
 
     /// The loaded related boards, by the canonical path of their repo directory.
     private var relatedBoards: [String: RelatedBoard] = [:]
@@ -230,14 +228,15 @@ public actor KanbanGraph {
         await observer?.callDidStart()
         defer { observer?.callDidFinish() }
         var session = try await loadedSession()
-        defer { self.session = session }
+        defer { loadState = .loaded(session) }
         let schema = schema
         let clock = clock
         let search = search
+        let key = session.key
         do {
             return try await session.run(
                 readingRelatedBoardsWith: { related, requests in
-                    try await self.relatedBoards(updating: related, toAnswer: requests)
+                    try await self.relatedBoards(updating: related, toAnswer: requests, currentKey: key)
                 },
                 { store in
                     try await schema.respond(
@@ -264,16 +263,14 @@ public actor KanbanGraph {
     /// - Throws: A ``BoardKeyError`` when git cannot give the key, a ``BoardWatcherError`` when the watcher cannot
     ///   start, or an ``EventLogError`` when a log file cannot be read. The next call then tries again.
     private func loadedSession() async throws -> CommitSession {
-        if let session {
+        if case .loaded(let session) = loadState {
             return session
         }
         let key = try keyReader(root)
         if case .notStarted = watchState {
             watchState = .watching(try startWatch(ofBoardAt: root))
         }
-        let loaded = try await loadSession(at: root, key: key, searchingWith: search)
-        currentKey = key
-        return loaded
+        return try await loadSession(at: root, key: key, searchingWith: search)
     }
 
     /// Loads the board of a repo, and gives its tasks to its search.
@@ -311,22 +308,24 @@ public actor KanbanGraph {
     /// - Parameters:
     ///   - related: The related boards of the run.
     ///   - requests: The requests of the run.
+    ///   - key: The current key of the current board.
     /// - Returns: The related boards with an answer for each request, and with each loaded related board.
     /// - Throws: A ``BoardWatcherError`` when the watcher of a board cannot start, or an ``EventLogError`` when a log
     ///   file cannot be read.
     private func relatedBoards(
         updating related: RelatedBoards,
-        toAnswer requests: Set<BoardRequest>
+        toAnswer requests: Set<BoardRequest>,
+        currentKey key: BoardKey
     ) async throws -> RelatedBoards {
         var updated = related
         var pending = requests
         while !pending.isEmpty {
             for request in pending where !updated.satisfies([request]) {
-                try await answer(request, in: &updated)
+                try await answer(request, in: &updated, currentKey: key)
             }
             updated.install(
                 boards: relatedBoards.mapValues(\.session.snapshot),
-                searchRoots: index?.places ?? locator.places(around: root)
+                searchRoots: locator.places(around: root)
             )
             pending = updated.loadedDependencyRequests.filter { request in !updated.satisfies([request]) }
         }
@@ -339,35 +338,50 @@ public actor KanbanGraph {
     /// - Parameters:
     ///   - request: The request.
     ///   - related: The related boards that get the answer.
+    ///   - key: The current key of the current board.
     /// - Throws: A ``BoardWatcherError`` or an ``EventLogError`` when a board cannot load.
-    private func answer(_ request: BoardRequest, in related: inout RelatedBoards) async throws {
+    private func answer(
+        _ request: BoardRequest,
+        in related: inout RelatedBoards,
+        currentKey key: BoardKey
+    ) async throws {
         switch request {
         case .board(let reference):
-            related.record(try await loadBoard(named: reference), forBoard: reference)
+            related.record(try await loadBoard(named: reference, currentKey: key), forBoard: reference)
         case .allCopies:
             related.record(listing: try await loadEachCopy())
         }
     }
 
-    /// Finds the board that a board ref names, and loads it when it is a related board. A ref that names no copy of
-    /// the index makes one more scan (plan.md §6.6, index life).
+    /// Finds the board that a board ref names, and loads it when it is a related board.
     ///
-    /// - Parameter reference: The board ref.
+    /// - Parameters:
+    ///   - reference: The board ref.
+    ///   - key: The current key of the current board.
     /// - Returns: The board.
     /// - Throws: A ``BoardWatcherError`` or an ``EventLogError`` when the board cannot load.
-    private func loadBoard(named reference: String) async throws -> BoardResolution {
-        guard let key = currentKey else {
-            return .notFound
-        }
-        let wasScanned = index != nil
-        var resolution = scannedIndex().resolution(of: reference, currentRoot: root, currentKey: key)
-        if resolution == nil, wasScanned {
-            resolution = rescan().resolution(of: reference, currentRoot: root, currentKey: key)
-        }
+    private func loadBoard(named reference: String, currentKey key: BoardKey) async throws -> BoardResolution {
+        let resolution = resolution(of: reference, currentKey: key)
         if case .copy(let copy) = resolution {
             try await loadRelatedBoard(copy)
         }
         return resolution ?? .notFound
+    }
+
+    /// Finds the board that a board ref names in the index of the scan (plan.md §6.6, index life). The first call
+    /// scans. A later call whose ref names no copy of the index scans one more time.
+    ///
+    /// - Parameters:
+    ///   - reference: The board ref.
+    ///   - key: The current key of the current board.
+    /// - Returns: The board, or `nil` when no copy of the index has the ref.
+    private func resolution(of reference: String, currentKey key: BoardKey) -> BoardResolution? {
+        let root = root
+        let resolve = { (index: BoardIndex) in index.resolution(of: reference, currentRoot: root, currentKey: key) }
+        guard case .scanned(let index) = scanState else {
+            return resolve(rescan())
+        }
+        return resolve(index) ?? resolve(rescan())
     }
 
     /// Scans for the copies of `Query.boards`, and loads each copy that is not the current repo.
@@ -385,19 +399,17 @@ public actor KanbanGraph {
         }
     }
 
-    /// Gives the index of the scan, and scans the first time.
-    ///
-    /// - Returns: The index.
-    private func scannedIndex() -> BoardIndex {
-        index ?? rescan()
-    }
-
-    /// Scans the places for repos again. A repo of the earlier scan keeps its key.
+    /// Scans the places for repos, and records the new index. A repo of the earlier scan keeps its key.
     ///
     /// - Returns: The new index.
     private func rescan() -> BoardIndex {
-        let scanned = locator.scan(around: root, reusing: index, readingKeysWith: keyReader)
-        index = scanned
+        let earlier: BoardIndex? =
+            switch scanState {
+            case .notScanned: nil
+            case .scanned(let index): index
+            }
+        let scanned = locator.scan(around: root, reusing: earlier, readingKeysWith: keyReader)
+        scanState = .scanned(scanned)
         return scanned
     }
 
@@ -432,9 +444,19 @@ public actor KanbanGraph {
     /// - Returns: The watch.
     /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when the watcher cannot start.
     private func startWatch(ofBoardAt directory: URL) throws(BoardWatcherError) -> BoardWatch {
+        try startWatch(on: Self.existingBoardDirectory(ofBoardAt: directory) ?? directory, ofBoardAt: directory)
+    }
+
+    /// Gives the `.kanban/` directory of a board when it is there.
+    ///
+    /// - Parameter directory: The root directory of the repo of the board.
+    /// - Returns: The `.kanban/` directory, or `nil` when the repo has no `.kanban/` directory yet.
+    private static func existingBoardDirectory(ofBoardAt directory: URL) -> URL? {
         let boardDirectory = EventLog(repositoryAt: directory).directory
-        let hasBoardDirectory = FileManager.default.fileExists(atPath: boardDirectory.path)
-        return try startWatch(on: hasBoardDirectory ? boardDirectory : directory, ofBoardAt: directory)
+        guard FileManager.default.fileExists(atPath: boardDirectory.path) else {
+            return nil
+        }
+        return boardDirectory
     }
 
     /// Starts a file watcher on a directory of a board, and a task that gives each batch of the watcher to
@@ -490,11 +512,8 @@ public actor KanbanGraph {
         guard var board = relatedBoards[path], let watch = board.watch else {
             return
         }
-        if let moved = try await movedWatch(watch, ofBoardAt: directory) {
+        try await apply(paths, to: &board.session, watchedBy: watch, ofBoardAt: directory) { moved in
             relatedBoards[path]?.watch = moved
-            try await apply(paths, to: &board.session, afterMove: true)
-        } else {
-            try await apply(paths, to: &board.session, afterMove: false)
         }
         relatedBoards[path]?.session = board.session
     }
@@ -505,13 +524,38 @@ public actor KanbanGraph {
     /// - Throws: A ``BoardWatcherError`` when the watcher cannot move, or an ``EventLogError`` when a file cannot be
     ///   read.
     private func applyCurrentBatch(_ paths: [URL]) async throws {
-        guard let watch = activeWatch, var session else {
+        guard let watch = activeWatch, case .loaded(var session) = loadState else {
             return
         }
-        defer { self.session = session }
-        let moved = try await movedWatch(watch, ofBoardAt: root)
-        if let moved {
+        defer { loadState = .loaded(session) }
+        try await apply(paths, to: &session, watchedBy: watch, ofBoardAt: root) { moved in
             watchState = .watching(moved)
+        }
+    }
+
+    /// Moves the file watcher of a board to `.kanban/` when `.kanban/` appeared, and then applies one batch to the
+    /// session of the board.
+    ///
+    /// The engine stores the new watch before the apply, so the new watch stays also when the apply fails.
+    ///
+    /// - Parameters:
+    ///   - paths: The changed paths of the batch.
+    ///   - session: The session of the board.
+    ///   - watch: The watch of the board.
+    ///   - directory: The root directory of the repo of the board.
+    ///   - store: Stores the new watch of the board when the watcher moved.
+    /// - Throws: A ``BoardWatcherError`` when the watcher cannot move, or an ``EventLogError`` when a file cannot be
+    ///   read.
+    private func apply(
+        _ paths: [URL],
+        to session: inout CommitSession,
+        watchedBy watch: BoardWatch,
+        ofBoardAt directory: URL,
+        storingMovedWatchWith store: (BoardWatch) -> Void
+    ) async throws {
+        let moved = try await movedWatch(watch, ofBoardAt: directory)
+        if let moved {
+            store(moved)
         }
         try await apply(paths, to: &session, afterMove: moved != nil)
     }
@@ -553,14 +597,38 @@ public actor KanbanGraph {
         _ watch: BoardWatch,
         ofBoardAt directory: URL
     ) async throws(BoardWatcherError) -> BoardWatch? {
-        let boardDirectory = EventLog(repositoryAt: directory).directory
-        guard watch.directory == directory, FileManager.default.fileExists(atPath: boardDirectory.path) else {
+        guard
+            watch.directory == directory,
+            let boardDirectory = Self.existingBoardDirectory(ofBoardAt: directory)
+        else {
             return nil
         }
         let moved = try startWatch(on: boardDirectory, ofBoardAt: directory)
         await watch.watcher.stop()
         return moved
     }
+}
+
+// MARK: - Load state
+
+/// The load state of the current board of a ``KanbanGraph`` (plan.md §5.3).
+private enum LoadState {
+    /// No call loaded the board yet.
+    case notLoaded
+
+    /// A call loaded the board: the live graph of the board and its commit path.
+    case loaded(CommitSession)
+}
+
+// MARK: - Scan state
+
+/// The state of the scan for the related boards of a ``KanbanGraph`` (plan.md §6.6, index life).
+private enum ScanState {
+    /// No call scanned yet.
+    case notScanned
+
+    /// A call scanned: the index of the last scan.
+    case scanned(BoardIndex)
 }
 
 // MARK: - Watch state

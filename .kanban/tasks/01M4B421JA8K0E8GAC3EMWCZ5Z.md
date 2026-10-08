@@ -27,6 +27,38 @@ comments:
     - Full suite: `swift test --skip-build` gives 902 tests in 58 suites, all pass.
     - `swift build --build-tests`: only the known `missing creator` warning. No line is longer than 120 characters. periphery: no unused code.
   timestamp: 2026-10-08T02:36:32.696623+00:00
+- actor: wballard
+  id: 01m4cpcs41grmc7shmkb4vv6zg
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (27dcfee). 4 findings (4 confirmed, 8 refuted). Sources/FoundationModelsKanban/Tool/KanbanGraph.swift:76, :359, :435, :512.
+    - next: Correct the 4 open items in the "Review Findings (2026-10-07 21:39)" section. Then review again.
+  timestamp: 2026-10-08T02:45:03.233725+00:00
+- actor: wballard
+  id: 01m4cpd3ytthg6g06n9ksh8cz1
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — CrossRepo/BoardLocator.swift, CrossRepo/RelatedBoards.swift, KanbanGraph, Commit, Schema, QueryResolvers, Errors, Readiness, ColumnOrder, History, RefResolver, 5 test files, plan.md
+    - test: green — swift test 3 runs, 902 passed each; build warnings only the 2 accepted kinds
+    - commit: 27dcfee
+    - review: findings — Sources/FoundationModelsKanban/Tool/KanbanGraph.swift:76, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift:359, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift:435, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift:512
+  timestamp: 2026-10-08T02:45:14.330728+00:00
+- actor: wballard
+  id: 01m4cprqp5k1r2a20q6722ay01
+  text: |-
+    Correction of the 4 review findings (2026-10-07 21:39). Notes for the next agent:
+    - swift/initialization: the cause is a stored Optional whose `nil` means "not done yet". KanbanGraph.swift had three of these: `index`, `currentKey`, and `session`. All three are gone. `scanState` is a `ScanState` enum (`.notScanned`, `.scanned(BoardIndex)`). `loadState` is a `LoadState` enum (`.notLoaded`, `.loaded(CommitSession)`). The first-scan rule is in one place: `resolution(of:currentKey:)`. `rescan()` gives the earlier index to `BoardLocator.scan(reusing:)`, whose documented contract takes `nil` for the first scan. `relatedBoards(updating:...)` now gives `locator.places(around: root)` as the search roots. This is the same value, because `scan` sets `BoardIndex.places` from that same function.
+    - swift/preconditions: the key now goes into `loadBoard` as a parameter, so no nil branch exists. `CommitSession.key` changed from `private` to internal (Commit.swift), and `respond` reads `session.key` and gives it to the loader closure.
+    - reuse/reuse: the new `private static func existingBoardDirectory(ofBoardAt:) -> URL?` does the lookup. `startWatch(ofBoardAt:)` and `movedWatch(_:ofBoardAt:)` both call it.
+    - duplication/duplication: the new helper `apply(_:to:watchedBy:ofBoardAt:storingMovedWatchWith:)` does the move-then-apply sequence one time. It does not return the moved watch. A caller-supplied closure stores the watch BEFORE the apply. Reason: the old code stored the moved watch before `apply` and kept it when `apply` threw. A helper that returns the watch after `apply` loses the new watcher when `apply` throws, because the old watcher already stopped. That changes the behavior. Each caller stores the watch in its own place (`watchState` or `relatedBoards[path]`), as the finding asks.
+  timestamp: 2026-10-08T02:51:34.981300+00:00
+- actor: wballard
+  id: 01m4cprt255z98sb29fxd46xh0
+  text: |-
+    ### implement — changed
+    - evidence: 2 files: Sources/FoundationModelsKanban/Tool/KanbanGraph.swift and Sources/FoundationModelsKanban/Tool/Commit.swift. `swift build --build-tests`: the only warning is the accepted mlx-swift "missing creator" warning. `swift test` run 1: 902 tests in 58 suites passed. `swift test --skip-build` run 2: 902 passed. `swift test --skip-build` run 3: 902 passed. `periphery scan --retain-public --quiet -- --build-tests --build-system native`: no item in Sources. It reports 7 items, all in test files that this change did not touch. These items were there before. No line is longer than 120 characters. All 4 of 4 findings are checked.
+    - next: /review
+  timestamp: 2026-10-08T02:51:37.413043+00:00
 depends_on:
 - 01M4B3VKJ8W42AXVFVMH6WN5VQ
 - 01M4B3YYXT069TKADQ93CBAA93
@@ -55,3 +87,18 @@ Find related boards on the disk and read them. The basis is plan.md §6.6 and §
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-07 21:39)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 16 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `plan.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsKanban/Tool/KanbanGraph.swift:76` `swift/initialization` — `index` is an Optional that `rescan()` assigns later. Its `nil` means 'not scanned yet', not genuine absence. Callers must test `index` in `scannedIndex()`, `loadBoard` (`wasScanned`) and `relatedBoards`, and each test repeats the same first-scan rule. Build the initial index in a named method that the first call runs, and store a non-optional value after that. Or store a state enum such as `.unscanned` and `.scanned(BoardIndex)` so that the rule is named in one place.
+- [x] `Sources/FoundationModelsKanban/Tool/KanbanGraph.swift:359` `swift/preconditions` — The branch for `currentKey == nil` returns `.notFound` with no assertion and no log. This branch is not a normal requirement. `loadedSession()` sets `currentKey` before any related-board load runs, so a nil key is an unexpected state. Silent `.notFound` hides a defect in the engine from the author and from production logs. Add `assertionFailure(...)` and a `Log.kanban.error(...)` line that names the missing key before the `return .notFound`, as the Commit.swift:378-379 branch does. Or pass the key into `loadBoard` so that no nil branch exists.
+- [x] `Sources/FoundationModelsKanban/Tool/KanbanGraph.swift:435` `reuse/reuse` — startWatch(ofBoardAt:) repeats the board-directory lookup that movedWatch(_:ofBoardAt:) also does: it builds EventLog(repositoryAt:).directory and checks that it exists with FileManager. This is the first of the two copies of the same logic. Extract one private helper, for example `boardDirectory(ofBoardAt:) -> URL` or `hasBoardDirectory(ofBoardAt:) -> Bool`, and call it from both startWatch(ofBoardAt:) and movedWatch(_:ofBoardAt:).
+- [x] `Sources/FoundationModelsKanban/Tool/KanbanGraph.swift:512` `duplication/duplication` — The move-then-apply sequence is written twice. `applyCurrentBatch` and `applyBatch` each call `movedWatch`, then call `apply(_:to:afterMove:)` with the same `moved != nil` decision. The only difference is where the new watch is stored. The two copies can drift apart, for example if one later handles a failed move differently. Extract one helper that takes the watch and the session, runs `movedWatch`, and calls `apply` with the right `afterMove` value. It returns the moved watch, or nil. Each caller then stores the result in its own place: `watchState` for the current board, or `relatedBoards[path]` for a related board.

@@ -210,8 +210,9 @@ struct CommitSession: Sendable {
     /// The live graph of the board.
     private(set) var live: LiveGraph
 
-    /// The key of the board. It orders the locks (plan.md §5.4 step 5.1).
-    private let key: BoardKey
+    /// The key of the board. It orders the locks (plan.md §5.4 step 5.1), and the engine resolves the board refs of
+    /// the related boards with it (plan.md §6.6).
+    let key: BoardKey
 
     /// The session actor: the actor of each event.
     private let actor: SessionActor
