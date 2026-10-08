@@ -65,10 +65,26 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsKanbanTests/Observe/SubscriptionTests.swift. `swift build --build-tests` clean (only the accepted "missing creator" warning). `swift test --skip-build` 3 times: 1020 tests in 72 suites passed each time (7.75 s, 7.68 s, 7.87 s); the parameterized test passed with 2 test cases each run.
     - next: /review
   timestamp: 2026-10-08T20:07:14.094319+00:00
+- actor: claude-code
+  id: 01m4ej5j99tcxcfngfec94vzmy
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (a721ddd). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. 1 file reviewed. All prior findings are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-08T20:09:41.417365+00:00
+- actor: claude-code
+  id: 01m4ej5rzfzwtdq1ga9k6vsd0f
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — Tests/FoundationModelsKanbanTests/Observe/SubscriptionTests.swift (2 tests folded into 1 parameterized test)
+    - test: green — swift test 3 runs, 1020 passed each (7.8 s, 7.9 s, 7.8 s)
+    - commit: a721ddd
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T20:09:48.271854+00:00
 depends_on:
 - 01M4EGCVYHARE5N564SE2WKEQZ
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: c380
 title: 'No filter means no filter: done tasks are not hidden by default'
 ---
 ## What
