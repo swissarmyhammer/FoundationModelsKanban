@@ -58,6 +58,15 @@ public actor KanbanGraph {
     /// The state of the file watcher of the current board.
     private var watchState = WatchState.notStarted
 
+    /// The file watcher of the current board while it runs, or `nil` before the first load and after ``close()``. A
+    /// test also reads it to prove which directory the engine watches, and that ``close()`` stopped the watcher.
+    var activeWatch: BoardWatch? {
+        guard case .watching(let watch) = watchState else {
+            return nil
+        }
+        return watch
+    }
+
     /// The public schema in the GraphQL schema definition language (SDL), generated from the Graphiti schema.
     public static var schemaSDL: String {
         do {
@@ -154,12 +163,9 @@ public actor KanbanGraph {
     /// Stops all file watchers (plan.md §7.2). After the call returns, a change of a file applies nothing. A later
     /// call still reads the graph in memory, but the graph does not follow the files any more.
     public func close() async {
-        let previous = watchState
+        let watch = activeWatch
         watchState = .closed
-        guard case .watching(let watch) = previous else {
-            return
-        }
-        await watch.end()
+        await watch?.end()
     }
 
     /// Runs one document inside the serial gate, and commits the patches that its mutation fields kept.
@@ -275,7 +281,7 @@ public actor KanbanGraph {
     /// - Throws: A ``BoardWatcherError`` when the watcher cannot move, or an ``EventLogError`` when a file cannot be
     ///   read.
     private func applyBatch(_ paths: [URL]) async throws {
-        guard case .watching = watchState, var session else {
+        guard activeWatch != nil, var session else {
             return
         }
         defer { self.session = session }
@@ -297,7 +303,7 @@ public actor KanbanGraph {
     /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when the new watcher cannot start. Then the old
     ///   watcher stays.
     private func moveWatchToBoardDirectory(of log: EventLog) async throws(BoardWatcherError) -> Bool {
-        guard case .watching(let watch) = watchState, watch.directory == root,
+        guard let watch = activeWatch, watch.directory == root,
             FileManager.default.fileExists(atPath: log.directory.path)
         else {
             return false

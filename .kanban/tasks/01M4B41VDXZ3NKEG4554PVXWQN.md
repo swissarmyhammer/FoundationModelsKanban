@@ -34,6 +34,44 @@ comments:
     - evidence: 7 files — Sources/FoundationModelsKanban/Observe/BoardWatcher.swift (new), Sources/FoundationModelsKanban/Observe/LiveGraph.swift, Sources/FoundationModelsKanban/Tool/Commit.swift, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift, Sources/FoundationModelsKanban/Events/EventLog.swift, Tests/FoundationModelsKanbanTests/Observe/BoardWatcherTests.swift (new), Tests/FoundationModelsKanbanTests/Tool/KanbanGraphTests.swift. `swift test --filter BoardWatcherTests`: 7/7 pass. `swift test`: 855 tests in 51 suites pass; only the known SwiftPM "missing creator" warning. periphery scan: No unused code detected.
     - next: /review
   timestamp: 2026-10-08T01:06:05.620466+00:00
+- actor: wballard
+  id: 01m4cgzg5z7tctyr9gy3kgqmxz
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (6c990b3); 2 findings, 2 confirmed, 0 refuted — Sources/FoundationModelsKanban/Observe/LiveGraph.swift:121, Tests/FoundationModelsKanbanTests/Observe/BoardWatcherTests.swift:180
+    - next: implement the 2 open items in "Review Findings (2026-10-07 20:08)", then review again.
+  timestamp: 2026-10-08T01:10:25.215467+00:00
+- actor: wballard
+  id: 01m4cgzv687nrg6t88j448t69m
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 7 files (Observe/BoardWatcher.swift, Observe/LiveGraph.swift, Tool/Commit.swift, Tool/KanbanGraph.swift, Events/EventLog.swift, BoardWatcherTests.swift, KanbanGraphTests.swift)
+    - test: green — swift test 3 runs, 855 passed each; build warnings only the 2 accepted kinds
+    - commit: 6c990b3
+    - review: findings — Sources/FoundationModelsKanban/Observe/LiveGraph.swift:121, Tests/FoundationModelsKanbanTests/Observe/BoardWatcherTests.swift:180
+  timestamp: 2026-10-08T01:10:36.488911+00:00
+- actor: wballard
+  id: 01m4ch8tjw5tqxw1161ehejgh4
+  text: |-
+    Review findings (2026-10-07 20:08) fixed.
+
+    1. `reuse/reuse` (LiveGraph.swift): new private `changedRefs(in current: [LocalRef: FileSignature?]) -> Set<LocalRef>` holds the one signature-compare filter. `changedRefs()` gives it the disk signatures of the union of the disk refs and the recorded refs. `changedRefs(among:)` gives it `fileSignatures(of:)`, so the per-ref signature read also is not repeated any more.
+
+    2. `test-integrity/no-test-cheating` (BoardWatcherTests.swift):
+    - New internal test seams: `BoardWatcher.isRunning` (the FSEvents stream is not stopped) and `KanbanGraph.activeWatch` (the `BoardWatch` while the state is `.watching`, else nil). `close()`, `applyBatch` and `moveWatchToBoardDirectory(of:)` now use `activeWatch`, so the `case .watching(let watch)` match is in one place only.
+    - The close test reads the watch before `close()`, then asserts with no wait: the watcher does not run (`try #require`), the consumer task is cancelled, and the engine has no active watch. Then the behavior check, ordered by the probe batch: the recorder has no batch. The stopped stream is the proof; the probe check only confirms it.
+    - Other tests in the file: the `.kanban/`-appears test passed even when the watcher did not move, because a watch on the repo root also sees `.kanban/`. It now asserts that the first watch is on the root, and after the load batch (a definite signal) that the active watch is on `.kanban/` and the root watcher does not run. The own-write test is ordered by one stream: FSEvents gives the events of one stream in order, and the consumer applies batches one at a time, so the own-write batch is done before the marker batch. The other tests wait for a positive batch or use no FSEvents.
+    - The old suggestion (a second probe write) does not remove the race, because two FSEvents streams have no order between them. The direct seam check does.
+
+    Red proof: `close()` changed for one run to not call `watch?.end()`. `swift test --filter BoardWatcherTests/closeStopsWatcher` failed at once: "Expectation failed: await !watch.watcher.isRunning". `close()` restored.
+  timestamp: 2026-10-08T01:15:30.780239+00:00
+- actor: wballard
+  id: 01m4ch8y19734h37q28q4c9125
+  text: |-
+    ### implement — changed
+    - evidence: 4 files — Sources/FoundationModelsKanban/Observe/LiveGraph.swift, Sources/FoundationModelsKanban/Observe/BoardWatcher.swift, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift, Tests/FoundationModelsKanbanTests/Observe/BoardWatcherTests.swift. RED: compile failure on missing `activeWatch`/`isRunning`; GREEN: `swift test --filter BoardWatcherTests` 7/7. Red proof: close() without end() -> closeStopsWatcher failed at `await !watch.watcher.isRunning`; restored. `swift test` x3 (`--skip-build` on runs 2 and 3): 855 tests in 51 suites passed each run; only build warning is the accepted mlx-swift "missing creator". periphery scan (--retain-public, tests indexed and report-excluded): No unused code detected. 2 of 2 findings checked.
+    - next: /review
+  timestamp: 2026-10-08T01:15:34.313437+00:00
 depends_on:
 - 01M4B3ZDK527CRVKQQRT87RGHJ
 - 01M4B4ADV9EPW7N9VGBVBVV8WM
@@ -60,3 +98,13 @@ The FSEvents watcher that drives the live graph. The basis is plan.md §5.6 and 
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-07 20:08)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 7 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsKanban/Observe/LiveGraph.swift:121` `reuse/reuse` — changedRefs(among:) repeats the signature-compare filter of changedRefs() instead of sharing it. Both compare the current signature of a ref with signatures[ref]. A later change to the rule would have to be made in two places. Extract one private helper that takes a map of current signatures and returns the refs whose signature differs from the recorded one, and call it from both changedRefs() and changedRefs(among:).
+- [x] `Tests/FoundationModelsKanbanTests/Observe/BoardWatcherTests.swift:180` `test-integrity/no-test-cheating` — The close test checks that no batch was applied right after the probe watcher sees the write. The graph's own FSEvents batch can arrive later than the probe's batch, so the check can pass even when close() does not stop the graph's watcher. The assertion is timing-dependent and does not prove what the test name says. After the probe batch, wait for a fixed signal that the graph's stream has had its chance to deliver, for example a second probe write that the graph would apply and wait for that batch on the probe, then assert the recorder is still empty. Alternatively assert on the watch state directly through an internal test seam.

@@ -40,6 +40,12 @@ actor BoardWatcher {
         self.sink = sink
     }
 
+    /// `true` until ``stop()``: the FSEvents stream runs and can give a batch. A test reads it to prove that a watcher
+    /// stopped, because a batch that does not come has no time after which it cannot come.
+    var isRunning: Bool {
+        stream != nil
+    }
+
     /// Stops the watcher and ends ``batches``. A second call does nothing.
     func stop() {
         guard let stream else {

@@ -104,8 +104,9 @@ struct LiveGraph: Sendable {
     /// - Returns: The local refs of the nodes of the changed files.
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a directory or a file cannot be read.
     func changedRefs() throws(EventLogError) -> Set<LocalRef> {
-        let current = try log.nodeFileSignatures()
-        return Set(current.keys).union(signatures.keys).filter { ref in current[ref] != signatures[ref] }
+        let onDisk = try log.nodeFileSignatures()
+        let refs = Set(onDisk.keys).union(signatures.keys)
+        return changedRefs(in: Dictionary(uniqueKeysWithValues: refs.map { ref in (ref, onDisk[ref]) }))
     }
 
     /// Lists the node files among some changed paths whose signature is not the recorded signature (plan.md §5.6,
@@ -116,9 +117,16 @@ struct LiveGraph: Sendable {
     /// - Returns: The local refs of the nodes of the changed files.
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a file cannot be read.
     func changedRefs(among paths: some Sequence<URL>) throws(EventLogError) -> Set<LocalRef> {
-        let refs = Set(paths.compactMap(log.ref(ofFileAt:)))
-        let current = try refs.map { ref throws(EventLogError) in (ref, try log.signature(of: ref)) }
-        return Set(current.filter { ref, signature in signature != signatures[ref] }.map { ref, _ in ref })
+        changedRefs(in: try fileSignatures(of: Set(paths.compactMap(log.ref(ofFileAt:)))))
+    }
+
+    /// Lists the nodes whose current file signature is not the recorded signature.
+    ///
+    /// - Parameter current: The current signature of the log file of each node to compare, by the local ref of its
+    ///   node. A node with no file has a `nil` signature.
+    /// - Returns: The local refs of the nodes whose current signature differs from the recorded one.
+    private func changedRefs(in current: [LocalRef: FileSignature?]) -> Set<LocalRef> {
+        Set(current.filter { ref, signature in signature != signatures[ref] }.keys)
     }
 
     /// Reads the files of some nodes again, stage by stage, and joins their nodes into the graph.

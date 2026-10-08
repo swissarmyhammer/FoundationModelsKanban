@@ -10,7 +10,9 @@ import ULID
 /// the file signatures, and `close()` (plan.md §5.6, §12 item 25).
 ///
 /// FSEvents gives a batch some milliseconds after a write. Each test waits for a definite signal: a batch that the
-/// engine applies, or a batch of a second watcher. The time limit only stops a test that would wait forever.
+/// engine applies, or a batch of a second watcher. The time limit only stops a test that would wait forever. A test
+/// that expects no batch does not wait for one: it reads the watch state of the engine directly (the active watch,
+/// and if its watcher runs), because the time of an FSEvents batch has no upper limit.
 @Suite("Live graph: FSEvents watcher and batches", .timeLimit(.minutes(1)))
 struct BoardWatcherTests {
     /// The longest time that a test waits for a batch.
@@ -153,10 +155,15 @@ struct BoardWatcherTests {
         let graph = try KanbanGraphTests.makeGraph(at: root, observingBatchesWith: recorder)
         let emptyName = #"{"data":{"board":{"name":"\#(KanbanGraphTests.emptyRepoName)"}}}"#
         #expect(try await KanbanGraphTests.execute(KanbanGraphTests.nameQuery, on: graph) == emptyName)
+        let rootWatch = try #require(await graph.activeWatch)
+        #expect(rootWatch.directory == root)
         var (task, ids) = try KanbanGraphTests.writeFixture(inRepoAt: root)
         let loaded = KanbanGraphTests.boardResponse(withTask: task, titled: KanbanGraphTests.taskTitle)
         #expect(try await Self.query(KanbanGraphTests.boardQuery, reaches: loaded, on: graph, recordedBy: recorder))
-        try Self.writeLaterTitle(to: task, mintingFrom: &ids, in: EventLog(repositoryAt: root))
+        let log = EventLog(repositoryAt: root)
+        #expect(await graph.activeWatch?.directory == log.directory)
+        #expect(await !rootWatch.watcher.isRunning)
+        try Self.writeLaterTitle(to: task, mintingFrom: &ids, in: log)
         let edited = KanbanGraphTests.boardResponse(withTask: task, titled: KanbanGraphTests.laterTitle)
         #expect(try await Self.query(KanbanGraphTests.boardQuery, reaches: edited, on: graph, recordedBy: recorder))
         await graph.close()
@@ -171,7 +178,12 @@ struct BoardWatcherTests {
         let graph = try KanbanGraphTests.makeGraph(at: directory.url, observingBatchesWith: recorder)
         let name = try await KanbanGraphTests.execute(KanbanGraphTests.nameQuery, on: graph)
         #expect(name == KanbanGraphTests.nameResponse)
+        let watch = try #require(await graph.activeWatch)
+        #expect(await watch.watcher.isRunning)
         await graph.close()
+        try #require(await !watch.watcher.isRunning)
+        #expect(watch.consumer.isCancelled)
+        #expect(await graph.activeWatch == nil)
         let probe = try BoardWatcher(watching: log.directory)
         let task = try KanbanGraphTests.writeTask(titled: KanbanGraphTests.laterTitle, mintingFrom: &ids, to: log)
         let taskFile = log.fileURL(for: .task(task))
