@@ -27,12 +27,14 @@ struct EventLogTests {
     /// The number of milliseconds in ``heldLockWaitLimit``.
     private static let heldLockWaitLimitMilliseconds = 300
 
-    /// The longest time that a deadline wait can continue after its deadline: one pause, and the scheduling delay of
-    /// a busy machine.
-    static let deadlineTolerance = Duration.seconds(deadlineToleranceSeconds)
+    /// The time after which a wait with a deadline counts as a hang. The wait ends at its deadline, but the test
+    /// continues only when a thread of the Swift cooperative pool is free. In a full parallel run, other tests block
+    /// the threads of the pool (for example a synchronous git command), so the test can continue some seconds after
+    /// the deadline. Thus this limit is far above that delay, and is below the time limit of the test.
+    private static let hangLimit = Duration.seconds(hangLimitSeconds)
 
-    /// The number of seconds in ``deadlineTolerance``.
-    private static let deadlineToleranceSeconds = 2
+    /// The number of seconds in ``hangLimit``.
+    private static let hangLimitSeconds = 30
 
     /// The pause between two tries of a wait with a deadline.
     static let retryPause = Duration.milliseconds(retryPauseMilliseconds)
@@ -148,6 +150,21 @@ struct EventLogTests {
             try await Task.sleep(for: retryPause)
         }
         return condition()
+    }
+
+    /// Runs blocking work on a new thread of its own, and waits for the end of the work with no blocked thread. Work
+    /// that blocks, for example a `flock` wait, must not run on the Swift cooperative pool. The pool has about one
+    /// thread for each processor, and a blocked pool thread makes the waits of the other tests of a parallel run
+    /// late.
+    ///
+    /// - Parameter work: The blocking work.
+    /// - Throws: The error of the work.
+    private static func runOnOwnThread(_ work: @escaping @Sendable () throws -> Void) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            Thread.detachNewThread {
+                continuation.resume(with: Result { try work() })
+            }
+        }
     }
 
     // MARK: - Paths
@@ -331,7 +348,10 @@ struct EventLogTests {
         #expect(try await Self.isLockReleased(of: log), Self.heldLockMessage(of: log))
     }
 
-    @Test("The wait for a released lock ends at its deadline while a different descriptor holds the lock")
+    @Test(
+        "The wait for a released lock ends at its deadline while a different descriptor holds the lock",
+        .timeLimit(.minutes(1))
+    )
     func lockWaitEndsAtDeadline() async throws {
         let directory = try TemporaryDirectory()
         let log = EventLog(repositoryAt: directory.url)
@@ -343,7 +363,7 @@ struct EventLogTests {
         lock.unlock()
         #expect(!isReleased)
         #expect(waited >= Self.heldLockWaitLimit)
-        #expect(waited < Self.heldLockWaitLimit + Self.deadlineTolerance)
+        #expect(waited < Self.hangLimit)
     }
 
     @Test("A second lock of the same board waits until the first lock is released")
@@ -352,10 +372,12 @@ struct EventLogTests {
         let log = EventLog(repositoryAt: directory.url)
         let records = Mutex<[String]>([])
         let first = try log.lock()
-        let waiter = Task.detached {
-            let second = try log.lock()
-            records.withLock { list in list.append(Self.acquiredRecord) }
-            second.unlock()
+        let waiter = Task {
+            try await Self.runOnOwnThread {
+                let second = try log.lock()
+                records.withLock { list in list.append(Self.acquiredRecord) }
+                second.unlock()
+            }
         }
         try await Task.sleep(for: Self.holdDuration)
         records.withLock { list in list.append(Self.releasedRecord) }

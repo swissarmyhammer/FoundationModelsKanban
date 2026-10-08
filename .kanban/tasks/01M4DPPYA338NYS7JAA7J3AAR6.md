@@ -27,8 +27,24 @@ comments:
     - evidence: new IntegrationTests/Package.swift, IntegrationTests/Package.resolved, IntegrationTests/Tests/FoundationModelsKanbanIntegrationTests/BoardSmokeTests.swift, IntegrationTests/Tests/FoundationModelsKanbanIntegrationTests/Support/TemporaryGitRepo.swift, .github/workflows/ci.yml; changed README.md. Root: `swift build --build-tests` OK (only the accepted missing-creator warning); `swift test --skip-build` x3: run 1 = 961 tests, 1 issue (flaky EventLogTests lock-deadline test, ^aazpa67), runs 2 and 3 = 961 tests passed; no integration suite in the root runs. IntegrationTests: `swift build --build-tests && swift test` = 1 test passed (only accepted warnings). `ruby -ryaml` parses ci.yml.
     - next: /review
   timestamp: 2026-10-08T12:19:41.500278+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: wballard
+  id: 01m4dqk77b854tbec7chm571de
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (87fed58). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. 4 files reviewed. Not reviewed: 6 .kanban/ files (.reviewignore); IntegrationTests/Package.resolved and README.md (no validator matches).
+    - next: none. The task is in done.
+  timestamp: 2026-10-08T12:25:17.291617+00:00
+- actor: wballard
+  id: 01m4dqkfj5dkmpcf8hq3h79vmp
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 6 files (IntegrationTests/Package.swift, IntegrationTests/Package.resolved, BoardSmokeTests.swift, TemporaryGitRepo.swift, .github/workflows/ci.yml, README.md)
+    - test: green — root swift test 3 runs, 961 passed each (8.3 s, 9.1 s, 9.6 s); IntegrationTests 1 passed; build warnings only the 2 accepted kinds
+    - commit: 87fed58
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T12:25:25.829873+00:00
+position_column: done
+position_ordinal: b780
 title: IntegrationTests package and CI, the same as the sibling packages
 ---
 ## What
