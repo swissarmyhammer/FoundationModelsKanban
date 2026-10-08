@@ -704,8 +704,8 @@ struct ChangeBuilderTests {
             name: "virtualTags",
             before: nil,
             after: nil,
-            added: [.string(VirtualTag.ready.rawValue)],
-            removed: [.string(VirtualTag.blocked.rawValue)],
+            added: [.string(VirtualTag.ready.rawValue), .string(VirtualTag.high.rawValue)],
+            removed: [.string(VirtualTag.blocked.rawValue), .string(VirtualTag.medium.rawValue)],
             diff: nil
         )
         #expect(try Self.field(named: "virtualTags", in: dependent) == virtualTags)

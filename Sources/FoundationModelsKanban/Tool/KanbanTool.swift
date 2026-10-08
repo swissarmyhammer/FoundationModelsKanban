@@ -1,4 +1,5 @@
 import FoundationModels
+import FoundationModelsExtras
 import GraphQL
 
 /// The `kanban` tool of FoundationModels: one GraphQL document goes in, and one `{data, errors}` response comes out
@@ -58,6 +59,9 @@ public struct KanbanTool: Tool {
     /// error `INVALID_VARIABLES`, and a subscription gives the error `SUBSCRIPTION_NOT_IN_TOOL`. In both cases the
     /// engine runs nothing.
     ///
+    /// When a host runs the call with a ``ToolContext``, the engine posts the ACP agent plan of each board whose
+    /// tasks the call changed to that context (plan.md §7.3). The model does not get the plan.
+    ///
     /// - Parameter arguments: The decoded arguments of the call.
     /// - Returns: The GraphQL response (`{data, errors}`) as JSON text with sorted keys.
     /// - Throws: An I/O fault of the engine, as ``KanbanGraph/execute(query:variables:operationName:)`` tells.
@@ -71,7 +75,8 @@ public struct KanbanTool: Tool {
         return try await graph.execute(
             query: arguments.query,
             variables: arguments.variables,
-            operationName: arguments.operationName
+            operationName: arguments.operationName,
+            postingPlansTo: ToolContext.current
         )
     }
 

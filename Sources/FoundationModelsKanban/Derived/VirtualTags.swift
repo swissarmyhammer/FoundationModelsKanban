@@ -3,8 +3,9 @@ import Foundation
 /// A virtual tag: a tag that the projection calculates for a task at read time, from the board state (plan.md §5.5,
 /// §6). No patch writes it. The filter `#READY` and the other `#` atoms match it.
 ///
-/// The cases are in the order of the Rust virtual tag registry. The new tags `CONFLICT`, `DELETED`, and `DONE` come
-/// last. The raw value is the slug of the tag, and the match is case-sensitive.
+/// The cases are in the order of the Rust virtual tag registry. The new tags `CONFLICT`, `DELETED`, and `DONE`, and
+/// then the priority tags `HIGH`, `MEDIUM`, and `LOW`, come last. The raw value is the slug of the tag, and the match
+/// is case-sensitive.
 enum VirtualTag: String, CaseIterable, Sendable {
     /// The task is live, it is not done, and all its dependencies are done.
     case ready = "READY"
@@ -23,6 +24,15 @@ enum VirtualTag: String, CaseIterable, Sendable {
 
     /// The task is live, and it shows in the terminal column.
     case done = "DONE"
+
+    /// The task is open, and it is in the first third of the open tasks in board order.
+    case high = "HIGH"
+
+    /// The task is open, and it is in the second third of the open tasks in board order.
+    case medium = "MEDIUM"
+
+    /// The task is open, and it is after the second third of the open tasks in board order.
+    case low = "LOW"
 }
 
 extension VirtualTag {
@@ -61,7 +71,8 @@ extension Readiness {
 
     /// Tells if one virtual tag applies to a task. A tombstone has the tag `DELETED`, and it can have `CONFLICT`. It
     /// never has `READY`, `BLOCKED`, `BLOCKING`, or `DONE`. A done task never has `READY` or `BLOCKING`. As in Rust,
-    /// it has `BLOCKED` when one of its dependencies is not done.
+    /// it has `BLOCKED` when one of its dependencies is not done. Each open task has one priority tag, `HIGH`,
+    /// `MEDIUM`, or `LOW` (``priorityTier(ofTaskAt:)``). A done task and a tombstone have no priority tag.
     ///
     /// - Parameters:
     ///   - tag: The virtual tag.
@@ -85,6 +96,8 @@ extension Readiness {
             return task.fields.isDeleted
         case .done:
             return isLive && isDone(taskAt: slot)
+        case .high, .medium, .low:
+            return priorityTier(ofTaskAt: slot)?.virtualTag == tag
         }
     }
 }

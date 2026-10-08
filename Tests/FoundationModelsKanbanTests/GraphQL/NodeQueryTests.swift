@@ -336,8 +336,8 @@ struct NodeQueryTests {
     @Test(
         "An undeleted task loses DELETED in virtualTags, and shows its live virtual tags again",
         arguments: [
-            (ReadinessFixture.first, #"["READY","BLOCKING"]"#),
-            (ReadinessFixture.second, #"["BLOCKED"]"#),
+            (ReadinessFixture.first, #"["READY","BLOCKING","MEDIUM"]"#),
+            (ReadinessFixture.second, #"["BLOCKED","HIGH"]"#),
         ]
     )
     func undeletedTaskLosesDeletedVirtualTag(task: String, liveTags: String) async throws {

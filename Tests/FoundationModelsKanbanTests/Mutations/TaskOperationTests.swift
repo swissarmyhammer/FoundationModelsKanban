@@ -396,7 +396,7 @@ struct TaskOperationTests {
             selecting: Self.virtualTagsSelection
         )
         let backResponse = try await CommentTests.run(back, on: fixture.graph)
-        #expect(backResponse == #"{"data":{"moveTask":{"virtualTags":["READY"]}}}"#)
+        #expect(backResponse == #"{"data":{"moveTask":{"virtualTags":["READY","HIGH"]}}}"#)
         #expect(try await Self.listedTasks(by: Self.doneTasksQuery, on: fixture.graph).isEmpty)
     }
 

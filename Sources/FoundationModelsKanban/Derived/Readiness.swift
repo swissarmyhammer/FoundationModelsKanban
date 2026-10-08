@@ -35,6 +35,14 @@ struct Readiness {
     /// The live tasks that depend on each task, by the slot of the target task, in slot order.
     private let dependents: [Int: [Int]]
 
+    /// The slots of the tasks, live and tombstoned, in board order: by the position of the column where the task
+    /// shows, then by ordinal, then by ULID. A task with no live column to show in comes last.
+    let taskOrder: [Int]
+
+    /// The priority tier of each open task (live and not done), by the slot of the task
+    /// (``PriorityTier/init(atRank:amongOpenTasks:)``). A done task and a tombstone are not in it.
+    private let priorityTiers: [Int: PriorityTier]
+
     /// Calculates the readiness of the tasks of a graph.
     ///
     /// - Parameters:
@@ -55,6 +63,9 @@ struct Readiness {
         )
         self.dependencies = dependencies
         dependents = graph.dependents(from: dependencies)
+        let taskOrder = graph.boardOrder(of: columnOrder)
+        self.taskOrder = taskOrder
+        priorityTiers = graph.priorityTiers(of: taskOrder, by: columnOrder)
     }
 
     /// Gives the column where a task shows: the `column` field (``ColumnOrder/displaySlot(of:)``).
@@ -62,9 +73,7 @@ struct Readiness {
     /// - Parameter slot: The slot of the task.
     /// - Returns: The slot of the column. A slot that holds no task, and a board with no live column, give `nil`.
     func column(ofTaskAt slot: Int) -> Int? {
-        graph.node(at: slot, as: TaskNode.self).flatMap { task in
-            columnOrder.displaySlot(of: task.column)
-        }
+        graph.column(ofTaskAt: slot, by: columnOrder)
     }
 
     /// Tells if a task is done: the task shows in the terminal column.
@@ -72,7 +81,16 @@ struct Readiness {
     /// - Parameter slot: The slot of the task.
     /// - Returns: `true` when the task is done. A slot that holds no task gives `false`.
     func isDone(taskAt slot: Int) -> Bool {
-        graph.node(at: slot, as: TaskNode.self).map { task in columnOrder.isTerminal(task.column) } ?? false
+        graph.isDone(taskAt: slot, by: columnOrder)
+    }
+
+    /// Gives the priority tier of a task: its third of the open tasks in board order
+    /// (``PriorityTier/init(atRank:amongOpenTasks:)``).
+    ///
+    /// - Parameter slot: The slot of the task.
+    /// - Returns: The tier, or `nil` for a done task, a tombstone, or a slot that holds no task.
+    func priorityTier(ofTaskAt slot: Int) -> PriorityTier? {
+        priorityTiers[slot]
     }
 
     /// Gives the dependencies of a task: its `dependsOn` edges and its dependency markers, without the dependencies
@@ -208,5 +226,66 @@ extension Graph {
             return dependencies[holder, default: []].compactMap(\.resolvedSlot).map { target in (target, holder) }
         }
         return Dictionary(grouping: links, by: \.target).mapValues { group in group.map(\.holder) }
+    }
+
+    /// Gives the column where a task shows (``ColumnOrder/displaySlot(of:)``).
+    ///
+    /// - Parameters:
+    ///   - slot: The slot of the task.
+    ///   - columnOrder: The live columns of the board in board order.
+    /// - Returns: The slot of the column. A slot that holds no task, and a board with no live column, give `nil`.
+    fileprivate func column(ofTaskAt slot: Int, by columnOrder: ColumnOrder) -> Int? {
+        node(at: slot, as: TaskNode.self).flatMap { task in
+            columnOrder.displaySlot(of: task.column)
+        }
+    }
+
+    /// Tells if a task is done: the task shows in the terminal column.
+    ///
+    /// - Parameters:
+    ///   - slot: The slot of the task.
+    ///   - columnOrder: The live columns of the board in board order.
+    /// - Returns: `true` when the task is done. A slot that holds no task gives `false`.
+    fileprivate func isDone(taskAt slot: Int, by columnOrder: ColumnOrder) -> Bool {
+        node(at: slot, as: TaskNode.self).map { task in columnOrder.isTerminal(task.column) } ?? false
+    }
+
+    /// Sorts the tasks of the graph, live and tombstoned, in board order: by the position of the column where the
+    /// task shows, then by ordinal, then by ULID. A task with no live column to show in comes last.
+    ///
+    /// - Parameter columnOrder: The live columns of the board in board order.
+    /// - Returns: The slots of the tasks, in board order.
+    fileprivate func boardOrder(of columnOrder: ColumnOrder) -> [Int] {
+        let columnSlots = columnOrder.slots
+        let positions = Dictionary(uniqueKeysWithValues: zip(columnSlots, columnSlots.indices))
+        let tasks = allSlots.compactMap { slot -> (slot: Int, position: Int, task: TaskNode)? in
+            guard let task = node(at: slot, as: TaskNode.self) else {
+                return nil
+            }
+            let position = column(ofTaskAt: slot, by: columnOrder).flatMap { column in positions[column] }
+            return (slot, position ?? positions.count, task)
+        }
+        return tasks.sorted { lhs, rhs in
+            (lhs.position, lhs.task.ordinal, lhs.task.id) < (rhs.position, rhs.task.ordinal, rhs.task.id)
+        }
+        .map(\.slot)
+    }
+
+    /// Gives the priority tier of each open task: each live task that is not done, by its rank in board order
+    /// (``PriorityTier/init(atRank:amongOpenTasks:)``).
+    ///
+    /// - Parameters:
+    ///   - taskOrder: The slots of the tasks in board order.
+    ///   - columnOrder: The live columns of the board in board order.
+    /// - Returns: The tier of each open task, by the slot of the task.
+    fileprivate func priorityTiers(of taskOrder: [Int], by columnOrder: ColumnOrder) -> [Int: PriorityTier] {
+        let openTasks = taskOrder.filter { slot in
+            isLiveTask(at: slot) && !isDone(taskAt: slot, by: columnOrder)
+        }
+        return Dictionary(
+            uniqueKeysWithValues: openTasks.enumerated().map { rank, slot in
+                (slot, PriorityTier(atRank: rank, amongOpenTasks: openTasks.count))
+            }
+        )
     }
 }

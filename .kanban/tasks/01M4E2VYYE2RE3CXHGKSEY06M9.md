@@ -89,10 +89,26 @@ comments:
     - not changed: `taskRef(_:)` and the comment ref in `refAtomOfComment` build a ref from a ULID, not from a slug. A change of the comment ref would change an assertion line, which the instruction forbids.
     - next: /review. The task stays in doing; nothing is committed.
   timestamp: 2026-10-08T18:09:37.796900+00:00
+- actor: claude-code
+  id: 01m4ebh487fdaqf7yrz7dgtsn7
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (f59f011). 0 findings, 0 confirmed, 0 refuted. 7 validator runs attempted, 0 failed. 1 file reviewed. 2 .kanban files excluded by .reviewignore. All items in the prior Review Findings checklist are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-08T18:13:40.231233+00:00
+- actor: claude-code
+  id: 01m4ebhb2ymmwea8vv7t4c92h9
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 test file (Filter/FilterEvaluatorTests.swift); 3/3 findings checked
+    - test: green — swift test 3 runs, 996 passed each (7.7 s, 7.9 s, 7.7 s); build warnings only the 2 accepted kinds
+    - commit: f59f011
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T18:13:47.230577+00:00
 depends_on:
 - 01M4E2MCSNEA5GS581W5QZEQ1H
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: c080
 title: history and changes take only the filter
 ---
 ## What

@@ -13,10 +13,6 @@ struct BoardView: Sendable {
     /// The current key of the board.
     let boardKey: String
 
-    /// The slots of the tasks, live and tombstoned, in board order: by the position of the column where the task
-    /// shows, then by ordinal, then by ULID. A task with no live column to show in comes last.
-    private let taskOrder: [Int]
-
     /// The directory, the search, and the events of the board, or `nil` for a view that only a graph rule, the
     /// history replay, or a test fixture reads.
     let source: BoardSource?
@@ -38,7 +34,6 @@ struct BoardView: Sendable {
         readiness = Readiness(of: graph, inBoard: boardKey, reading: related)
         self.boardKey = boardKey
         self.source = source
-        taskOrder = Self.boardOrder(of: readiness)
     }
 
     /// The graph of the board.
@@ -62,26 +57,6 @@ struct BoardView: Sendable {
     /// - Returns: The full URI of the node.
     func id(of ref: LocalRef) -> NodeID {
         NodeID(text: NodeURI(boardKey: boardKey, ref: ref).description)
-    }
-
-    /// Sorts the tasks of a board, live and tombstoned, in board order.
-    ///
-    /// - Parameter readiness: The readiness of the tasks of the board.
-    /// - Returns: The slots of the tasks, in board order.
-    private static func boardOrder(of readiness: Readiness) -> [Int] {
-        let columnSlots = readiness.columnOrder.slots
-        let positions = Dictionary(uniqueKeysWithValues: zip(columnSlots, columnSlots.indices))
-        let tasks = readiness.graph.allSlots.compactMap { slot -> (slot: Int, position: Int, task: TaskNode)? in
-            guard let task = readiness.graph.node(at: slot, as: TaskNode.self) else {
-                return nil
-            }
-            let position = readiness.column(ofTaskAt: slot).flatMap { column in positions[column] } ?? positions.count
-            return (slot, position, task)
-        }
-        return tasks.sorted { lhs, rhs in
-            (lhs.position, lhs.task.ordinal, lhs.task.id) < (rhs.position, rhs.task.ordinal, rhs.task.id)
-        }
-        .map(\.slot)
     }
 }
 
@@ -197,7 +172,7 @@ extension BoardView {
     /// The tasks of the board, live and tombstoned, in board order. A task list selects from them with a
     /// ``TaskFilter``, which leaves out the tombstones unless the filter names `#DELETED` (plan.md §3.3, rule 3).
     var allTasks: [TaskObject] {
-        taskOrder.compactMap { slot in object(at: slot) }
+        readiness.taskOrder.compactMap { slot in object(at: slot) }
     }
 
     /// Finds the task that a forgiving ref names.

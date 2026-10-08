@@ -180,11 +180,13 @@ struct ReadinessFixture {
     ///   - remoteDependencies: The URIs of the tasks of other boards that the `dependsOn` edges name.
     ///   - moves: The moves of the task to a column, in event order.
     ///   - fields: The body and the time values of the task.
+    ///   - title: The title of the task. The default is the empty title.
     /// - Returns: The slot of the task.
     /// - Throws: An error when a ULID text is not valid.
     @discardableResult
     mutating func addTask(
         withULID text: String,
+        titled title: String = "",
         inColumn column: String? = ReadinessFixture.todo,
         taggedWith tags: [String] = [],
         assignedTo assignees: [String] = [],
@@ -198,6 +200,7 @@ struct ReadinessFixture {
         let task = TaskNode(
             id: try DependencyMarkersTests.ulid(of: text),
             fields: fields,
+            title: title,
             column: column.map { slug in .unresolved(.local(.column(slug: slug))) },
             assignees: assignees.map { slug in .unresolved(.local(.actor(slug: slug))) },
             tags: tags.map { slug in .unresolved(.local(.tag(slug: slug))) },

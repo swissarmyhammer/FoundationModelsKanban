@@ -172,7 +172,7 @@ struct QueryResolverTests {
         let shortID = ShortID(ofULIDString: ReadinessFixture.first).value
         let color = AutoColor.color(forText: QueryFixture.tagSlug)
         let expected = #"{"data":{"board":{"task":{"shortId":"\#(shortID)","ready":true,"#
-            + #""virtualTags":["READY","BLOCKING"],"blocks":[{"title":"\#(QueryFixture.secondTitle)"}],"#
+            + #""virtualTags":["READY","BLOCKING","MEDIUM"],"blocks":[{"title":"\#(QueryFixture.secondTitle)"}],"#
             + #""blockedBy":[],"progress":{"total":2,"completed":1},"#
             + #""assignees":[{"name":"\#(QueryFixture.actorName)"}],"#
             + #""tags":[{"name":"\#(QueryFixture.tagSlug)","color":"\#(color)"}]}}}}"#
@@ -186,7 +186,7 @@ struct QueryResolverTests {
                 { board { task(id: "\(ReadinessFixture.second)") { ready virtualTags blockedBy { title } } } }
                 """
         )
-        let expected = #"{"data":{"board":{"task":{"ready":false,"virtualTags":["BLOCKED"],"#
+        let expected = #"{"data":{"board":{"task":{"ready":false,"virtualTags":["BLOCKED","HIGH"],"#
             + #""blockedBy":[{"title":"\#(QueryFixture.firstTitle)"}]}}}}"#
         #expect(response == expected)
     }

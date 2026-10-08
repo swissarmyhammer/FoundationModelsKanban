@@ -57,7 +57,7 @@ It changes four items:
 - **Entity YAML and Markdown files.** The event log replaces them.
 - **Diff-patch changelog.** The GraphQL mutation log replaces it.
 - **Entity cache events, broadcast channels, GUI views and commands, merge-driver install.** (The Rust watcher and change events are replaced by GraphQL subscriptions, §6.7. The Rust undo stack is replaced by undo from the event log, §6.5.)
-- **The `_plan` ACP plan data** that the Rust MCP wrapper adds to task mutation results. A caller can get this data with a query.
+- **The `_plan` ACP plan data** that the Rust MCP wrapper adds to task mutation results. The response has no `_plan` field. The tool sends the ACP agent plan to the client through the `ToolContext` instead (§7.3).
 
 ## 3. The graph
 
@@ -237,7 +237,7 @@ type Task implements Node {
   blockedBy: [Task!]!                 # derived
   blocks: [Task!]!                    # derived
   ready: Boolean!                     # derived
-  virtualTags: [String!]!             # READY | BLOCKED | BLOCKING | CONFLICT | DELETED | DONE
+  virtualTags: [String!]!             # READY | BLOCKED | BLOCKING | CONFLICT | DELETED | DONE | HIGH | MEDIUM | LOW
   progress: Progress!                 # derived from Markdown checklists
   comments: [Comment!]!
   created: DateTime!                  # all time values are derived from the event log (§5.3)
@@ -566,7 +566,7 @@ A log can change outside the tool: a manual edit, a `git pull`, a merge, a `git 
 | Auto-init | If the first mutation runs and `.kanban` has no board, the tool initializes the board with the default columns. The default board `name` is the repo directory name. A query on an empty repo returns an empty board with that name and writes nothing. |
 | Terminal column | The column with the maximum `order`. A task there is "done". |
 | `ready` | All `dependsOn` targets are done. |
-| Virtual tags | `READY` (live, not done, and all dependencies done), `BLOCKED` (live, and at least one dependency is not done), `BLOCKING` (live, not done, and some live task depends on it). New in this design: `CONFLICT` (the body has a conflict block from a diff that could not apply, §5.5), `DELETED` (the task is a tombstone, §3.3), and `DONE` (live, and in the terminal column). A tombstone is never `READY`, `BLOCKED`, `BLOCKING`, or `DONE`. `DONE` does not change the other tags: a done task is never `READY` or `BLOCKING`, and, as in Rust, it is `BLOCKED` when a dependency is not done. `DELETED` and `DONE` are "hidden unless named": a list shows a tombstone only when the filter names `#DELETED`, and a done task only when the filter names `#DONE` or a column (§3.3 rule 3, §6.3). |
+| Virtual tags | `READY` (live, not done, and all dependencies done), `BLOCKED` (live, and at least one dependency is not done), `BLOCKING` (live, not done, and some live task depends on it). New in this design: `CONFLICT` (the body has a conflict block from a diff that could not apply, §5.5), `DELETED` (the task is a tombstone, §3.3), and `DONE` (live, and in the terminal column). A tombstone is never `READY`, `BLOCKED`, `BLOCKING`, or `DONE`. `DONE` does not change the other tags: a done task is never `READY` or `BLOCKING`, and, as in Rust, it is `BLOCKED` when a dependency is not done. `DELETED` and `DONE` are "hidden unless named": a list shows a tombstone only when the filter names `#DELETED`, and a done task only when the filter names `#DONE` or a column (§3.3 rule 3, §6.3). New: the priority tags `HIGH`, `MEDIUM`, and `LOW` (`Derived/PriorityTier.swift`). Each open task (live and not done) has one of them, from its place among the open tasks in board order: the first third is `HIGH`, the second third `MEDIUM`, and the rest `LOW`. The rule: the open task at rank `r` (from 0) of `n` open tasks gets tier `r * 3 / n` with integer division, so the first tier holds `ceil(n / 3)` tasks. Thus 1 open task is `HIGH`; 2 are `HIGH` and `MEDIUM`; 3 are `HIGH`, `MEDIUM`, and `LOW`; 7 are 3 `HIGH`, 2 `MEDIUM`, and 2 `LOW`. A done task and a tombstone have no priority tag. A move changes the tier of the moved task and of the tasks after it. The priority tags are not "hidden unless named". The agent plan reads them (§7.3). |
 | `nextTask` | From the tasks that have `READY` (live, not done, and ready) and match the filter: sort by column order, then by ordinal. Return the first task or `null`. `nextTask` never returns a tombstone or a done task, also for a filter that names `#DELETED` or `#DONE`. |
 | `completeTask` | Move to the terminal column, after the last ordinal there. |
 | `moveTask` | The place comes from one field: an explicit `ordinal`, or `before` or `after` a neighbor. With no place field, the task goes to the end of the column. More than one place field gives `CONFLICTING_PLACEMENT` (§4.4); the Rust code used the first field and ignored the others. A missing column is created (name = slug in title case). |
@@ -662,7 +662,7 @@ body     = [^ \t\n\r#@^%~$()&|!]+
 
 | Syntax | Matches |
 |---|---|
-| `#tag` | Tasks with this tag, from an edge or a `#marker` (§6.1), after the rename redirect (§6.2). Also the virtual tags `READY`, `BLOCKED`, `BLOCKING`, and the new `CONFLICT`, `DELETED`, and `DONE`. `#DELETED` also lets the list select the tombstones, and `#DONE` the done tasks (§3.3, rule 3). |
+| `#tag` | Tasks with this tag, from an edge or a `#marker` (§6.1), after the rename redirect (§6.2). Also the virtual tags `READY`, `BLOCKED`, `BLOCKING`, and the new `CONFLICT`, `DELETED`, `DONE`, `HIGH`, `MEDIUM`, and `LOW`. `#DELETED` also lets the list select the tombstones, and `#DONE` the done tasks (§3.3, rule 3). |
 | `@user` | Tasks assigned to this actor, by actor slug or by the slug of the actor name. |
 | `^id` | The task itself, or a task with this `dependsOn` target (from an edge or a marker). `id` can be a full ULID, a 7-character short id, `^short`, or a unique ULID prefix. In the change feed (§6.7), `^id` also matches a node of a different type: a column or tag slug, an actor slug, a comment id, or the URL of the node. `^id` names `DONE` and `DELETED`, so `^id` also selects a done task or a tombstone. |
 | `&&` / `and` / `AND` | Both sides. |
@@ -717,7 +717,7 @@ body     = [^ \t\n\r#@^%~$()&|!]+
 
 **Only the filter selects.** A task list takes only `filter`, and `first` and `after` for paging. The Rust `list tasks` params `tag`, `assignee`, `column`, `project`, and `excludeDone` are removed, and there is no `deleted` argument. The agent writes the atom instead: `#x`, `@x`, `%x`. The shortcut mutations (for example `completeTask`) stay.
 
-**Default selection.** The derived tags are `READY`, `BLOCKED`, `BLOCKING`, `CONFLICT`, `DELETED`, and `DONE` (§6, "Virtual tags"). `DELETED` and `DONE` are "hidden unless named" (§3.3, rule 3):
+**Default selection.** The derived tags are `READY`, `BLOCKED`, `BLOCKING`, `CONFLICT`, `DELETED`, `DONE`, `HIGH`, `MEDIUM`, and `LOW` (§6, "Virtual tags"). `DELETED` and `DONE` are "hidden unless named" (§3.3, rule 3):
 
 - A list leaves out a task that has a hidden tag, unless the filter names that tag at some depth (also under a NOT). Then the filter decides.
 - `#DELETED` names `DELETED`. `#DONE` names `DONE`. A `%` atom or a column URL also names `DONE`, as the Rust rule "a named column turns off `excludeDone`" does. Thus `%done` lists the done tasks, and `%done && !#DONE` lists none.
@@ -913,6 +913,18 @@ public struct KanbanTool: Tool {
 - It is an `actor`, so its state is safe. An actor can run a second call at each `await`, so the actor alone does not make calls run one at a time. Thus, `execute` also goes through a serial gate (an async queue), and calls in the same process run one at a time. The file locks and the commit check (§5.4) protect against other processes.
 - A CLI target (`kanban`) runs `kanban '<document>' [--variables <json>]` against the current directory. `kanban watch '<subscription>'` prints one JSON line for each event (§6.7). `kanban --schema` prints the generated SDL.
 
+### 7.3 The agent plan
+
+The tool complies with the ACP agent plan (https://agentclientprotocol.com/protocol/v2/agent-plan). The plan goes to the client through the `ToolContext` of FoundationModelsExtras: `ToolContext.progress(_ detail:, plan:)` posts one `.progress` event with a `PlanSnapshot`. The model gets only the detail line. It never gets the plan.
+
+- **When.** A `KanbanTool` call reads `ToolContext.current` one time and gives it to the engine (`Tool/AgentPlan.swift`). After the call commits, the engine reads the changes that the commit path already takes for the change feed (§6.7): the changes of each loaded board in this operation of the serial gate. For each board whose changes patch a task (add, update, move, complete, assign, tag, delete, undelete, undo, redo), the call posts one `.progress` event with the plan of that board, in the sort order of the path of the repo directory. A query, a mutation that patches no task (for example `addTag` or `addComment`), and a call that throws post nothing. A changed board that a commit check applied from a different process before the commit is also in the changes, so its plan goes out too.
+- **No context, no work.** The public `KanbanGraph.execute`, `subscribe`, and the batches of the file watcher give no context. Thus the CLI, a GUI, and a direct `execute` do no plan work, also when a `ToolContext` is bound around them. The file watcher must not read the task-local: its consumer task inherits the task-local of the first call.
+- **Plan id.** The board key. Each board is one plan, and each post replaces the plan with that id.
+- **Entries.** The full list, never a partial list: one entry for each live task of the board, in board order (column order, then ordinal, then ULID). `content` is the task title. A tombstone is not in the plan.
+- **Status.** A done task (`DONE`) is `completed`. A task in the first column is `pending`. Each other live task is `in_progress`.
+- **Priority.** The priority tag of the task (§6, "Virtual tags"): `HIGH` is `high`, `MEDIUM` is `medium`, and `LOW` is `low`. A done task has no priority tag, and its entry is `low`.
+- **Detail.** The short line `<done> of <total> tasks done`, from the `Board.summary` counts.
+
 ## 8. Package layout
 
 ```
@@ -930,7 +942,7 @@ FoundationModelsKanban/
       Body/          UnifiedDiff.swift (make, reverse), DiffApply.swift (nearest exact match, conflict block)
       GraphQL/       Schema.swift (public, Graphiti), PatchSchema.swift (internal `patch`), QueryResolvers.swift,
                      MutationResolvers.swift, NameRewrite.swift (§4.5), Errors.swift, Scalars.swift
-      Derived/       Readiness.swift, VirtualTags.swift, Progress.swift, Timeline.swift
+      Derived/       Readiness.swift, VirtualTags.swift, PriorityTier.swift, Progress.swift, Timeline.swift
       Filter/        FilterParser.swift, FilterEvaluator.swift
       Search/        TaskSearchItem.swift (SearchableMetadata), TaskSearch.swift
       Tags/          TagSlug.swift, TagMarkers.swift, AutoColor.swift
@@ -938,7 +950,7 @@ FoundationModelsKanban/
       CrossRepo/     BoardLocator.swift
       Observe/       ChangeFeed.swift (subscribers), BoardWatcher.swift (FSEvents, batches, file signatures),
                      LiveGraph.swift (apply a batch, unresolved refs, large-change reload)
-      Tool/          KanbanTool.swift, KanbanArguments.swift, KanbanGraph.swift
+      Tool/          KanbanTool.swift, KanbanArguments.swift, KanbanGraph.swift, AgentPlan.swift (§7.3)
     kanban/          KanbanMain.swift (CLI)
   Tests/
     FoundationModelsKanbanTests/
@@ -954,7 +966,7 @@ Dependencies. Get siblings by URL, the same as CodeContext:
 - swift-argument-parser for the CLI.
 - `pointfreeco/swift-parsing` (`https://github.com/pointfreeco/swift-parsing`) for the filter DSL (§6.3). See §12, item 24.
 - swift-log. Optional: swift-distributed-tracing and swift-metrics (API only), the same as CodeContext.
-- `FoundationModelsExtras` only if we use one of its helpers. The `Operations` product is not necessary.
+- `FoundationModelsExtras` for `PooledEmbedding` (§6.4), and for `ToolContext` and `PlanSnapshot` of the agent plan (§7.3). The `Operations` product is not necessary.
 
 ## 9. Linking into the agent (code mode)
 

@@ -263,6 +263,14 @@ struct FilterEvaluatorTests {
         #expect(try Self.sampleMatches(of: "#BLOCKING") == [Self.first, Self.second])
     }
 
+    @Test("The priority tags HIGH, MEDIUM, and LOW select the open tasks by their third of the board order")
+    func priorityTags() throws {
+        // Board order of the open tasks: the first and the fourth task in `todo`, then the second task in `doing`.
+        #expect(try Self.sampleMatches(of: "#HIGH") == [Self.first])
+        #expect(try Self.sampleMatches(of: "#MEDIUM") == [Self.fourth])
+        #expect(try Self.sampleMatches(of: "#low") == [Self.second])
+    }
+
     @Test("A virtual tag ignores case")
     func virtualTagCaseInsensitive() throws {
         #expect(try Self.sampleMatches(of: "#ready") == [Self.first])

@@ -4,7 +4,7 @@ import Testing
 @testable import FoundationModelsKanban
 
 /// Tests the virtual tags of a task: `READY`, `BLOCKED`, `BLOCKING`, `CONFLICT`, `DELETED`, and `DONE` (plan.md §5.5,
-/// §6).
+/// §6). ``PriorityTagsTests`` tests the priority tags `HIGH`, `MEDIUM`, and `LOW`.
 /// The tests in the "Rust" sections are the port of the tests of the Rust `virtual_tags.rs`.
 @Suite("Virtual tags")
 struct VirtualTagsTests {
@@ -21,9 +21,11 @@ struct VirtualTagsTests {
 
     // MARK: - Rust: registry
 
-    @Test("The virtual tags are READY, BLOCKED, BLOCKING, CONFLICT, DELETED, and DONE, in this order")
+    @Test(
+        "The virtual tags are READY, BLOCKED, BLOCKING, CONFLICT, DELETED, DONE, HIGH, MEDIUM, and LOW, in this order"
+    )
     func tagsInRegistryOrder() {
-        let names = ["READY", "BLOCKED", "BLOCKING", "CONFLICT", "DELETED", "DONE"]
+        let names = ["READY", "BLOCKED", "BLOCKING", "CONFLICT", "DELETED", "DONE", "HIGH", "MEDIUM", "LOW"]
         #expect(VirtualTag.allCases.map(\.rawValue) == names)
     }
 
@@ -138,7 +140,7 @@ struct VirtualTagsTests {
     func conflictBlockGivesConflict() throws {
         var board = ReadinessFixture()
         try board.addTask(withULID: ReadinessFixture.first, fields: ReadinessFixture.fields(hasConflict: true))
-        #expect(try Self.tags(ofTask: ReadinessFixture.first, on: board) == [.ready, .conflict])
+        #expect(try Self.tags(ofTask: ReadinessFixture.first, on: board) == [.ready, .conflict, .high])
     }
 
     @Test("A task with no conflict block does not have CONFLICT")
@@ -205,6 +207,6 @@ struct VirtualTagsTests {
             dependingOn: [ReadinessFixture.ghost],
             fields: ReadinessFixture.fields(hasConflict: true)
         )
-        #expect(try Self.tags(ofTask: ReadinessFixture.first, on: board) == [.blocked, .blocking, .conflict])
+        #expect(try Self.tags(ofTask: ReadinessFixture.first, on: board) == [.blocked, .blocking, .conflict, .high])
     }
 }

@@ -195,8 +195,29 @@ public actor KanbanGraph {
     ///   when a log file cannot be read, locked, or written, or a ``BoardWatcherError`` when the file watcher of a
     ///   board cannot start.
     public func execute(query: String, variables: [String: Map], operationName: String?) async throws -> String {
+        try await execute(query: query, variables: variables, operationName: operationName, postingPlansTo: nil)
+    }
+
+    /// Runs one GraphQL document against the board, as ``execute(query:variables:operationName:)`` does, and posts
+    /// the agent plan of each board whose tasks the call changed to a tool context (plan.md §7.3).
+    ///
+    /// A tool reads its ``ToolContext`` one time and gives it here. With no context, the call does no plan work.
+    ///
+    /// - Parameters:
+    ///   - query: The GraphQL document.
+    ///   - variables: The values of the variables of the document.
+    ///   - operationName: The operation of the document to run, or `nil` when the document has one operation.
+    ///   - context: The context of the tool call that gets the plans, or `nil` for no post.
+    /// - Returns: The GraphQL response (`{data, errors}`) as JSON text with sorted keys.
+    /// - Throws: An I/O fault only, the same as ``execute(query:variables:operationName:)``.
+    func execute(
+        query: String,
+        variables: [String: Map],
+        operationName: String?,
+        postingPlansTo context: ToolContext?
+    ) async throws -> String {
         try await gate.run {
-            try await self.publishingChanges {
+            try await self.publishingChanges(postingPlansTo: context) {
                 try await self.respond(to: query, variables: variables, operationName: operationName)
             }
         }
@@ -223,7 +244,7 @@ public actor KanbanGraph {
         operationName: String?
     ) async throws -> AsyncThrowingStream<String, Error> {
         try await gate.run {
-            try await self.publishingChanges {
+            try await self.publishingChanges(postingPlansTo: nil) {
                 try await self.startSubscription(to: query, variables: variables, operationName: operationName)
             }
         }
@@ -351,30 +372,41 @@ public actor KanbanGraph {
     /// (plan.md §6.7). The changes go out also when the operation throws, because a commit check can apply the
     /// changes of a different process before the call fails.
     ///
-    /// - Parameter operation: The operation.
+    /// When the operation returns and a tool context is given, the same changes also give the agent plan of each
+    /// board whose tasks changed (plan.md §7.3). An operation that throws posts no plan.
+    ///
+    /// - Parameters:
+    ///   - context: The context of the tool call that gets the plans, or `nil` for no post.
+    ///   - operation: The operation.
     /// - Returns: The value of the operation.
     /// - Throws: The error of the operation.
     private func publishingChanges<Value: Sendable>(
+        postingPlansTo context: ToolContext?,
         _ operation: @Sendable () async throws -> Value
     ) async throws -> Value {
+        let value: Value
         do {
-            let value = try await operation()
-            await publishLiveChanges()
-            return value
+            value = try await operation()
         } catch {
-            await publishLiveChanges()
+            await publishLiveChanges(takeLiveChanges())
             throw error
         }
+        let changed = takeLiveChanges()
+        await publishLiveChanges(changed)
+        await context?.postAgentPlans(of: changed)
+        return value
     }
 
-    /// Takes the changes of the live graph of each loaded board, and sends them to the subscribers of the change feed
-    /// (plan.md §6.7). With no subscriber, the changes are only dropped.
+    /// Sends the changes of the live graph of each loaded board to the subscribers of the change feed (plan.md
+    /// §6.7). With no subscriber, the changes are only dropped.
     ///
     /// Before it makes the changes, the engine loads each board that a `dependsOn` edge of a loaded board reaches, so
     /// that the derived fields read the tasks of those boards. A board that cannot load is recorded with swift-log,
     /// and the changes of the operation are then not sent.
-    private func publishLiveChanges() async {
-        let changed = takeLiveChanges()
+    ///
+    /// - Parameter changed: The changes of each loaded board that changed, by the canonical path of its repo
+    ///   directory (``takeLiveChanges()``).
+    private func publishLiveChanges(_ changed: [String: BoardChanges]) async {
         let subscribed = feed.subscribedBoards
         guard !changed.isEmpty, !subscribed.isEmpty, case .loaded(let current) = loadState else {
             return
@@ -764,7 +796,7 @@ public actor KanbanGraph {
     private func receive(_ paths: [URL], ofBoardAt directory: URL) async {
         do {
             try await gate.run {
-                try await self.publishingChanges {
+                try await self.publishingChanges(postingPlansTo: nil) {
                     try await self.applyBatch(paths, ofBoardAt: directory)
                 }
             }
