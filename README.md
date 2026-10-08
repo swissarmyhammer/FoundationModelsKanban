@@ -17,8 +17,10 @@ A package boundary separates the two test suites:
   network.
 - `swift test --package-path IntegrationTests` runs the integration suite in
   the nested [`IntegrationTests`](IntegrationTests) package. These tests use
-  real external systems, for example a real git repo. A test that uses the
-  on-device model needs a Mac with Apple Intelligence turned on.
+  real external systems, for example a real git repo. The model test uses
+  Qwen 3.8 (`mlx-community/Qwen3.8-27B-mxfp4`), which MLX runs. It needs a
+  Mac with a Metal device, and it downloads the model (about 14 GB) into the
+  Hugging Face cache when the cache does not have it.
 
 The package structure selects the suite. No environment variable changes it.
 The root `Package.swift` declares one test target, the unit suite, so a root

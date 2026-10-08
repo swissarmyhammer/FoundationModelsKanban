@@ -842,8 +842,22 @@ struct KanbanArguments: ConvertibleFromGeneratedContent {
   - a string schema, with the guide "the variables as one JSON object in text";
   - an object schema with no properties.
 
-  The encoded JSON Schema then has `anyOf` and no top-level `type`, so Multitool passes a script object through. The on-device model can only make an empty object with the second choice. Thus, an empty object means "no variables". If the document then needs a variable, validation gives the normal GraphQL error, and the model can send the string form or put the values in the document.
-- **Tests for this schema.** A unit test encodes `KanbanArguments.generationSchema` and checks that `variables` has `anyOf` and no `type`. The step 18 test sends an object and a string through Multitool. A test with a real `LanguageModelSession` checks that the on-device model makes the string form for a document with variables.
+  The encoded JSON Schema then has `anyOf` and no top-level `type`, so Multitool passes a script object through.
+  A model can only make an empty object with the second choice. Thus, an empty object means "no variables". If the
+  document then needs a variable, validation gives the normal GraphQL error, and the model can send the string form
+  or put the values in the document.
+
+  Measured result (3 runs for each model, the same prompt):
+  - The on-device `SystemLanguageModel` sent `"variables": {}` in 3 of 3 runs. Guided generation picked the object
+    choice with no properties.
+  - Qwen 3.8 (`mlx-community/Qwen3.8-27B-mxfp4`) sent the string form with the value in 3 of 3 runs.
+- **Tests for this schema.** A unit test encodes `KanbanArguments.generationSchema` and checks that `variables` has
+  `anyOf` and no `type`. The step 18 test sends an object and a string through Multitool. A test with a real
+  `LanguageModelSession` checks that Qwen 3.8 (`mlx-community/Qwen3.8-27B-mxfp4`) sends `variables` that hold the
+  value for a document with variables, and that the task is added. The test is in the nested `IntegrationTests/`
+  package. Extras `PooledModel` loads the model, and the session uses it as a FoundationModels `LanguageModel`. The
+  test accepts the string form and an object, but an empty object fails. The test does not use the on-device
+  `SystemLanguageModel`, because that model sent `"variables": {}` in 3 of 3 runs.
 - The decoder keeps the JSON types: number, boolean, null, list, and object. GraphQL input coercion then converts them, for example a JSON number to `Int` or `Float`.
 - The tool description is short. It gives the purpose of the tool, the root fields (`board`, `boards`, `node`, `nodes`), and one example query. It does not hold the schema.
 - To learn the schema, the agent uses standard GraphQL introspection (`__schema`, `__type`). The engine answers from the live schema, so the answer is always correct.
@@ -1050,7 +1064,14 @@ The owner made each decision below.
 5. **Log layout. — DECIDED.** One log file for each node (§5.2). Two branches that change different nodes change different files. The `union` merge driver keeps both sides when two branches change the same node. One `events.jsonl` for the full board is not used, because each branch would then change the same file.
 6. **Search. — DECIDED.** Use FoundationModelsMetadataRegistry (`MetadataSearcher`), which uses FoundationModelsRanker for BM25 + trigram + optional embedding cosine with RRF fusion (§6.4). The kanban package does not write its own ranker.
 7. **Tags in the body text. — DECIDED.** A task gets its tags from two sources: the `tags` edges and the `#markers` in the current body. The projection calculates the union at read time (§6.1). `tagTask` changes only edges. `untagTask` removes the edge, and also the marker if it is in the text. The Rust rule (the body text is the only source) is not used, because a merge can then lose a tag. Dependencies use the same model: a full `kanban://` task URL in the body is a dependency marker, and `task.dependsOn` is the union of the edges and the markers (§6.1).
-8. **Shape of `variables`. — DECIDED.** Accept both forms: a plain object (code mode) and a JSON object in a string (the on-device model). Also accept a code fence around the JSON, `null`, and no value. A custom `ConvertibleFromGeneratedContent` init does the decode. The declared schema of `variables` is `DynamicGenerationSchema(anyOf:)` of a string and an object with no properties. Multitool passes a script object, and an empty object from the model means "no variables" (§7.1).
+8. **Shape of `variables`. — DECIDED.** Accept both forms: a plain object (code mode) and a JSON object in a string
+   (a model: Qwen 3.8, `mlx-community/Qwen3.8-27B-mxfp4`, sent this form in 3 of 3 runs of the model test in
+   `IntegrationTests/`). Also accept a code fence around the JSON, `null`, and no value. A custom
+   `ConvertibleFromGeneratedContent` init does the decode. The declared schema of `variables` is
+   `DynamicGenerationSchema(anyOf:)` of a string and an object with no properties. Multitool passes a script object,
+   and an empty object from the model means "no variables". The on-device `SystemLanguageModel` sent
+   `"variables": {}` in 3 of 3 runs, because guided generation picked the object choice with no properties. Thus the
+   model test uses Qwen 3.8, which Extras `PooledModel` loads (§7.1).
 9. **GraphQL engine. — DECIDED.** Use `GraphQLSwift/GraphQL` for parse, validate, and execute. Use `GraphQLSwift/Graphiti` to build the schema from Swift types, so that the Swift types are the one source of truth. The SDL is generated, not written. The forgiving name rewrite (§4.5) changes the parsed document before validation. The internal `patch` mutation is in a separate schema, so that the model cannot write a patch directly.
 10. **Schema in the tool description. — DECIDED.** The description does not hold the schema. It holds the purpose, the root fields, and one tested example query. The agent learns the schema with standard introspection (§7.1). Thus, the schema has one view, and it cannot go out of date.
 11. **Import of old boards. — DECIDED.** No import. The tool does not read the Rust `.kanban/` data. Replay reads only `*.jsonl` files, so old Rust files (`.yaml`, `.md`) in the same directory are ignored.

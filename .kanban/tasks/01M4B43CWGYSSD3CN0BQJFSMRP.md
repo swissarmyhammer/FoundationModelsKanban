@@ -221,11 +221,27 @@ comments:
     - evidence: 1 file — IntegrationTests/Tests/FoundationModelsKanbanIntegrationTests/ModelVariablesTests.swift. Root: `swift build --build-tests` OK (only the accepted `missing creator for mutated node` warning); `swift test --skip-build` 3 runs, each exit 0, 965 tests in 68 suites passed (7.6 s, 7.8 s, 7.5 s). IntegrationTests: `swift build --build-tests && swift test` exit 0, only the accepted warning, 2 tests in 2 suites passed; Qwen 3.8 test passed after 8.3 s, and Swift Testing reported "Attached 'kanban-arguments.json'".
     - next: /review.
   timestamp: 2026-10-08T15:24:33.922952+00:00
+- actor: claude-code
+  id: 01m4e22gvtk45h92xq5p6bcg0j
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (02a1abd); 0 findings, 0 confirmed, 0 refuted; 7 validator runs attempted, 0 failed. All prior Review Findings items are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-08T15:28:24.442372+00:00
+- actor: claude-code
+  id: 01m4e22rz9eps7efsjmhx1223c
+  text: |-
+    ### finish iteration 4 — clean
+    - implement: changed — 1 file (ModelVariablesTests.swift); 1/1 findings checked
+    - test: green — root swift test 3 runs, 965 passed each (7.9 s, 7.6 s, 7.7 s); IntegrationTests 2 passed, Qwen 3.8 test 10.8 s; build warnings only the 2 accepted kinds
+    - commit: 02a1abd
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T15:28:32.745151+00:00
 depends_on:
 - 01M4DPPYA338NYS7JAA7J3AAR6
 - 01M4DYAT2V3CEKMMZ8SBHJSNMM
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: bb80
 title: 'Multitool proof: code mode end to end'
 ---
 ## What
