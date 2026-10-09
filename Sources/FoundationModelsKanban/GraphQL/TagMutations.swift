@@ -224,8 +224,9 @@ extension WorkingCopy {
     ///    old tag, and an `edit` with the body of the old tag.
     /// 2. The old tag gets a `set` of `renamedTo`.
     ///
-    /// A rename to a slug that the graph has is a merge: only patch 2 is written. A rename to the slug of the tag
-    /// itself writes nothing.
+    /// A rename to a slug that the graph has is a merge: patch 1 is not written. When the end of the rename chain of
+    /// that slug is a tombstone, that tag gets a `delete: false` patch before patch 2, the same as in
+    /// ``ensureLiveTag(_:setting:body:at:)``. A rename to the slug of the tag itself writes nothing.
     ///
     /// - Parameters:
     ///   - source: The local ref of the tag to rename.
@@ -239,13 +240,11 @@ extension WorkingCopy {
         guard target != source else {
             return source
         }
-        if !graph.hasNode(target) {
-            let color = (graph.node(for: source)?.state as? TagNode)?.resolvedColor
-            let values = [String: PatchValue](
-                givenValues: [PropertyName.name: .string(name.name), PropertyName.color: color.map(PatchValue.string)]
-            )
-            try addNode(target, setting: values, body: graph.body(of: source), at: time)
-        }
+        let color = (graph.node(for: source)?.state as? TagNode)?.resolvedColor
+        let values = [String: PatchValue](
+            givenValues: [PropertyName.name: .string(name.name), PropertyName.color: color.map(PatchValue.string)]
+        )
+        _ = try ensureLiveTag(target, setting: values, body: graph.body(of: source), at: time)
         try apply(PatchInput(node: source, set: [PropertyName.renamedTo: .ref(.local(target))]), at: time)
         let start = graph.slot(for: source)
         try checkNoRenameCycle(fromTagAt: start)

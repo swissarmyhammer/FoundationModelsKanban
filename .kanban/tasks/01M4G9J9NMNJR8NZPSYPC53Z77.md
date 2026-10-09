@@ -33,8 +33,24 @@ comments:
     - evidence: 14 files — Sources/FoundationModelsKanban/{Tags/TagSlug.swift, GraphQL/Errors.swift, GraphQL/TaskMutations.swift, GraphQL/TagMutations.swift, GraphQL/TaskOperationMutations.swift, GraphQL/ColumnActorMutations.swift, Filter/FilterEvaluator.swift}, Tests/FoundationModelsKanbanTests/{Tags/VirtualTagSlugTests.swift (new), Mutations/VirtualTagNameTests.swift (new), Mutations/ReservedSlugTests.swift, GraphQL/KanbanErrorTests.swift, Filter/FilterEvaluatorTests.swift}, plan.md. `swift build --build-tests`: only the accepted SwiftPM "missing creator" warning. `swift test`: 1089 tests in 78 suites passed, 0 issues.
     - next: /review
   timestamp: 2026-10-09T17:44:06.002788+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4gwhp0qy4nr7vjhd9jsge7p
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings (0 confirmed, 3 refuted, 14 attempted). The commit message of df13cc6 agrees with the diff. Each acceptance criterion and each test item is met: VirtualTagNameTests (addTag "Deleted"/"blocked", addTask tags "done", #BLOCKED marker; refusals use runWritingNothing, so no patch is written), VirtualTagSlugTests (old log with a real tag done). updateTag is not refused, as the owner rule and plan.md §6 tell.
+    - next: none — task moved to done
+  timestamp: 2026-10-09T17:49:33.079677+00:00
+- actor: claude-code
+  id: 01m4gwhpwfdmgn0685972y9zjp
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 14 files
+    - test: green — swift test, 1089 tests in 78 suites passed
+    - commit: df13cc6
+    - review: clean — 0 findings
+  timestamp: 2026-10-09T17:49:33.967161+00:00
+position_column: done
+position_ordinal: ce80
 title: Refuse tag names that are the same as a virtual tag
 ---
 ## What

@@ -640,7 +640,7 @@ Decision: **a rename makes a redirect.** For example, `renameTag(from: "bug", to
 - **Filters and refs follow the redirect.** `#bug` and `#defect` both match. `addTask(tags: ["bug"])` writes an edge to `defect`.
 - **A chain of renames is followed.** For example, `bug` → `defect` → `issue`. A rename that makes a cycle is refused (`TAG_RENAME_CYCLE`). A cycle that a merge makes is shown as §5.3 tells.
 - **Board.tags** lists only the tags that have no `renamedTo`. One exception: in a rename cycle from a merge (§5.3), the tag where the walk stops is also listed.
-- **Rename to a slug that exists** is a merge: the old tag redirects to the existing tag (only patch 2 is written).
+- **Rename to a slug that exists** is a merge: the old tag redirects to the existing tag (patch 1 is not written). If the existing tag (at the end of its rename chain) is a tombstone, the rename also writes `delete: false` on it, the same as `addTag`. Thus, the tasks with the old tag show the target. `undo` of the rename reverses the two patches, and the target is a tombstone again.
 - **All refs to a redirected slug follow the redirect.** This includes `addTag` (it returns the target and writes nothing), `updateTag`, `deleteTag`, and `renameTag`. Thus, `deleteTag(id: "bug")` after the rename deletes `defect`.
 - **Delete of a redirect target.** The target gets a tombstone. Edges and markers that point to the old slug follow the redirect to the tombstone, so the tasks lose the tag. This is the same as for a direct edge (§3.3).
 

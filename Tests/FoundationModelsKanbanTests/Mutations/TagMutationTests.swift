@@ -159,7 +159,7 @@ struct TagMutationTests {
     ///
     /// - Parameter slug: The slug of the tag. The slug is also the name.
     /// - Returns: The `set` part.
-    private static func autoColorSetting(of slug: String) -> [String: PatchValue] {
+    static func autoColorSetting(of slug: String) -> [String: PatchValue] {
         ColumnActorTests.setting(name: slug, color: AutoColor.color(forText: slug))
     }
 
