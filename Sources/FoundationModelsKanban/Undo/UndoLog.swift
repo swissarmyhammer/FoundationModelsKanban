@@ -72,12 +72,16 @@ struct UndoLog: Sendable {
 
     /// Finds the transaction that a reverse call reverses.
     ///
+    /// `undo(txn: T)` reverses T. `redo(txn: T)` takes the original transaction T, and reverses the undo of T
+    /// (plan.md §6.5).
+    ///
     /// - Parameters:
     ///   - direction: `undo` or `redo`.
     ///   - text: The `txn` of the call, in any case, or `nil` for the newest target of the session actor.
     ///   - actor: The session actor.
     /// - Returns: The transaction ULID.
-    /// - Throws: ``KanbanError/nothingToUndo`` when the log has no such transaction.
+    /// - Throws: ``KanbanError/nothingToUndo`` when the log has no such transaction, when `undo` names a transaction
+    ///   that is already undone, and when `redo` names a transaction that is not undone. `force` does not change this.
     func target(of direction: ReverseDirection, named text: String?, by actor: LocalRef) throws(KanbanError) -> ULID {
         guard let text else {
             let candidate = transactions.last { transaction in
@@ -93,7 +97,41 @@ struct UndoLog: Sendable {
         guard let txn = ULID(ulidString: text.uppercased()), index(of: txn) != nil else {
             throw .nothingToUndo
         }
-        return txn
+        return try target(of: direction, naming: txn)
+    }
+
+    /// Finds the transaction that a reverse call with a `txn` reverses.
+    ///
+    /// - Parameters:
+    ///   - direction: `undo` or `redo`.
+    ///   - txn: The transaction that the call names. The log has it.
+    /// - Returns: `txn` for `undo`, and the undo of `txn` that is not undone for `redo`.
+    /// - Throws: ``KanbanError/nothingToUndo`` when `undo` names a transaction that is already undone, or when `redo`
+    ///   names a transaction that is not undone.
+    private func target(of direction: ReverseDirection, naming txn: ULID) throws(KanbanError) -> ULID {
+        switch direction {
+        case .undo:
+            guard !undoneState.isUndone(txn: txn) else {
+                throw .nothingToUndo
+            }
+            return txn
+        case .redo:
+            guard let undo = currentUndo(of: txn) else {
+                throw .nothingToUndo
+            }
+            return undo
+        }
+    }
+
+    /// Gives the undo of a transaction that makes the transaction undone (``UndoneState``).
+    ///
+    /// - Parameter txn: The transaction.
+    /// - Returns: The newest later transaction that has `undoes` = `txn` and that is not undone, or `nil` when the
+    ///   transaction is not undone.
+    private func currentUndo(of txn: ULID) -> ULID? {
+        transactions.last { transaction in
+            transaction.txn > txn && transaction.undoes == txn && !undoneState.isUndone(txn: transaction.txn)
+        }?.txn
     }
 
     /// Tells if a transaction is a target of a call with no `txn`: an original transaction for `undo`, and an undo of

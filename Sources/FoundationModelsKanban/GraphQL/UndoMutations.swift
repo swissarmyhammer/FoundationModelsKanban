@@ -26,7 +26,8 @@ extension ReverseDirection {
 
 /// The `input` object of `undo` and `redo` (plan.md §4.2, §6.5).
 private struct UndoInput: Decodable, Sendable {
-    /// The transaction to reverse, or `nil` for the newest target of the session actor.
+    /// The transaction to reverse for `undo`, or the original transaction whose undo `redo` reverses, or `nil` for
+    /// the newest target of the session actor.
     let txn: NodeID?
 
     /// `true` to write the inverse also when a later transaction conflicts with it.

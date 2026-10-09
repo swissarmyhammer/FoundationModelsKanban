@@ -639,6 +639,49 @@ struct UndoTests {
         #expect(try await Self.failure(of: MutationName.redo, in: &session) == .nothingToUndo)
     }
 
+    @Test(
+        "undo(txn:) of a transaction that is already undone gives NOTHING_TO_UNDO and writes nothing, also with force",
+        arguments: [false, true]
+    )
+    func undoOfUndoneTransactionGivesNothingToUndo(isForced: Bool) async throws {
+        let directory = try TemporaryDirectory()
+        let calls = try await Self.twoTitleCalls(inRepoAt: directory)
+        var session = calls.session
+        try await Self.reverse(with: Self.txnInput(calls.second), in: &session)
+        // A later call changes the title again, so a second inverse of the second call would change the title.
+        try await HistoryTests.run(eachOf: [Self.titleField(KanbanGraphTests.taskTitle, of: calls.task)], in: &session)
+        let events = session.live.events
+        let error = try await Self.failure(with: Self.txnInput(calls.second, forcing: isForced), in: &session)
+        #expect(error == .nothingToUndo)
+        #expect(session.live.events == events)
+    }
+
+    @Test(
+        "redo(txn:) of a transaction that is not undone gives NOTHING_TO_UNDO and writes nothing, also with force",
+        arguments: [false, true]
+    )
+    func redoOfTransactionNotUndoneGivesNothingToUndo(isForced: Bool) async throws {
+        let directory = try TemporaryDirectory()
+        let calls = try await Self.twoTitleCalls(inRepoAt: directory)
+        var session = calls.session
+        let events = session.live.events
+        let input = Self.txnInput(calls.second, forcing: isForced)
+        let error = try await Self.failure(of: MutationName.redo, with: input, in: &session)
+        #expect(error == .nothingToUndo)
+        #expect(session.live.events == events)
+    }
+
+    @Test("redo(txn:) takes the original transaction, and reverses the undo of that transaction")
+    func redoOfUndoneTransactionReversesItsUndo() async throws {
+        let directory = try TemporaryDirectory()
+        let calls = try await Self.twoTitleCalls(inRepoAt: directory)
+        var session = calls.session
+        let undo = try await Self.reverse(with: Self.txnInput(calls.second), in: &session)
+        let redo = try await Self.reverse(MutationName.redo, with: Self.txnInput(calls.second), in: &session)
+        #expect(redo["undoes"] == undo["txn"])
+        #expect(try CommitTests.title(of: .task(calls.task), in: session) == Self.secondTitle)
+    }
+
     // MARK: - Schema
 
     @Test("The Mutation type has undo and redo, with the UndoInput input and the Change result")

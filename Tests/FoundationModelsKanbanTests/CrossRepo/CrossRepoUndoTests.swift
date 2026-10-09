@@ -204,11 +204,12 @@ struct CrossRepoUndoTests {
     func redoWithBoardReachesBoardThatIsNotLoaded() async throws {
         let repos = try await CrossRepoFixture.SideBySide.make()
         let task = try await Self.addAndUndoLibTask(in: repos)
-        let undo = try Self.lastEvent(ofTask: task, inRepoAt: repos.lib).txn
-        // The `txn` of `redo` names the undo transaction: the transaction that the redo reverses.
+        let undoEvent = try Self.lastEvent(ofTask: task, inRepoAt: repos.lib)
+        let undo = undoEvent.txn
+        // The `txn` of `redo` names the original transaction. The redo reverses the undo of that transaction.
         try await Self.reverse(
             MutationName.redo,
-            transaction: undo,
+            transaction: try #require(undoEvent.undoes),
             onNewEngineIn: repos,
             mintingFrom: GitGraphFixture.thirdEngineIDs
         )
