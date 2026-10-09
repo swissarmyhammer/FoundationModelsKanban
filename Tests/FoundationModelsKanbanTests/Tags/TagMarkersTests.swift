@@ -20,24 +20,12 @@ struct TagMarkersTests {
     /// The text of ``underscoreMarker`` before its `_`. A marker of ``underscoreMarker`` must not give this slug.
     static let underscoreMarkerHead = "needs"
 
-    /// Each body with a marker that has `_`, with the slugs that the parse gives, in text order.
-    static let underscoreParseCases: [(String, [String])] = [
-        ("Fix #\(underscoreMarker) now", [underscoreMarkerSlug]),
-        ("#Needs_Review", [underscoreMarkerSlug]),
-        ("#needs__review_ and #\(underscoreMarkerHead)", [underscoreMarkerSlug, underscoreMarkerHead]),
-        ("#_needs", []),
-        ("#a_#b", ["a"]),
-    ]
+    /// The tag name that most remove cases take out of a body.
+    static let bugTagName = "bug"
 
-    /// Each remove of a tag from a body with a marker that has `_`: the tag name, the body, and the body after the
-    /// remove.
-    static let underscoreRemoveCases: [(String, String, String)] = [
-        (spacedTagName, "fix #\(underscoreMarker) now", "fix now"),
-        (underscoreMarkerHead, "fix #\(underscoreMarker) now", "fix #\(underscoreMarker) now"),
-    ]
-
-    /// Each body of the Rust parse tests, with the slugs that the parse gives, in text order.
+    /// Each body with the slugs that the parse gives, in text order.
     static let parseCases: [(String, [String])] = [
+        // The bodies of the Rust parse tests.
         ("Fix the #bug in #login", ["bug", "login"]),
         ("#bug and #bug again", ["bug"]),
         ("text #real\n```\n#fake\n```\nmore #also-real", ["real", "also-real"]),
@@ -57,39 +45,56 @@ struct TagMarkersTests {
         ("#bug.", ["bug"]),
         ("#bug", ["bug"]),
         ("#multi-word-tag", ["multi-word-tag"]),
+        // Two markers that differ only in case give one tag.
+        ("#Bug and #bug and #BUG", ["bug"]),
+        // A marker glued to the end of a word is not a tag.
+        ("a#bug b_#bug c9#bug", []),
+        // A trailing hyphen is not part of the slug.
+        ("see #bug- now", ["bug"]),
+        // A marker in a fence that opens with tildes is not a tag.
+        ("~~~\n#fake\n~~~\n#real", ["real"]),
+        // A marker keeps each `_` in its text and gives the slug of the full name.
+        ("Fix #\(underscoreMarker) now", [underscoreMarkerSlug]),
+        ("#Needs_Review", [underscoreMarkerSlug]),
+        ("#needs__review_ and #\(underscoreMarkerHead)", [underscoreMarkerSlug, underscoreMarkerHead]),
+        ("#_needs", []),
+        ("#a_#b", ["a"]),
     ]
 
-    /// Each body of the Rust remove tests, with the body after the remove of `#bug`.
-    static let removeCases: [(String, String)] = [
-        ("fix #bug in code", "fix in code"),
-        ("fix issue #bug", "fix issue"),
-        ("no tags here", "no tags here"),
-        ("text #bug\n```\n#bug inside\n```", "text\n```\n#bug inside\n```"),
-        ("text — with #bug em dash", "text — with em dash"),
-        ("prose\n#bug\nmore", "prose\n\nmore"),
-        ("prose\n#bug\n", "prose\n\n"),
-        ("prose\n#bug", "prose"),
-        ("a\n\n#bug", "a\n"),
-        ("a\n\n\n#bug", "a\n\n"),
-        ("keep me   \nfix #bug  \nkeep me too   \n", "keep me   \nfix\nkeep me too   \n"),
-        ("fix #bug, then ship", "fix, then ship"),
-        ("done #bug.", "done."),
-        ("a #bug! b", "a! b"),
-        ("see (#bug) here", "see () here"),
-        ("# Fix #bug\n\nsee also #bug", "# Fix #bug\n\nsee also"),
-    ]
-
-    /// Each tagged body that the Rust append writes, with the body before the append. The remove gives that body
-    /// back: the marker on its own last line goes away together with the line break before it.
-    static let appendedCases: [(String, String)] = [
-        ("Repro:\n```\ncargo test\n```\n#bug", "Repro:\n```\ncargo test\n```"),
-        ("Intro\n\n## Acceptance\n#bug", "Intro\n\n## Acceptance"),
-        ("# Just a heading\n#bug", "# Just a heading"),
-        ("plain body #bug", "plain body"),
-        ("#bug", ""),
-        ("prose\n\n#bug", "prose\n"),
-        ("body   \n#bug", "body   "),
-    ]
+    /// Each remove of a tag from a body: the tag name, the body, and the body after the remove.
+    static let removeCases: [(String, String, String)] = [
+        // The bodies of the Rust remove tests.
+        (bugTagName, "fix #bug in code", "fix in code"),
+        (bugTagName, "fix issue #bug", "fix issue"),
+        (bugTagName, "no tags here", "no tags here"),
+        (bugTagName, "text #bug\n```\n#bug inside\n```", "text\n```\n#bug inside\n```"),
+        (bugTagName, "text — with #bug em dash", "text — with em dash"),
+        (bugTagName, "prose\n#bug\nmore", "prose\n\nmore"),
+        (bugTagName, "prose\n#bug\n", "prose\n\n"),
+        (bugTagName, "prose\n#bug", "prose"),
+        (bugTagName, "a\n\n#bug", "a\n"),
+        (bugTagName, "a\n\n\n#bug", "a\n\n"),
+        (bugTagName, "keep me   \nfix #bug  \nkeep me too   \n", "keep me   \nfix\nkeep me too   \n"),
+        (bugTagName, "fix #bug, then ship", "fix, then ship"),
+        (bugTagName, "done #bug.", "done."),
+        (bugTagName, "a #bug! b", "a! b"),
+        (bugTagName, "see (#bug) here", "see () here"),
+        (bugTagName, "# Fix #bug\n\nsee also #bug", "# Fix #bug\n\nsee also"),
+        // Each tagged body that the Rust append writes. The remove gives the body before the append back: the
+        // marker on its own last line goes away together with the line break before it.
+        (bugTagName, "Repro:\n```\ncargo test\n```\n#bug", "Repro:\n```\ncargo test\n```"),
+        (bugTagName, "Intro\n\n## Acceptance\n#bug", "Intro\n\n## Acceptance"),
+        (bugTagName, "# Just a heading\n#bug", "# Just a heading"),
+        (bugTagName, "plain body #bug", "plain body"),
+        (bugTagName, "#bug", ""),
+        (bugTagName, "prose\n\n#bug", "prose\n"),
+        (bugTagName, "body   \n#bug", "body   "),
+        // A remove takes out a marker that differs from the slug only in case.
+        (bugTagName, "fix #Bug and #BUG now", "fix and now"),
+        // A remove takes out a full marker with `_`, and only for its slug.
+        (spacedTagName, "fix #\(underscoreMarker) now", "fix now"),
+        (underscoreMarkerHead, "fix #\(underscoreMarker) now", "fix #\(underscoreMarker) now"),
+    ] + bystanderBodies.map { body in (bugTagName, body, body) }
 
     /// Bodies with no marker of `bug`. The remove must give each one back, byte for byte.
     static let bystanderBodies = [
@@ -154,64 +159,19 @@ struct TagMarkersTests {
         #expect(Self.slugTexts(in: body) == expected)
     }
 
-    @Test("Two markers that differ only in case give one tag")
-    func parseIgnoresCase() {
-        #expect(Self.slugTexts(in: "#Bug and #bug and #BUG") == ["bug"])
-    }
-
-    @Test("A marker glued to the end of a word is not a tag")
-    func gluedMarkerIsNotTag() {
-        #expect(Self.slugTexts(in: "a#bug b_#bug c9#bug").isEmpty)
-    }
-
-    @Test("A trailing hyphen is not part of the slug")
-    func trailingHyphenIsNotPartOfSlug() {
-        #expect(Self.slugTexts(in: "see #bug- now") == ["bug"])
-    }
-
-    @Test("A marker keeps each _ in its text and gives the slug of the full name", arguments: underscoreParseCases)
-    func parseKeepsUnderscore(body: String, expected: [String]) {
-        #expect(Self.slugTexts(in: body) == expected)
-    }
-
-    @Test("A marker in a fence that opens with tildes is not a tag")
-    func tildeFenceHidesMarker() {
-        #expect(Self.slugTexts(in: "~~~\n#fake\n~~~\n#real") == ["real"])
-    }
-
     // MARK: - Remove
 
     @Test("A remove takes each marker of the tag out of the body", arguments: removeCases)
-    func removeTakesOutMarkers(body: String, expected: String) throws {
-        let result = TagMarkers.removing(markersOf: try Self.slug(of: "bug"), from: body)
+    func removeTakesOutMarkers(name: String, body: String, expected: String) throws {
+        let slug = try Self.slug(of: name)
+        let result = TagMarkers.removing(markersOf: slug, from: body)
         #expect(result == expected)
-        #expect(!Self.slugTexts(in: result).contains("bug"))
-    }
-
-    @Test("A remove of the marker that the append wrote gives the body back", arguments: appendedCases)
-    func removeUndoesAppend(tagged: String, original: String) throws {
-        #expect(TagMarkers.removing(markersOf: try Self.slug(of: "bug"), from: tagged) == original)
-    }
-
-    @Test("A remove takes out a full marker with _, and only for its slug", arguments: underscoreRemoveCases)
-    func removeKeepsUnderscore(name: String, body: String, expected: String) throws {
-        #expect(TagMarkers.removing(markersOf: try Self.slug(of: name), from: body) == expected)
-    }
-
-    @Test("A remove gives a body with no marker of the tag back, byte for byte", arguments: bystanderBodies)
-    func removeKeepsBystanderBody(body: String) throws {
-        #expect(TagMarkers.removing(markersOf: try Self.slug(of: "bug"), from: body) == body)
-    }
-
-    @Test("A remove takes out a marker that differs from the slug only in case")
-    func removeIgnoresCase() throws {
-        let result = TagMarkers.removing(markersOf: try Self.slug(of: "bug"), from: "fix #Bug and #BUG now")
-        #expect(result == "fix and now")
+        #expect(!Self.slugTexts(in: result).contains(slug.value))
     }
 
     @Test("A remove keeps each line that the parse skips, at its position", arguments: lineBreaks)
     func removeKeepsSkippedLines(lineBreak: String) throws {
-        let slug = try Self.slug(of: "bug")
+        let slug = try Self.slug(of: Self.bugTagName)
         for above in Self.lineShapes {
             for middle in Self.lineShapes {
                 for below in Self.lineShapes {
