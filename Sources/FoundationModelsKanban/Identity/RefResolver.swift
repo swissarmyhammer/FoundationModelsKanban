@@ -61,7 +61,7 @@ struct RefResolver: Sendable {
     ) throws(KanbanError) -> StoredRef {
         let lookup = Lookup(reference: reference, type: type, includesTombstones: includesTombstones)
         switch try target(of: reference, in: lookup) {
-        case .shortForm(let key), .sameBoard(let key):
+        case .shortForm(let key), .sameBoard(let key, _):
             return .local(try localRef(forKey: key, in: lookup))
         case .otherBoard(let uri):
             return try remoteRef(to: uri, acceptingRemote: acceptsRemote, in: lookup)
@@ -86,7 +86,7 @@ struct RefResolver: Sendable {
         switch try target(of: reference, in: lookup) {
         case .shortForm:
             return reference
-        case .sameBoard(let key):
+        case .sameBoard(let key, _):
             return key
         case .otherBoard:
             throw lookup.notFound
@@ -103,15 +103,14 @@ struct RefResolver: Sendable {
     ///   names a node of a different board.
     /// - Throws: ``KanbanError/ambiguousID(reference:matches:)`` when the ref is a prefix of more than one ULID.
     func anyLocalRef(for reference: String) throws(KanbanError) -> LocalRef? {
-        switch RefText(reference) {
-        case .shortForm(let key):
+        switch target(of: reference) {
+        case .shortForm(let key)?:
             return try anyLocalRef(forKey: key, writtenAs: reference)
-        case .uri(let text):
-            guard let uri = try? NodeURI(parsing: text), let key = localKey(forURI: uri) else {
-                return nil
-            }
-            let lookup = Lookup(reference: reference, type: uri.ref.nodeType, includesTombstones: true)
+        case .sameBoard(let key, let type)?:
+            let lookup = Lookup(reference: reference, type: type, includesTombstones: true)
             return try candidateRef(forKey: key, in: lookup)
+        case .otherBoard?, nil:
+            return nil
         }
     }
 
@@ -217,16 +216,53 @@ extension RefResolver {
         }
     }
 
-    /// The node that a ref of the expected type names, as this board sees it.
+    /// The node that a ref names, as this board sees it.
     private enum RefTarget {
         /// A short form, without white space at the two ends.
         case shortForm(String)
 
-        /// A URI with the key of this board, by the short form of its node.
-        case sameBoard(key: String)
+        /// A URI with the key of this board, by the short form and the node type of its node.
+        case sameBoard(key: String, type: PatchNodeType)
 
         /// A URI with the key of a different board.
         case otherBoard(NodeURI)
+
+        /// Tells if the target can name a node of a type. A short form can name a node of each type. A URI names a
+        /// node of the type in the URI only.
+        ///
+        /// - Parameter type: The node type that the caller expects.
+        /// - Returns: `true` when the target is a short form, or a URI that names a node of the type.
+        func canName(_ type: PatchNodeType) -> Bool {
+            switch self {
+            case .shortForm:
+                return true
+            case .sameBoard(_, let nodeType):
+                return nodeType == type
+            case .otherBoard(let uri):
+                return uri.ref.nodeType == type
+            }
+        }
+    }
+
+    /// Sorts a ref into a short form, a URI of this board, or a URI of a different board. This is the only parse of
+    /// a URI and the only check of its board key in the resolver.
+    ///
+    /// - Parameter reference: The ref as the caller wrote it. White space at the two ends is ignored.
+    /// - Returns: The target of the ref, or `nil` when the ref is a URI that does not parse. The graph does not need
+    ///   the node.
+    private func target(of reference: String) -> RefTarget? {
+        switch RefText(reference) {
+        case .shortForm(let key):
+            return .shortForm(key)
+        case .uri(let text):
+            guard let uri = try? NodeURI(parsing: text) else {
+                return nil
+            }
+            guard let key = localKey(forURI: uri) else {
+                return .otherBoard(uri)
+            }
+            return .sameBoard(key: key, type: uri.ref.nodeType)
+        }
     }
 
     /// Sorts a ref of the expected type into a short form, a URI of this board, or a URI of a different board.
@@ -238,16 +274,10 @@ extension RefResolver {
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when the ref is a URI that does not parse, or a URI that
     ///   names a node of a different type.
     private func target(of reference: String, in lookup: Lookup) throws(KanbanError) -> RefTarget {
-        switch RefText(reference) {
-        case .shortForm(let key):
-            return .shortForm(key)
-        case .uri(let text):
-            let uri = try parsedURI(from: text, in: lookup)
-            guard let key = localKey(forURI: uri) else {
-                return .otherBoard(uri)
-            }
-            return .sameBoard(key: key)
+        guard let target = target(of: reference), target.canName(lookup.type) else {
+            throw lookup.notFound
         }
+        return target
     }
 
     /// Gives the short form of the node of a URI, when the URI has the key of this board.
@@ -256,27 +286,6 @@ extension RefResolver {
     /// - Returns: The short form, or `nil` when the URI has the key of a different board.
     private func localKey(forURI uri: NodeURI) -> String? {
         uri.localRef(inBoard: boardKey).map { ref in shortForm(of: ref) }
-    }
-
-    /// Reads a full URI, and checks that it names a node of the expected type.
-    ///
-    /// - Parameters:
-    ///   - text: The URI text, without white space at the two ends.
-    ///   - lookup: The resolve.
-    /// - Returns: The URI.
-    /// - Throws: ``KanbanError/notFound(type:reference:)`` when the text is not a valid URI, or when the URI names a
-    ///   node of a different type.
-    private func parsedURI(from text: String, in lookup: Lookup) throws(KanbanError) -> NodeURI {
-        let uri: NodeURI
-        do {
-            uri = try NodeURI(parsing: text)
-        } catch {
-            throw lookup.notFound
-        }
-        guard uri.ref.nodeType == lookup.type else {
-            throw lookup.notFound
-        }
-        return uri
     }
 
     /// Gives the stored ref of a URI to a node of a different board.

@@ -73,6 +73,42 @@ comments:
     - evidence: 3 files — Sources/FoundationModelsKanban/Identity/RefResolver.swift, Sources/FoundationModelsKanban/GraphQL/ColumnActorMutations.swift, Sources/FoundationModelsKanban/GraphQL/TagMutations.swift. `swift test`: 1095 tests in 79 suites passed, 0 failures. The only build warning is the accepted SwiftPM "missing creator for mutated node" warning. All 3 review findings are checked.
     - next: /test, then /review
   timestamp: 2026-10-09T18:32:29.952460+00:00
+- actor: claude-code
+  id: 01m4gz8kp1z05p6s09edpeyp0z
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD, 1 finding (1 confirmed, 0 refuted) — Sources/FoundationModelsKanban/Identity/RefResolver.swift:110. The 3 prior findings are checked. The HEAD commit message (7321ac8) agrees with the diff: the refactor does not change behavior, and each helper that the message names is in the diff.
+    - next: /implement the open item in "## Review Findings (2026-10-09 13:35)"
+  timestamp: 2026-10-09T18:37:01.505842+00:00
+- actor: claude-code
+  id: 01m4gz8mqpegjn510m7k28pb6n
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 3 files
+    - test: green — swift test, 1095 tests in 79 suites passed
+    - commit: 7321ac8
+    - review: findings — Sources/FoundationModelsKanban/Identity/RefResolver.swift:110
+  timestamp: 2026-10-09T18:37:02.582330+00:00
+- actor: claude-code
+  id: 01m4gzftydfc2h455wex0snzgr
+  text: |-
+    Review finding of 2026-10-09 13:35 (RefResolver.swift:110 reuse/reuse) is fixed. This is a refactor only. Behavior does not change.
+
+    - The finding gives two options. This change uses the second option: the parse is optional, and both callers share it. `target(of:in:)` cannot serve `anyLocalRef` directly, because `anyLocalRef` has no expected type before the parse. The `Lookup` of a URI takes its type from the URI.
+    - New private `target(of:) -> RefTarget?` (no expected type). It is now the only place in RefResolver.swift that calls `NodeURI(parsing:)` and `localKey(forURI:)`. It returns `nil` when a URI does not parse.
+    - `RefTarget.sameBoard` now holds the node type of the URI: `.sameBoard(key:type:)`. The new `RefTarget.canName(_:)` does the type check. A short form can name each type, and a URI names only the type in the URI.
+    - `target(of:in:)` now calls `target(of:)` and throws `lookup.notFound` when the result is `nil` or `canName` is false. The errors and their order are the same as before: a URI that does not parse and a URI of a wrong type both give NOT_FOUND before the board check.
+    - `parsedURI(from:in:)` is removed. Its parse is in `target(of:)`, and its type check is in `canName`.
+    - `anyLocalRef` makes one call to `target(of:)`, and has no `RefText` switch: `.shortForm` tries each type, `.sameBoard(key, type)` resolves with that type and tombstones, and `.otherBoard` or `nil` gives `nil`.
+    - New characterization test in NodeQueryTests: `node(id:)` with a `kanban://` URI that does not parse returns null and no error. It passed before and after the refactor. It pins the nil path of `anyLocalRef`, which no test had covered.
+  timestamp: 2026-10-09T18:40:58.317661+00:00
+- actor: claude-code
+  id: 01m4gzfywswxy894r6bfbqaec0
+  text: |-
+    ### implement — changed
+    - evidence: 2 files — Sources/FoundationModelsKanban/Identity/RefResolver.swift, Tests/FoundationModelsKanbanTests/GraphQL/NodeQueryTests.swift. `swift test`: 1096 tests in 79 suites passed, 0 failures. The only build warning is the accepted SwiftPM "missing creator for mutated node" warning. The finding RefResolver.swift:110 is checked; all findings on the card are checked.
+    - next: /test, then /review
+  timestamp: 2026-10-09T18:41:02.361038+00:00
 depends_on:
 - 01M4G9JDQ98082KJQTMWE86DV8
 position_column: doing
@@ -108,3 +144,12 @@ title: addTag, addColumn and addActor accept a full kanban:// URI as id
 - [x] `Sources/FoundationModelsKanban/GraphQL/TagMutations.swift:102` `duplication/duplication` — addTag repeats the id-to-slug path that RefResolver.slug(ofNewNode:named:ofType:) already has: take the id, call newNodeKey(for:ofType:), then build the slug from the key. The tag version differs only in its slug type (TagName instead of Slug(columnOrActorName:)), so the two paths can drift apart. Give the id-to-key step one shared helper, for example a RefResolver method that returns the new node key from an optional NodeID and a name. Each caller then builds its own slug type: TagName for tags, Slug(columnOrActorName:) for columns and actors.
 - [x] `Sources/FoundationModelsKanban/Identity/RefResolver.swift:88` `duplication/duplication` — newNodeKey repeats the URI-to-local-id steps of storedRef and anyLocalRef: trim the text, check the scheme, parse the URI, map it with localRef(inBoard:), and take shortForm(of:). If one of these steps changes, the three copies can drift apart. Extract one private helper, for example localKey(forURI:in:), that returns the short form of a URI in this board, or nil. Call it from storedRef, anyLocalRef and newNodeKey. Each caller keeps its own error or nil handling.
 - [x] `Sources/FoundationModelsKanban/Identity/RefResolver.swift:93` `reuse/reuse` — `newNodeKey(for:ofType:)` repeats the URI branch of `storedRef(for:ofType:acceptingRemote:includingTombstones:)`: it parses the text with `parsedURI(from:in:)`, takes `localRef(inBoard:)`, and converts the result with `shortForm(of:)`. Two copies of the same board-key check mean a future change to URI handling has to be made in both places. Extract a helper, for example `sameBoardShortForm(of text: String, in lookup: Lookup) throws(KanbanError) -> String?`, that returns the short form of a URI when it names this board. Call it from `storedRef` and from `newNodeKey`, so each keeps only its own lookup and its own remote-ref handling.
+
+## Review Findings (2026-10-09 13:35)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Sources/FoundationModelsKanban/Identity/RefResolver.swift:110` `reuse/reuse` — The `.uri` branch of `anyLocalRef` repeats the parse-and-check-key steps that `target(of:in:)` and `parsedURI(from:in:)` already do, instead of calling them. It parses with `NodeURI(parsing:)` and then calls `localKey(forURI:)`, which is the same sequence `target(of:in:)` runs. The new code is a parallel copy of existing logic, so a future fix to URI parsing or board-key handling would have to be made in two places. Route the `.uri` case through `target(of:in:)`. Wrap it in `try?` and map a throw to `nil`, and map `.otherBoard` to `nil`, so that the nil-on-failure contract of `anyLocalRef` is kept. Alternatively, have `parsedURI` take a flag or return an optional so both callers share one parse. Either way, the `RefText` switch in `anyLocalRef` can then also be replaced by one call to `target(of:in:)`.

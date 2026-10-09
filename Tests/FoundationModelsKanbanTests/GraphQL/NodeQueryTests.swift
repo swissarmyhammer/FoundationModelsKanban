@@ -223,6 +223,12 @@ struct NodeQueryTests {
         #expect(response == #"{"data":{"node":null}}"#)
     }
 
+    @Test("node(id:) with a kanban:// URI that does not parse returns null and no error")
+    func unparsableURIIsNull() async throws {
+        let response = try await Self.typeAndID(of: NodeURI.scheme, in: QueryFixture())
+        #expect(response == #"{"data":{"node":null}}"#)
+    }
+
     @Test("The schema gives nodes(ids:) a nullable list with no null item")
     func nodesFieldType() throws {
         #expect(try PublicSchema().sdl.contains("nodes(ids: [ID!]!): [Node!]\n"))
