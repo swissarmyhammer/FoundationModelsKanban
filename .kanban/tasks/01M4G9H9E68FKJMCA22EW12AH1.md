@@ -54,8 +54,24 @@ comments:
     - evidence: HEAD 9bfb481 -> 53362dd (message only); `git show --stat HEAD` gives the same 8 files, 188 insertions, 19 deletions; tree 8719d83 unchanged.
     - next: /review
   timestamp: 2026-10-09T13:49:14.941059+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4geygdztxwrb6cejqrd5x3y
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (131d58f) — engine: 0 findings (0 confirmed, 0 refuted); the 2 changed files are .kanban files that .reviewignore excludes. Driver check of the commit messages: each statement in the message of 53362dd agrees with its diff (old nearestMatch matched a hunk with no old lines at each index and applied it near index 0; matches(_:withOldLines:at:), Hunk.endsWithoutNewline and the insertConflict change are in DiffApply.swift; the 5 named tests are in DiffApplyTests, MergeTests and ReplayTests; the task files of ^ew12ah1 and ^tdybdkj are in the commit). The message of 131d58f agrees with its diff (3 comments, 1 Review Findings section with 1 checked item, 7 log lines, only task files of ^ew12ah1). The prior finding is checked.
+    - next: none — task moved to done
+  timestamp: 2026-10-09T13:51:53.279108+00:00
+- actor: claude-code
+  id: 01m4geyhm4anxsp19rzhpxy66n
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — message of 9bfb481 amended to 53362dd
+    - test: green — swift test, 1054 tests in 74 suites passed
+    - commit: 131d58f
+    - review: clean — 0 findings
+  timestamp: 2026-10-09T13:51:54.500974+00:00
+position_column: done
+position_ordinal: c880
 title: 'Body diff: two inserts into an empty body must not join lines'
 ---
 ## What

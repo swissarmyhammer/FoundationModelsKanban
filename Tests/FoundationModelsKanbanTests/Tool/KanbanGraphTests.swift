@@ -82,6 +82,7 @@ struct KanbanGraphTests {
     /// - Parameters:
     ///   - root: The root directory of the repo.
     ///   - keyReader: Gives the key of the board. The default is ``fakeKey(ofRepoAt:)``.
+    ///   - clock: Gives the time of a change. The default always gives ``time``.
     ///   - actor: The session actor. The default is ``sessionActor``.
     ///   - ids: The source of the transaction ULIDs and the event ids. The default is ``mutationIDs``.
     ///   - locator: Finds the related boards. The default looks only in the parent directory of the repo.
@@ -92,6 +93,7 @@ struct KanbanGraphTests {
     static func makeGraph(
         at root: URL,
         readingKeyWith keyReader: @escaping BoardKeyReader = fakeKey,
+        timedBy clock: @escaping @Sendable () -> DateTime = { time },
         actingAs actor: SessionActor = sessionActor,
         mintingFrom ids: FixedULIDSource = mutationIDs,
         locatedBy locator: BoardLocator = .default,
@@ -102,7 +104,7 @@ struct KanbanGraphTests {
         try KanbanGraph(
             root: root,
             readingKeyWith: keyReader,
-            timedBy: { time },
+            timedBy: clock,
             actingAs: actor,
             mintingFrom: ids,
             locatedBy: locator,

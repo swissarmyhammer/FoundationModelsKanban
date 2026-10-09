@@ -277,14 +277,14 @@ public actor KanbanGraph {
     ///   - query: The GraphQL document.
     ///   - variables: The values of the variables of the document.
     ///   - operationName: The operation of the document to run, or `nil`.
-    /// - Returns: The response as JSON text with sorted keys.
+    /// - Returns: The result of the call. Its value is the response as JSON text with sorted keys.
     /// - Throws: A ``BoardKeyError``, a ``BoardWatcherError``, or an ``EventLogError`` when a board cannot load or a
     ///   commit cannot write.
     private func respond(
         to query: String,
         variables: [String: Map],
         operationName: String?
-    ) async throws -> String {
+    ) async throws -> CallResult<String> {
         try await runSchemaCall(answeringFailureWith: { $0 }) { schema, context in
             try await schema.respond(
                 to: query,
@@ -302,14 +302,14 @@ public actor KanbanGraph {
     ///   - query: The subscription document.
     ///   - variables: The values of the variables of the document.
     ///   - operationName: The operation of the document to run, or `nil`.
-    /// - Returns: The response of each event as JSON text with sorted keys. A subscription that cannot start gives a
-    ///   stream with one response with the error.
+    /// - Returns: The result of the start. Its value is the response of each event as JSON text with sorted keys. A
+    ///   subscription that cannot start gives a stream with one response with the error.
     /// - Throws: A ``BoardKeyError``, a ``BoardWatcherError``, or an ``EventLogError`` when a board cannot load.
     private func startSubscription(
         to query: String,
         variables: [String: Map],
         operationName: String?
-    ) async throws -> AsyncThrowingStream<String, Error> {
+    ) async throws -> CallResult<AsyncThrowingStream<String, Error>> {
         try await runSchemaCall(answeringFailureWith: AsyncThrowingStream.single) { schema, context in
             try await schema.subscribe(
                 to: query,
@@ -327,20 +327,23 @@ public actor KanbanGraph {
     /// - Parameters:
     ///   - wrap: Gives the output of the response JSON text of a ``KanbanError``.
     ///   - call: Runs the document against the schema and the context of one run, and gives the output.
-    /// - Returns: The output of the run that committed or kept no patch, or the wrapped error response.
+    /// - Returns: ``CallResult/completed(_:)`` with the output of the run that committed or kept no patch, or
+    ///   ``CallResult/failed(_:)`` with the wrapped error response.
     /// - Throws: A ``BoardKeyError``, a ``BoardWatcherError``, or an ``EventLogError`` when a board cannot load or a
     ///   commit cannot write.
     private func runSchemaCall<Output: Sendable>(
         answeringFailureWith wrap: (String) -> Output,
         _ call: @Sendable (PublicSchema, KanbanContext) async throws -> Output
-    ) async throws -> Output {
+    ) async throws -> CallResult<Output> {
         let schema = schema
         do {
-            return try await runCall { context in
-                try await call(schema, context)
-            }
+            return .completed(
+                try await runCall { context in
+                    try await call(schema, context)
+                }
+            )
         } catch let error as KanbanError {
-            return wrap(try error.responseJSON())
+            return .failed(wrap(try error.responseJSON()))
         }
     }
 
@@ -378,29 +381,33 @@ public actor KanbanGraph {
     /// (plan.md §6.7). The changes go out also when the operation throws, because a commit check can apply the
     /// changes of a different process before the call fails.
     ///
-    /// When the operation returns and a tool context is given, the same changes also give the agent plan of each
-    /// board whose tasks changed (plan.md §7.3). An operation that throws posts no plan.
+    /// When the operation completes and a tool context is given, the same changes also give the agent plan of each
+    /// board whose tasks changed (plan.md §7.3). The engine decides from the result of the operation: an operation
+    /// that throws, and an operation whose commit fails (``CallResult/failed(_:)``, for example `BOARD_BUSY`), post no
+    /// plan, because the call wrote nothing.
     ///
     /// - Parameters:
     ///   - context: The context of the tool call that gets the plans, or `nil` for no post.
     ///   - operation: The operation.
-    /// - Returns: The value of the operation.
+    /// - Returns: The value of the result of the operation.
     /// - Throws: The error of the operation.
     private func publishingChanges<Value: Sendable>(
         postingPlansTo context: ToolContext?,
-        _ operation: @Sendable () async throws -> Value
+        _ operation: @Sendable () async throws -> CallResult<Value>
     ) async throws -> Value {
-        let value: Value
+        let result: CallResult<Value>
         do {
-            value = try await operation()
+            result = try await operation()
         } catch {
             await publishLiveChanges(takeLiveChanges())
             throw error
         }
         let changed = takeLiveChanges()
         await publishLiveChanges(changed)
-        await context?.postAgentPlans(of: changed)
-        return value
+        if case .completed = result {
+            await context?.postAgentPlans(of: changed)
+        }
+        return result.value
     }
 
     /// Sends the changes of the live graph of each loaded board to the subscribers of the change feed (plan.md
@@ -804,7 +811,7 @@ public actor KanbanGraph {
         do {
             try await gate.run {
                 try await self.publishingChanges(postingPlansTo: nil) {
-                    try await self.applyBatch(paths, ofBoardAt: directory)
+                    .completed(try await self.applyBatch(paths, ofBoardAt: directory))
                 }
             }
         } catch {
@@ -924,6 +931,27 @@ public actor KanbanGraph {
         let moved = try startWatch(on: boardDirectory, ofBoardAt: directory)
         await watch.watcher.stop()
         return moved
+    }
+}
+
+// MARK: - Call result
+
+/// The result of one operation of a ``KanbanGraph`` inside the serial gate: a call, the start of a subscription, or a
+/// batch of the file watcher. The result tells the agent plan if the operation wrote its changes (plan.md §7.3).
+private enum CallResult<Value: Sendable>: Sendable {
+    /// The operation committed its patches, or it kept no patch.
+    case completed(Value)
+
+    /// A ``KanbanError`` of the run or of the commit failed the call as a whole, for example `BOARD_BUSY`. The call
+    /// wrote nothing. The value holds the error response.
+    case failed(Value)
+
+    /// The value of the operation: its output, or the error response of a failed call.
+    var value: Value {
+        switch self {
+        case .completed(let value), .failed(let value):
+            value
+        }
     }
 }
 

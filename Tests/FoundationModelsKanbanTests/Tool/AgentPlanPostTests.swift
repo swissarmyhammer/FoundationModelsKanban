@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModels
 import FoundationModelsExtras
+import Synchronization
 import Testing
 import ULID
 
@@ -19,12 +20,14 @@ actor RecordingSink: OperationEventSink {
     }
 }
 
-/// Tests the post of the ACP agent plan after a `kanban` tool call that changes a task: the call posts one `.progress`
-/// event with the plan of the board, and a query, a mutation that changes no task, and a call with no bound
-/// ``ToolContext`` post nothing.
+/// Tests the post of the ACP agent plan after a `kanban` tool call that changes a task (plan.md §7.3): the call posts
+/// one `.progress` event with the plan of each changed board, in the sort order of the repo path. A query, a mutation
+/// that changes no task, a call whose commit fails, a call with no bound ``ToolContext``, and a batch of the file
+/// watcher post nothing. A successful call also posts the plan of a board that the commit check changed from a
+/// different process.
 ///
 /// Each test runs in an empty repo, so the first mutation makes the board with the default columns.
-@Suite("Agent plan: the post of a tool call")
+@Suite("Agent plan: the post of a tool call", .timeLimit(.minutes(1)))
 struct AgentPlanPostTests {
     /// The title of the first task of a test.
     static let firstTitle = "Write the lexer"
@@ -44,6 +47,12 @@ struct AgentPlanPostTests {
     /// The number of live tasks after two `addTask` calls.
     static let twoTasks = 2
 
+    /// The number of posts after the first `addTask` call of a test: the plan of the new board.
+    static let firstCallPosts = 1
+
+    /// The key of the board of a test engine with the fake key reader: the id of its plan.
+    static let boardKey = KanbanGraphTests.boardKey.description
+
     /// Makes an `addTask` mutation that selects the id of the new task.
     ///
     /// - Parameter title: The title of the task.
@@ -54,8 +63,9 @@ struct AgentPlanPostTests {
 
     /// The tool, its engine, and the sink of the bound context of one test.
     struct Harness {
-        /// The temporary repo directory. The value holds it, so that the repo stays on disk while the test runs.
-        let directory: TemporaryDirectory
+        /// The owner of the repo directories on disk. The value holds it, so that the repos stay on disk while the
+        /// test runs.
+        let storage: AnyObject
 
         /// The engine of the tool.
         let graph: KanbanGraph
@@ -66,18 +76,23 @@ struct AgentPlanPostTests {
         /// The sink of the bound context.
         let sink = RecordingSink()
 
-        /// The key of the board of the repo: the id of its plan.
-        var boardKey: String {
-            KanbanGraphTests.fakeKey(ofRepoAt: directory.url).description
+        /// Makes the tool over an engine.
+        ///
+        /// - Parameters:
+        ///   - graph: The engine.
+        ///   - storage: The owner of the repo directories of the engine.
+        init(graph: KanbanGraph, keeping storage: AnyObject) {
+            self.storage = storage
+            self.graph = graph
+            tool = KanbanTool(graph: graph)
         }
 
         /// Makes the tool over a test engine in an empty repo.
         ///
         /// - Throws: An error when the directory or the engine cannot be made.
         init() throws {
-            directory = try TemporaryDirectory()
-            graph = try KanbanGraphTests.makeGraph(at: directory.url)
-            tool = KanbanTool(graph: graph)
+            let directory = try TemporaryDirectory()
+            self.init(graph: try KanbanGraphTests.makeGraph(at: directory.url), keeping: directory)
         }
 
         /// Makes a context that posts to the sink of the harness.
@@ -127,6 +142,17 @@ struct AgentPlanPostTests {
         }
     }
 
+    /// Makes a harness over a test engine in an empty repo whose clock writes as a different process.
+    ///
+    /// - Returns: The harness, and the clock of its engine. The clock is idle.
+    /// - Throws: An error when the directory or the engine cannot be made.
+    static func makeHarnessWithOtherProcess() throws -> (harness: Harness, clock: OtherProcessClock) {
+        let directory = try TemporaryDirectory()
+        let clock = OtherProcessClock(writingTo: EventLog(repositoryAt: directory.url))
+        let graph = try KanbanGraphTests.makeGraph(at: directory.url, timedBy: clock.now)
+        return (Harness(graph: graph, keeping: directory), clock)
+    }
+
     /// Makes a `moveTask` mutation of one task to a column.
     ///
     /// - Parameters:
@@ -143,11 +169,11 @@ struct AgentPlanPostTests {
         let harness = try Harness()
         try await harness.addTask(titled: Self.firstTitle)
         let event = try #require(await harness.sink.events.first)
-        #expect(await harness.sink.events.count == 1)
+        #expect(await harness.sink.events.count == Self.firstCallPosts)
         #expect(event.kind == .progress)
         #expect(event.detail == "0 of 1 tasks done")
         let expected = PlanSnapshot(
-            id: harness.boardKey,
+            id: Self.boardKey,
             entries: [PlanSnapshot.Entry(content: Self.firstTitle, priority: .high, status: .pending)]
         )
         #expect(event.plan == expected)
@@ -174,8 +200,8 @@ struct AgentPlanPostTests {
         let harness = try Harness()
         try await harness.addTask(titled: Self.firstTitle)
         try await harness.call(AddUpdateTaskTests.mutation(of: TagMutationTests.addTag(named: TagMutationTests.bug)))
-        try await harness.call("{ board { name tasks { totalCount } } }")
-        #expect(await harness.sink.events.count == 1)
+        try await harness.call(KanbanGraphTests.nameQuery)
+        #expect(await harness.sink.events.count == Self.firstCallPosts)
     }
 
     @Test("A direct execute of the engine posts nothing under a bound ToolContext, and the next tool call posts")
@@ -187,5 +213,135 @@ struct AgentPlanPostTests {
         #expect(await harness.sink.events.isEmpty)
         try await harness.addTask(titled: Self.secondTitle)
         #expect(await harness.plans.map(\.entries.count) == [AgentPlanPostTests.twoTasks])
+    }
+
+    @Test("A call that changes two boards posts one progress event for each board, in the sort order of the repo path")
+    func twoBoardsPostInPathOrder() async throws {
+        let repos = try await CrossRepoFixture.SideBySide.make()
+        let harness = Harness(graph: try GitGraphFixture.makeGraph(at: repos.app), keeping: repos.sandbox)
+        try await harness.call(CrossRepoWriteTests.addTaskToEachBoard())
+        let boards = [
+            (path: repos.app.canonicalPath, key: try CrossRepoWriteTests.appKey()),
+            (path: repos.lib.canonicalPath, key: try CrossRepoWriteTests.libKey()),
+        ]
+        let expected = boards.sorted { lhs, rhs in lhs.path < rhs.path }.map(\.key)
+        let events = await harness.sink.events
+        #expect(events.map(\.plan?.id) == expected)
+        #expect(events.allSatisfy { event in event.kind == .progress })
+    }
+
+    @Test("A call whose commit fails with BOARD_BUSY posts no progress event")
+    func boardBusyPostsNothing() async throws {
+        let (harness, clock) = try Self.makeHarnessWithOtherProcess()
+        try await harness.addTask(titled: Self.firstTitle)
+        clock.arm(.writingAtEachRead)
+        let response = try await harness.call(Self.addTask(titled: Self.secondTitle))
+        clock.arm(.idle)
+        #expect(try response == KanbanError.boardBusy(attempts: CommitSession.maximumRuns).responseJSON())
+        #expect(await harness.sink.events.count == Self.firstCallPosts)
+    }
+
+    @Test("A successful call also posts the plan of a board that the commit check changed from a different process")
+    func appliedChangeOfOtherProcessIsPosted() async throws {
+        let (harness, clock) = try Self.makeHarnessWithOtherProcess()
+        try await harness.addTask(titled: Self.firstTitle)
+        clock.arm(.writingOnce)
+        try await harness.call(AddUpdateTaskTests.mutation(of: TagMutationTests.addTag(named: TagMutationTests.bug)))
+        let plans = await harness.plans
+        #expect(plans.count == Self.firstCallPosts + 1)
+        #expect(Set(plans.last?.entries.map(\.content) ?? []) == [Self.firstTitle, OtherProcessClock.title])
+    }
+
+    @Test("A batch of the file watcher posts nothing while a ToolContext is bound to the first call")
+    func watcherBatchPostsNothing() async throws {
+        let directory = try TemporaryDirectory()
+        let recorder = BatchRecorder()
+        let graph = try KanbanGraphTests.makeGraph(at: directory.url, observingBatchesWith: recorder)
+        let harness = Harness(graph: graph, keeping: directory)
+        try await harness.addTask(titled: Self.firstTitle)
+        let log = EventLog(repositoryAt: directory.url)
+        var ids = GitGraphFixture.secondEngineIDs
+        let task = try KanbanGraphTests.writeTask(titled: OtherProcessClock.title, mintingFrom: &ids, to: log)
+        let taskFile = log.fileURL(for: .task(task))
+        #expect(try await BoardWatcherTests.hasBatch(in: recorder.batches) { batch in
+            BoardWatcherTests.batch(batch, holds: taskFile)
+        })
+        try await harness.call(KanbanGraphTests.nameQuery)
+        #expect(await harness.sink.events.count == Self.firstCallPosts)
+        await graph.close()
+    }
+}
+
+// MARK: - Clock of a different process
+
+/// The clock of a test engine. When a test arms it, the clock also writes a new task to the board as a different
+/// process. The engine reads the clock in each run of a call, so the write comes after the load of the board and
+/// before the commit check of the run.
+final class OtherProcessClock: Sendable {
+    /// When the clock writes a task.
+    enum Mode {
+        /// The clock writes nothing.
+        case idle
+
+        /// The clock writes one task at the next read, and is then idle.
+        case writingOnce
+
+        /// The clock writes one task at each read.
+        case writingAtEachRead
+    }
+
+    /// The state of the clock.
+    private struct State {
+        /// When the clock writes a task.
+        var mode: Mode
+
+        /// The ULID source of the writes of the different process.
+        var ids: FixedULIDSource
+    }
+
+    /// The title of each task that the clock writes.
+    static let title = "Written by a different process"
+
+    /// The event log of the board.
+    private let log: EventLog
+
+    /// The state, behind a lock, because the engine can read the clock from a different thread.
+    private let state = Mutex(State(mode: .idle, ids: GitGraphFixture.secondEngineIDs))
+
+    /// Makes an idle clock.
+    ///
+    /// - Parameter log: The event log of the board that the clock writes to.
+    init(writingTo log: EventLog) {
+        self.log = log
+    }
+
+    /// Sets when the clock writes a task.
+    ///
+    /// - Parameter mode: The mode.
+    func arm(_ mode: Mode) {
+        state.withLock { state in state.mode = mode }
+    }
+
+    /// Gives ``KanbanGraphTests/time``, and writes a task first when the mode tells the clock to write.
+    ///
+    /// - Returns: The time.
+    @Sendable
+    func now() -> DateTime {
+        state.withLock { state in
+            switch state.mode {
+            case .idle:
+                return
+            case .writingOnce:
+                state.mode = .idle
+            case .writingAtEachRead:
+                break
+            }
+            do {
+                _ = try KanbanGraphTests.writeTask(titled: Self.title, mintingFrom: &state.ids, to: log)
+            } catch {
+                Issue.record(error)
+            }
+        }
+        return KanbanGraphTests.time
     }
 }

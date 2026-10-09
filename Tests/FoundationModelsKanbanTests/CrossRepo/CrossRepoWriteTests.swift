@@ -130,6 +130,18 @@ struct CrossRepoWriteTests {
         try await CrossRepoFixture.addTask(with: "\(boardField(libKey())), \(input)", on: graph)
     }
 
+    /// Makes a mutation with two `addTask` fields: one field adds a task to the current board, and one field adds a
+    /// task to the related board.
+    ///
+    /// - Returns: The mutation document.
+    /// - Throws: An error when the remote URL of the related repo is not valid.
+    static func addTaskToEachBoard() throws -> String {
+        AddUpdateTaskTests.mutation(
+            of: "a: " + AddUpdateTaskTests.addTask(with: ""),
+            "b: " + AddUpdateTaskTests.addTask(with: boardField(try libKey()))
+        )
+    }
+
     /// Tells if a response has no `errors` list.
     ///
     /// - Parameter response: The response JSON text.
@@ -299,11 +311,7 @@ struct CrossRepoWriteTests {
         let repos = try await CrossRepoFixture.SideBySide.make()
         let app = try GitGraphFixture.makeGraph(at: repos.app)
         let (appKey, libKey) = (try Self.appKey(), try Self.libKey())
-        let mutation = AddUpdateTaskTests.mutation(
-            of: "a: " + AddUpdateTaskTests.addTask(with: ""),
-            "b: " + AddUpdateTaskTests.addTask(with: Self.boardField(libKey))
-        )
-        let response = try await KanbanGraphTests.execute(mutation, on: app)
+        let response = try await KanbanGraphTests.execute(Self.addTaskToEachBoard(), on: app)
         #expect(try Self.hasNoErrors(response), "\(response)")
         let appEvents = try Self.events(inRepoAt: repos.app)
         let libEvents = try Self.events(inRepoAt: repos.lib)
