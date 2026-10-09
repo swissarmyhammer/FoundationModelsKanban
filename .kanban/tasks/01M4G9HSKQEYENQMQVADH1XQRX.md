@@ -60,8 +60,17 @@ comments:
     - evidence: 1 file — Sources/FoundationModelsKanban/Identity/RefResolver.swift (uncommitted). Commit 8b68b37 message amended to 957b8d9 (same tree, same file list). swiftlint no_magic_numbers on RefResolver.swift: 1 violation before, 0 after. `swift test`: 1034 tests in 73 suites passed, 0 failed; only the accepted SwiftPM "missing creator for mutated node" warning.
     - next: /test, /commit, /review
   timestamp: 2026-10-09T12:49:42.391066+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4gbgv7k68b02q5bfk9n6snz
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 file, commit message of 8b68b37 amended to 957b8d9
+    - test: green — swift test, 1034 tests in 73 suites passed
+    - commit: c0a04ae
+    - review: clean — 0 findings
+  timestamp: 2026-10-09T12:51:59.859635+00:00
+position_column: done
+position_ordinal: c480
 title: Short id shared by two tasks gives AMBIGUOUS_ID
 ---
 ## What

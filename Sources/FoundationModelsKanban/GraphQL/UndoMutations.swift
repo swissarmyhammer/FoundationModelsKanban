@@ -239,7 +239,8 @@ extension WorkingCopy {
     ///
     /// The patches of a column tombstone come last, so that the inverse moves its tasks out first. Then the graph
     /// rules of plan.md §3.3 apply: a column tombstone needs an empty column, and the restored edges must make no
-    /// `dependsOn` cycle and no rename cycle. A board where the transaction made only side-effect nodes gets no patch.
+    /// `dependsOn` cycle and no rename cycle. A board where the transaction made only nodes that the undo keeps (the
+    /// board, the default columns, and the session actor) gets no patch.
     ///
     /// - Parameters:
     ///   - target: The transaction to reverse. The log of the board has it.

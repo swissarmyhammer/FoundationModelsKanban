@@ -21,13 +21,6 @@ struct UndoTests {
     /// so the undo does not clear `started`.
     static let movedField = "started"
 
-    /// The node type that a mutation case of ``ChangeBuilderTests/mutationCases`` makes as a side effect, by the name
-    /// of the case (plan.md §6.5). An undo keeps such a node.
-    static let sideEffectTypes: [String: PatchNodeType] = [
-        "moveTask to a new column": .column,
-        "tagTask with a new tag": .tag,
-    ]
-
     /// The title of the fixture task after the first of two title calls.
     static let firstTitle = "Port the lexer"
 
@@ -42,6 +35,9 @@ struct UndoTests {
 
     /// The text of a line that a later call of a body test changes.
     static let laterChangedLine = "changed later"
+
+    /// The slug of a tag that the fixture board does not have, beside ``TaskOperationTests/feature``.
+    static let chore = "chore"
 
     // MARK: - Helpers
 
@@ -146,25 +142,61 @@ struct UndoTests {
         fields["deleted"] != .single(.null)
     }
 
+    /// Gives the nodes of a session that are not in an earlier projection.
+    ///
+    /// - Parameters:
+    ///   - session: The commit session.
+    ///   - earlier: The earlier projection.
+    /// - Returns: The tracked fields of each node that the earlier projection does not have, by its local ref.
+    static func addedNodes(
+        of session: CommitSession,
+        since earlier: [LocalRef: TrackedFields]
+    ) -> [LocalRef: TrackedFields] {
+        projection(of: session).filter { ref, _ in earlier[ref] == nil }
+    }
+
     /// Expects that the projection of a session equals an earlier projection, except the nodes that are not in the
-    /// earlier projection. Each such node must be a tombstone, or a node of the side-effect type.
+    /// earlier projection. Each such node must be a tombstone (plan.md §6.5).
     ///
     /// - Parameters:
     ///   - session: The commit session after the undo.
     ///   - earlier: The projection before the call that the undo reversed.
-    ///   - sideEffect: The node type that the call made as a side effect, or `nil` for none.
-    static func expectProjection(
-        of session: CommitSession,
-        restoring earlier: [LocalRef: TrackedFields],
-        keeping sideEffect: PatchNodeType? = nil
-    ) {
+    static func expectProjection(of session: CommitSession, restoring earlier: [LocalRef: TrackedFields]) {
         let undone = projection(of: session)
         for (ref, fields) in earlier {
             #expect(undone[ref] == fields, "\(ref)")
         }
-        for (ref, fields) in undone where earlier[ref] == nil {
-            #expect(isTombstone(fields) || ref.nodeType == sideEffect, "\(ref)")
+        for (ref, fields) in addedNodes(of: session, since: earlier) {
+            #expect(isTombstone(fields), "\(ref)")
         }
+    }
+
+    /// Expects that each node of a list is in the projection of a session, and is not a tombstone.
+    ///
+    /// - Parameters:
+    ///   - refs: The local refs of the nodes.
+    ///   - session: The commit session.
+    static func expectLive(_ refs: Set<LocalRef>, in session: CommitSession) {
+        let current = projection(of: session)
+        for ref in refs {
+            #expect(current[ref].map { fields in !isTombstone(fields) } == true, "\(ref)")
+        }
+    }
+
+    /// Makes an `addTask` field with one tag.
+    ///
+    /// - Parameter tag: The tag name.
+    /// - Returns: The field.
+    static func addTaskTagged(_ tag: String) -> String {
+        AddUpdateTaskTests.addTask(with: TaskOperationTests.tagsInput(tag))
+    }
+
+    /// Makes an `addTask` field whose body has one `#marker`.
+    ///
+    /// - Parameter tag: The tag name of the marker.
+    /// - Returns: The field.
+    static func addTaskMarking(_ tag: String) -> String {
+        AddUpdateTaskTests.addTask(with: ##"body: "#\##(tag)""##)
     }
 
     /// Makes an `updateTask` field that sets the title of a task.
@@ -251,18 +283,14 @@ struct UndoTests {
     // MARK: - Each public mutation
 
     @Test(
-        "undo of each public mutation gives the projection from before the call, except the side-effect nodes",
+        "undo of each public mutation restores the projection before the call, and each node it made is a tombstone",
         arguments: ChangeBuilderTests.mutationCases
     )
     func undoRestoresProjectionBeforeCall(mutationCase: ChangeBuilderTests.MutationCase) async throws {
         let recorded = try await ChangeBuilderTests.record(mutationCase)
         var session = recorded.after
         try await Self.reverse(in: &session)
-        Self.expectProjection(
-            of: session,
-            restoring: Self.projection(of: recorded.before),
-            keeping: Self.sideEffectTypes[mutationCase.testDescription]
-        )
+        Self.expectProjection(of: session, restoring: Self.projection(of: recorded.before))
     }
 
     @Test(
@@ -377,19 +405,82 @@ struct UndoTests {
 
     // MARK: - Side effects
 
-    @Test("undo of addTask that made a tag as a side effect makes a tombstone of the task, and the tag stays")
-    func undoAddTaskKeepsSideEffectTag() async throws {
+    @Test("undo of addTask that made a tag as a side effect makes a tombstone of the task and of the tag")
+    func undoAddTaskRemovesSideEffectTag() async throws {
         let directory = try TemporaryDirectory()
         var session = try await ChangeBuilderTests.baseSession(inRepoAt: directory).session
         let earlier = Self.projection(of: session)
-        let addTask = AddUpdateTaskTests.addTask(with: TaskOperationTests.tagsInput(TaskOperationTests.feature))
-        try await HistoryTests.run(eachOf: [addTask], in: &session)
+        try await HistoryTests.run(eachOf: [Self.addTaskTagged(TaskOperationTests.feature)], in: &session)
         try await Self.reverse(in: &session)
-        let added = Self.projection(of: session).filter { ref, _ in earlier[ref] == nil }
+        let added = Self.addedNodes(of: session, since: earlier)
         #expect(Set(added.keys.map(\.nodeType)) == [.task, .tag])
-        for (ref, fields) in added {
-            #expect(Self.isTombstone(fields) == (ref.nodeType == .task), "\(ref)")
-        }
+        Self.expectProjection(of: session, restoring: earlier)
+    }
+
+    @Test("undo of a call with addTask that made a tag and addTag makes a tombstone of both tags")
+    func undoAddTaskAndAddTagRemovesBothTags() async throws {
+        let directory = try TemporaryDirectory()
+        var session = try await ChangeBuilderTests.baseSession(inRepoAt: directory).session
+        let earlier = Self.projection(of: session)
+        let fields = [Self.addTaskTagged(TaskOperationTests.feature), TagMutationTests.addTag(named: Self.chore)]
+        try await ChangeBuilderTests.run("mutation { \(fields.joined(separator: " ")) }", in: &session)
+        try await Self.reverse(in: &session)
+        let tags = Self.addedNodes(of: session, since: earlier).keys.filter { ref in ref.nodeType == .tag }
+        #expect(Set(tags) == [.tag(slug: TaskOperationTests.feature), .tag(slug: Self.chore)])
+        Self.expectProjection(of: session, restoring: earlier)
+    }
+
+    @Test("undo of moveTask to a new column moves the task back and makes a tombstone of the column")
+    func undoMoveToNewColumnRemovesColumn() async throws {
+        let directory = try TemporaryDirectory()
+        let base = try await ChangeBuilderTests.baseSession(inRepoAt: directory)
+        var session = base.session
+        let earlier = Self.projection(of: session)
+        let refs = ChangeBuilderTests.refs(of: base.task, in: session)
+        let move = ChangeBuilderTests.moveField(of: refs, to: TaskOperationTests.newColumnSlug)
+        try await HistoryTests.run(eachOf: [move], in: &session)
+        try await Self.reverse(in: &session)
+        let added = Self.addedNodes(of: session, since: earlier)
+        #expect(Set(added.keys) == [.column(slug: TaskOperationTests.newColumnSlug)])
+        Self.expectProjection(of: session, restoring: earlier)
+    }
+
+    @Test("undo of addTask whose #marker made a deleted tag live again makes a tombstone of the tag again")
+    func undoAddTaskDeletesRestoredTag() async throws {
+        let directory = try TemporaryDirectory()
+        let base = try await ChangeBuilderTests.baseSession(inRepoAt: directory)
+        var session = base.session
+        let refs = ChangeBuilderTests.refs(of: base.task, in: session)
+        try await HistoryTests.run(eachOf: [ChangeBuilderTests.deleteBugField(refs)], in: &session)
+        let earlier = Self.projection(of: session)
+        try await HistoryTests.run(eachOf: [Self.addTaskMarking(TagMutationTests.bug)], in: &session)
+        let restored = try #require(Self.projection(of: session)[.tag(slug: TagMutationTests.bug)])
+        #expect(!Self.isTombstone(restored))
+        try await Self.reverse(in: &session)
+        Self.expectProjection(of: session, restoring: earlier)
+    }
+
+    // MARK: - New board
+
+    @Test("undo of the first call on a new board keeps the board, the default columns, and the session actor")
+    func undoFirstCallKeepsAutoInitNodes() async throws {
+        let directory = try TemporaryDirectory()
+        var session = try await CommitTests.makeSession(of: EventLog(repositoryAt: directory.url))
+        try await HistoryTests.run(eachOf: [Self.addTaskTagged(TaskOperationTests.feature)], in: &session)
+        try await Self.reverse(in: &session)
+        Self.expectLive(BoardMutationTests.initializedRefs, in: session)
+        let removed = Self.projection(of: session).filter { _, fields in Self.isTombstone(fields) }
+        #expect(Set(removed.keys.map(\.nodeType)) == [.task, .tag])
+    }
+
+    @Test("undo of the first call after a later call by the same session actor gives no UNDO_CONFLICT")
+    func undoFirstCallAfterLaterCallBySameActor() async throws {
+        let directory = try TemporaryDirectory()
+        var session = try await CommitTests.makeSession(of: EventLog(repositoryAt: directory.url))
+        let first = try await Self.transaction(running: Self.addTaskTagged(TaskOperationTests.feature), in: &session)
+        try await HistoryTests.run(eachOf: [Self.addTaskTagged(Self.chore)], in: &session)
+        try await Self.reverse(with: Self.txnInput(first), in: &session)
+        Self.expectLive(BoardMutationTests.initializedRefs, in: session)
     }
 
     // MARK: - Conflicts
@@ -406,6 +497,30 @@ struct UndoTests {
         let use = try await Self.transaction(running: addTask, in: &session)
         let error = try await Self.failure(with: Self.txnInput(addTag), in: &session)
         #expect(error == .undoConflict(transaction: addTag.ulidString, laterTransactions: [use.ulidString]))
+    }
+
+    @Test("undo of addTask that made a tag, after a later task used the tag, gives UNDO_CONFLICT")
+    func undoAddTaskAfterLaterUseOfSideEffectTagConflicts() async throws {
+        let directory = try TemporaryDirectory()
+        var session = try await ChangeBuilderTests.baseSession(inRepoAt: directory).session
+        let addTask = Self.addTaskTagged(TaskOperationTests.feature)
+        let first = try await Self.transaction(running: addTask, in: &session)
+        let use = try await Self.transaction(running: addTask, in: &session)
+        let error = try await Self.failure(with: Self.txnInput(first), in: &session)
+        #expect(error == .undoConflict(transaction: first.ulidString, laterTransactions: [use.ulidString]))
+    }
+
+    @Test("undo of addTask that made a deleted tag live again, after a later task used the tag, gives UNDO_CONFLICT")
+    func undoAddTaskAfterLaterUseOfRestoredTagConflicts() async throws {
+        let directory = try TemporaryDirectory()
+        let base = try await ChangeBuilderTests.baseSession(inRepoAt: directory)
+        var session = base.session
+        let refs = ChangeBuilderTests.refs(of: base.task, in: session)
+        try await HistoryTests.run(eachOf: [ChangeBuilderTests.deleteBugField(refs)], in: &session)
+        let restore = try await Self.transaction(running: Self.addTaskMarking(TagMutationTests.bug), in: &session)
+        let use = try await Self.transaction(running: Self.addTaskTagged(TagMutationTests.bug), in: &session)
+        let error = try await Self.failure(with: Self.txnInput(restore), in: &session)
+        #expect(error == .undoConflict(transaction: restore.ulidString, laterTransactions: [use.ulidString]))
     }
 
     @Test("undo after a later change to the same property gives UNDO_CONFLICT with the later transaction")

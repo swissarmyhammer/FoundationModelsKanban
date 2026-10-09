@@ -142,12 +142,7 @@ struct UndoLog: Sendable {
         let before = Dictionary(
             uniqueKeysWithValues: nodes.map { node in (node, events(of: node, in: earlier)) }
         )
-        let rule = InverseRule(
-            operations: Set(target.events.flatMap(\.ops)),
-            actor: target.actor,
-            isOriginal: target.undoes == nil,
-            makesBoard: before[.board]?.isEmpty == true
-        )
+        let rule = InverseRule(actor: target.actor, makesBoard: before[.board]?.isEmpty == true)
         let inverses = try nodes.map { node throws(EventError) -> NodeInverse? in
             let earlierEvents = before[node] ?? []
             let laterEvents = earlierEvents + events(of: node, in: target.events)

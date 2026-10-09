@@ -3,70 +3,36 @@ import ULID
 
 // MARK: - Inverse rule
 
-/// The facts of one transaction that decide which of its changes have an inverse (plan.md §6.5, the inverse table).
+/// The facts of one transaction that decide the nodes that an undo keeps (plan.md §6.5, the inverse table).
 ///
-/// The log does not record which mutation field made a patch, so the rule reads the `ops` of the transaction:
+/// The first patch of each node that the transaction made gets the inverse `delete: true`, also for a node that a
+/// mutation made as a side effect (an unknown tag in `addTask`, a new column in `moveTask`). The rule does not read
+/// the `ops` of the transaction, so the result does not change with the other mutations of the call.
 ///
-/// - The first patch of a node that a mutation made explicitly gets `delete: true`. A node is explicit when the `ops`
-///   have a mutation that makes a node of its type (``makers``).
-/// - The first patch of a node that a mutation made as a side effect has no inverse: the node stays. These are the
-///   board, the actor of the transaction (the session actor), the default columns of an auto-init, and a node whose
-///   type no mutation of the `ops` makes (an unknown tag in `addTask`, a new column in `moveTask`, a new author).
-/// - A tag that a `#marker` or a tag name makes live again with `delete: false` keeps its `delete: false`, unless the
-///   `ops` have a mutation that makes a tag live explicitly (``tagRestorers``).
-///
-/// An undo or a redo transaction is not an original transaction: each of its changes is reversed, except the first
-/// patch of a node, which only a side effect of the call can make.
+/// The undo keeps these nodes: the board, the default columns of an auto-init, and the actor of the transaction (the
+/// session actor that the call made automatically).
 struct InverseRule: Sendable {
-    /// The public mutations that make a node of each type explicitly.
-    static let makers: [PatchNodeType: Set<String>] = [
-        .column: [MutationName.addColumn],
-        .actor: [MutationName.addActor],
-        .tag: [MutationName.addTag, MutationName.renameTag],
-        .task: [MutationName.addTask],
-        .comment: [MutationName.addComment],
-    ]
-
-    /// The public mutations that make a tombstoned tag live explicitly.
-    static let tagRestorers: Set<String> = [MutationName.addTag, MutationName.undeleteTag]
-
-    /// The names of the public mutations of the transaction.
-    let operations: Set<String>
-
     /// The actor of the transaction, or `nil` when the transaction has no event.
     let actor: LocalRef?
-
-    /// `true` for an original transaction: one that is not an undo or a redo.
-    let isOriginal: Bool
 
     /// `true` when the transaction made the board node: an auto-init.
     let makesBoard: Bool
 
-    /// Tells if the transaction made a node explicitly, so that its inverse is a tombstone.
+    /// Tells if an undo keeps a node that the transaction made, so that the node has no inverse.
     ///
     /// - Parameter ref: The local ref of a node that the transaction made.
-    /// - Returns: `true` when a mutation of the transaction made the node explicitly.
-    func makesExplicitly(_ ref: LocalRef) -> Bool {
-        guard isOriginal, !(Self.makers[ref.nodeType] ?? []).isDisjoint(with: operations) else {
+    /// - Returns: `true` for the board, for the session actor, and for a default column of an auto-init.
+    func keeps(_ ref: LocalRef) -> Bool {
+        switch ref {
+        case .board:
+            return true
+        case .actor:
+            return ref == actor
+        case .column(let slug):
+            return makesBoard && DefaultColumn.all.contains { column in column.slug == slug }
+        case .tag, .task, .comment:
             return false
         }
-        switch ref {
-        case .actor:
-            return ref != actor
-        case .column(let slug):
-            return !(makesBoard && DefaultColumn.all.contains { column in column.slug == slug })
-        case .board, .tag, .task, .comment:
-            return true
-        }
-    }
-
-    /// Tells if the transaction made a tombstoned node live explicitly, so that its inverse makes the tombstone
-    /// again.
-    ///
-    /// - Parameter ref: The local ref of a node that the transaction made live.
-    /// - Returns: `false` for a tag that an original transaction made live as a side effect, else `true`.
-    func restoresExplicitly(_ ref: LocalRef) -> Bool {
-        !isOriginal || ref.nodeType != .tag || !Self.tagRestorers.isDisjoint(with: operations)
     }
 }
 
@@ -122,18 +88,20 @@ struct NodeInverse: Sendable {
     /// The change of the body, or `nil` when the transaction did not change the body.
     let bodyChange: BodyChange?
 
-    /// `true` when the transaction made the node, so that the inverse makes a tombstone. A later edge to the node is
-    /// then a conflict.
-    let isNewNode: Bool
-
     /// The local ref of the node.
     var node: LocalRef {
         parts.node
     }
 
+    /// `true` when the inverse makes a tombstone: the transaction made the node, or made it live again. A later edge
+    /// to the node is then a conflict.
+    var makesTombstone: Bool {
+        parts.delete == true
+    }
+
     /// `true` when the inverse makes a column a tombstone. The graph rule of plan.md §3.3, rule 5, applies to it.
     var makesColumnTombstone: Bool {
-        node.nodeType == .column && parts.delete == true
+        node.nodeType == .column && makesTombstone
     }
 
     /// Makes the inverse of the events of one transaction on one node.
@@ -143,7 +111,7 @@ struct NodeInverse: Sendable {
     ///   - before: The state of the node just before the transaction, or `nil` when the transaction made the node.
     ///   - after: The state of the node just after the transaction.
     ///   - rule: The facts of the transaction.
-    /// - Returns: The inverse, or `nil` when the change has no inverse: a side-effect node, or no change.
+    /// - Returns: The inverse, or `nil` when the change has no inverse: a node that the undo keeps, or no change.
     /// - Throws: An ``EventError`` from ``PatchInput``. The values come from the log, so a valid log gives no error.
     init?(
         of node: LocalRef,
@@ -152,10 +120,10 @@ struct NodeInverse: Sendable {
         following rule: InverseRule
     ) throws(EventError) {
         guard let before else {
-            guard rule.makesExplicitly(node) else {
+            guard !rule.keeps(node) else {
                 return nil
             }
-            try self.init(parts: PatchInput(node: node, delete: true), bodyChange: nil, isNewNode: true)
+            try self.init(parts: PatchInput(node: node, delete: true), bodyChange: nil)
             return
         }
         let values = after.properties.valueChanges(
@@ -166,21 +134,19 @@ struct NodeInverse: Sendable {
             to: before.properties,
             named: Set(before.properties.members.keys).union(after.properties.members.keys)
         )
-        let isRestore = before.isDeleted && !after.isDeleted
-        let changesTombstone = before.isDeleted != after.isDeleted && (!isRestore || rule.restoresExplicitly(node))
         let parts = try PatchInput(
             node: node,
             set: values.set,
             unset: values.unset,
             add: members.add,
             remove: members.remove,
-            delete: changesTombstone ? before.isDeleted : nil
+            delete: before.isDeleted == after.isDeleted ? nil : before.isDeleted
         )
         let bodyChange = before.body == after.body ? nil : BodyChange(before: before.body, after: after.body)
         guard !parts.isEmpty || bodyChange != nil else {
             return nil
         }
-        self.init(parts: parts, bodyChange: bodyChange, isNewNode: false)
+        self.init(parts: parts, bodyChange: bodyChange)
     }
 
     /// Makes an inverse from its parts.
@@ -188,11 +154,9 @@ struct NodeInverse: Sendable {
     /// - Parameters:
     ///   - parts: The `set`, `unset`, `add`, `remove`, and `delete` parts.
     ///   - bodyChange: The change of the body, or `nil`.
-    ///   - isNewNode: `true` when the transaction made the node.
-    private init(parts: PatchInput, bodyChange: BodyChange?, isNewNode: Bool) {
+    private init(parts: PatchInput, bodyChange: BodyChange?) {
         self.parts = parts
         self.bodyChange = bodyChange
-        self.isNewNode = isNewNode
     }
 
     /// Makes the inverse patch on the node now.
@@ -213,14 +177,15 @@ struct NodeInverse: Sendable {
     }
 
     /// Tells if a later patch conflicts with the inverse (plan.md §6.5, conflict): it changes the same property, the
-    /// same set member, or the tombstone state of the node, or it makes an edge to a node that the transaction made.
-    /// A later edit of the body is not a conflict here: ``BodyChange/applies(to:)`` decides it.
+    /// same set member, or the tombstone state of the node, or it makes an edge to a node that the inverse makes a
+    /// tombstone (``makesTombstone``). A later edit of the body is not a conflict here: ``BodyChange/applies(to:)``
+    /// decides it.
     ///
     /// - Parameter patch: The later patch.
     /// - Returns: `true` when the patch conflicts.
     func conflicts(with patch: PatchInput) -> Bool {
         guard patch.node == node else {
-            return isNewNode && patch.makesEdge(to: node)
+            return makesTombstone && patch.makesEdge(to: node)
         }
         return !patch.propertyNames.isDisjoint(with: parts.propertyNames)
             || !patch.setMembers.isDisjoint(with: parts.setMembers)
