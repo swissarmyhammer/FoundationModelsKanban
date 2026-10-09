@@ -70,6 +70,9 @@ struct AgentPlanPostTests {
         /// The engine of the tool.
         let graph: KanbanGraph
 
+        /// The root directory of the repo of the engine.
+        let root: URL
+
         /// The tool.
         let tool: KanbanTool
 
@@ -80,19 +83,34 @@ struct AgentPlanPostTests {
         ///
         /// - Parameters:
         ///   - graph: The engine.
+        ///   - root: The root directory of the repo of the engine.
         ///   - storage: The owner of the repo directories of the engine.
-        init(graph: KanbanGraph, keeping storage: AnyObject) {
+        init(graph: KanbanGraph, at root: URL, keeping storage: AnyObject) {
             self.storage = storage
             self.graph = graph
+            self.root = root
             tool = KanbanTool(graph: graph)
         }
 
-        /// Makes the tool over a test engine in an empty repo.
+        /// Makes the tool over a test engine in an empty repo. This is the one place that makes the directory and the
+        /// engine of a test in an empty repo.
         ///
+        /// - Parameters:
+        ///   - makeClock: Gives the clock of the engine from the event log of the board. The default clock always
+        ///     gives ``KanbanGraphTests/time``.
+        ///   - batchObserver: Gets a call when the file watcher applies a batch, or `nil` for no calls.
         /// - Throws: An error when the directory or the engine cannot be made.
-        init() throws {
+        init(
+            timedBy makeClock: (EventLog) -> @Sendable () -> DateTime = { _ in { KanbanGraphTests.time } },
+            observingBatchesWith batchObserver: (any LiveGraphObserver)? = nil
+        ) throws {
             let directory = try TemporaryDirectory()
-            self.init(graph: try KanbanGraphTests.makeGraph(at: directory.url), keeping: directory)
+            let graph = try KanbanGraphTests.makeGraph(
+                at: directory.url,
+                timedBy: makeClock(EventLog(repositoryAt: directory.url)),
+                observingBatchesWith: batchObserver
+            )
+            self.init(graph: graph, at: directory.url, keeping: directory)
         }
 
         /// Makes a context that posts to the sink of the harness.
@@ -147,10 +165,13 @@ struct AgentPlanPostTests {
     /// - Returns: The harness, and the clock of its engine. The clock is idle.
     /// - Throws: An error when the directory or the engine cannot be made.
     static func makeHarnessWithOtherProcess() throws -> (harness: Harness, clock: OtherProcessClock) {
-        let directory = try TemporaryDirectory()
-        let clock = OtherProcessClock(writingTo: EventLog(repositoryAt: directory.url))
-        let graph = try KanbanGraphTests.makeGraph(at: directory.url, timedBy: clock.now)
-        return (Harness(graph: graph, keeping: directory), clock)
+        var clock: OtherProcessClock?
+        let harness = try Harness { log in
+            let made = OtherProcessClock(writingTo: log)
+            clock = made
+            return made.now
+        }
+        return (harness, try #require(clock))
     }
 
     /// Makes a `moveTask` mutation of one task to a column.
@@ -218,7 +239,8 @@ struct AgentPlanPostTests {
     @Test("A call that changes two boards posts one progress event for each board, in the sort order of the repo path")
     func twoBoardsPostInPathOrder() async throws {
         let repos = try await CrossRepoFixture.SideBySide.make()
-        let harness = Harness(graph: try GitGraphFixture.makeGraph(at: repos.app), keeping: repos.sandbox)
+        let graph = try GitGraphFixture.makeGraph(at: repos.app)
+        let harness = Harness(graph: graph, at: repos.app, keeping: repos.sandbox)
         try await harness.call(CrossRepoWriteTests.addTaskToEachBoard())
         let boards = [
             (path: repos.app.canonicalPath, key: try CrossRepoWriteTests.appKey()),
@@ -254,12 +276,10 @@ struct AgentPlanPostTests {
 
     @Test("A batch of the file watcher posts nothing while a ToolContext is bound to the first call")
     func watcherBatchPostsNothing() async throws {
-        let directory = try TemporaryDirectory()
         let recorder = BatchRecorder()
-        let graph = try KanbanGraphTests.makeGraph(at: directory.url, observingBatchesWith: recorder)
-        let harness = Harness(graph: graph, keeping: directory)
+        let harness = try Harness(observingBatchesWith: recorder)
         try await harness.addTask(titled: Self.firstTitle)
-        let log = EventLog(repositoryAt: directory.url)
+        let log = EventLog(repositoryAt: harness.root)
         var ids = GitGraphFixture.secondEngineIDs
         let task = try KanbanGraphTests.writeTask(titled: OtherProcessClock.title, mintingFrom: &ids, to: log)
         let taskFile = log.fileURL(for: .task(task))
@@ -268,7 +288,7 @@ struct AgentPlanPostTests {
         })
         try await harness.call(KanbanGraphTests.nameQuery)
         #expect(await harness.sink.events.count == Self.firstCallPosts)
-        await graph.close()
+        await harness.graph.close()
     }
 }
 

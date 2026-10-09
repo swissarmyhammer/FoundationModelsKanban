@@ -27,6 +27,38 @@ comments:
     - evidence: 5 files — Sources/FoundationModelsKanban/Tool/KanbanGraph.swift, plan.md, Tests/FoundationModelsKanbanTests/Tool/AgentPlanPostTests.swift, Tests/FoundationModelsKanbanTests/Tool/KanbanGraphTests.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoWriteTests.swift. `swift test --filter AgentPlanPostTests`: 8 of 8 pass. `swift test`: 1058 tests in 74 suites pass; the only warning is the accepted SwiftPM "missing creator for mutated node".
     - next: /review
   timestamp: 2026-10-09T14:01:48.546957+00:00
+- actor: claude-code
+  id: 01m4gfrmy6c8edv36e4jyk4w28
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD — 2 findings (2 confirmed, 0 refuted) — Tests/FoundationModelsKanbanTests/Tool/AgentPlanPostTests.swift:150, Tests/FoundationModelsKanbanTests/Tool/AgentPlanPostTests.swift:257. The HEAD commit message agrees with the diff. Each acceptance item and each test item has a matching test in the diff.
+    - next: /implement ^ahmpz3f to correct the open findings
+  timestamp: 2026-10-09T14:06:09.862062+00:00
+- actor: claude-code
+  id: 01m4gfrpdjcv4z9qr7a73vzkxw
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 5 files
+    - test: green — swift test, 1058 tests in 74 suites passed
+    - commit: 15f6f12
+    - review: findings — Tests/FoundationModelsKanbanTests/Tool/AgentPlanPostTests.swift:150, Tests/FoundationModelsKanbanTests/Tool/AgentPlanPostTests.swift:257
+  timestamp: 2026-10-09T14:06:11.378059+00:00
+- actor: claude-code
+  id: 01m4gfzjhf4g7vjrtcq6wasqmf
+  text: |-
+    Review round 1 findings corrected (both reuse/reuse in AgentPlanPostTests.swift).
+    - `Harness.init(timedBy:observingBatchesWith:)` is now the one place that makes the TemporaryDirectory and the engine of an empty-repo test. Both parameters have defaults (the fixed clock, no batch observer). `Harness()` still works.
+    - The clock parameter is a maker `(EventLog) -> @Sendable () -> DateTime`, not a plain clock. Reason: `OtherProcessClock` writes to the event log of the board, so it needs the directory, and the directory must not be made in a second place. `makeHarnessWithOtherProcess` gives a maker that keeps the clock that it makes.
+    - `Harness` has a new `root` property (the root directory of the repo of the engine). `watcherBatchPostsNothing` reads the event log from `harness.root`, and calls `Harness(observingBatchesWith:)`. `init(graph:at:keeping:)` takes the root; the two-board test gives `repos.app`.
+    - No other copy of the setup stays in the file. The two-board test uses `GitGraphFixture.makeGraph` over git repos, which is a different setup.
+  timestamp: 2026-10-09T14:09:56.783329+00:00
+- actor: claude-code
+  id: 01m4gfzme8d1sdw7dppdx4a89a
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsKanbanTests/Tool/AgentPlanPostTests.swift. `swift test --filter AgentPlanPostTests`: 8 of 8 pass. `swift test`: 1058 tests in 74 suites pass; the only build warning is the accepted SwiftPM "missing creator for mutated node". Both findings are `- [x]`.
+    - next: /review
+  timestamp: 2026-10-09T14:09:58.728423+00:00
 depends_on:
 - 01M4G9HNAFASWXCDCPFTDYBDKJ
 position_column: doing
@@ -54,3 +86,16 @@ plan.md §7.3: "a call that throws post nothing". `Sources/FoundationModelsKanba
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-09 09:03)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `plan.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsKanbanTests/Tool/AgentPlanPostTests.swift:150` `reuse/reuse` — makeHarnessWithOtherProcess repeats the setup of Harness.init(). Both make a TemporaryDirectory, call KanbanGraphTests.makeGraph, and build a Harness with keeping:. Only the clock differs. A second copy of this setup can drift from the first. Add a clock parameter to Harness.init(), for example init(timedBy clock: @escaping @Sendable () -> DateTime = { KanbanGraphTests.time }). Then makeHarnessWithOtherProcess only builds the OtherProcessClock and calls that init. Keep one place that makes the directory and the engine.
+- [x] `Tests/FoundationModelsKanbanTests/Tool/AgentPlanPostTests.swift:257` `reuse/reuse` — watcherBatchPostsNothing repeats the setup of Harness.init() a second time. It makes a TemporaryDirectory and calls KanbanGraphTests.makeGraph, then builds a Harness with keeping:. It also needs an observer, so it cannot call Harness.init() as it is. This is the same near-match as makeHarnessWithOtherProcess, and the two copies can drift apart. Give Harness.init() the options that the test engines need, such as a clock and a batch observer, each with a default. Then makeHarnessWithOtherProcess and watcherBatchPostsNothing both call that one init. This is the same fix as the earlier finding on line 150.
