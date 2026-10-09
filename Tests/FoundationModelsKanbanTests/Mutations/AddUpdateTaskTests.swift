@@ -409,6 +409,22 @@ struct AddUpdateTaskTests {
         #expect(try ColumnActorTests.patches(of: .task(task), in: directory) == [expected])
     }
 
+    @Test("addTask with U+2028, U+2029 and U+0085 in the title and the body gives the same text after a new load")
+    func addTaskKeepsUnicodeBreaksAfterNewLoad() async throws {
+        let directory = try TemporaryDirectory()
+        let text = EventLogTests.unicodeBreakText
+        let response = try await ColumnActorTests.respond(
+            to: "mutation($title: String!, $body: String) { addTask(input: { title: $title, body: $body }) { id } }",
+            with: ["title": .string(text), "body": .string(text)],
+            onFixtureIn: directory
+        )
+        let task = try Self.firstTask(in: response)
+        let query = #"{ board { task(id: "\#(Self.sigilRef(of: task))") { title body } } }"#
+        let read = try await KanbanGraphTests.execute(query, on: KanbanGraphTests.makeGraph(at: directory.url))
+        let expected: NSDictionary = ["data": ["board": ["task": ["title": text, "body": text]]]]
+        #expect(NSDictionary(dictionary: try KanbanGraphTests.object(of: read)) == expected)
+    }
+
     // MARK: - addTask assignees
 
     @Test("addTask with assignees adds the assignee edges")

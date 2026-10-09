@@ -63,6 +63,13 @@ struct EventLogTests {
     /// The ref of the `bug` tag.
     static let bugTag = LocalRef.tag(slug: "bug")
 
+    /// A text with U+2028 (line separator), U+2029 (paragraph separator) and U+0085 (next line). `JSONEncoder` does
+    /// not escape these characters, so they stay in the log line, but they do not end the line.
+    static let unicodeBreakText = "one\u{2028}two\u{2029}three\u{0085}four"
+
+    /// The line break of a line that a Windows editor wrote: a carriage return before the line feed.
+    static let crlfLineBreak = "\r\n"
+
     /// Makes the event of a patch that sets the title of the test task.
     ///
     /// - Parameters:
@@ -79,6 +86,30 @@ struct EventLogTests {
     /// - Returns: The two events, in step order.
     static func firstAndLastTitleEvents() throws -> [Event] {
         [try titleEvent(atStep: 1, setting: "first"), try titleEvent(atStep: 2, setting: "last")]
+    }
+
+    /// Makes the events of steps 1 and 2 of the test task: the first sets the title `first`, and the second sets the
+    /// title ``unicodeBreakText``.
+    ///
+    /// - Returns: The two events, in step order.
+    static func unicodeBreakTitleEvents() throws -> [Event] {
+        [try titleEvent(atStep: 1, setting: "first"), try titleEvent(atStep: 2, setting: unicodeBreakText)]
+    }
+
+    /// Writes events to the log file of the test task as appended lines, and gives the log of the board.
+    ///
+    /// - Parameters:
+    ///   - events: The events, in file order.
+    ///   - directory: The temporary repo directory.
+    /// - Returns: The event log of the board, and the ref of the test task.
+    static func appendToTaskLog(
+        _ events: [Event],
+        in directory: TemporaryDirectory
+    ) throws -> (log: EventLog, task: LocalRef) {
+        let log = EventLog(repositoryAt: directory.url)
+        let task = try ReplayTests.taskRef()
+        try log.append(contentsOf: events, toLogOf: task)
+        return (log, task)
     }
 
     /// Makes the event of a patch that sets the name of a node.
@@ -98,6 +129,21 @@ struct EventLogTests {
     /// - Returns: The text of the file.
     static func text(of url: URL) throws -> String {
         try String(contentsOf: url, encoding: .utf8)
+    }
+
+    /// Writes a text as the full log file of one node, without an append. The directory of the file is made first.
+    ///
+    /// - Parameters:
+    ///   - text: The full text of the file.
+    ///   - ref: The local ref of the node.
+    ///   - log: The event log of the board.
+    /// - Returns: The file.
+    @discardableResult
+    static func writeLogFile(_ text: String, of ref: LocalRef, in log: EventLog) throws -> URL {
+        let file = log.fileURL(for: ref)
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try text.write(to: file, atomically: true, encoding: .utf8)
+        return file
     }
 
     /// Tells if a different file descriptor can get the lock of a board now. The check does not wait.
@@ -212,10 +258,7 @@ struct EventLogTests {
         let task = try ReplayTests.taskRef()
         let first = try Self.titleEvent(atStep: 1, setting: "first")
         let second = try Self.titleEvent(atStep: 2, setting: "second")
-        let file = log.fileURL(for: task)
-        let folder = file.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        try first.encodedLine().write(to: file, atomically: true, encoding: .utf8)
+        let file = try Self.writeLogFile(first.encodedLine(), of: task, in: log)
         try log.append(contentsOf: [second], toLogOf: task)
         #expect(try Self.text(of: file) == "\(try first.encodedLine())\n\(try second.encodedLine())\n")
     }
@@ -275,6 +318,28 @@ struct EventLogTests {
         #expect(read.node == nil)
     }
 
+    @Test("A read keeps a line whose value holds U+2028, U+2029 and U+0085 as one event")
+    func readKeepsUnicodeBreaksInLine() throws {
+        let directory = try TemporaryDirectory()
+        let events = try Self.unicodeBreakTitleEvents()
+        let (log, task) = try Self.appendToTaskLog(events, in: directory)
+        let read = try log.readLog(of: task)
+        #expect(read.events == events)
+        #expect((read.node?.state as? TaskNode)?.title == Self.unicodeBreakText)
+    }
+
+    @Test("A read accepts lines that end with a carriage return and a line feed")
+    func readAcceptsCRLFLines() throws {
+        let directory = try TemporaryDirectory()
+        let log = EventLog(repositoryAt: directory.url)
+        let task = try ReplayTests.taskRef()
+        let events = try Self.unicodeBreakTitleEvents()
+        let text = try events.map { event in try event.encodedLine() + Self.crlfLineBreak }.joined()
+        try Self.writeLogFile(text, of: task, in: log)
+        #expect(try log.readLog(of: task).events == events)
+        #expect(try log.signature(of: task)?.lastEventID == events.last?.id)
+    }
+
     // MARK: - Signatures
 
     @Test("A node with no file has no signature")
@@ -296,6 +361,14 @@ struct EventLogTests {
         #expect(signature.size == (try Data(contentsOf: file)).count)
         #expect(signature.modified == attributes[.modificationDate] as? Date)
         #expect(signature.lastEventID == events.last?.id)
+    }
+
+    @Test("The signature gives the id of a last line whose value holds U+2028, U+2029 and U+0085")
+    func signatureReadsLastLineWithUnicodeBreaks() throws {
+        let directory = try TemporaryDirectory()
+        let events = try Self.unicodeBreakTitleEvents()
+        let (log, task) = try Self.appendToTaskLog(events, in: directory)
+        #expect(try log.signature(of: task)?.lastEventID == events.last?.id)
     }
 
     @Test("The signature changes after an append and does not change after a read")

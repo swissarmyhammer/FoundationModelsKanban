@@ -49,6 +49,10 @@ struct EventLog: Hashable, Sendable {
     /// The character at the end of each line.
     static let lineBreak = "\n"
 
+    /// The characters that end a line when a log file is read: ``lineBreak``, and the carriage return and line feed
+    /// of a file that a Windows editor wrote. Swift keeps the two characters of `"\r\n"` as one `Character`.
+    private static let lineBreaks: Set<Character> = [Character(lineBreak), "\r\n"]
+
     /// The `.kanban/` directory of the board.
     let directory: URL
 
@@ -192,11 +196,15 @@ extension EventLog {
 
     /// Splits the data of a log file into its lines. A line that holds only white space is not in the result.
     ///
+    /// Only a line feed, or a carriage return and a line feed, ends a line. `JSONEncoder` does not escape U+2028,
+    /// U+2029 or U+0085, so these characters can be in a JSON line, and they must not split it. The replay and the
+    /// file signature use this one split.
+    ///
     /// - Parameter data: The data of the file.
     /// - Returns: The lines, in file order, with no line break.
     private static func lines(of data: Data) -> [Substring] {
         String(decoding: data, as: UTF8.self)
-            .split(whereSeparator: \.isNewline)
+            .split { character in lineBreaks.contains(character) }
             .filter { line in !line.allSatisfy(\.isWhitespace) }
     }
 }

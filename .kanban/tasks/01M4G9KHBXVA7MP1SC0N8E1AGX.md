@@ -58,10 +58,19 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsKanbanTests/GraphQL/NameRewriteTests.swift. `swift test --filter NameRewriteTests/mutationRewriteIsInExtensions`: 1 test passed. `swift test`: 1078 tests in 76 suites passed, 0 failures; only the accepted SwiftPM "missing creator for mutated node" warning.
     - next: /review
   timestamp: 2026-10-09T16:47:50.135628+00:00
+- actor: claude-code
+  id: 01m4gs4z7bkz13a027mnx7q9cy
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 file
+    - test: green — swift test, 1078 tests in 76 suites passed
+    - commit: d38ce63
+    - review: clean — 0 findings
+  timestamp: 2026-10-09T16:50:10.795837+00:00
 depends_on:
 - 01M4G9J3T6GYAK2C87GK5XF03F
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: cc80
 title: 'Schema agrees with plan §4: nullability, optional addTag input, label alias'
 ---
 ## What
