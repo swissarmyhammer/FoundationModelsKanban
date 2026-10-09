@@ -8,6 +8,10 @@ import Foundation
 /// virtual tag) matches only a task. `^id` matches the node with the id, and `~type` matches each node of the type. A
 /// change with no update after the filter is left out, so a change is in the result when one update or more matches.
 ///
+/// No filter also goes through ``TaskFilter``. It keeps each update, except the updates of a tombstoned task: of these,
+/// it keeps only the `DELETED` update (``TaskFilter/matches(updateOfNodeAt:isDelete:)``). `Change.updates` with no
+/// filter gives each update of its change, because `history` or `changes` already filtered that change.
+///
 /// The filter reads the graph that ``applied(to:readingNodesOf:)`` gets, so a subscription tests each node as the node
 /// is after the change.
 struct ChangeFilter: Sendable {
@@ -64,16 +68,19 @@ struct ChangeFilter: Sendable {
 
     /// Makes the test of the updates against the graph of a read view.
     ///
+    /// No filter goes through the same ``TaskFilter`` as a filter, so the "hidden unless named" rule applies to both.
+    ///
     /// - Parameter view: The read view of the graph whose nodes the filter tests.
-    /// - Returns: The test. With no filter, it keeps each update. Else it keeps an update when the graph has the node
-    ///   of the update and the node passes the filter.
+    /// - Returns: The test. It keeps an update when the graph has the node of the update and the update passes
+    ///   ``TaskFilter/matches(updateOfNodeAt:isDelete:)``.
     /// - Throws: An error of ``check(against:)``.
     private func test(over view: BoardView) throws(KanbanError) -> (NodeUpdate) -> Bool {
-        guard let expression else {
-            return { _ in true }
-        }
         let nodeFilter = try TaskFilter(filtering: expression, over: view.readiness, inBoard: view.boardKey)
         let graph = view.graph
-        return { update in graph.slot(for: update.ref).map(nodeFilter.matches(nodeAt:)) ?? false }
+        return { update in
+            graph.slot(for: update.ref).map { slot in
+                nodeFilter.matches(updateOfNodeAt: slot, isDelete: update.kind == .deleted)
+            } ?? false
+        }
     }
 }

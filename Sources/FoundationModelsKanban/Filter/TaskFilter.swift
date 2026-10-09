@@ -48,7 +48,8 @@ struct TaskFilter {
         readiness.graph.node(at: slot, as: TaskNode.self) != nil && matches(nodeAt: slot)
     }
 
-    /// Tells if a node of any type passes the test: the test of an update of the change feed.
+    /// Tells if a node of any type passes the test. ``matches(updateOfNodeAt:isDelete:)`` uses this test for an update
+    /// of the change feed.
     ///
     /// - Parameter slot: The slot of the node, live or tombstoned.
     /// - Returns: `true` when the node has no hidden state that the filter does not name, and matches the filter.
@@ -56,5 +57,20 @@ struct TaskFilter {
     func matches(nodeAt slot: Int) -> Bool {
         !hiddenTags.contains { tag in readiness.hasVirtualTag(tag, taskAt: slot) }
             && (evaluator?.matches(nodeAt: slot) ?? true)
+    }
+
+    /// Tells if the node of an update of the change feed passes the test (plan.md §6.7, filter).
+    ///
+    /// The test is the test of ``matches(nodeAt:)``, with one exception. With no filter, the update that makes a node
+    /// a tombstone passes: the node was live before that update, so the feed shows the delete, as a task list shows
+    /// the live task. A later update of a tombstoned task does not pass. A filter that names `#DELETED`, `^id`, or
+    /// `~task` keeps each update of a tombstoned task that matches it.
+    ///
+    /// - Parameters:
+    ///   - slot: The slot of the node, live or tombstoned.
+    ///   - isDelete: `true` for the update that made the node a tombstone (`DELETED`).
+    /// - Returns: `true` when the update passes.
+    func matches(updateOfNodeAt slot: Int, isDelete: Bool) -> Bool {
+        (isDelete && evaluator == nil) || matches(nodeAt: slot)
     }
 }
