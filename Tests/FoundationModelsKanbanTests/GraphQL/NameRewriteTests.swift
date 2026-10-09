@@ -397,8 +397,11 @@ struct NameRewriteTests {
             to: AddUpdateTaskTests.mutation(of: Self.addTaskField(named: "taskAdd")),
             onFixtureIn: try TemporaryDirectory()
         )
+        // The id of the added task is a new ULID on each run, so the test reads it from the response.
+        let task = try AddUpdateTaskTests.firstTask(in: response)
+        let added = #"{"data":{"taskAdd":{"id":"\#(ColumnActorTests.id(of: .task(task)))"}}"#
         let rewrite = #"{"from":"taskAdd","path":["taskAdd"],"to":"addTask"}"#
-        #expect(response.hasSuffix(Self.extensionsSuffix(rewrite: rewrite)))
+        #expect(response == added + Self.extensionsSuffix(rewrite: rewrite))
     }
 
     @Test("tagTask with the input field label tags the task, and the response has label to tags in extensions.rewrites")

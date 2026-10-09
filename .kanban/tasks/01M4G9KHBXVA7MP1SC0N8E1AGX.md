@@ -34,6 +34,30 @@ comments:
   id: 01m4grmtw8a7gv2g2x1zy8p14d
   text: 'Correction to the step record: the count is 10 files, not 9. The list of paths in the record is correct.'
   timestamp: 2026-10-09T16:41:22.056131+00:00
+- actor: claude-code
+  id: 01m4grw9e7hq94w9v06f37m6cz
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 10 files
+    - test: green — swift test, 1078 tests in 76 suites passed
+    - commit: b9a1bc6
+    - review: findings — Tests/FoundationModelsKanbanTests/GraphQL/NameRewriteTests.swift:401
+  timestamp: 2026-10-09T16:45:26.343311+00:00
+- actor: claude-code
+  id: 01m4gs0ma3vks0gqwty319cqzy
+  text: |-
+    Review finding fixed (`completeness/public-output-contract`, NameRewriteTests.swift `mutationRewriteIsInExtensions`):
+    - The test now compares the full response with exact equality, the same as `labelInputFieldIsInExtensions`. The expected text is `{"data":{"taskAdd":{"id":"<task URI>"}}` + `extensionsSuffix(rewrite:)`.
+    - The id of the added task is a new ULID on each run. The test reads it with `AddUpdateTaskTests.firstTask(in:)` and makes the URI with `ColumnActorTests.id(of: .task(task))`. A comment in the test gives this reason.
+    - Check of the file: no other test uses `hasSuffix`. The two `hasPrefix` checks (`noMatchGivesValidationError`, `createBoardDoesNotMapToInitBoard`) examine error messages in tests that this task did not add. They are prefix checks, not suffix-only checks, so this step did not change them.
+  timestamp: 2026-10-09T16:47:48.547344+00:00
+- actor: claude-code
+  id: 01m4gs0nvq7607bcbz6psgm6m6
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsKanbanTests/GraphQL/NameRewriteTests.swift. `swift test --filter NameRewriteTests/mutationRewriteIsInExtensions`: 1 test passed. `swift test`: 1078 tests in 76 suites passed, 0 failures; only the accepted SwiftPM "missing creator for mutated node" warning.
+    - next: /review
+  timestamp: 2026-10-09T16:47:50.135628+00:00
 depends_on:
 - 01M4G9J3T6GYAK2C87GK5XF03F
 position_column: doing
@@ -60,3 +84,15 @@ Three differences between the generated SDL and plan.md §4.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-09 11:43)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 9 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `plan.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsKanbanTests/GraphQL/NameRewriteTests.swift:401` `completeness/public-output-contract` — The assertion in mutationRewriteIsInExtensions now checks only that the response ends with the extensions suffix. The data part of the response is no longer checked. The sibling test labelInputFieldIsInExtensions (line 419) still checks the whole response with exact equality. A regression in the data of the taskAdd/addTask response would now pass this test. Assert the full response with exact equality, as line 419 does. Build the expected data prefix from the addTask field response. If the data varies per run, say why in a comment and assert the prefix separately.
