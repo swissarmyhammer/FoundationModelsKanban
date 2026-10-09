@@ -181,9 +181,12 @@ public actor KanbanGraph {
     /// - Parameter name: The name of the actor, or `nil` for the name of the OS user.
     /// - Returns: The session actor.
     /// - Throws: ``KanbanError/invalidSlug(name:)`` when the name gives an empty slug.
+    ///   ``KanbanError/reservedSlug(type:)`` when the name gives the slug ``Slug/reservedForBoard``.
     static func sessionActor(named name: String?) throws(KanbanError) -> SessionActor {
         let actorName = name ?? NSUserName()
-        return SessionActor(ref: .actor(slug: try Slug(columnOrActorName: actorName).value), name: actorName)
+        let ref = LocalRef.actor(slug: try Slug(columnOrActorName: actorName).value)
+        try ref.checkSlugIsNotReserved()
+        return SessionActor(ref: ref, name: actorName)
     }
 
     /// Runs one GraphQL document against the board (plan.md §5.4).

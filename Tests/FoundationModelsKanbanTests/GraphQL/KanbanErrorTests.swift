@@ -65,9 +65,17 @@ struct KanbanErrorTests {
         (.internalFailure(detail: engineMessage), "INTERNAL"),
     ]
 
+    /// The errors of the reserved slug `board`, with the code of the slug rule of each node type. These cases share
+    /// the codes of ``codes``, so the test of distinct codes does not read them.
+    static let reservedSlugCodes: [(KanbanError, String)] = [
+        (.reservedSlug(type: .column), "INVALID_SLUG"),
+        (.reservedSlug(type: .actor), "INVALID_SLUG"),
+        (.reservedTagName, "INVALID_TAG_NAME"),
+    ]
+
     // MARK: - Codes
 
-    @Test("Each case gives its exact code", arguments: codes)
+    @Test("Each case gives its exact code", arguments: codes + reservedSlugCodes)
     func caseGivesItsCode(error: KanbanError, expectedCode: String) {
         #expect(error.code == expectedCode)
     }
@@ -248,6 +256,24 @@ struct KanbanErrorTests {
         #expect(
             KanbanError.invalidSlug(name: "---").message
                 == "The name \"---\" gives an empty slug. Use a name that has one or more letters or digits."
+        )
+    }
+
+    @Test("INVALID_SLUG for the slug board tells that the board URI reserves the slug")
+    func reservedSlugMessage() {
+        #expect(
+            KanbanError.reservedSlug(type: .column).message
+                == "The slug \"board\" is reserved for the board URI kanban://<board-key>/board, so a column cannot "
+                + "have it. Use a name or an id that gives a different slug."
+        )
+    }
+
+    @Test("INVALID_TAG_NAME for the slug board tells that the board URI reserves the slug")
+    func reservedTagNameMessage() {
+        #expect(
+            KanbanError.reservedTagName.message
+                == "The slug \"board\" is reserved for the board URI kanban://<board-key>/board, so a tag cannot "
+                + "have it. Use a tag name that gives a different slug."
         )
     }
 

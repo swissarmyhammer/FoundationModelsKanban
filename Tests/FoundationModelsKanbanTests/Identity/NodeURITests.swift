@@ -24,6 +24,9 @@ struct NodeURITests {
     /// The name of each node type other than the board. A board URI test uses each name as the name of a repo.
     static let typeNames = PatchNodeType.allCases.filter { type in type != .board }.map(\.pathSegment)
 
+    /// The board keys of the ref round-trip test: the current key, and each key whose repo name is a node type.
+    static let roundTripKeys = [currentKey] + keyPrefixes.flatMap { prefix in typeNames.map { "\(prefix)/\($0)" } }
+
     /// The ULID text of the test task.
     static let taskULID = "01KT6R6HR3KJT6JVNDRAJV8V4T"
 
@@ -50,6 +53,28 @@ struct NodeURITests {
         let uri = try NodeURI(parsing: text)
         let ref = try #require(uri.localRef(inBoard: Self.currentKey))
         #expect(NodeURI(boardKey: Self.currentKey, ref: ref).description == text)
+    }
+
+    @Test(
+        "Each node type with a legal slug round-trips from a ref to a URI, also in a repo named for a node type",
+        arguments: uriTexts, roundTripKeys
+    )
+    func refRoundTripsThroughURI(text: String, key: String) throws {
+        let uri = NodeURI(boardKey: key, ref: try NodeURI(parsing: text).ref)
+        #expect(try NodeURI(parsing: uri.description) == uri)
+    }
+
+    @Test("A column, an actor, or a tag with the reserved slug gives a URI that parses as the board URI")
+    func reservedSlugURIParsesAsBoard() throws {
+        let refs: [LocalRef] = [
+            .column(slug: Slug.reservedForBoard),
+            .actor(slug: Slug.reservedForBoard),
+            .tag(slug: Slug.reservedForBoard),
+        ]
+        for ref in refs {
+            let uri = NodeURI(boardKey: Self.currentKey, ref: ref)
+            #expect(try NodeURI(parsing: uri.description).ref == .board)
+        }
     }
 
     // MARK: - Parse

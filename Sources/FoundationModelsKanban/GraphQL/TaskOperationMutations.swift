@@ -176,7 +176,8 @@ extension KanbanResolver {
     ///   only.
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live task has the id, a neighbor names no live
     ///   task, or the column is a tombstone. ``KanbanError/invalidOrdinal(ordinal:)`` and
-    ///   ``KanbanError/invalidSlug(name:)``. The decode of the input throws
+    ///   ``KanbanError/invalidSlug(name:)``. ``KanbanError/reservedSlug(type:)`` when a new column would get the slug
+    ///   ``Slug/reservedForBoard``. The decode of the input throws
     ///   ``KanbanError/conflictingPlacement(fields:)`` before this resolver runs, so that the field writes nothing.
     fileprivate func moveTask(
         context: KanbanContext,
@@ -282,6 +283,7 @@ extension KanbanResolver {
     /// - Returns: The task after the change.
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live task has the id, or a tag URI names no live
     ///   tag. ``KanbanError/invalidTagName(name:)`` when a name gives an empty slug.
+    ///   ``KanbanError/reservedTagName`` when a new tag would get the slug ``Slug/reservedForBoard``.
     fileprivate func tagTask(
         context: KanbanContext,
         arguments: InputArguments<TagTaskInput>
@@ -381,6 +383,7 @@ extension WorkingCopy {
     /// - Returns: The local ref of the column.
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when a URI names no live column, or the slug names a
     ///   tombstone. ``KanbanError/invalidSlug(name:)`` when the name gives an empty slug.
+    ///   ``KanbanError/reservedSlug(type:)`` when a new column would get the slug ``Slug/reservedForBoard``.
     fileprivate mutating func columnRef(
         forMoveTo id: NodeID,
         resolvingWith resolver: RefResolver,

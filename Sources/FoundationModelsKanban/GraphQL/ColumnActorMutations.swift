@@ -130,6 +130,7 @@ extension KanbanResolver {
     ///   - arguments: The new column.
     /// - Returns: The column. The GraphQL field is nullable, so that an error gives `null` for this field only.
     /// - Throws: ``KanbanError/invalidSlug(name:)`` when the id gives an empty slug.
+    ///   ``KanbanError/reservedSlug(type:)`` when the id gives the slug ``Slug/reservedForBoard``.
     ///   ``KanbanError/duplicateID(type:id:)`` when the board has a column with the slug, live or tombstoned.
     fileprivate func addColumn(
         context: KanbanContext,
@@ -213,6 +214,8 @@ extension KanbanResolver {
     ///   - arguments: The new actor.
     /// - Returns: The actor. With `ensure`, the actor that the board has, with no change.
     /// - Throws: ``KanbanError/invalidSlug(name:)`` when the id gives an empty slug.
+    ///   ``KanbanError/reservedSlug(type:)`` when the board has no actor with the slug, and the id gives the slug
+    ///   ``Slug/reservedForBoard``.
     ///   ``KanbanError/duplicateID(type:id:)`` when the board has an actor with the slug and `ensure` is not `true`.
     fileprivate func addActor(
         context: KanbanContext,
@@ -377,15 +380,17 @@ extension WorkingCopy {
     ///   - values: The properties of the node.
     ///   - body: The body of the node, or `nil` for no body.
     ///   - time: The time of the change.
-    /// - Throws: ``KanbanError/duplicateID(type:id:)`` when the graph has the node, live or tombstoned. A patch on a
-    ///   tombstone does not make it live, so the caller must undelete it. An ``EventError`` when the patch breaks a
-    ///   rule of the log.
+    /// - Throws: ``KanbanError/reservedSlug(type:)`` or ``KanbanError/reservedTagName`` when the slug of the node is
+    ///   ``Slug/reservedForBoard`` (``LocalRef/checkSlugIsNotReserved()``). ``KanbanError/duplicateID(type:id:)`` when
+    ///   the graph has the node, live or tombstoned. A patch on a tombstone does not make it live, so the caller must
+    ///   undelete it. An ``EventError`` when the patch breaks a rule of the log.
     mutating func addNode(
         _ ref: LocalRef,
         setting values: [String: PatchValue],
         body: String?,
         at time: DateTime
     ) throws {
+        try ref.checkSlugIsNotReserved()
         guard !graph.hasNode(ref) else {
             throw KanbanError.duplicateID(type: ref.nodeType, id: ref.localID ?? ref.description)
         }

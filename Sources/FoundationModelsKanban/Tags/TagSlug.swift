@@ -11,6 +11,11 @@ struct Slug: Hashable, Sendable, CustomStringConvertible {
     /// The character that replaces each run of characters that a slug does not keep.
     static let separator: Character = "-"
 
+    /// The slug that no column, actor, or tag can have: `board`, the last segment of the board URI
+    /// `kanban://<board-key>/board` (plan.md §3.2). The parse reads each URI whose last segment is `board` as the
+    /// board URI, so the URI `kanban://<board-key>/column/board` is the board of the key `<board-key>/column`.
+    static let reservedForBoard = PatchNodeType.board.pathSegment
+
     /// The slug text, for example `bug-fix`.
     let value: String
 
@@ -71,6 +76,21 @@ struct Slug: Hashable, Sendable, CustomStringConvertible {
             text.removeLast()
         }
         return text
+    }
+}
+
+extension LocalRef {
+    /// Checks that a mutation can make a node with this ref: a column, an actor, or a tag must not have the slug
+    /// ``Slug/reservedForBoard`` (plan.md §3.2). A slug is in lowercase, so the check ignores the case of the name
+    /// that gave the slug. Replay does not use this check, so a log that already has such a node still loads.
+    ///
+    /// - Throws: ``KanbanError/reservedTagName`` for a tag, and ``KanbanError/reservedSlug(type:)`` for a column or
+    ///   an actor, when the slug is ``Slug/reservedForBoard``.
+    func checkSlugIsNotReserved() throws(KanbanError) {
+        guard localID == Slug.reservedForBoard else {
+            return
+        }
+        throw nodeType == .tag ? .reservedTagName : .reservedSlug(type: nodeType)
     }
 }
 

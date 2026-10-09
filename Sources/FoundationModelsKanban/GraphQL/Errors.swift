@@ -55,8 +55,16 @@ enum KanbanError: Error, Hashable, Sendable {
     /// `INVALID_TAG_NAME`: the tag name gives an empty slug.
     case invalidTagName(name: String)
 
+    /// `INVALID_TAG_NAME`: the tag name gives the slug ``Slug/reservedForBoard``, which the board URI reserves
+    /// (plan.md §3.2).
+    case reservedTagName
+
     /// `INVALID_SLUG`: the name of a column or an actor gives an empty slug.
     case invalidSlug(name: String)
+
+    /// `INVALID_SLUG`: the name or the id of a column or an actor gives the slug ``Slug/reservedForBoard``, which the
+    /// board URI reserves (plan.md §3.2). The type is the node type of the node.
+    case reservedSlug(type: PatchNodeType)
 
     /// `INVALID_ORDINAL`: the ordinal is not a valid fractional index.
     case invalidOrdinal(ordinal: String)
@@ -114,8 +122,8 @@ extension KanbanError {
         case .nothingToUndo: "NOTHING_TO_UNDO"
         case .undoConflict: "UNDO_CONFLICT"
         case .invalidFilter: "INVALID_FILTER"
-        case .invalidTagName: "INVALID_TAG_NAME"
-        case .invalidSlug: "INVALID_SLUG"
+        case .invalidTagName, .reservedTagName: "INVALID_TAG_NAME"
+        case .invalidSlug, .reservedSlug: "INVALID_SLUG"
         case .invalidOrdinal: "INVALID_ORDINAL"
         case .conflictingPlacement: "CONFLICTING_PLACEMENT"
         case .boardBusy: "BOARD_BUSY"
@@ -173,8 +181,12 @@ extension KanbanError {
                 + "Correct the filter, for example: \(example)"
         case .invalidTagName(let name):
             "The tag name \"\(name)\" gives an empty slug. \(Self.emptySlugCorrection)"
+        case .reservedTagName:
+            "\(Self.reservedSlugProblem(for: .tag)) Use a tag name that gives a different slug."
         case .invalidSlug(let name):
             "The name \"\(name)\" gives an empty slug. \(Self.emptySlugCorrection)"
+        case .reservedSlug(let type):
+            "\(Self.reservedSlugProblem(for: type)) Use a name or an id that gives a different slug."
         case .invalidOrdinal(let ordinal):
             "The ordinal \"\(ordinal)\" is not a valid fractional index. Use before or after with a neighbor task, "
                 + "or leave out the ordinal to put the task at the end of the column."
@@ -202,6 +214,17 @@ extension KanbanError {
     /// - Returns: The name of the type, in lowercase.
     private static func noun(for type: PatchNodeType) -> String {
         type.rawValue.lowercased()
+    }
+
+    /// Gives the problem part of the message of a slug that the board URI reserves (plan.md §3.2).
+    ///
+    /// - Parameter type: The node type of the node that cannot have the slug.
+    /// - Returns: The text, for example `The slug "board" is reserved for the board URI
+    ///   kanban://<board-key>/board, so a column cannot have it.`
+    private static func reservedSlugProblem(for type: PatchNodeType) -> String {
+        let boardURI = "\(NodeURI.scheme)<board-key>\(LocalRef.separator)\(LocalRef.board)"
+        return "The slug \"\(Slug.reservedForBoard)\" is reserved for the board URI \(boardURI), "
+            + "so a \(noun(for: type)) cannot have it."
     }
 
     /// Gives a list of short ids in a message, each with a leading ``ShortID/sigil``, for example

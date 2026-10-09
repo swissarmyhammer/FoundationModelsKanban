@@ -56,6 +56,7 @@ extension KanbanResolver {
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live task has the ref.
     ///   ``KanbanError/actorNotFound(reference:)`` when an actor URI names no actor.
     ///   ``KanbanError/invalidSlug(name:)`` when an actor name gives an empty slug.
+    ///   ``KanbanError/reservedSlug(type:)`` when a new actor would get the slug ``Slug/reservedForBoard``.
     fileprivate func addComment(
         context: KanbanContext,
         arguments: InputArguments<AddCommentInput>
@@ -145,7 +146,8 @@ extension WorkingCopy {
     ///   - time: The time of the change.
     /// - Returns: The local ref of the author.
     /// - Throws: ``KanbanError/actorNotFound(reference:)`` when an actor URI names no actor.
-    ///   ``KanbanError/invalidSlug(name:)`` when a name gives an empty slug. An ``EventError`` when the actor patch
+    ///   ``KanbanError/invalidSlug(name:)`` when a name gives an empty slug. ``KanbanError/reservedSlug(type:)`` when
+    ///   the name of a new actor gives the slug ``Slug/reservedForBoard``. An ``EventError`` when the actor patch
     ///   breaks a rule of the log.
     fileprivate mutating func authorRef(
         for id: NodeID?,
@@ -163,6 +165,7 @@ extension WorkingCopy {
         guard !graph.hasNode(ref) else {
             return ref
         }
+        try ref.checkSlugIsNotReserved()
         try apply(PatchInput(node: ref, set: [PropertyName.name: .string(id.text)]), at: time)
         return ref
     }

@@ -30,6 +30,43 @@ comments:
     - evidence: 6 files — Sources/FoundationModelsKanban/Identity/NodeURI.swift, Sources/FoundationModelsKanban/Identity/BoardKey.swift, Tests/FoundationModelsKanbanTests/Identity/NodeURITests.swift, Tests/FoundationModelsKanbanTests/Mutations/AddUpdateTaskTests.swift, Tests/FoundationModelsKanbanTests/Mutations/ColumnActorTests.swift, plan.md. `swift test --filter "NodeURITests|updateTaskDependsOnMixedCaseHost|mixedCaseHostCycleIsRefused"`: 17 tests pass. `swift test`: 1068 tests in 74 suites pass, 0 failures; the only warning is the accepted SwiftPM "missing creator for mutated node".
     - next: /review
   timestamp: 2026-10-09T15:11:29.193221+00:00
+- actor: claude-code
+  id: 01m4gkq9rawr4nqd7jv74053x0
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 6 files
+    - test: green — swift test, 1068 tests in 74 suites passed
+    - commit: c9a7756
+    - review: findings — Sources/FoundationModelsKanban/Identity/NodeURI.swift:83
+  timestamp: 2026-10-09T15:15:19.946790+00:00
+- actor: claude-code
+  id: 01m4gqcp5ehfeakhy4zqgsa770
+  text: |-
+    Round 2 research (finding NodeURI.swift:83, decision: the slug `board` is reserved).
+    - The owner answered a question: display names are not restricted. `updateColumn`, `updateActor` and `updateTag` change only the display name; the slug and the URI do not change. Thus these mutations refuse nothing. The rule applies to the slug of a node that a mutation makes.
+    - Creation paths of a column, actor, or tag: `WorkingCopy.addNode` (addColumn, addActor, moveTask auto column, `ensureLiveTag` for addTag / tagRefs of addTask, updateTask, tagTask / #marker tags, renameTag target). Two paths do not use `addNode`: `authorRef` in CommentMutations (an unknown author actor gets a `set` patch) and `KanbanGraph.sessionActor(named:)`.
+    - Existing pattern: two `KanbanError` cases can share one code (`notFound` and `boardNotFound`). New cases `reservedSlug(name:)` (INVALID_SLUG) and `reservedTagName(name:)` (INVALID_TAG_NAME) keep the old `invalidSlug`/`invalidTagName` messages and callers.
+    - `TagName(normalizing:)` and `Slug(columnOrActorName:)` also run in lookups (RefResolver, TagMarkers at read time). The check must not go there, or an old log with `#board` would read differently.
+    - Replay does not call the mutation code, so an old log with a `board` node still loads.
+    - Reserved slug constant: `PatchNodeType.board.pathSegment` (the board segment of the board URI).
+  timestamp: 2026-10-09T16:19:26.510064+00:00
+- actor: claude-code
+  id: 01m4gqvzv6yhk8amw7s6nzadre
+  text: |-
+    Round 2 implementation landed (TDD: RED had 16 failing cases for the right reason, no refusal; GREEN after the check).
+    - One constant `Slug.reservedForBoard` (= `PatchNodeType.board.pathSegment`) in Tags/TagSlug.swift, and one check `LocalRef.checkSlugIsNotReserved()`.
+    - The check runs in `WorkingCopy.addNode` (addColumn, addActor and `ensure: true` on a new actor, moveTask new column, addTag, renameTag target, tags of addTask/updateTask/tagTask, #marker tags), in `authorRef` (new comment author), and in `KanbanGraph.sessionActor(named:)`.
+    - New error cases share the old codes: `KanbanError.reservedSlug(type:)` (INVALID_SLUG), `KanbanError.reservedTagName` (INVALID_TAG_NAME). Message: `The slug "board" is reserved for the board URI kanban://<board-key>/board, so a column cannot have it. ...`.
+    - The owner answered: display names are not restricted. `updateColumn`, `updateActor`, `updateTag` refuse nothing (the slug does not change). A node that an old log has stays usable (`ensure: true` on an old `board` actor returns it).
+    - Replay does not use the check. Test `oldLogWithReservedSlugLoads` proves the old log loads.
+    - Tests: new Tests/FoundationModelsKanbanTests/Mutations/ReservedSlugTests.swift (one parameterized test over 15 mutation cases with the shared helper `ColumnActorTests.failure(of:after:in:)`, session actor, old log). NodeURITests: `refRoundTripsThroughURI` (6 node types x 11 keys) and `reservedSlugURIParsesAsBoard`. KanbanErrorTests: codes and messages of the two cases.
+    - plan.md §3.2: bullet "The slug `board` is reserved".
+    - ^82s1wf9: the `board` slug part is removed from its description, with a comment.
+
+    ### implement — changed
+    - evidence: 13 files — Sources/FoundationModelsKanban/Tags/TagSlug.swift, Sources/FoundationModelsKanban/GraphQL/Errors.swift, Sources/FoundationModelsKanban/GraphQL/ColumnActorMutations.swift, Sources/FoundationModelsKanban/GraphQL/CommentMutations.swift, Sources/FoundationModelsKanban/GraphQL/TagMutations.swift, Sources/FoundationModelsKanban/GraphQL/TaskMutations.swift, Sources/FoundationModelsKanban/GraphQL/TaskOperationMutations.swift, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift, Tests/FoundationModelsKanbanTests/Mutations/ReservedSlugTests.swift (new), Tests/FoundationModelsKanbanTests/Identity/NodeURITests.swift, Tests/FoundationModelsKanbanTests/GraphQL/KanbanErrorTests.swift, plan.md. `swift test`: 1075 tests in 75 suites pass, 0 failures; the only build warning is the accepted SwiftPM "missing creator for mutated node".
+    - next: /review
+  timestamp: 2026-10-09T16:27:47.942206+00:00
 position_column: doing
 position_ordinal: '80'
 title: Board URI parse and case-insensitive board key host
@@ -53,3 +90,15 @@ Two defects in board identity (plan.md §3.2).
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-09 10:13)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 5 file(s) reviewed, 7 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `plan.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsKanban/Identity/NodeURI.swift:83` `completeness/inverse-operation-coverage` — The parse now reads any URI ending in `/board` as the board URI, even when the segment before it is a column name. A column whose slug is `board` is written by `LocalRef.uri(inBoard:)` (LocalRef.swift:211-213) as `kanban://<key>/column/board`. That text now parses back as `.board`, so the round trip from a column to a URI and back loses the column. The change deleted `columnNamedBoardIsColumn`, the one test that covered this case, and added no round-trip check for it. Decide whether a column or actor slug of `board` is legal. If it is, parse `column/board` and `actor/board` (and the other typed refs) as the typed ref, and only treat a trailing `board` as the board when it has no type segment before it. Then restore a column-named-board test and add `kanban://<key>/column/board` to the round-trip list. If a slug of `board` is not legal, add a test that proves the slug is refused, so the rule is written down.

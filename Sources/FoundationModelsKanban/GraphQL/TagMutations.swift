@@ -85,6 +85,7 @@ extension KanbanResolver {
     ///   - arguments: The new tag.
     /// - Returns: The tag. The GraphQL field is nullable, so that an error gives `null` for this field only.
     /// - Throws: ``KanbanError/invalidTagName(name:)`` when the id or the name gives an empty slug.
+    ///   ``KanbanError/reservedTagName`` when a new tag would get the slug ``Slug/reservedForBoard``.
     fileprivate func addTag(
         context: KanbanContext,
         arguments: InputArguments<AddTagInput>
@@ -165,6 +166,7 @@ extension KanbanResolver {
     /// - Returns: The live tag at the end of the rename chain of the renamed tag.
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live tag has the `from` ref.
     ///   ``KanbanError/invalidTagName(name:)`` when the new name gives an empty slug.
+    ///   ``KanbanError/reservedTagName`` when the new tag would get the slug ``Slug/reservedForBoard``.
     ///   ``KanbanError/tagRenameCycle(path:)`` when the redirect makes a rename cycle.
     fileprivate func renameTag(
         context: KanbanContext,
@@ -194,7 +196,8 @@ extension WorkingCopy {
     ///   - body: The body of an unknown tag, or `nil` for no body.
     ///   - time: The time of the change.
     /// - Returns: The local ref of the tag at the end of the rename chain.
-    /// - Throws: An ``EventError`` when a patch breaks a rule of the log.
+    /// - Throws: ``KanbanError/reservedTagName`` when an unknown tag has the slug ``Slug/reservedForBoard``. An
+    ///   ``EventError`` when a patch breaks a rule of the log.
     mutating func ensureLiveTag(
         _ ref: LocalRef,
         setting values: [String: PatchValue],
