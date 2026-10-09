@@ -30,9 +30,10 @@ struct TaskFilter {
     ///   - filter: The parsed filter, or `nil` for no filter.
     ///   - readiness: The readiness of the tasks of the board. It holds the graph and the column order.
     ///   - boardKey: The current key of the board. A URL with this key names a node of the board.
-    init(filtering filter: FilterExpr?, over readiness: Readiness, inBoard boardKey: String) {
-        evaluator = filter.map { expression in
-            FilterEvaluator(evaluating: expression, over: readiness, inBoard: boardKey)
+    /// - Throws: An error of ``FilterEvaluator/init(evaluating:over:inBoard:)``.
+    init(filtering filter: FilterExpr?, over readiness: Readiness, inBoard boardKey: String) throws(KanbanError) {
+        evaluator = try filter.map { expression throws(KanbanError) in
+            try FilterEvaluator(evaluating: expression, over: readiness, inBoard: boardKey)
         }
         hiddenTags = VirtualTag.hiddenUnlessNamed.filter { tag in !(filter?.names(tag) ?? false) }
         self.readiness = readiness

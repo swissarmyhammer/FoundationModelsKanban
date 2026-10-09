@@ -130,6 +130,35 @@ struct ShortIDTests {
         #expect(ShortID.resolve("0123456", among: ids) == .found(Self.ownerOf0123456))
     }
 
+    @Test("A short id that two ids share gives each of these ids, so it names no id")
+    func sharedShortIDIsAmbiguous() {
+        let ids = [Self.ownerOf0123456, Self.core, Self.secondOwnerOf0123456]
+        let owners = [Self.ownerOf0123456, Self.secondOwnerOf0123456]
+        #expect(ShortID.resolve("^0123456", among: ids) == .ambiguous(owners))
+    }
+
+    @Test("A short id of one id, and the full id of an owner of a shared short id, still resolve")
+    func uniqueFormsResolveBesideSharedShortID() {
+        let ids = [Self.ownerOf0123456, Self.core, Self.secondOwnerOf0123456]
+        #expect(ShortID.resolve("^ajv8v4t", among: ids) == .found(Self.core))
+        #expect(ShortID.resolve(Self.secondOwnerOf0123456, among: ids) == .found(Self.secondOwnerOf0123456))
+    }
+
+    @Test("The ids with the short id of a reference are each id that has that short id")
+    func idsWithShortIDOfReference() {
+        let ids = [Self.ownerOf0123456, Self.core, Self.secondOwnerOf0123456]
+        let owners = [Self.ownerOf0123456, Self.secondOwnerOf0123456]
+        #expect(ShortID.ulids(withShortIDOf: " ^0123456 ", among: ids) == owners)
+        #expect(ShortID.ulids(withShortIDOf: "^AJV8V4T", among: ids) == [Self.core])
+    }
+
+    @Test("A reference that is not as long as a short id has no ids with its short id")
+    func referenceOfOtherLengthHasNoShortIDOwners() {
+        let ids = [Self.ownerOf0123456, Self.core, Self.secondOwnerOf0123456]
+        #expect(ShortID.ulids(withShortIDOf: Self.ownerOf0123456, among: ids).isEmpty)
+        #expect(ShortID.ulids(withShortIDOf: "123456", among: ids).isEmpty)
+    }
+
     @Test("An unknown reference is not found")
     func unknownReferenceIsNotFound() {
         #expect(ShortID.resolve("zzzzzzz", among: Self.board) == .notFound)

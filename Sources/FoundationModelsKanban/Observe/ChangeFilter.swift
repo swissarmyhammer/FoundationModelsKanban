@@ -30,8 +30,12 @@ struct ChangeFilter: Sendable {
     ///   - view: The read view of the graph whose nodes the filter tests.
     /// - Returns: Each change with the updates that the filter keeps, in the order of `changes`. A change with no
     ///   update after the filter is not in the list.
-    func applied(to changes: some Sequence<Change>, readingNodesOf view: BoardView) -> [Change] {
-        let keeps = test(over: view)
+    /// - Throws: An error of ``check(against:)``.
+    func applied(
+        to changes: some Sequence<Change>,
+        readingNodesOf view: BoardView
+    ) throws(KanbanError) -> [Change] {
+        let keeps = try test(over: view)
         return changes.compactMap { change in
             let updates = change.nodeUpdates.filter(keeps)
             return updates.isEmpty ? nil : change.replacingNodeUpdates(updates)
@@ -44,8 +48,18 @@ struct ChangeFilter: Sendable {
     ///   - updates: The updates.
     ///   - view: The read view of the graph whose nodes the filter tests.
     /// - Returns: The updates that the filter keeps, in the order of `updates`.
-    func updates(of updates: [NodeUpdate], readingNodesOf view: BoardView) -> [NodeUpdate] {
-        updates.filter(test(over: view))
+    /// - Throws: An error of ``check(against:)``.
+    func updates(of updates: [NodeUpdate], readingNodesOf view: BoardView) throws(KanbanError) -> [NodeUpdate] {
+        updates.filter(try test(over: view))
+    }
+
+    /// Checks that the filter can test the nodes of the graph of a read view, as a subscription does when it starts.
+    ///
+    /// - Parameter view: The read view of the graph whose nodes the filter tests.
+    /// - Throws: An error of ``TaskFilter/init(filtering:over:inBoard:)``, for example `AMBIGUOUS_ID` for a `^id` value
+    ///   that is a short id of two or more tasks.
+    func check(against view: BoardView) throws(KanbanError) {
+        _ = try test(over: view)
     }
 
     /// Makes the test of the updates against the graph of a read view.
@@ -53,11 +67,12 @@ struct ChangeFilter: Sendable {
     /// - Parameter view: The read view of the graph whose nodes the filter tests.
     /// - Returns: The test. With no filter, it keeps each update. Else it keeps an update when the graph has the node
     ///   of the update and the node passes the filter.
-    private func test(over view: BoardView) -> (NodeUpdate) -> Bool {
+    /// - Throws: An error of ``check(against:)``.
+    private func test(over view: BoardView) throws(KanbanError) -> (NodeUpdate) -> Bool {
         guard let expression else {
             return { _ in true }
         }
-        let nodeFilter = TaskFilter(filtering: expression, over: view.readiness, inBoard: view.boardKey)
+        let nodeFilter = try TaskFilter(filtering: expression, over: view.readiness, inBoard: view.boardKey)
         let graph = view.graph
         return { update in graph.slot(for: update.ref).map(nodeFilter.matches(nodeAt:)) ?? false }
     }

@@ -3,7 +3,9 @@ import Foundation
 /// Evaluates a parsed filter against the nodes of one board (plan.md §6.3).
 ///
 /// The evaluator resolves each atom one time, when it is made, so that the test of each node does no name lookup.
-/// Each match ignores case. An atom whose value names nothing matches nothing; it is not an error.
+/// Each match ignores case. An atom whose value names nothing matches nothing; it is not an error. One value is an
+/// error: a `^id` value that is a short id of two or more tasks or comments gives `AMBIGUOUS_ID`
+/// (``KanbanError/sharedShortID(reference:ids:)``), because a short id is a unique ULID prefix (plan.md §3.2).
 ///
 /// - `#tag` matches a task that has the tag from an edge or from a `#marker` in its body, after the rename redirect
 ///   (``Graph/tagSlots(of:)``). It also matches a task that has the virtual tag of that name (``VirtualTag``).
@@ -38,8 +40,10 @@ struct FilterEvaluator {
     ///   - filter: The parsed filter.
     ///   - readiness: The readiness of the tasks of the board. It holds the graph and the column order.
     ///   - boardKey: The current key of the board. A URL with this key names a node of the board.
-    init(evaluating filter: FilterExpr, over readiness: Readiness, inBoard boardKey: String) {
-        test = FilterCompiler(readiness: readiness, boardKey: boardKey).test(for: filter)
+    /// - Throws: ``KanbanError/sharedShortID(reference:ids:)`` when the value of a `^id` atom is a short id that two
+    ///   or more tasks or comments of the board have, live or tombstoned.
+    init(evaluating filter: FilterExpr, over readiness: Readiness, inBoard boardKey: String) throws(KanbanError) {
+        test = try FilterCompiler(readiness: readiness, boardKey: boardKey).test(for: filter)
     }
 
     /// Tells if a node matches the filter.
@@ -87,20 +91,22 @@ private struct FilterCompiler {
     ///
     /// - Parameter filter: The filter, or a part of it.
     /// - Returns: The test.
-    func test(for filter: FilterExpr) -> NodeTest {
+    /// - Throws: ``KanbanError/sharedShortID(reference:ids:)`` when the value of a `^id` atom is a short id that two
+    ///   or more tasks or comments have (``refTest(for:)``).
+    func test(for filter: FilterExpr) throws(KanbanError) -> NodeTest {
         switch filter {
         case .atom(let kind, let value):
-            return atomTest(of: kind, value: value)
+            return try atomTest(of: kind, value: value)
         case .and(let lhs, let rhs):
-            let left = test(for: lhs)
-            let right = test(for: rhs)
+            let left = try test(for: lhs)
+            let right = try test(for: rhs)
             return { slot in left(slot) && right(slot) }
         case .or(let lhs, let rhs):
-            let left = test(for: lhs)
-            let right = test(for: rhs)
+            let left = try test(for: lhs)
+            let right = try test(for: rhs)
             return { slot in left(slot) || right(slot) }
         case .not(let operand):
-            let operandTest = test(for: operand)
+            let operandTest = try test(for: operand)
             return { slot in !operandTest(slot) }
         }
     }
@@ -111,12 +117,14 @@ private struct FilterCompiler {
     ///   - kind: The kind of the atom.
     ///   - value: The value of the atom.
     /// - Returns: The test.
-    private func atomTest(of kind: FilterAtomKind, value: FilterValue) -> NodeTest {
+    /// - Throws: ``KanbanError/sharedShortID(reference:ids:)`` when the atom is a `^id` atom whose value is a short
+    ///   id that two or more tasks or comments have (``refTest(for:)``).
+    private func atomTest(of kind: FilterAtomKind, value: FilterValue) throws(KanbanError) -> NodeTest {
         switch kind {
         case .tag: localTest(of: kind, value: value, makingTestWith: tagTest(named:))
         case .assignee: localTest(of: kind, value: value, makingTestWith: assigneeTest(named:))
         case .column: localTest(of: kind, value: value, makingTestWith: columnTest(named:))
-        case .ref: refTest(for: value)
+        case .ref: try refTest(for: value)
         case .type: nodeTypeTest(for: value)
         }
     }
@@ -310,9 +318,19 @@ extension FilterCompiler {
     /// Makes the test of a `^id` atom. A task matches by the task test (``taskRefTest(naming:)``). A node of a
     /// different type matches when the value names that node.
     ///
+    /// The task test resolves the value among one task and its dependencies, so it cannot find a short id that two
+    /// tasks share. Thus, the value is first checked against all of the tasks and the comments of the board
+    /// (``RefResolver/checkShortIDIsUnique(_:writtenAs:)``): a short id is a unique ULID prefix (plan.md §3.2).
+    ///
     /// - Parameter value: The value of the atom.
     /// - Returns: The test.
-    private func refTest(for value: FilterValue) -> NodeTest {
+    /// - Throws: ``KanbanError/sharedShortID(reference:ids:)`` when the value is a short id that two or more tasks or
+    ///   comments have, live or tombstoned.
+    private func refTest(for value: FilterValue) throws(KanbanError) -> NodeTest {
+        if case .name(let reference) = value {
+            let resolver = RefResolver(graph: graph, boardKey: boardKey)
+            try resolver.checkShortIDIsUnique(reference, writtenAs: "\(FilterAtomKind.ref.sigil)\(reference)")
+        }
         let taskTest = taskRefTest(naming: target(of: value, for: .ref))
         let namedRef = localRef(namedBy: value)
         return { slot in

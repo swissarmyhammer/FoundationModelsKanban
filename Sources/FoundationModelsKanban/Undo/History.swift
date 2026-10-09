@@ -116,13 +116,13 @@ extension BoardObject {
     ///   - arguments: The filter, the start, and the page size.
     /// - Returns: The newest `first` changes after `since` that the filter keeps. The value is never `nil`. The
     ///   optional type makes the GraphQL field nullable.
-    /// - Throws: An error of ``ChangeFilter/init(parsing:)``.
+    /// - Throws: An error of ``ChangeFilter/init(parsing:)`` or of ``ChangeFilter/applied(to:readingNodesOf:)``.
     func history(context: KanbanContext, arguments: HistoryArguments) async throws(KanbanError) -> [Change]? {
         let filter = try ChangeFilter(parsing: arguments.filter)
         let currentEvents = await context.store.work.liveEvents
         let events = view.source?.events ?? currentEvents
         let changes = History(of: events, inBoard: view.boardKey).changes(after: arguments.since?.text)
         let pageSize = max(arguments.first ?? HistoryArguments.defaultPageSize, .zero)
-        return Array(filter.applied(to: changes.reversed(), readingNodesOf: view).prefix(pageSize))
+        return Array(try filter.applied(to: changes.reversed(), readingNodesOf: view).prefix(pageSize))
     }
 }

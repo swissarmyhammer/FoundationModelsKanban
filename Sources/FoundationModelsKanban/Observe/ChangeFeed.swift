@@ -102,9 +102,38 @@ final class ChangeFeed: Sendable {
             return subscribers.byID.values.filter { subscriber in subscriber.boardPath == path }
         }
         for subscriber in subscribers {
-            for change in subscriber.filter.applied(to: changes, readingNodesOf: view) {
+            send(changes, to: subscriber, readingNodesOf: view, resolvingIn: board)
+        }
+    }
+
+    /// Sends the changes that the filter of one subscriber keeps to that subscriber.
+    ///
+    /// The subscription checked its filter against the board when it started, but a later change can make the filter
+    /// fail: a merge can give a second task the short id of a `^id` value (`AMBIGUOUS_ID`). The stream of a subscriber
+    /// has no error, so the feed writes the error to the log and ends the stream of the subscriber. The client then
+    /// sees that the subscription ended, and can subscribe again with a full id.
+    ///
+    /// - Parameters:
+    ///   - changes: The changes, each of one transaction, in the order of their transactions.
+    ///   - subscriber: The subscriber.
+    ///   - view: The read view of the board now. The filter of the subscriber tests its nodes.
+    ///   - board: The board that the resolvers of the changes read.
+    private func send(
+        _ changes: [Change],
+        to subscriber: Subscriber,
+        readingNodesOf view: BoardView,
+        resolvingIn board: EventBoard
+    ) {
+        do {
+            for change in try subscriber.filter.applied(to: changes, readingNodesOf: view) {
                 subscriber.continuation.yield(ChangeEvent(change: change, board: board))
             }
+        } catch {
+            Log.kanban.error(
+                "The filter of a subscription fails on the board now; the subscription ends",
+                metadata: ["board": "\(view.boardKey)", "code": "\(error.code)", "message": "\(error.message)"]
+            )
+            subscriber.continuation.finish()
         }
     }
 

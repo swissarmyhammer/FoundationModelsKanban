@@ -199,14 +199,15 @@ struct Change: Sendable {
     ///   - arguments: The filter.
     /// - Returns: The updates that the filter keeps, in the order of ``nodeUpdates``. With no filter, each update. The
     ///   value is never `nil`. The optional type makes the GraphQL field nullable.
-    /// - Throws: An error of ``ChangeFilter/init(parsing:)`` or of ``KanbanContext/view(ofBoardOfChange:)``.
+    /// - Throws: An error of ``ChangeFilter/init(parsing:)``, of ``KanbanContext/view(ofBoardOfChange:)``, or of
+    ///   ``ChangeFilter/updates(of:readingNodesOf:)``.
     func updates(context: KanbanContext, arguments: FilterArguments) async throws(KanbanError) -> [NodeUpdate]? {
         let filter = try ChangeFilter(parsing: arguments.filter)
         guard arguments.filter != nil, let first = nodeUpdates.first else {
             return nodeUpdates
         }
         let view = try await context.view(ofBoardOfChange: first.boardKey)
-        return filter.updates(of: nodeUpdates, readingNodesOf: view)
+        return try filter.updates(of: nodeUpdates, readingNodesOf: view)
     }
 }
 

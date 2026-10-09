@@ -174,12 +174,28 @@ struct KanbanGraphTests {
         to log: EventLog
     ) throws -> ULID {
         let task = ids.makeULID()
+        try writeTask(task, titled: title, mintingFrom: &ids, to: log)
+        return task
+    }
+
+    /// Writes a task with a given ULID in the `todo` column.
+    ///
+    /// - Parameters:
+    ///   - task: The ULID of the task.
+    ///   - title: The title of the task.
+    ///   - ids: The ULID source of the event ids.
+    ///   - log: The event log of the board.
+    static func writeTask(
+        _ task: ULID,
+        titled title: String,
+        mintingFrom ids: inout FixedULIDSource,
+        to log: EventLog
+    ) throws {
         let patch = try PatchInput(
             node: .task(task),
             set: ["title": .json(.string(title)), "column": .ref(.local(todoColumn))]
         )
         try append(patch, mintingFrom: &ids, to: log)
-        return task
     }
 
     /// Writes the fixture logs: the board, one column, and one task in the column.

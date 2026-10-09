@@ -5,7 +5,7 @@ import Foundation
 ///
 /// The filter applies to `Board.tasks`, to `Board.nextTask`, to `Board.searchTasks`, and to the `tasks` fields of
 /// `Column`, `Actor`, and `Tag`. A filter that is empty or does not parse gives `INVALID_FILTER`. A value that names
-/// nothing gives no task.
+/// nothing gives no task. A `^id` value that is a short id of two or more tasks gives `AMBIGUOUS_ID`.
 ///
 /// A list leaves out the tasks in a hidden state (``VirtualTag/hiddenUnlessNamed``): the tombstones. A filter that
 /// names the tag of a state also selects from the tasks in that state, and the filter decides (``TaskFilter``,
@@ -41,8 +41,13 @@ struct TaskSelection {
     ///   - isIncluded: One more test that each task must pass, for example "the task has the virtual tag `READY`".
     /// - Returns: The tasks that pass `isIncluded` and the ``TaskFilter`` of the filter: a task in a hidden state
     ///   only when the filter names that state.
-    func tasks(in view: BoardView, where isIncluded: (TaskObject) -> Bool = { _ in true }) -> [TaskObject] {
-        let taskFilter = TaskFilter(filtering: filter, over: view.readiness, inBoard: view.boardKey)
+    /// - Throws: An error of ``TaskFilter/init(filtering:over:inBoard:)``, for example `AMBIGUOUS_ID` for a `^id`
+    ///   value that is a short id of two or more tasks.
+    func tasks(
+        in view: BoardView,
+        where isIncluded: (TaskObject) -> Bool = { _ in true }
+    ) throws(KanbanError) -> [TaskObject] {
+        let taskFilter = try TaskFilter(filtering: filter, over: view.readiness, inBoard: view.boardKey)
         return view.allTasks.filter { task in
             isIncluded(task) && taskFilter.matches(taskAt: task.slot)
         }

@@ -113,6 +113,32 @@ struct KanbanErrorTests {
         )
     }
 
+    @Test("AMBIGUOUS_ID for a short id that two ids share gives the full ids")
+    func sharedShortIDMessage() {
+        let owners = [ShortIDTests.ownerOf0123456, ShortIDTests.secondOwnerOf0123456]
+        let error = KanbanError.sharedShortID(reference: "^0123456", ids: owners)
+        #expect(error.code == "AMBIGUOUS_ID")
+        #expect(
+            error.message
+                == "The reference \"^0123456\" matches more than one id: 01KT6R6HR3KJT6JVNDR0123456, "
+                + "01KT6SAMJAJ40XVQ9YJ0123456. These ids have the same short id, so send one of these full ids."
+        )
+    }
+
+    @Test("The error of an ambiguous reference gives the short ids when they are unique, else the full ids")
+    func ambiguityGivesTheFormThatNamesOneID() {
+        let siblings = [ShortIDTests.siblingA, ShortIDTests.siblingB]
+        let owners = [ShortIDTests.ownerOf0123456, ShortIDTests.secondOwnerOf0123456]
+        #expect(
+            KanbanError.ambiguity(of: "01KT6SA", among: siblings)
+                == .ambiguousID(reference: "01KT6SA", matches: Self.ambiguousMatches)
+        )
+        #expect(
+            KanbanError.ambiguity(of: "^0123456", among: owners)
+                == .sharedShortID(reference: "^0123456", ids: owners)
+        )
+    }
+
     @Test("ACTOR_NOT_FOUND tells how to add the actor")
     func actorNotFoundMessage() {
         let error = KanbanError.actorNotFound(reference: "alice")

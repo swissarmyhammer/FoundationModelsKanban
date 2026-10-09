@@ -21,6 +21,10 @@ enum KanbanError: Error, Hashable, Sendable {
     /// `AMBIGUOUS_ID`: the reference is a prefix of more than one id. The matches are the short ids of these ids.
     case ambiguousID(reference: String, matches: [ShortID])
 
+    /// `AMBIGUOUS_ID`: the reference matches more than one id, and two or more of these ids have the same short id
+    /// (a merge can make such ids). A short id cannot name one of them, so the ids are the full ULIDs of the matches.
+    case sharedShortID(reference: String, ids: [String])
+
     /// `ACTOR_NOT_FOUND`: no actor has the reference.
     case actorNotFound(reference: String)
 
@@ -85,7 +89,7 @@ extension KanbanError {
         switch self {
         case .invalidVariables: "INVALID_VARIABLES"
         case .notFound, .boardNotFound: "NOT_FOUND"
-        case .ambiguousID: "AMBIGUOUS_ID"
+        case .ambiguousID, .sharedShortID: "AMBIGUOUS_ID"
         case .actorNotFound: "ACTOR_NOT_FOUND"
         case .duplicateID: "DUPLICATE_ID"
         case .columnNotEmpty: "COLUMN_NOT_EMPTY"
@@ -119,6 +123,9 @@ extension KanbanError {
         case .ambiguousID(let reference, let matches):
             "The reference \"\(reference)\" matches more than one id: \(Self.sigilList(of: matches)). "
                 + "Send one of these short ids."
+        case .sharedShortID(let reference, let ids):
+            "The reference \"\(reference)\" matches more than one id: \(ids.joined(separator: Self.listSeparator)). "
+                + "These ids have the same short id, so send one of these full ids."
         case .actorNotFound(let reference):
             "No actor has the reference \"\(reference)\". Add the actor with addActor, "
                 + "or use the id of an actor of the board."
@@ -179,6 +186,27 @@ extension KanbanError {
     /// - Returns: The list text.
     private static func sigilList(of shortIDs: [ShortID]) -> String {
         shortIDs.map { "\(ShortID.sigil)\($0.value)" }.joined(separator: listSeparator)
+    }
+}
+
+// MARK: - Ambiguous reference
+
+extension KanbanError {
+    /// Makes the `AMBIGUOUS_ID` error of a reference that matches more than one id.
+    ///
+    /// The error gives the form of the ids that names one id: the short ids when they are unique
+    /// (``ambiguousID(reference:matches:)``), else the full ids (``sharedShortID(reference:ids:)``).
+    ///
+    /// - Parameters:
+    ///   - reference: The reference as the caller wrote it.
+    ///   - ulids: The text of each ULID that the reference matches, in the order to show.
+    /// - Returns: The error.
+    static func ambiguity(of reference: String, among ulids: [String]) -> KanbanError {
+        let shortIDs = ulids.map(ShortID.init(ofULIDString:))
+        guard Set(shortIDs).count == shortIDs.count else {
+            return .sharedShortID(reference: reference, ids: ulids)
+        }
+        return .ambiguousID(reference: reference, matches: shortIDs)
     }
 }
 

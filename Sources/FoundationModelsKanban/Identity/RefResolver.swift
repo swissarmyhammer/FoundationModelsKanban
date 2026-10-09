@@ -17,7 +17,9 @@ import Foundation
 /// A ref names only a live node, unless the caller asks for tombstones (the undelete mutations do). A ref that names
 /// no node gives ``KanbanError/notFound(type:reference:)``. A URI that does not parse also gives that error, because
 /// the error catalog has no code for a ``NodeRefError``. A prefix of more than one ULID gives
-/// ``KanbanError/ambiguousID(reference:matches:)`` with the short ids of the matches.
+/// ``KanbanError/ambiguousID(reference:matches:)`` with the short ids of the matches. A short id that more than one
+/// ULID has (a merge can make such ULIDs) gives ``KanbanError/sharedShortID(reference:ids:)`` with the full ULIDs of
+/// the matches (``KanbanError/ambiguity(of:among:)``).
 ///
 /// ``anyLocalRef(for:)`` resolves a ref with no expected type, for `node(id:)` and `nodes(ids:)` (plan.md §4.1).
 struct RefResolver: Sendable {
@@ -84,6 +86,20 @@ struct RefResolver: Sendable {
         }
         let lookup = Lookup(reference: reference, type: ref.nodeType, includesTombstones: true)
         return try candidateRef(forKey: shortForm(of: ref), in: lookup)
+    }
+
+    /// Checks that a short form is not a short id that two or more tasks or comments of this board have, live or
+    /// tombstoned.
+    ///
+    /// A `^id` filter atom resolves its value among one task and its dependencies (``FilterEvaluator``), so it does
+    /// not find two tasks with the same short id. The filter calls this check one time, before it tests the nodes.
+    ///
+    /// - Parameters:
+    ///   - key: The short form, for example the value of a `^id` filter atom.
+    ///   - reference: The ref as the caller wrote it, for the error message, for example `^ajv8v4t`.
+    /// - Throws: ``KanbanError/sharedShortID(reference:ids:)`` when two or more tasks or comments have the short id.
+    func checkShortIDIsUnique(_ key: String, writtenAs reference: String) throws(KanbanError) {
+        try checkShortIDIsUnique(key, writtenAs: reference, among: Self.ulidTypes)
     }
 
     /// Finds the node of any type that a short form names, live or tombstoned.
@@ -268,7 +284,11 @@ extension RefResolver {
     ///   - lookup: The resolve.
     /// - Returns: The local ref of the node, or `nil` when no candidate matches.
     /// - Throws: ``KanbanError/ambiguousID(reference:matches:)`` when the key is a prefix of more than one candidate.
+    ///   ``KanbanError/sharedShortID(reference:ids:)`` when the key is a short id that two or more nodes of the ULID
+    ///   types have, live or tombstoned (``checkShortIDIsUnique(_:writtenAs:among:)``), or when two or more of the
+    ///   candidates that a prefix matches have the same short id.
     private func ulidRef(for key: String, in lookup: Lookup) throws(KanbanError) -> LocalRef? {
+        try checkShortIDIsUnique(key, writtenAs: lookup.reference, among: lookup.ulidTypes)
         let candidates = graph.allSlots
             .compactMap { slot in ref(at: slot, in: lookup) }
             .filter { candidate in lookup.ulidTypes.contains(candidate.nodeType) }
@@ -278,7 +298,34 @@ extension RefResolver {
         case .notFound:
             return nil
         case .ambiguous(let ulids):
-            throw .ambiguousID(reference: lookup.reference, matches: ulids.map(ShortID.init(ofULIDString:)))
+            throw .ambiguity(of: lookup.reference, among: ulids)
+        }
+    }
+
+    /// Checks that no two nodes of some types have the short id that a ULID form names.
+    ///
+    /// The check reads each node of the types, live or tombstoned, also when the lookup does not accept tombstones.
+    /// Thus, a short id that a live node and a tombstone share names no node (plan.md §3.2: a short id is a unique
+    /// ULID prefix).
+    ///
+    /// - Parameters:
+    ///   - key: The ULID form. Only a short id, with or without a leading ``ShortID/sigil``, can fail the check.
+    ///   - reference: The ref as the caller wrote it, for the error message.
+    ///   - types: The node types whose local id is a ULID that the form can name.
+    /// - Throws: ``KanbanError/sharedShortID(reference:ids:)`` with the full ULIDs, in slot order, when two or more
+    ///   nodes have the short id.
+    private func checkShortIDIsUnique(
+        _ key: String,
+        writtenAs reference: String,
+        among types: Set<PatchNodeType>
+    ) throws(KanbanError) {
+        let ulids = graph.allSlots
+            .compactMap { slot in graph.node(at: slot)?.ref }
+            .filter { ref in types.contains(ref.nodeType) }
+            .compactMap(\.localID)
+        let owners = ShortID.ulids(withShortIDOf: key, among: ulids)
+        guard owners.count < 2 else {
+            throw .sharedShortID(reference: reference, ids: owners)
         }
     }
 

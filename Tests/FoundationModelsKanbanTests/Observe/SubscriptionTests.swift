@@ -131,7 +131,7 @@ struct SubscriptionTests {
     ///   first event.
     /// - Throws: An error when the stream does not end before the time limit, or when the first event has no error
     ///   with `extensions`.
-    private static func errorCode(
+    static func errorCode(
         of stream: AsyncThrowingStream<String, Error>
     ) async throws -> (eventCount: Int, code: String?) {
         let events = try #require(try await allEvents(of: stream))

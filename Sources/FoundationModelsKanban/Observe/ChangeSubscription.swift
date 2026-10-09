@@ -21,8 +21,8 @@ extension KanbanResolver {
     /// - Returns: The changes. In a run that the engine runs again after it loads the board, the stream has ended
     ///   and the subscriber is not added.
     /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for `board`. An
-    ///   error of ``ChangeFilter/init(parsing:)``. ``KanbanError/notFound(type:reference:)`` when the board has no
-    ///   repo directory to watch.
+    ///   error of ``ChangeFilter/init(parsing:)`` or of ``ChangeFilter/check(against:)``.
+    ///   ``KanbanError/notFound(type:reference:)`` when the board has no repo directory to watch.
     func changes(context: KanbanContext, arguments: ChangesArguments) async throws(KanbanError) -> ChangeEvents {
         let store = context.store
         let events = try await Self.events(of: arguments, readIn: store, from: context.feed)
@@ -40,7 +40,9 @@ extension KanbanResolver {
     ///   - feed: The change feed.
     /// - Returns: The events of the subscriber, or a stream that has ended when the engine did not load the board
     ///   yet. The engine then runs the call again after the load.
-    /// - Throws: An error of ``BoardStore/view(ofBoard:)`` or of ``ChangeFilter/init(parsing:)``.
+    /// - Throws: An error of ``BoardStore/view(ofBoard:)``, of ``ChangeFilter/init(parsing:)``, or of
+    ///   ``ChangeFilter/check(against:)`` on the board now, for example `AMBIGUOUS_ID` for a `^id` value that is a
+    ///   short id of two or more tasks.
     ///   ``KanbanError/notFound(type:reference:)`` for the board when the board has no repo directory to watch, for
     ///   example a board in memory only. The subscription then gives one response with the error, and ends.
     private static func events(
@@ -52,6 +54,7 @@ extension KanbanResolver {
             return endedEvents()
         }
         let filter = try ChangeFilter(parsing: arguments.filter)
+        try filter.check(against: view)
         guard let directory = view.source?.directory else {
             Log.kanban.error(
                 "A subscription names a board in memory only; the subscription ends",
