@@ -850,7 +850,6 @@ More filters: `filter: "~column"` gives the column updates, `filter: "^<id>"` th
 - **Serial gate.** A subscription stream does not hold the serial gate of `execute` (§7.2). Each `Change` is resolved through the gate, one at a time.
 - **Engine.** `graphqlSubscribe` of GraphQLSwift/GraphQL returns `Result<any AsyncSequence & Sendable, GraphQLErrors>`. Graphiti declares the `changes` field with `SubscriptionField`, whose resolver returns an `AsyncSequence & Sendable`. `KanbanGraph` gives an `AsyncStream<Change>` for each subscriber.
 - **In the tool.** When the selected operation of a document sent through `KanbanTool` is a `subscription`, the tool returns the error `SUBSCRIPTION_NOT_IN_TOOL` (§7.1). The message tells the agent to use `board { history(since: <txn>) }` to get the changes after a known transaction.
-- **In the CLI.** `kanban watch '<subscription>'` prints one JSON line for each event, until the user stops it.
 
 See §12, item 17.
 
@@ -909,7 +908,7 @@ struct KanbanArguments: ConvertibleFromGeneratedContent {
 ### 7.2 Public API
 
 ```swift
-public actor KanbanGraph {                     // the engine: the tool, the CLI, a GUI, and tests use it
+public actor KanbanGraph {                     // the engine: the tool, a GUI, and tests use it
     public init(root: URL, actor: String?, locator: BoardLocator = .default,   // locator holds the extra search roots
                 embedder: (any PooledEmbedding)? = nil) throws
     public func execute(query: String, variables: [String: Map], operationName: String?) async throws -> String
@@ -929,14 +928,13 @@ public struct KanbanTool: Tool {
 - **What `KanbanGraph` keeps across calls:** the board index (§6.6), one `MetadataSearcher` for each board (§6.4), the live `Graph`, the file signatures, and the file watcher of each loaded board (§5.6), and the active subscribers (§6.7).
 - **What it makes on each call:** only a working copy of each graph for a mutation (§5.4). It does not load a board again.
 - It is an `actor`, so its state is safe. An actor can run a second call at each `await`, so the actor alone does not make calls run one at a time. Thus, `execute` also goes through a serial gate (an async queue), and calls in the same process run one at a time. The file locks and the commit check (§5.4) protect against other processes.
-- A CLI target (`kanban`) runs `kanban '<document>' [--variables <json>]` against the current directory. `kanban watch '<subscription>'` prints one JSON line for each event (§6.7). `kanban --schema` prints the generated SDL.
 
 ### 7.3 The agent plan
 
 The tool complies with the ACP agent plan (https://agentclientprotocol.com/protocol/v2/agent-plan). The plan goes to the client through the `ToolContext` of FoundationModelsExtras: `ToolContext.progress(_ detail:, plan:)` posts one `.progress` event with a `PlanSnapshot`. The model gets only the detail line. It never gets the plan.
 
 - **When.** A `KanbanTool` call reads `ToolContext.current` one time and gives it to the engine (`Tool/AgentPlan.swift`). After the call commits, the engine reads the changes that the commit path already takes for the change feed (§6.7): the changes of each loaded board in this operation of the serial gate. For each board whose changes patch a task (add, update, move, complete, assign, tag, delete, undelete, undo, redo), the call posts one `.progress` event with the plan of that board, in the sort order of the path of the repo directory. A query and a mutation that patches no task (for example `addTag` or `addComment`) post nothing. The engine decides from the result of the commit, not from a throw: a call whose commit fails posts nothing, because it wrote nothing. This includes a call whose response is one error of the commit path (for example `BOARD_BUSY`), and a call that throws an I/O fault. The commit check of a failed call can apply the changes of a different process to the live graph, and those changes still go to the change feed, but they give no plan post. A changed board that a commit check applied from a different process before a successful commit is also in the changes, so its plan goes out too.
-- **No context, no work.** The public `KanbanGraph.execute`, `subscribe`, and the batches of the file watcher give no context. Thus the CLI, a GUI, and a direct `execute` do no plan work, also when a `ToolContext` is bound around them. The file watcher must not read the task-local: its consumer task inherits the task-local of the first call.
+- **No context, no work.** The public `KanbanGraph.execute`, `subscribe`, and the batches of the file watcher give no context. Thus a GUI and a direct `execute` do no plan work, also when a `ToolContext` is bound around them. The file watcher must not read the task-local: its consumer task inherits the task-local of the first call.
 - **Plan id.** The board key. Each board is one plan, and each post replaces the plan with that id.
 - **Entries.** The full list, never a partial list: one entry for each live task of the board, in board order (column order, then ordinal, then ULID). `content` is the task title. A tombstone is not in the plan.
 - **Status.** A done task (`DONE`) is `completed`. A task in the first column is `pending`. Each other live task is `in_progress`.
@@ -969,7 +967,6 @@ FoundationModelsKanban/
       Observe/       ChangeFeed.swift (subscribers), BoardWatcher.swift (FSEvents, batches, file signatures),
                      LiveGraph.swift (apply a batch, unresolved refs, large-change reload)
       Tool/          KanbanTool.swift, KanbanArguments.swift, KanbanGraph.swift, AgentPlan.swift (§7.3)
-    kanban/          KanbanMain.swift (CLI)
   Tests/
     FoundationModelsKanbanTests/
 ```
@@ -981,7 +978,6 @@ Dependencies. Get siblings by URL, the same as CodeContext:
 - `GraphQLSwift/Graphiti` (`https://github.com/GraphQLSwift/Graphiti`) to build the schema from Swift types. See §12, item 9.
 - A ULID package. Use the same package as Multitool.
 - `FoundationModelsMetadataRegistry` (it also brings `FoundationModelsRanker`) for `searchTasks`. See §6.4.
-- swift-argument-parser for the CLI.
 - `pointfreeco/swift-parsing` (`https://github.com/pointfreeco/swift-parsing`) for the filter DSL (§6.3). See §12, item 24.
 - swift-log. Optional: swift-distributed-tracing and swift-metrics (API only), the same as CodeContext.
 - `FoundationModelsExtras` for `PooledEmbedding` (§6.4), and for `ToolContext` and `PlanSnapshot` of the agent plan (§7.3). The `Operations` product is not necessary.
@@ -1017,7 +1013,7 @@ await tools.kanban({
 
 Each step must compile and pass its tests before the next step starts.
 
-1. **Package scaffold.** `Package.swift`, empty library, CLI target, test target, `README.md`.
+1. **Package scaffold.** `Package.swift`, empty library, test target, `README.md`.
 2. **GraphQL engine.** Add `GraphQLSwift/GraphQL`. Add `GraphQLSwift/Graphiti`. Build the public schema and the internal `patch` schema from Swift types with Graphiti. Connect async resolvers under Swift 6 strict concurrency. Run one query and one mutation end to end. If the library has a Swift 6 concurrency problem, correct it in our wrapper code; do not change the engine.
 3. **Identity.** `NodeURI`, `LocalRef` (the stored form, and the conversion to and from `NodeURI` with the current board key, §3.2), `BoardKey` (from the current git remote), ULID minting with unique short ids, `RefResolver` (URI, ULID, short id, `^short`, prefix, slug, tag name, ambiguous result).
 4. **Ordinal.** Fractional index: `first`, `after`, `before`, `between`.
@@ -1032,8 +1028,8 @@ Each step must compile and pass its tests before the next step starts.
 13. **Search.** `searchTasks` with `MetadataSearcher` (§6.4). Test it first with no embedder, then with an injected fake embedder.
 14. **Undo and redo.** The inverse table, the undone state derived from the log, conflict detection, `force`, and the `history` query (§6.5), in one board.
 15. **Cross-repo.** `BoardLocator` (scan, search roots, index), board refs, `Query.board(id:)` and `boards`, the `board` field on mutations, multi-board locks, the replay scope (§5.4), enabling a related repo, and `undo` of a transaction that spans boards (§6.6). Unknown targets count as not done.
-16. **Observe changes.** `Change` with `NodeUpdate` and `FieldChange` for all node types, the before-and-after compare with the updates of derived fields, `Subscription.changes` with its filter, `history(since:)`, the change feed for commits in this process and for batches from the file watcher, and `kanban watch` (§6.7).
-17. **Tool and CLI.** `KanbanTool`, `KanbanArguments`, the short tool description with its tested example, and the `kanban` CLI.
+16. **Observe changes.** `Change` with `NodeUpdate` and `FieldChange` for all node types, the before-and-after compare with the updates of derived fields, `Subscription.changes` with its filter, `history(since:)`, and the change feed for commits in this process and for batches from the file watcher (§6.7).
+17. **Tool.** `KanbanTool`, `KanbanArguments`, and the short tool description with its tested example.
 18. **Multitool proof.** A test that registers the tool in a `MultiTool.Builder` and runs a `runCode` script that adds a task, reads `nextTask`, and moves the task. The script passes `variables` once as an object and once as a JSON string.
 
 ## 11. Testing

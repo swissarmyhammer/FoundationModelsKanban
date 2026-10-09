@@ -106,17 +106,11 @@ struct CIWorkflowTests {
         #expect(jobKeys == Self.jobKeys, "ci.yml must have the jobs \(Self.jobKeys); found \(jobKeys)")
     }
 
-    /// Reads the workflow file from the repository root. `#filePath` is
-    /// `Tests/FoundationModelsKanbanTests/CIWorkflowTests.swift`, two directories below the root.
+    /// Reads the workflow file from the repository root.
     ///
     /// - Returns: each line of the workflow file, with its indent.
     /// - Throws: an error when the file cannot be read.
     private static func workflowLines() throws -> [Substring] {
-        let repositoryRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()  // Tests/FoundationModelsKanbanTests/
-            .deletingLastPathComponent()  // Tests/
-            .deletingLastPathComponent()  // repository root
-        let text = try String(contentsOf: repositoryRoot.appendingPathComponent(workflowPath), encoding: .utf8)
-        return text.split(separator: "\n", omittingEmptySubsequences: false)
+        try RepositoryFile.lines(at: workflowPath)
     }
 }

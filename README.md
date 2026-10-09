@@ -3,22 +3,40 @@
 FoundationModelsKanban is a kanban task graph for Swift. You read and change
 the graph with GraphQL: one document goes in, and one `{data, errors}`
 response comes out. The package moves the kanban function of the Rust
-`swissarmyhammer` tool to Swift. It gives a `KanbanGraph` engine, a
-FoundationModels `kanban` tool for in-process agents, and a `kanban`
-command-line tool. Each board is an event log in the `.kanban/` directory of
-its git repo. The port is not complete. See [plan.md](plan.md) for the design
-and the port order.
+`swissarmyhammer` tool to Swift. It gives a `KanbanGraph` engine and a
+FoundationModels `kanban` tool for in-process agents. Each board is an event
+log in the `.kanban/` directory of its git repo. The port is not complete. See
+[plan.md](plan.md) for the design and the port order.
 
 ## Examples
 
 Each list takes one `filter` (plan.md §6.3). The same filter selects the tasks
-of a list and the updates of the change feed:
+of a list and the updates of the change feed.
 
-```sh
-kanban '{ board { tasks(filter: "#bug && @alice") { edges { node { id title } } } } }'
-kanban '{ board { history(filter: "~column", first: 5) { txn ops updates { id kind } } } }'
-kanban '{ board { history(filter: "^01jabcd") { txn actor { name } updates { fields { name before after } } } } }'
-kanban watch 'subscription { changes(filter: "#bug || ~comment") { txn ops updates { id type kind } } }'
+The tasks that have the tag `bug` and the assignee `alice`:
+
+```graphql
+{ board { tasks(filter: "#bug && @alice") { edges { node { id title } } } } }
+```
+
+The five newest changes that have a column update:
+
+```graphql
+{ board { history(filter: "~column", first: 5) { txn ops updates { id kind } } } }
+```
+
+The changes that have an update of one node:
+
+```graphql
+{ board { history(filter: "^01jabcd") { txn actor { name } updates { fields { name before after } } } } }
+```
+
+A subscription to the updates of the tasks that have the tag `bug`, and to the
+updates of each comment. `KanbanGraph.subscribe` runs a subscription. The
+`kanban` tool does not run a subscription.
+
+```graphql
+subscription { changes(filter: "#bug || ~comment") { txn ops updates { id type kind } } }
 ```
 
 - `~type` keeps the updates of one node type: `~task`, `~column`, `~tag`,

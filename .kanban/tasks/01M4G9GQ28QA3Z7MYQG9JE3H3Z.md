@@ -17,8 +17,17 @@ comments:
     - evidence: deleted Sources/kanban/KanbanMain.swift, Tests/FoundationModelsKanbanTests/CLI/KanbanCLITests.swift, Tests/FoundationModelsKanbanTests/CLI/KanbanProcess.swift; changed Package.swift, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift, Tests/FoundationModelsKanbanTests/Tool/KanbanGraphTests.swift, Tests/FoundationModelsKanbanTests/Identity/BoardKeyTests.swift. Package.resolved files: no change from swift package resolve, same pins. swift test: 1094 tests in 79 suites passed. swift build --build-tests: only the accepted "missing creator" warning. swift build --build-tests --package-path IntegrationTests: build complete, only accepted mlx warnings. Acceptance rg: no result.
     - next: /review
   timestamp: 2026-10-09T20:05:42.372035+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4h4gdskrfx8qv5n1z4t56z5
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 3 files deleted, 4 files changed
+    - test: green — swift test, 1094 tests in 79 suites passed; IntegrationTests build complete
+    - commit: 35d0872
+    - review: clean — 0 findings
+  timestamp: 2026-10-09T20:08:40.499362+00:00
+position_column: done
+position_ordinal: d780
 title: Remove the kanban CLI from the code
 ---
 ## What
