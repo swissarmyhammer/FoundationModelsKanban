@@ -5,14 +5,14 @@ import ULID
 
 @testable import FoundationModelsKanban
 
-/// Tests `renameTag` to the slug of a tombstoned tag (plan.md §6.2, §6.5). A rename to a slug that exists is a merge,
-/// so the rename writes `delete: false` on the tombstone, and the tasks with the old tag show the target. `undo` of the
-/// rename reverses the two patches.
+/// Tests `renameTag` to the slug of a tag that exists (plan.md §6.2, §6.5). A rename to a slug that exists is a merge.
+/// When the target is a tombstone, the rename writes `delete: false` on it, and the tasks with the old tag show the
+/// target. `undo` of the rename reverses the two patches. When the target is live, the rename writes no patch on it.
 ///
 /// Each test runs ``ChangeBuilderTests/baseSetup``, which adds ``TagMutationTests/bug``, in a commit session of the
-/// fixture board. Then the test runs three calls: a `tagTask` of the fixture task with `bug`, an `addTag` of
-/// ``TagMutationTests/defect``, and a `deleteTag` of `defect`.
-@Suite("Tag rename to a deleted tag")
+/// fixture board. Then the test runs a `tagTask` of the fixture task with `bug` and an `addTag` of
+/// ``TagMutationTests/defect``. For a deleted target, the test also runs a `deleteTag` of `defect`.
+@Suite("Tag rename to a tag that exists")
 struct TagRenameToTombstoneTests {
     /// The local ref of the rename target ``TagMutationTests/defect``.
     static let defectTag = LocalRef.tag(slug: TagMutationTests.defect)
@@ -20,7 +20,11 @@ struct TagRenameToTombstoneTests {
     /// The selection of the `renameTag` field: the id of the tag and the time of its delete.
     static let renameSelection = "{ id deleted }"
 
-    /// The `delete` values of the patches on the target after the rename: the `deleteTag` of the setup, then the
+    /// The `delete` values of the patches on a live target after the rename: none. A merge into a live tag writes no
+    /// patch on the target.
+    static let deletesAfterMerge: [Bool] = []
+
+    /// The `delete` values of the patches on a deleted target after the rename: the `deleteTag` of the setup, then the
     /// `delete: false` of the rename.
     static let deletesAfterRename = [true, false]
 
@@ -30,20 +34,25 @@ struct TagRenameToTombstoneTests {
 
     // MARK: - Helpers
 
-    /// Runs the base setup, then the three setup calls of this suite, each in its own transaction.
+    /// Runs the base setup, then the setup calls of this suite, each in its own transaction.
     ///
-    /// - Parameter directory: The temporary repo directory.
+    /// - Parameters:
+    ///   - isDeleted: `true` to delete the target after its `addTag`, `false` to keep it live.
+    ///   - directory: The temporary repo directory.
     /// - Returns: The session after the setup, and the ULID of the fixture task.
-    static func sessionWithDeletedTarget(
+    static func sessionWithTarget(
+        isDeleted: Bool,
         inRepoAt directory: TemporaryDirectory
     ) async throws -> (session: CommitSession, task: ULID) {
         let base = try await ChangeBuilderTests.baseSession(inRepoAt: directory)
         var session = base.session
-        let fields = [
+        var fields = [
             ChangeBuilderTests.tagField(of: ChangeBuilderTests.refs(of: base.task, in: session)),
             TagMutationTests.addTag(named: TagMutationTests.defect),
-            CommentTests.nodeField(MutationName.deleteTag, naming: TagMutationTests.defect),
         ]
+        if isDeleted {
+            fields.append(CommentTests.nodeField(MutationName.deleteTag, naming: TagMutationTests.defect))
+        }
         try await HistoryTests.run(eachOf: fields, in: &session)
         return (session, base.task)
     }
@@ -79,17 +88,27 @@ struct TagRenameToTombstoneTests {
     @Test("renameTag to a deleted tag writes delete false on the target, and returns the live target")
     func renameRevivesTarget() async throws {
         let directory = try TemporaryDirectory()
-        var session = try await Self.sessionWithDeletedTarget(inRepoAt: directory).session
+        var session = try await Self.sessionWithTarget(isDeleted: true, inRepoAt: directory).session
         let renamed = try await Self.renameBugToDefect(in: &session)
         #expect(renamed == ["id": Map(ColumnActorTests.id(of: Self.defectTag)), "deleted": .null])
         let patches = try ColumnActorTests.patches(of: Self.defectTag, in: directory)
         #expect(try patches == Self.targetPatches(deleting: Self.deletesAfterRename))
     }
 
+    @Test("renameTag to a live tag writes no patch on the target, and returns the live target")
+    func mergeIntoLiveTargetWritesNoTargetPatch() async throws {
+        let directory = try TemporaryDirectory()
+        var session = try await Self.sessionWithTarget(isDeleted: false, inRepoAt: directory).session
+        let renamed = try await Self.renameBugToDefect(in: &session)
+        #expect(renamed == ["id": Map(ColumnActorTests.id(of: Self.defectTag)), "deleted": .null])
+        let patches = try ColumnActorTests.patches(of: Self.defectTag, in: directory)
+        #expect(try patches == Self.targetPatches(deleting: Self.deletesAfterMerge))
+    }
+
     @Test("After renameTag to a deleted tag, the task with the old tag shows the target")
     func renamedTaskShowsTarget() async throws {
         let directory = try TemporaryDirectory()
-        let setup = try await Self.sessionWithDeletedTarget(inRepoAt: directory)
+        let setup = try await Self.sessionWithTarget(isDeleted: true, inRepoAt: directory)
         var session = setup.session
         try await Self.renameBugToDefect(in: &session)
         let task = UndoTests.projection(of: session)[.task(setup.task)]
@@ -101,7 +120,7 @@ struct TagRenameToTombstoneTests {
     @Test("undo of renameTag to a deleted tag gives the projection before the rename, and deletes the target again")
     func undoRestoresDeletedTarget() async throws {
         let directory = try TemporaryDirectory()
-        var session = try await Self.sessionWithDeletedTarget(inRepoAt: directory).session
+        var session = try await Self.sessionWithTarget(isDeleted: true, inRepoAt: directory).session
         let before = UndoTests.projection(of: session)
         try await Self.renameBugToDefect(in: &session)
         try await UndoTests.reverse(in: &session)

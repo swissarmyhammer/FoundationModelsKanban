@@ -213,8 +213,26 @@ extension WorkingCopy {
             try addNode(ref, setting: values, body: body, at: time)
             return ref
         }
+        return try undeleteTag(redirectedFrom: ref, at: time)
+    }
+
+    /// Follows the rename redirect from a tag that the graph has, and makes the tag at the end of the chain live
+    /// (plan.md §6.2).
+    ///
+    /// Only a tombstone at the end of the chain gets a `delete: false` patch. A live tag at the end of the chain gets
+    /// no patch. This check is explicit, so the contract does not depend on the commit path, which also drops a patch
+    /// that changes nothing.
+    ///
+    /// - Parameters:
+    ///   - ref: The local ref of a tag that the graph has.
+    ///   - time: The time of the change.
+    /// - Returns: The local ref of the tag at the end of the rename chain.
+    /// - Throws: An ``EventError`` when the patch breaks a rule of the log.
+    private mutating func undeleteTag(redirectedFrom ref: LocalRef, at time: DateTime) throws(EventError) -> LocalRef {
         let target = graph.tagRef(redirectedFrom: ref)
-        try apply(PatchInput(node: target, delete: false), at: time)
+        if graph.node(for: target)?.state.fields.isDeleted == true {
+            try apply(PatchInput(node: target, delete: false), at: time)
+        }
         return target
     }
 
@@ -224,9 +242,10 @@ extension WorkingCopy {
     ///    old tag, and an `edit` with the body of the old tag.
     /// 2. The old tag gets a `set` of `renamedTo`.
     ///
-    /// A rename to a slug that the graph has is a merge: patch 1 is not written. When the end of the rename chain of
-    /// that slug is a tombstone, that tag gets a `delete: false` patch before patch 2, the same as in
-    /// ``ensureLiveTag(_:setting:body:at:)``. A rename to the slug of the tag itself writes nothing.
+    /// A rename to a slug that the graph has is a merge: patch 1 is not written. The merge writes a patch on the target
+    /// only when the end of the rename chain of that slug is a tombstone: that tag gets a `delete: false` patch before
+    /// patch 2, from ``undeleteTag(redirectedFrom:at:)``. A merge into a live tag writes no patch on the target. A
+    /// rename to the slug of the tag itself writes nothing.
     ///
     /// - Parameters:
     ///   - source: The local ref of the tag to rename.
@@ -240,11 +259,15 @@ extension WorkingCopy {
         guard target != source else {
             return source
         }
-        let color = (graph.node(for: source)?.state as? TagNode)?.resolvedColor
-        let values = [String: PatchValue](
-            givenValues: [PropertyName.name: .string(name.name), PropertyName.color: color.map(PatchValue.string)]
-        )
-        _ = try ensureLiveTag(target, setting: values, body: graph.body(of: source), at: time)
+        if graph.hasNode(target) {
+            _ = try undeleteTag(redirectedFrom: target, at: time)
+        } else {
+            let color = (graph.node(for: source)?.state as? TagNode)?.resolvedColor
+            let values = [String: PatchValue](
+                givenValues: [PropertyName.name: .string(name.name), PropertyName.color: color.map(PatchValue.string)]
+            )
+            try addNode(target, setting: values, body: graph.body(of: source), at: time)
+        }
         try apply(PatchInput(node: source, set: [PropertyName.renamedTo: .ref(.local(target))]), at: time)
         let start = graph.slot(for: source)
         try checkNoRenameCycle(fromTagAt: start)
