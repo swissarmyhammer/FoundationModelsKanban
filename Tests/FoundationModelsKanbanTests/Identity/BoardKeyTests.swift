@@ -142,11 +142,26 @@ struct BoardKeyTests {
         let sandbox = try GitSandbox()
         let directory = sandbox.root.appending(path: "plain-directory", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        await #expect {
-            try await BoardKey.read(fromRepoAt: directory)
-        } throws: { error in
-            if case .gitFailed = error as? BoardKeyError { true } else { false }
-        }
+        await #expect(performing: { try await BoardKey.read(fromRepoAt: directory) }, throws: Self.isGitFailure)
+    }
+
+    @Test("An engine that reads the key from git throws a git failure at its first call outside a git repo")
+    func engineOutsideRepoThrows() async throws {
+        let sandbox = try GitSandbox()
+        let graph = try GitGraphFixture.makeGraph(at: sandbox.root)
+        await #expect(
+            performing: { try await KanbanGraphTests.execute(KanbanGraphTests.nameQuery, on: graph) },
+            throws: Self.isGitFailure
+        )
+        await graph.close()
+    }
+
+    /// Tells if an error is a git failure of the board key read.
+    ///
+    /// - Parameter error: The error that a call threw.
+    /// - Returns: `true` when the error is ``BoardKeyError/gitFailed(arguments:status:message:)``.
+    private static func isGitFailure(_ error: any Error) -> Bool {
+        if case .gitFailed = error as? BoardKeyError { true } else { false }
     }
 
     // MARK: - Git process

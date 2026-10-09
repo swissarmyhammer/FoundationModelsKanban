@@ -33,8 +33,24 @@ comments:
     - evidence: 5 files — Sources/FoundationModelsKanban/Identity/BoardKey.swift, Sources/FoundationModelsKanban/CrossRepo/BoardLocator.swift, Sources/FoundationModelsKanban/Identity/RefResolver.swift, Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift, Tests/FoundationModelsKanbanTests/Identity/RefResolverTests.swift. `swift test`: 1100 tests in 80 suites passed, 0 failed. The only build warning is the accepted SwiftPM "missing creator for mutated node" warning.
     - next: /review
   timestamp: 2026-10-09T19:57:06.355999+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4h3zxb34y7ykdbgypkmaas0
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings (5 files reviewed: BoardKey.swift, BoardLocator.swift, RefResolver.swift, BoardLocatorTests.swift, RefResolverTests.swift; 4 .kanban files not reviewed by .reviewignore). The HEAD commit message agrees with the diff. Each acceptance and test item is met: `BoardIndex.boardKey(in:)` and `RefResolver.candidateRef(forKey:in:)` normalize a bare key with `BoardKey.normalizedText(of:)`; `BoardLocatorTests.mixedCaseHostKeyResolves` and `RefResolverTests` (`boardResolves` with `NodeURITests.mixedCaseKey`, `mixedCaseBoardKeyResolvesWithNoType`) test a mixed-case host.
+    - next: none — task moved to done
+  timestamp: 2026-10-09T19:59:39.363716+00:00
+- actor: claude-code
+  id: 01m4h3zy8pqeceh8rhex97dq9m
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 5 files
+    - test: green — swift test, 1100 tests in 80 suites passed
+    - commit: 6a4d4d2
+    - review: clean — 0 findings
+  timestamp: 2026-10-09T19:59:40.310661+00:00
+position_column: done
+position_ordinal: d680
 title: Bare board key ignores host case
 ---
 ## What

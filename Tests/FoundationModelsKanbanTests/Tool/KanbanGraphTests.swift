@@ -354,6 +354,13 @@ struct KanbanGraphTests {
         #expect(KanbanGraph.schemaSDL.contains("board(id: String): Board"))
         #expect(!KanbanGraph.schemaSDL.contains("patch"))
     }
+
+    @Test("The schema SDL is not empty, and it has the Query type and the Task type")
+    func schemaSDLHasQueryAndTaskTypes() {
+        #expect(!KanbanGraph.schemaSDL.isEmpty)
+        #expect(KanbanGraph.schemaSDL.contains("type Query "))
+        #expect(KanbanGraph.schemaSDL.contains("type Task "))
+    }
 }
 
 // MARK: - Call recorder

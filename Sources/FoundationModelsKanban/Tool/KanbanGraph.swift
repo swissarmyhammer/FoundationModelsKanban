@@ -4,7 +4,7 @@ import GraphQL
 
 /// The engine of the kanban tool: one GraphQL endpoint over the board of a repo (plan.md §7.2).
 ///
-/// The tool, the CLI, a GUI, and the tests use the same engine. The host makes one engine and gives it to each client
+/// The tool, a GUI, and the tests use the same engine. The host makes one engine and gives it to each client
 /// in the process, so that all clients share one live graph and one serial gate.
 ///
 /// The first call that needs the board reads the board key from git, and loads the board from its logs with the
