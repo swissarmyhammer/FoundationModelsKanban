@@ -66,6 +66,9 @@ public actor KanbanGraph {
     /// Gets a call when a file watcher applies a batch, or `nil` for no calls.
     private let batchObserver: (any LiveGraphObserver)?
 
+    /// The writer of the appends of each commit to the logs of each board.
+    private let logWriter: any EventLogWriter
+
     /// The load state of the current board: its live graph and its commit path after the first call loads it.
     private var loadState = LoadState.notLoaded
 
@@ -145,6 +148,7 @@ public actor KanbanGraph {
     ///   - embedder: The embedder of `searchTasks`, or `nil` for BM25 and trigram only.
     ///   - observer: Gets a call when each call starts and ends, or `nil` for no calls.
     ///   - batchObserver: Gets a call when a file watcher applies a batch, or `nil` for no calls.
+    ///   - logWriter: The writer of the appends of each commit. The default writes the log files.
     /// - Throws: An error from Graphiti when a type of the public schema is not valid.
     init(
         root: URL,
@@ -155,7 +159,8 @@ public actor KanbanGraph {
         locatedBy locator: BoardLocator = .default,
         embeddingWith embedder: (any PooledEmbedding)? = nil,
         reportingTo observer: (any KanbanCallObserver)? = nil,
-        observingBatchesWith batchObserver: (any LiveGraphObserver)? = nil
+        observingBatchesWith batchObserver: (any LiveGraphObserver)? = nil,
+        writingLogsWith logWriter: any EventLogWriter = FileEventLogWriter()
     ) throws {
         self.root = root
         self.keyReader = keyReader
@@ -167,6 +172,7 @@ public actor KanbanGraph {
         search = TaskSearch(embeddingWith: embedder)
         self.observer = observer
         self.batchObserver = batchObserver
+        self.logWriter = logWriter
         schema = try PublicSchema()
     }
 
@@ -552,7 +558,8 @@ public actor KanbanGraph {
             actingAs: sessionActor,
             mintingFrom: idSource,
             timedBy: clock,
-            searchingWith: search
+            searchingWith: search,
+            writingWith: logWriter
         )
         await loaded.updateSearch()
         return loaded

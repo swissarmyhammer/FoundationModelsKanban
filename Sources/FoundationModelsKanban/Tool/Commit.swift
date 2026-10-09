@@ -285,6 +285,9 @@ struct CommitSession: Sendable {
     /// The ranked search over the tasks of the board. The session updates it after each change of the live graph.
     private let search: TaskSearch
 
+    /// The writer of the appends of a commit to the logs of the board.
+    fileprivate let writer: any EventLogWriter
+
     /// Makes the session of a loaded board.
     ///
     /// - Parameters:
@@ -294,13 +297,15 @@ struct CommitSession: Sendable {
     ///   - ids: The source of the transaction ULIDs and the event ids.
     ///   - clock: The clock that gives the time of an empty board.
     ///   - search: The ranked search over the tasks of the board.
+    ///   - writer: The writer of the appends of a commit to the logs of the board.
     init(
         of live: LiveGraph,
         inBoard key: BoardKey,
         actingAs actor: SessionActor,
         mintingFrom ids: any ULIDSource,
         timedBy clock: @escaping @Sendable () -> DateTime,
-        searchingWith search: TaskSearch
+        searchingWith search: TaskSearch,
+        writingWith writer: any EventLogWriter
     ) {
         self.live = live
         self.key = key
@@ -308,6 +313,7 @@ struct CommitSession: Sendable {
         self.ids = ids
         self.clock = clock
         self.search = search
+        self.writer = writer
     }
 
     /// Gives the live tasks of the board to the search (plan.md §6.4, life of the searcher). The searcher embeds again
@@ -506,20 +512,22 @@ struct CommitSession: Sendable {
     /// signatures of the log files of each locked board with its live graph. When a log of one board changed, the
     /// commit applies the changed files to the live graph of each locked board and writes nothing. Else it appends
     /// the kept patches of each changed board with the `ops` of the full call and the keys of the other changed
-    /// boards, and each working copy becomes the live graph of its board.
+    /// boards, and each working copy becomes the live graph of its board. When an append fails, the commit puts
+    /// each log file that it changed back, and no live graph changes.
     ///
     /// - Parameters:
     ///   - work: The working copy of the current board at the end of the run.
     ///   - related: The working copy of each related board that the run changed or read for a graph rule.
     /// - Returns: The result: the patches are written, or a log changed and the call must run again. The result
     ///   holds the session of each related board after the attempt.
-    /// - Throws: An ``EventLogError`` when a log file cannot be read, locked, or written.
+    /// - Throws: An ``EventLogError`` when a log file cannot be read, locked, or written. Then no log file keeps a
+    ///   part of the transaction, and no live graph changes.
     private mutating func commit(
         _ work: WorkingCopy,
         along related: [RelatedWork]
     ) async throws(EventLogError) -> CommitAttempt {
         let reads = work.boardsRead(along: related)
-        var writes = [BoardWrite(key: key, path: directory.canonicalPath, live: live, work: work)]
+        var writes = [BoardWrite(key: key, path: directory.canonicalPath, live: live, work: work, writer: writer)]
             + related.map(\.boardWrite)
         let lockedBoards = writes.indices.filter { index in
             writes[index].hasPatches || reads.contains(writes[index].path)
@@ -531,11 +539,7 @@ struct CommitSession: Sendable {
             isLogChanged = isLogChanged || isChanged
         }
         if !isLogChanged {
-            let changedBoards = writes.indices.filter { index in writes[index].hasPatches }
-            let keys = changedBoards.map { index in writes[index].key.description }
-            for index in changedBoards {
-                try writes[index].append(recording: Array(work.operations), changing: keys)
-            }
+            try Self.append(&writes, recording: Array(work.operations))
         }
         lock.unlock()
         live = writes[0].live
@@ -545,6 +549,56 @@ struct CommitSession: Sendable {
             }
         )
         return isLogChanged ? .logChanged(sessions) : .committed(sessions)
+    }
+
+    /// Appends the kept patches of each changed board, and then makes each working copy the live graph of its board
+    /// (plan.md §5.4 steps 5.3 to 5.5). No live graph changes until each append of each board succeeds.
+    ///
+    /// Before the first append, the commit records the state of each log file that it changes. When an append or the
+    /// read of a new signature fails, the commit puts each of these files back while it holds the locks, and no live
+    /// graph changes. Thus no log keeps a part of the transaction.
+    ///
+    /// - Parameters:
+    ///   - writes: The boards of the commit. Each changed board gets its new live graph.
+    ///   - operations: The names of the public mutations of the full call.
+    /// - Throws: An ``EventLogError`` when the state of a log file cannot be read before the first append, and then
+    ///   nothing is written. The ``EventLogError`` of the append or the signature read that failed, after the
+    ///   rollback.
+    private static func append(_ writes: inout [BoardWrite], recording operations: [String]) throws(EventLogError) {
+        let changedBoards = writes.indices.filter { index in writes[index].hasPatches }
+        let keys = changedBoards.map { index in writes[index].key.description }
+        let marks = try changedBoards.map { index throws(EventLogError) in try writes[index].marks() }.joined()
+        do throws(EventLogError) {
+            let written = try changedBoards.map { index throws(EventLogError) in
+                try writes[index].append(recording: operations, changing: keys)
+            }
+            var adopted = writes
+            for (index, events) in zip(changedBoards, written) {
+                try adopted[index].adopt(writing: events)
+            }
+            writes = adopted
+        } catch {
+            rollBack(Array(marks))
+            throw error
+        }
+    }
+
+    /// Puts each log file of a failed commit back to its mark (plan.md §5.4 step 5.5). A file that cannot be put
+    /// back does not stop the rollback of the other files. The rollback records it with swift-log, and the next
+    /// commit check of the board then finds the file changed and reads it again.
+    ///
+    /// - Parameter marks: The mark of each log file that the commit changed.
+    private static func rollBack(_ marks: [LogFileMark]) {
+        for mark in marks {
+            do {
+                try mark.restore()
+            } catch {
+                Log.kanban.error(
+                    "A failed commit cannot put a log file back",
+                    metadata: ["path": "\(mark.file.path)", "error": "\(error)"]
+                )
+            }
+        }
     }
 
     /// Gives this session with a different live graph.
@@ -590,6 +644,9 @@ private struct BoardWrite {
     /// The working copy of the board at the end of the run.
     let work: WorkingCopy
 
+    /// The writer of the appends to the logs of the board.
+    let writer: any EventLogWriter
+
     /// `true` when the run kept a patch of the board, so the commit locks, checks, and writes the board.
     var hasPatches: Bool {
         !work.kept.isEmpty
@@ -613,20 +670,40 @@ private struct BoardWrite {
         return true
     }
 
-    /// Appends the kept patches of the board to their node logs, and makes the working copy the live graph (plan.md
-    /// §5.4 steps 5.3 and 5.4).
+    /// Records the state of each node log that the kept patches of the board append to, before the first append
+    /// (plan.md §5.4 step 5.5).
+    ///
+    /// - Returns: The mark of each log file.
+    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when the state of a log file cannot be read.
+    func marks() throws(EventLogError) -> [LogFileMark] {
+        try Set(work.kept.map(\.patch.node)).map { ref throws(EventLogError) in try live.log.mark(ofLogOf: ref) }
+    }
+
+    /// Appends the kept patches of the board to their node logs (plan.md §5.4 step 5.3). The live graph does not
+    /// change: ``adopt(writing:)`` changes it after each append of each board succeeds.
     ///
     /// - Parameters:
     ///   - operations: The names of the public mutations of the full call.
     ///   - keys: The keys of all boards that the call changed. Each event records the keys of the other boards.
-    /// - Throws: An ``EventLogError`` when a log file cannot be written or read.
-    mutating func append(recording operations: [String], changing keys: [String]) throws(EventLogError) {
+    /// - Returns: The written events, in the order of their ids.
+    /// - Throws: An ``EventLogError`` when a log file cannot be written.
+    func append(recording operations: [String], changing keys: [String]) throws(EventLogError) -> [Event] {
         let written = work.kept.map { event in
             event.recording(operations: operations, changing: keys, inBoard: key.description)
         }
         for (ref, events) in OrderedDictionary(grouping: written, by: \.patch.node) {
-            try live.log.append(contentsOf: events, toLogOf: ref)
+            try writer.append(contentsOf: events, toLogOf: ref, in: live.log)
         }
+        return written
+    }
+
+    /// Makes the working copy the live graph, and records the new signature of each log file that the commit
+    /// appended to (plan.md §5.4 step 5.4).
+    ///
+    /// - Parameter written: The events that ``append(recording:changing:)`` wrote.
+    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a log file cannot be read. Then the live graph does
+    ///   not change.
+    mutating func adopt(writing written: [Event]) throws(EventLogError) {
         try live.adopt(work.graph, writing: written)
     }
 }
@@ -657,7 +734,7 @@ struct RelatedWork: Sendable {
 
     /// The board as the commit writes it.
     fileprivate var boardWrite: BoardWrite {
-        BoardWrite(key: session.key, path: path, live: session.live, work: work)
+        BoardWrite(key: session.key, path: path, live: session.live, work: work, writer: session.writer)
     }
 }
 

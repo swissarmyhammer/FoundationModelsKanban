@@ -1,8 +1,41 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8580'
+comments:
+- actor: claude-code
+  id: 01m4gczbbe93fpmjmft0mnetxs
+  text: |-
+    Research done.
+    - `CommitSession.commit(_:along:)` in Tool/Commit.swift appends each changed board in turn through `BoardWrite.append(recording:changing:)`. That function appends each node file through `EventLog.append(contentsOf:toLogOf:)`, and then calls `live.adopt`.
+    - `writes` is a local array. When an append throws, `commit` throws before `live = writes[0].live`, so the session keeps its old live graph. But the lines of the earlier appends stay on disk. The next call then sees a changed log and reads the partial transaction.
+    - `BoardLock` is `~Copyable`. It releases the locks at the end of its scope, also when `commit` throws.
+    - A file signature holds the size, the modification time, and the last event id. A truncate changes the modification time. To keep the signatures the same, the rollback must also restore the modification time.
+    - KanbanGraph makes each session (the current board and each related board) in `loadSession(at:key:searchingWith:)`. Thus one writer that the engine gets reaches each board of a cross-board commit.
+    - A two-board test can use `CrossRepoFixture.SideBySide` and `GitGraphFixture.makeGraph`.
+  timestamp: 2026-10-09T13:17:23.694361+00:00
+- actor: claude-code
+  id: 01m4gdfkye3es2jbysqcwwabw9
+  text: |-
+    Implementation landed (TDD: the 5 new tests failed first with 17 issues, then passed).
+    - New seam: `EventLogWriter` protocol and `FileEventLogWriter` (Events/EventLogWriter.swift). `CommitSession.init` takes `writingWith:`; `KanbanGraph` internal init takes `writingLogsWith:` (default `FileEventLogWriter()`) and gives it to each session, current and related.
+    - New `LogFileMark` (Events/LogFileMark.swift) and `EventLog.mark(ofLogOf:)`: stat of the file before the first append (size and `st_mtimespec`, or no file). `restore()` truncates and sets the exact mtime back with `utimensat`, or unlinks a new file.
+    - Commit.swift: `BoardWrite.append` now only writes and returns the events; `BoardWrite.adopt(writing:)` is separate. New `CommitSession.append(_:recording:)` records the marks of all boards, appends all boards, then adopts all boards on a copy of `writes`. On any error of an append or of an adopt (signature read), it rolls back each mark while the locks are held, and throws the original error. A restore that fails is logged with swift-log and does not stop the other restores.
+    - plan.md §5.4 steps 5.3 to 5.5 describe the record, the all-or-nothing adopt, and the rollback.
+    Choices where the card is open (closest to plan.md all-or-nothing):
+    - The rollback also restores the modification time, so the file signatures equal the recorded signatures and the next call commits in its first run (no extra run from a changed log).
+    - A failure of the new-signature read after all appends also rolls back, so an error always means nothing on disk.
+    - Only the node log files roll back. A `.kanban/` subdirectory or git file that the append made stays; it holds no event.
+    - Discovery: before this change the live graph did not change on a failed append (the `writes` array is local), but the files kept the partial transaction, and the next commit check read them back.
+  timestamp: 2026-10-09T13:26:16.782760+00:00
+- actor: claude-code
+  id: 01m4gdfr518bbfd3jpan6wn3pm
+  text: |-
+    ### implement — changed
+    - evidence: 8 files — Sources/FoundationModelsKanban/Events/EventLogWriter.swift (new), Sources/FoundationModelsKanban/Events/LogFileMark.swift (new), Sources/FoundationModelsKanban/Tool/Commit.swift, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift, Tests/FoundationModelsKanbanTests/Tool/CommitRollbackTests.swift (new), Tests/FoundationModelsKanbanTests/Tool/CommitTests.swift, Tests/FoundationModelsKanbanTests/Tool/KanbanGraphTests.swift, plan.md. `swift test --filter CommitRollbackTests`: 5 of 5 pass. `swift test`: 1049 tests in 74 suites pass. No compiler warning other than the accepted SwiftPM "missing creator for mutated node".
+    - next: /review
+  timestamp: 2026-10-09T13:26:21.089416+00:00
+position_column: doing
+position_ordinal: '80'
 title: 'Commit: no partial transaction on disk when an append fails'
 ---
 ## What

@@ -29,10 +29,19 @@ comments:
     - evidence: 5 files — Sources/FoundationModelsKanban/Undo/UndoLog.swift, Sources/FoundationModelsKanban/GraphQL/UndoMutations.swift, Tests/FoundationModelsKanbanTests/Undo/UndoTests.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoUndoTests.swift, plan.md. RED then GREEN on 4 tests (6 cases). `swift test`: 1044 tests in 73 suites passed. Only warning: SwiftPM "missing creator for mutated node" (accepted).
     - next: /review
   timestamp: 2026-10-09T13:12:58.861267+00:00
+- actor: claude-code
+  id: 01m4gcwfqtcbnfvsa6t8m6zxv3
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 5 files
+    - test: green — swift test, 1044 tests in 73 suites passed
+    - commit: 9306485
+    - review: clean — 0 findings
+  timestamp: 2026-10-09T13:15:49.882693+00:00
 depends_on:
 - 01M4G9HG2TPCN1FH38714D8XF6
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: c680
 title: undo(txn:) on a transaction that is already undone
 ---
 ## What

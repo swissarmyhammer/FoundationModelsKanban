@@ -87,6 +87,7 @@ struct KanbanGraphTests {
     ///   - locator: Finds the related boards. The default looks only in the parent directory of the repo.
     ///   - observer: Gets a call when each call starts and ends, or `nil` for no calls.
     ///   - batchObserver: Gets a call when the file watcher applies a batch, or `nil` for no calls.
+    ///   - writer: The writer of the appends of each commit. The default writes the log files.
     /// - Returns: The engine.
     static func makeGraph(
         at root: URL,
@@ -95,7 +96,8 @@ struct KanbanGraphTests {
         mintingFrom ids: FixedULIDSource = mutationIDs,
         locatedBy locator: BoardLocator = .default,
         reportingTo observer: (any KanbanCallObserver)? = nil,
-        observingBatchesWith batchObserver: (any LiveGraphObserver)? = nil
+        observingBatchesWith batchObserver: (any LiveGraphObserver)? = nil,
+        writingLogsWith writer: any EventLogWriter = FileEventLogWriter()
     ) throws -> KanbanGraph {
         try KanbanGraph(
             root: root,
@@ -105,7 +107,8 @@ struct KanbanGraphTests {
             mintingFrom: ids,
             locatedBy: locator,
             reportingTo: observer,
-            observingBatchesWith: batchObserver
+            observingBatchesWith: batchObserver,
+            writingLogsWith: writer
         )
     }
 
