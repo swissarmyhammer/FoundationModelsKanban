@@ -561,6 +561,17 @@ struct AddUpdateTaskTests {
         #expect(try ColumnActorTests.patches(of: tag, in: directory).last == PatchInput(node: tag, delete: false))
     }
 
+    @Test("A marker with _ in the body gives the tag of its full slug, and makes no tag of the text before the _")
+    func addTaskBodyMarkerWithUnderscore() async throws {
+        let directory = try TemporaryDirectory()
+        let body = #"body: "Fix #\#(TagMarkersTests.underscoreMarker)""#
+        let add = Self.addTask(with: body, selecting: "{ tags { name } }")
+        let response = try await ColumnActorTests.respond(to: Self.mutation(of: add), onFixtureIn: directory)
+        #expect(response == #"{"data":{"addTask":{"tags":[{"name":"\#(TagMarkersTests.underscoreMarkerSlug)"}]}}}"#)
+        let head = LocalRef.tag(slug: TagMarkersTests.underscoreMarkerHead)
+        #expect(try ColumnActorTests.patches(of: head, in: directory) == [])
+    }
+
     // MARK: - addTask dependencies
 
     @Test("addTask with a dependsOn URI of this board stores a local ref, and the task is blocked")

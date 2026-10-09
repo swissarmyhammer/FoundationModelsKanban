@@ -56,7 +56,14 @@ struct TaskOperationTests {
     private static let ghost = "ghost"
 
     /// The body of a task with a marker of ``AddUpdateTaskTests/markerSlug`` between two words.
-    private static let markedBody = "Fix #\(AddUpdateTaskTests.markerSlug) now\n"
+    private static let markedBody = taskBody(withMarker: AddUpdateTaskTests.markerSlug)
+
+    /// Each marker text of the marker remove test, with the slug of its tag: a marker with no `_`, and a marker with
+    /// `_` from the tag name rule.
+    private static let markerTexts = [
+        (AddUpdateTaskTests.markerSlug, AddUpdateTaskTests.markerSlug),
+        (TagMarkersTests.underscoreMarker, TagMarkersTests.underscoreMarkerSlug),
+    ]
 
     /// ``markedBody`` after the remove of the marker and its adjacent space.
     private static let unmarkedBody = "Fix now\n"
@@ -132,6 +139,14 @@ struct TaskOperationTests {
     ]
 
     // MARK: - Helpers
+
+    /// Makes the body of a task with one marker between two words. The remove of the marker gives ``unmarkedBody``.
+    ///
+    /// - Parameter marker: The marker text after the `#`.
+    /// - Returns: The body.
+    private static func taskBody(withMarker marker: String) -> String {
+        "Fix #\(marker) now\n"
+    }
 
     /// Makes a query that lists the ids of the tasks of the board that a filter selects.
     ///
@@ -684,19 +699,20 @@ struct TaskOperationTests {
         #expect(try AddUpdateTaskTests.lastPatch(of: task, in: directory) == expected)
     }
 
-    @Test("untagTask on a marker tag removes the marker from the body with an edit patch")
-    func untagTaskRemovesMarker() async throws {
+    @Test("untagTask on a marker tag removes the marker from the body with an edit patch", arguments: markerTexts)
+    func untagTaskRemovesMarker(marker: String, slug: String) async throws {
         let directory = try TemporaryDirectory()
         let task = try AddUpdateTaskTests.fixtureTask()
-        let input = Self.tagsInput(AddUpdateTaskTests.markerSlug)
+        let markedBody = Self.taskBody(withMarker: marker)
         let response = try await Self.respond(
-            toFields: AddUpdateTaskTests.updateTask(task, with: "body: $body"),
-            Self.taskField("untagTask", of: task, with: input, selecting: "{ body tags { name } }"),
-            with: Self.markedBodyVariables,
+            toFields: AddUpdateTaskTests.updateTask(task, with: "body: $body", selecting: Self.tagsSelection),
+            Self.taskField("untagTask", of: task, with: Self.tagsInput(slug), selecting: "{ body tags { name } }"),
+            with: ["body": .string(markedBody)],
             in: directory
         )
-        #expect(response.contains(#""untagTask":{"body":"\#(Self.jsonText(of: Self.unmarkedBody))","tags":[]}"#))
-        let edit = PatchEdit(body: ReplayTests.diff(from: Self.markedBody, to: Self.unmarkedBody))
+        let untagged = #""untagTask":{"body":"\#(Self.jsonText(of: Self.unmarkedBody))","tags":[]}"#
+        #expect(response == Self.dataResponse(of: #"\#(untagged),"updateTask":{"tags":[{"name":"\#(slug)"}]}"#))
+        let edit = PatchEdit(body: ReplayTests.diff(from: markedBody, to: Self.unmarkedBody))
         let expected = try PatchInput(node: .task(task), edit: edit)
         #expect(try AddUpdateTaskTests.lastPatch(of: task, in: directory) == expected)
     }

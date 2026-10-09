@@ -340,6 +340,18 @@ struct FilterEvaluatorTests {
         #expect(try Self.matches(of: "#bug-fix", in: board) == [Self.second])
     }
 
+    @Test("A tag atom with _ matches a marker with _, and the text before the _ does not")
+    func markerWithUnderscore() throws {
+        var board = ReadinessFixture()
+        board.addTag(withSlug: TagMarkersTests.underscoreMarkerSlug)
+        board.addTag(withSlug: TagMarkersTests.underscoreMarkerHead)
+        let body = ReadinessFixture.fields(body: "#\(TagMarkersTests.underscoreMarker) found")
+        try board.addTask(withULID: Self.first, fields: body)
+        try board.addTask(withULID: Self.second)
+        #expect(try Self.matches(of: "#\(TagMarkersTests.underscoreMarker)", in: board) == [Self.first])
+        #expect(try Self.matches(of: "#\(TagMarkersTests.underscoreMarkerHead)", in: board) == [])
+    }
+
     @Test("An assignee atom matches the slug of the actor name")
     func assigneeSlugOfName() throws {
         #expect(try Self.sampleMatches(of: "@alice-smith") == [Self.first])

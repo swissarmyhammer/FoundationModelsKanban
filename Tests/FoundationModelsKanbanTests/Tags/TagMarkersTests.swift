@@ -8,6 +8,34 @@ import Testing
 /// so the expected tags are in lowercase.
 @Suite("Tag markers")
 struct TagMarkersTests {
+    /// A tag name with a space, as the caller writes it.
+    static let spacedTagName = "needs review"
+
+    /// The tag name that the tag name rule gives for ``spacedTagName``: the space becomes `_` (plan.md §6).
+    static let underscoreMarker = "needs_review"
+
+    /// The slug of ``underscoreMarker``.
+    static let underscoreMarkerSlug = "needs-review"
+
+    /// The text of ``underscoreMarker`` before its `_`. A marker of ``underscoreMarker`` must not give this slug.
+    static let underscoreMarkerHead = "needs"
+
+    /// Each body with a marker that has `_`, with the slugs that the parse gives, in text order.
+    static let underscoreParseCases: [(String, [String])] = [
+        ("Fix #\(underscoreMarker) now", [underscoreMarkerSlug]),
+        ("#Needs_Review", [underscoreMarkerSlug]),
+        ("#needs__review_ and #\(underscoreMarkerHead)", [underscoreMarkerSlug, underscoreMarkerHead]),
+        ("#_needs", []),
+        ("#a_#b", ["a"]),
+    ]
+
+    /// Each remove of a tag from a body with a marker that has `_`: the tag name, the body, and the body after the
+    /// remove.
+    static let underscoreRemoveCases: [(String, String, String)] = [
+        (spacedTagName, "fix #\(underscoreMarker) now", "fix now"),
+        (underscoreMarkerHead, "fix #\(underscoreMarker) now", "fix #\(underscoreMarker) now"),
+    ]
+
     /// Each body of the Rust parse tests, with the slugs that the parse gives, in text order.
     static let parseCases: [(String, [String])] = [
         ("Fix the #bug in #login", ["bug", "login"]),
@@ -141,6 +169,11 @@ struct TagMarkersTests {
         #expect(Self.slugTexts(in: "see #bug- now") == ["bug"])
     }
 
+    @Test("A marker keeps each _ in its text and gives the slug of the full name", arguments: underscoreParseCases)
+    func parseKeepsUnderscore(body: String, expected: [String]) {
+        #expect(Self.slugTexts(in: body) == expected)
+    }
+
     @Test("A marker in a fence that opens with tildes is not a tag")
     func tildeFenceHidesMarker() {
         #expect(Self.slugTexts(in: "~~~\n#fake\n~~~\n#real") == ["real"])
@@ -158,6 +191,11 @@ struct TagMarkersTests {
     @Test("A remove of the marker that the append wrote gives the body back", arguments: appendedCases)
     func removeUndoesAppend(tagged: String, original: String) throws {
         #expect(TagMarkers.removing(markersOf: try Self.slug(of: "bug"), from: tagged) == original)
+    }
+
+    @Test("A remove takes out a full marker with _, and only for its slug", arguments: underscoreRemoveCases)
+    func removeKeepsUnderscore(name: String, body: String, expected: String) throws {
+        #expect(TagMarkers.removing(markersOf: try Self.slug(of: name), from: body) == expected)
     }
 
     @Test("A remove gives a body with no marker of the tag back, byte for byte", arguments: bystanderBodies)

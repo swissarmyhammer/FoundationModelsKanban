@@ -13,9 +13,11 @@ private struct TagMarker {
 /// Finds and removes the `#tag` markers of a task body (plan.md §6.1, §12 item 7).
 ///
 /// This is a port of the parse part of the Rust file `swissarmyhammer-kanban/src/tag_parser.rs`. A marker is a `#`,
-/// then an ASCII letter or digit, then more ASCII letters, digits, and `-`. The `#` must not follow an ASCII letter,
-/// an ASCII digit, or `_`. The Rust parse keeps the case of the text. This parse changes each marker to its slug, so
-/// a marker names the same tag as the tag name rule gives (plan.md §3.2).
+/// then an ASCII letter or digit, then more ASCII letters, digits, and ``slugPunctuation``. The `#` must not follow an
+/// ASCII letter, an ASCII digit, or `_`. The Rust parse keeps the case of the text. This parse changes each marker to
+/// its slug, so a marker names the same tag as the tag name rule gives (plan.md §3.2). The Rust parse stops a marker
+/// at `_`. This parse does not, because the tag name rule writes `_` for each run of spaces (plan.md §6): the marker
+/// `#needs_review` names the tag `needs review`, with the slug `needs-review`.
 ///
 /// A marker in a fence line, in a fenced code block, in a heading line, or in inline code is not a tag.
 enum TagMarkers {
@@ -27,6 +29,11 @@ enum TagMarkers {
 
     /// The scalar, other than an ASCII letter or digit, that glues a `#` to the word before it.
     static let wordJoiner: Unicode.Scalar = "_"
+
+    /// The characters, other than an ASCII letter or digit, that the slug text of a marker can hold: the slug
+    /// separator, and the character that the tag name rule writes for each run of spaces. Thus the text of each tag
+    /// name is one marker.
+    static let slugPunctuation: Set<Character> = [Slug.separator, TagName.spaceReplacement]
 
     /// The space that a remove takes away together with the marker, so that the text keeps no double space.
     static let adjacentSpace: Unicode.Scalar = " "
@@ -186,10 +193,10 @@ extension TagMarkers {
 }
 
 extension Unicode.Scalar {
-    /// `true` when the scalar can be in the slug text of a marker: an ASCII letter, an ASCII digit, or the slug
-    /// separator.
+    /// `true` when the scalar can be in the slug text of a marker: an ASCII letter, an ASCII digit, or a character of
+    /// ``TagMarkers/slugPunctuation``.
     fileprivate var isMarkerSlugScalar: Bool {
-        isASCIIAlphanumeric || Character(self) == Slug.separator
+        isASCIIAlphanumeric || TagMarkers.slugPunctuation.contains(Character(self))
     }
 }
 

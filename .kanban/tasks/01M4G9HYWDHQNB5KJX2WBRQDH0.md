@@ -109,10 +109,26 @@ comments:
     - evidence: 2 files — Sources/FoundationModelsKanban/Identity/RefResolver.swift, Tests/FoundationModelsKanbanTests/GraphQL/NodeQueryTests.swift. `swift test`: 1096 tests in 79 suites passed, 0 failures. The only build warning is the accepted SwiftPM "missing creator for mutated node" warning. The finding RefResolver.swift:110 is checked; all findings on the card are checked.
     - next: /test, then /review
   timestamp: 2026-10-09T18:41:02.361038+00:00
+- actor: claude-code
+  id: 01m4gzmw2pva4r91sz0p8dsetd
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD, 0 findings (0 confirmed, 0 refuted, 7 attempted, 0 failed). 2 files reviewed; the 2 .kanban files are excluded by .reviewignore. All 4 prior findings are checked. The HEAD commit message (fe300c2) agrees with the diff: target(of:) is new, sameBoard holds the node type, canName(_:) is new, parsedURI(from:in:) is removed, and the NodeQueryTests test is new.
+    - next: none — the task is in done
+  timestamp: 2026-10-09T18:43:43.318984+00:00
+- actor: claude-code
+  id: 01m4gzmwzcmkn3bj7kbretbqh9
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — 2 files
+    - test: green — swift test, 1096 tests in 79 suites passed
+    - commit: fe300c2
+    - review: clean — 0 findings
+  timestamp: 2026-10-09T18:43:44.236339+00:00
 depends_on:
 - 01M4G9JDQ98082KJQTMWE86DV8
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: d080
 title: addTag, addColumn and addActor accept a full kanban:// URI as id
 ---
 ## What
