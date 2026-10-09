@@ -40,20 +40,65 @@ struct CommitRollbackTests {
 
     // MARK: - Fixture
 
-    /// Runs one call of a session, and expects the fault of the writer.
+    /// A board of the one-board tests. The writer of its session makes the second append fail.
+    struct FailingBoard {
+        /// The temporary repo directory. The board keeps it, so that the directory stays until the test ends.
+        let directory: TemporaryDirectory
+
+        /// The event log of the board.
+        let log: EventLog
+
+        /// The refs of the fixture tasks.
+        let tasks: [LocalRef]
+
+        /// The writer of the session. It makes the second append fail.
+        let writer: FaultingLogWriter
+
+        /// The commit session of the board.
+        var session: CommitSession
+    }
+
+    /// Writes the board fixture, and makes its commit session with a writer that makes the second append fail.
     ///
-    /// - Parameters:
-    ///   - session: The commit session.
-    ///   - call: Runs the call against the store of the working copy.
-    static func expectFault(
-        running session: inout CommitSession,
-        _ call: @Sendable (BoardStore) async throws -> Void
-    ) async throws {
+    /// - Returns: The board.
+    static func makeFailingBoard() async throws -> FailingBoard {
+        let directory = try TemporaryDirectory()
+        let (log, tasks) = try CommitTests.writeBoard(in: directory)
+        let writer = FaultingLogWriter(failingAppend: secondAppend)
+        let session = try await CommitTests.makeSession(of: log, writingWith: writer)
+        return FailingBoard(directory: directory, log: log, tasks: tasks, writer: writer, session: session)
+    }
+
+    /// Runs a call, and expects the fault of the writer.
+    ///
+    /// - Parameter call: Runs the call.
+    static func expectFault(_ call: () async throws -> Void) async throws {
         do {
-            try await session.run(call)
+            try await call()
             Issue.record("The call did not give the fault of the writer")
         } catch let error as EventLogError {
             #expect(error == FaultingLogWriter.fault)
+        }
+    }
+
+    /// Runs one call of a session that sets ``CommitTests/callTitle`` on two tasks, one task in each mutation field,
+    /// and expects the fault of the writer.
+    ///
+    /// - Parameters:
+    ///   - session: The commit session.
+    ///   - first: The task of the first mutation field.
+    ///   - second: The task of the second mutation field.
+    static func expectFault(
+        running session: inout CommitSession,
+        settingTitlesOf first: LocalRef,
+        _ second: LocalRef
+    ) async throws {
+        try await expectFault {
+            try await session.run { store in
+                let title = CommitTests.callTitle
+                try await CommitTests.setTitle(title, of: first, as: CommitTests.firstOperation, in: store)
+                try await CommitTests.setTitle(title, of: second, as: CommitTests.secondOperation, in: store)
+            }
         }
     }
 
@@ -82,30 +127,44 @@ struct CommitRollbackTests {
         return root
     }
 
-    /// Makes the engine of the current repo of a two-board test. Its writer makes the first append to the related
-    /// board fail.
+    /// The two repos of a two-board test, and the engine of the current repo.
+    struct TwoBoards {
+        /// The temporary directory that holds the two repos. The value keeps it, so that the directory stays until the
+        /// test ends.
+        let directory: TemporaryDirectory
+
+        /// The root directory of the current repo.
+        let app: URL
+
+        /// The root directory of the related repo.
+        let lib: URL
+
+        /// The engine of the current repo. Its writer makes the first append to the related board fail.
+        let graph: KanbanGraph
+    }
+
+    /// Makes the two repos of a two-board test, and the engine of the current repo. The writer of the engine makes
+    /// the first append to the related board fail.
     ///
-    /// - Parameters:
-    ///   - app: The root directory of the current repo.
-    ///   - lib: The root directory of the related repo.
-    /// - Returns: The engine.
-    static func makeTwoBoardGraph(at app: URL, failingIn lib: URL) throws -> KanbanGraph {
-        try KanbanGraphTests.makeGraph(
+    /// - Returns: The repos and the engine.
+    static func makeTwoBoards() throws -> TwoBoards {
+        let directory = try TemporaryDirectory()
+        let app = try makeRepo(named: appName, in: directory)
+        let lib = try makeRepo(named: libName, in: directory)
+        let graph = try KanbanGraphTests.makeGraph(
             at: app,
             readingKeyWith: directoryKey(ofRepoAt:),
             writingLogsWith: FaultingLogWriter(failingAppend: firstAppend, toBoardAt: lib)
         )
+        return TwoBoards(directory: directory, app: app, lib: lib, graph: graph)
     }
 
     /// Runs the two-board call, and expects the fault of the writer.
     ///
     /// - Parameter graph: The engine of the current repo.
     static func expectTwoBoardFault(on graph: KanbanGraph) async throws {
-        do {
+        try await expectFault {
             _ = try await KanbanGraphTests.execute(twoBoardCall, on: graph)
-            Issue.record("The call did not give the fault of the writer")
-        } catch let error as EventLogError {
-            #expect(error == FaultingLogWriter.fault)
         }
     }
 
@@ -121,56 +180,37 @@ struct CommitRollbackTests {
 
     @Test("When the second append fails, no log file changes and the live graph and signatures stay the same")
     func failedSecondAppendChangesNothing() async throws {
-        let directory = try TemporaryDirectory()
-        let (log, tasks) = try CommitTests.writeBoard(in: directory)
-        let writer = FaultingLogWriter(failingAppend: Self.secondAppend)
-        var session = try await CommitTests.makeSession(of: log, writingWith: writer)
+        var board = try await Self.makeFailingBoard()
+        let (log, tasks) = (board.log, board.tasks)
         let before = try log.nodeFileSignatures()
-        try await Self.expectFault(running: &session) { store in
-            try await CommitTests.setTitle(CommitTests.callTitle, of: tasks[0], as: CommitTests.firstOperation, in: store)
-            try await CommitTests.setTitle(CommitTests.callTitle, of: tasks[1], as: CommitTests.secondOperation, in: store)
-        }
-        #expect(writer.appendCount == Self.secondAppend)
+        try await Self.expectFault(running: &board.session, settingTitlesOf: tasks[0], tasks[1])
+        #expect(board.writer.appendCount == Self.secondAppend)
         #expect(try log.nodeFileSignatures() == before)
-        #expect(session.live.signatures == before)
-        #expect(try CommitTests.title(of: tasks[0], in: session) == tasks[0].description)
+        #expect(board.session.live.signatures == before)
+        #expect(try CommitTests.title(of: tasks[0], in: board.session) == tasks[0].description)
         #expect(try CommitTests.callEvents(of: tasks[0], in: log).isEmpty)
-        try await LiveGraphApplyTests.expectEqualToFreshLoad(session.live, of: log)
+        try await LiveGraphApplyTests.expectEqualToFreshLoad(board.session.live, of: log)
     }
 
     @Test("When the append to a new node file fails, the file does not exist after the call")
     func failedAppendToNewFileRemovesFile() async throws {
-        let directory = try TemporaryDirectory()
-        let (log, tasks) = try CommitTests.writeBoard(in: directory)
-        var session = try await CommitTests.makeSession(
-            of: log,
-            writingWith: FaultingLogWriter(failingAppend: Self.secondAppend)
-        )
+        var board = try await Self.makeFailingBoard()
+        let log = board.log
         let newTask = LocalRef.task(ULID(timestamp: ReplayTests.date(atStep: CommitTests.callStep)))
         let before = try log.nodeFileSignatures()
-        try await Self.expectFault(running: &session) { store in
-            try await CommitTests.setTitle(CommitTests.callTitle, of: tasks[0], as: CommitTests.firstOperation, in: store)
-            try await CommitTests.setTitle(CommitTests.callTitle, of: newTask, as: CommitTests.secondOperation, in: store)
-        }
+        try await Self.expectFault(running: &board.session, settingTitlesOf: board.tasks[0], newTask)
         #expect(!FileManager.default.fileExists(atPath: log.fileURL(for: newTask).path))
         #expect(try log.nodeFileSignatures() == before)
-        try await LiveGraphApplyTests.expectEqualToFreshLoad(session.live, of: log)
+        try await LiveGraphApplyTests.expectEqualToFreshLoad(board.session.live, of: log)
     }
 
     @Test("After a failed commit, the next call commits in its first run and sees no part of the failed transaction")
     func nextCallAfterFailureWorks() async throws {
-        let directory = try TemporaryDirectory()
-        let (log, tasks) = try CommitTests.writeBoard(in: directory)
-        var session = try await CommitTests.makeSession(
-            of: log,
-            writingWith: FaultingLogWriter(failingAppend: Self.secondAppend)
-        )
-        try await Self.expectFault(running: &session) { store in
-            try await CommitTests.setTitle(CommitTests.callTitle, of: tasks[0], as: CommitTests.firstOperation, in: store)
-            try await CommitTests.setTitle(CommitTests.callTitle, of: tasks[1], as: CommitTests.secondOperation, in: store)
-        }
+        var board = try await Self.makeFailingBoard()
+        let (log, tasks) = (board.log, board.tasks)
+        try await Self.expectFault(running: &board.session, settingTitlesOf: tasks[0], tasks[1])
         let runs = Mutex(0)
-        try await session.run { store in
+        try await board.session.run { store in
             CommitTests.countRun(in: runs)
             try await CommitTests.setTitle(
                 CommitTests.laterCallTitle,
@@ -183,18 +223,16 @@ struct CommitRollbackTests {
         #expect(runs.withLock { count in count } == 1)
         #expect(try CommitTests.callEvents(of: tasks[0], in: log).map(\.patch) == [laterPatch])
         #expect(try CommitTests.callEvents(of: tasks[1], in: log).isEmpty)
-        #expect(try CommitTests.title(of: tasks[1], in: session) == tasks[1].description)
-        try await LiveGraphApplyTests.expectEqualToFreshLoad(session.live, of: log)
+        #expect(try CommitTests.title(of: tasks[1], in: board.session) == tasks[1].description)
+        try await LiveGraphApplyTests.expectEqualToFreshLoad(board.session.live, of: log)
     }
 
     // MARK: - Two boards
 
     @Test("When the append of board 2 fails, no file of either board changes, and board 1 reads as before")
     func failedSecondBoardChangesNeitherBoard() async throws {
-        let directory = try TemporaryDirectory()
-        let app = try Self.makeRepo(named: Self.appName, in: directory)
-        let lib = try Self.makeRepo(named: Self.libName, in: directory)
-        let graph = try Self.makeTwoBoardGraph(at: app, failingIn: lib)
+        let boards = try Self.makeTwoBoards()
+        let (app, lib, graph) = (boards.app, boards.lib, boards.graph)
         let queryBefore = try await KanbanGraphTests.execute(KanbanGraphTests.boardQuery, on: graph)
         let (appBefore, libBefore) = (try Self.signatures(ofRepoAt: app), try Self.signatures(ofRepoAt: lib))
         try await Self.expectTwoBoardFault(on: graph)
@@ -206,19 +244,17 @@ struct CommitRollbackTests {
 
     @Test("After a failed two-board call, the same call commits, and each board holds its change one time")
     func twoBoardCallAfterFailureWorks() async throws {
-        let directory = try TemporaryDirectory()
-        let app = try Self.makeRepo(named: Self.appName, in: directory)
-        let lib = try Self.makeRepo(named: Self.libName, in: directory)
-        let graph = try Self.makeTwoBoardGraph(at: app, failingIn: lib)
+        let boards = try Self.makeTwoBoards()
+        let graph = boards.graph
         try await Self.expectTwoBoardFault(on: graph)
         let response = try await KanbanGraphTests.execute(Self.twoBoardCall, on: graph)
         #expect(try CrossRepoWriteTests.hasNoErrors(response))
         #expect(try await KanbanGraphTests.execute(KanbanGraphTests.nameQuery, on: graph).contains(Self.newBoardName))
-        let boardEvents = try EventLog(repositoryAt: app).readLog(of: .board).events
+        let boardEvents = try EventLog(repositoryAt: boards.app).readLog(of: .board).events
         #expect(boardEvents.filter { event in event.ops == [MutationName.updateBoard, MutationName.addTask] }.count == 1)
-        let libTasks = try EventLog(repositoryAt: lib).nodeRefs(ofType: .task)
-        let libTitles = try libTasks.compactMap { ref in
-            (try EventLog(repositoryAt: lib).readLog(of: ref).node?.state as? TaskNode)?.title
+        let libLog = EventLog(repositoryAt: boards.lib)
+        let libTitles = try libLog.nodeRefs(ofType: .task).compactMap { ref in
+            (try libLog.readLog(of: ref).node?.state as? TaskNode)?.title
         }
         #expect(libTitles.filter { title in title == Self.libTaskTitle }.count == 1)
         await graph.close()

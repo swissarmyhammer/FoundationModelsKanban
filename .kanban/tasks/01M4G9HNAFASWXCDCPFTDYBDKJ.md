@@ -34,6 +34,38 @@ comments:
     - evidence: 8 files — Sources/FoundationModelsKanban/Events/EventLogWriter.swift (new), Sources/FoundationModelsKanban/Events/LogFileMark.swift (new), Sources/FoundationModelsKanban/Tool/Commit.swift, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift, Tests/FoundationModelsKanbanTests/Tool/CommitRollbackTests.swift (new), Tests/FoundationModelsKanbanTests/Tool/CommitTests.swift, Tests/FoundationModelsKanbanTests/Tool/KanbanGraphTests.swift, plan.md. `swift test --filter CommitRollbackTests`: 5 of 5 pass. `swift test`: 1049 tests in 74 suites pass. No compiler warning other than the accepted SwiftPM "missing creator for mutated node".
     - next: /review
   timestamp: 2026-10-09T13:26:21.089416+00:00
+- actor: claude-code
+  id: 01m4gds0kkhnxj462y6sgtf9y1
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD — 1 finding (1 confirmed, 2 refuted): Tests/FoundationModelsKanbanTests/Tool/CommitRollbackTests.swift:103 (reuse/reuse). The commit message of 83ca850 agrees with the diff. The diff meets all 4 acceptance criteria and all 3 test items. The implement step must check these 7 items.
+    - next: /implement the open finding, then check the 7 met items.
+  timestamp: 2026-10-09T13:31:24.659636+00:00
+- actor: claude-code
+  id: 01m4gds1q2545c23fexyqskjbm
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 8 files
+    - test: green — swift test, 1049 tests in 74 suites passed
+    - commit: 83ca850
+    - review: findings — Tests/FoundationModelsKanbanTests/Tool/CommitRollbackTests.swift:103
+  timestamp: 2026-10-09T13:31:25.794418+00:00
+- actor: claude-code
+  id: 01m4ge0vvf0wp5mh5a5bkmqkef
+  text: |-
+    Review round 1 finding is fixed in CommitRollbackTests.swift.
+    - New `expectFault(_ call: () async throws -> Void)` holds the one do/catch check. `expectFault(running:settingTitlesOf:_:)` and `expectTwoBoardFault(on:)` both call it. The first one captures the `inout` session in the closure that it gives.
+    - The same cause was also in other parts of the file, and these parts are now shared too: the one-board setup (TemporaryDirectory, writeBoard, FaultingLogWriter, makeSession) is now `makeFailingBoard()` -> `FailingBoard`. The two setTitle calls that 3 tests repeated are now in `expectFault(running:settingTitlesOf:_:)`. The two-board setup (directory, app, lib, graph) is now `makeTwoBoards()` -> `TwoBoards`, which replaces `makeTwoBoardGraph(at:failingIn:)`. Two `EventLog(repositoryAt: lib)` calls are now one `libLog`.
+    - Each fixture struct keeps its TemporaryDirectory, so the directory stays until the test ends.
+    - I verified the 7 acceptance and test items against the code: `CommitSession.append(_:recording:)` appends all boards first, adopts on a copy only after all appends succeed, and rolls back each LogFileMark on an error while the locks are held. plan.md §5.4 step 5 states the rollback. I set all 7 items and the finding to checked.
+  timestamp: 2026-10-09T13:35:41.935298+00:00
+- actor: claude-code
+  id: 01m4ge0y1x2rvtwsn7afeynp25
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsKanbanTests/Tool/CommitRollbackTests.swift. `swift test --filter CommitRollbackTests`: 5 of 5 pass. `swift test`: 1049 tests in 74 suites pass. The only compiler warning is the accepted SwiftPM "missing creator for mutated node". Finding and 7 met items checked (8/8).
+    - next: /review
+  timestamp: 2026-10-09T13:35:44.189921+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'Commit: no partial transaction on disk when an append fails'
@@ -51,15 +83,27 @@ Also, `append(recording:changing:)` in `Sources/FoundationModelsKanban/Tool/Comm
 - Update plan.md §5.4 to describe the rollback.
 
 ## Acceptance Criteria
-- [ ] When the second append of a cross-board transaction fails, no file of either board changes, and the call returns an error.
-- [ ] After a failure on board 2, the live graph of board 1 is unchanged.
-- [ ] When an append to a new node file fails, the file does not exist after the call.
-- [ ] The next call works normally and sees no part of the failed transaction.
+- [x] When the second append of a cross-board transaction fails, no file of either board changes, and the call returns an error.
+- [x] After a failure on board 2, the live graph of board 1 is unchanged.
+- [x] When an append to a new node file fails, the file does not exist after the call.
+- [x] The next call works normally and sees no part of the failed transaction.
 
 ## Tests
-- [ ] A test in `Tests/FoundationModelsKanbanTests/Tool/` (for example `CommitRollbackTests.swift`) with a fault-injecting writer, for one board and for two boards.
-- [ ] A two-board test: the append of board 2 fails, then a query of board 1 gives the same result as before the call.
-- [ ] `swift test` passes.
+- [x] A test in `Tests/FoundationModelsKanbanTests/Tool/` (for example `CommitRollbackTests.swift`) with a fault-injecting writer, for one board and for two boards.
+- [x] A two-board test: the append of board 2 fails, then a query of board 1 gives the same result as before the call.
+- [x] `swift test` passes.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-09 08:28)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 7 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `plan.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsKanbanTests/Tool/CommitRollbackTests.swift:103` `reuse/reuse` — `expectTwoBoardFault(on:)` repeats the do/catch body of `expectFault(running:_:)` (same `Issue.record` on success, same `catch let error as EventLogError` with `#expect(error == FaultingLogWriter.fault)`). Only the run call differs. The near-match is not extended, so the expected-fault check now exists in two places. Extract the shared check into one helper that takes the call as a closure, for example `expectFault(_ call: () async throws -> Void)`, and have `expectFault(running:_:)` and `expectTwoBoardFault(on:)` both call it with their own run statement. This is a judgment call because `expectFault` takes an `inout` session, so the closure must capture it.
