@@ -26,10 +26,26 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsKanbanTests/Observe/BoardWatcherTests.swift. `swift test`: 1098 tests in 80 suites passed, 0 failures; only the accepted SwiftPM "missing creator for mutated node" warning. New test: 20 of 20 repetitions passed.
     - next: /review
   timestamp: 2026-10-09T19:50:01.026840+00:00
+- actor: claude-code
+  id: 01m4h3ksah0pxkm2z49j448x1e
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings (1 file reviewed: Tests/FoundationModelsKanbanTests/Observe/BoardWatcherTests.swift; 4 .kanban files not reviewed by .reviewignore). The HEAD commit message agrees with the diff. Each acceptance and test item is met: the test waits for the watcher batch, checks the new title and the done column, and compares the exact history list (addTask CREATED, title UPDATED, move UPDATED).
+    - next: none — task moved to done
+  timestamp: 2026-10-09T19:53:02.033555+00:00
+- actor: claude-code
+  id: 01m4h3ktb001rw13h99z1pmzrp
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 1 file
+    - test: green — swift test x2, 1098 tests in 80 suites passed each run
+    - commit: 6975248
+    - review: clean — 0 findings
+  timestamp: 2026-10-09T19:53:03.072343+00:00
 depends_on:
 - 01M4G9K73ZBYJ3Y9KSXYEW2ZEB
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: d580
 title: 'Test: history after a union merge that the watcher applies'
 ---
 ## What

@@ -82,6 +82,19 @@ extension BoardKey {
         return (host + segments.dropFirst()).joined(separator: String(LocalRef.separator))
     }
 
+    /// Makes the text of a key from a key that a caller wrote, with the rule of ``normalizedText(ofSegments:)``.
+    ///
+    /// A bare key in a board ref or in a short form uses this rule, so `GitHub.com/owner/repo` names the board
+    /// `github.com/owner/repo` (plan.md §3.2).
+    ///
+    /// - Parameter text: The key as the caller wrote it, for example `GitHub.com/owner/repo`.
+    /// - Returns: The text of the key with the host in lowercase, for example `github.com/owner/repo`.
+    static func normalizedText(of text: String) -> String {
+        normalizedText(
+            ofSegments: text.split(separator: LocalRef.separator, omittingEmptySubsequences: false).map(String.init)
+        )
+    }
+
     /// Splits a remote URL into its authority (the user, the host, and the port) and its path.
     ///
     /// - Parameter text: The remote URL, with no spaces at the start or at the end.

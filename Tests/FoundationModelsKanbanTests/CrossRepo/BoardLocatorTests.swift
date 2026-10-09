@@ -41,6 +41,12 @@ struct BoardLocatorTests {
     /// The number of key reads of the first scan of the rescan test: the current repo and the related repo.
     static let firstScanReads = 2
 
+    /// The key of ``appOrigin`` with its host in mixed case.
+    static let mixedCaseAppKey = "GitHub.com/example/app"
+
+    /// The key of ``libOrigin`` with its host in mixed case.
+    static let mixedCaseLibKey = "GitHub.com/example/lib"
+
     // MARK: - Fixture
 
     /// The repos of a sandbox with two copies of the current repo and two copies of the related repo.
@@ -217,6 +223,19 @@ struct BoardLocatorTests {
         let index = try await Self.scan(around: repos.current)
         let resolution = try Self.resolve(Self.key(of: Self.libOrigin).description, in: repos, index: index)
         #expect(resolution == .copy(try Self.copy(at: repos.firstCopy, in: index)))
+    }
+
+    @Test(
+        "A bare key whose host is in mixed case resolves to the board of the key with the host in lowercase",
+        arguments: [(mixedCaseAppKey, currentCopyName), (mixedCaseLibKey, firstCopyName)]
+    )
+    func mixedCaseHostKeyResolves(reference: String, expectedCopyName: String) async throws {
+        let sandbox = try GitSandbox()
+        let repos = try await TwoCopies.make(in: sandbox)
+        let index = try await Self.scan(around: repos.current)
+        let directory = sandbox.root.appending(path: expectedCopyName, directoryHint: .isDirectory)
+        let expected = index.resolution(of: try Self.copy(at: directory, in: index), currentRoot: repos.current)
+        #expect(try Self.resolve(reference, in: repos, index: index) == expected)
     }
 
     @Test("A unique repo directory name resolves to its copy")

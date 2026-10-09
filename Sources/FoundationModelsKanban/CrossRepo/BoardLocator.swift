@@ -218,13 +218,14 @@ struct BoardIndex: Sendable {
         return resolution(ofPath: text, currentRoot: root)
     }
 
-    /// Gives the board key that a ref names: the key of a board URI, or the ref itself.
+    /// Gives the board key that a ref names: the key of a board URI, or the ref itself. The host of the key ignores
+    /// case, so the key has the host in lowercase (``BoardKey/normalizedText(of:)``).
     ///
     /// - Parameter text: The ref, without white space at the two ends.
     /// - Returns: The key, or `nil` when the ref is a URI that does not parse or that names a node other than a board.
     private static func boardKey(in text: String) -> String? {
         guard NodeURI.hasScheme(atStartOf: text) else {
-            return text
+            return BoardKey.normalizedText(of: text)
         }
         guard let uri = try? NodeURI(parsing: text), uri.ref == .board else {
             return nil

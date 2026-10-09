@@ -12,7 +12,7 @@ import Foundation
 /// - For a column or an actor: the slug, or a name that gives the slug (``Slug/normalizedText(of:)``).
 /// - For a tag: the slug, or a tag name that gives the slug (``TagName``). The resolve then follows the rename
 ///   redirect (plan.md §6.2), so a ref to an old slug gives the tag at the end of the rename chain.
-/// - For the board: the key of the board.
+/// - For the board: the key of the board. The host of the key ignores case (``BoardKey/normalizedText(of:)``).
 ///
 /// A ref names only a live node, unless the caller asks for tombstones (the undelete mutations do). A ref that names
 /// no node gives ``KanbanError/notFound(type:reference:)``. A URI that does not parse also gives that error, because
@@ -337,7 +337,7 @@ extension RefResolver {
     private func candidateRef(forKey key: String, in lookup: Lookup) throws(KanbanError) -> LocalRef? {
         switch lookup.type {
         case .board:
-            return key == boardKey ? ref(of: .board, in: lookup) : nil
+            return BoardKey.normalizedText(of: key) == boardKey ? ref(of: .board, in: lookup) : nil
         case .column:
             return ref(of: .column(slug: Slug.normalizedText(of: key)), in: lookup)
         case .actor:

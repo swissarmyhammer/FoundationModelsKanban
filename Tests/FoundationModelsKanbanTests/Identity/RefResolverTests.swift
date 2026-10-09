@@ -81,6 +81,15 @@ struct RefResolverTests {
         board.graph.update(with: .tag(tag))
     }
 
+    /// Makes the resolver of a board, with the current key ``DependencyMarkersTests/boardKey``.
+    ///
+    /// - Parameter board: The board, or `nil` for the test board of ``board()``.
+    /// - Returns: The resolver.
+    /// - Throws: An error when a ULID text of the fixture is not valid.
+    static func resolver(of board: ReadinessFixture? = nil) throws -> RefResolver {
+        RefResolver(graph: try (board ?? Self.board()).graph, boardKey: DependencyMarkersTests.boardKey)
+    }
+
     /// Resolves a ref in the test board.
     ///
     /// - Parameters:
@@ -98,9 +107,7 @@ struct RefResolverTests {
         includingTombstones includesTombstones: Bool = false,
         in board: ReadinessFixture? = nil
     ) throws -> StoredRef {
-        let graph = try (board ?? Self.board()).graph
-        let resolver = RefResolver(graph: graph, boardKey: DependencyMarkersTests.boardKey)
-        return try resolver.storedRef(
+        try resolver(of: board).storedRef(
             for: reference,
             ofType: type,
             acceptingRemote: acceptsRemote,
@@ -292,14 +299,20 @@ struct RefResolverTests {
     }
 
     @Test(
-        "The board resolves from the current key and from its URI",
+        "The board resolves from the current key, from the key with the host in mixed case, and from its URI",
         arguments: [
             DependencyMarkersTests.boardKey,
+            NodeURITests.mixedCaseKey,
             "\(NodeURI.scheme)\(DependencyMarkersTests.boardKey)/board",
         ]
     )
     func boardResolves(reference: String) throws {
         #expect(try Self.resolve(reference, as: .board) == .local(.board))
+    }
+
+    @Test("A board key with the host in mixed case resolves to the board when the ref has no expected type")
+    func mixedCaseBoardKeyResolvesWithNoType() throws {
+        #expect(try Self.resolver().anyLocalRef(for: NodeURITests.mixedCaseKey) == .board)
     }
 
     @Test("A board ref that is not the current key gives NOT_FOUND")
