@@ -83,6 +83,18 @@ struct ColumnActorTests {
     /// The `input` argument that names the added actor.
     private static let aliceReference = #"input: { id: "\#(aliceSlug)" }"#
 
+    /// The ids that name the column ``qaSlug`` in an `addColumn` input: the slug, and the full URI of the column.
+    private static let qaIDs = [qaSlug, id(of: qaColumn)]
+
+    /// The ids that name the actor ``aliceSlug`` in an `addActor` input: the slug, and the full URI of the actor.
+    private static let aliceIDs = [aliceSlug, id(of: alice)]
+
+    /// The full URI of the column ``qaSlug`` in a board that is not the fixture board.
+    private static let otherBoardQA = NodeURI(
+        boardKey: DependencyMarkersTests.otherBoardKey,
+        ref: qaColumn
+    ).description
+
     // MARK: - Helpers
 
     /// Gives the full URI of a node of the fixture board, as the GraphQL `ID` shows it.
@@ -272,10 +284,13 @@ struct ColumnActorTests {
 
     // MARK: - addColumn
 
-    @Test("addColumn with an id and a name makes the column after the last column, and returns it")
-    func addColumnAppendsColumn() async throws {
+    @Test(
+        "addColumn with a slug or a column URI as the id makes the column of that slug after the last column",
+        arguments: qaIDs
+    )
+    func addColumnAppendsColumn(id: String) async throws {
         let directory = try TemporaryDirectory()
-        let mutation = #"mutation { addColumn(input: { id: "\#(Self.qaSlug)", name: "\#(Self.qaName)" }) "#
+        let mutation = #"mutation { addColumn(input: { id: "\#(id)", name: "\#(Self.qaName)" }) "#
             + "{ id name order } }"
         let response = try await Self.respond(to: mutation, onFixtureIn: directory)
         let column = #"{"id":"\#(Self.id(of: Self.qaColumn))","name":"\#(Self.qaName)","#
@@ -325,6 +340,16 @@ struct ColumnActorTests {
             in: directory
         )
         #expect(error == .invalidSlug(name: Self.emptySlugName))
+    }
+
+    @Test("addColumn with a column URI of a different board gives NOT_FOUND and writes nothing")
+    func addColumnURIOfOtherBoard() async throws {
+        let directory = try TemporaryDirectory()
+        let error = try await Self.failure(
+            of: #"mutation { addColumn(input: { id: "\#(Self.otherBoardQA)", name: "\#(Self.qaName)" }) { id } }"#,
+            in: directory
+        )
+        #expect(error == .notFound(type: .column, reference: Self.otherBoardQA))
     }
 
     // MARK: - updateColumn
@@ -455,10 +480,13 @@ struct ColumnActorTests {
         #expect(error == .duplicateID(type: .actor, id: Self.aliceSlug))
     }
 
-    @Test("addActor with ensure on an actor that exists returns the actor and writes nothing")
-    func addActorEnsureExisting() async throws {
+    @Test(
+        "addActor with ensure, and the slug or the URI of an actor that exists, returns the actor and writes nothing",
+        arguments: aliceIDs
+    )
+    func addActorEnsureExisting(id: String) async throws {
         let directory = try TemporaryDirectory()
-        let mutation = #"mutation { addActor(input: { id: "\#(Self.aliceSlug)", name: "\#(Self.renamedAlice)", "#
+        let mutation = #"mutation { addActor(input: { id: "\#(id)", name: "\#(Self.renamedAlice)", "#
             + "ensure: true }) { name } }"
         let response = try await Self.respondWritingNothing(to: mutation, after: Self.addAlice, in: directory)
         #expect(response == #"{"data":{"addActor":{"name":"\#(Self.aliceName)"}}}"#)

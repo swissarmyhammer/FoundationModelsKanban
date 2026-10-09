@@ -24,10 +24,12 @@ extension MutationName {
 
 /// The `input` object of `addTag` (plan.md §4.2). The input gives the id, the name, or the two.
 private struct AddTagInput: Decodable, Sendable {
-    /// The id of the tag, or `nil` for the slug of ``name``. The id is the slug of this text (plan.md §3.2).
+    /// The id of the tag, or `nil` for the slug of ``name``. The id is the slug of this text, or the slug of a full
+    /// tag URI of the board (plan.md §3.2).
     let id: NodeID?
 
-    /// The tag name, or `nil` for the text of ``id``. The tag name rule applies (plan.md §6).
+    /// The tag name, or `nil` for the text of ``id``, or the slug of a URI ``id``. The tag name rule applies
+    /// (plan.md §6).
     let name: String?
 
     /// The color of the tag, or `nil` for the auto color of the slug.
@@ -85,7 +87,8 @@ extension KanbanResolver {
     ///   - arguments: The new tag. The `input` argument is optional, because ``AddTagInput`` has no required field
     ///     (plan.md §4.2). No `input` is the same as an `input` with no field.
     /// - Returns: The tag. The GraphQL field is nullable, so that an error gives `null` for this field only.
-    /// - Throws: ``KanbanError/invalidTagName(name:)`` when the id or the name gives an empty slug, or when the input
+    /// - Throws: ``KanbanError/notFound(type:reference:)`` when the id is a URI that does not name a tag of the
+    ///   board. ``KanbanError/invalidTagName(name:)`` when the id or the name gives an empty slug, or when the input
     ///   gives no id and no name. ``KanbanError/reservedTagName`` when a new tag would get the slug
     ///   ``Slug/reservedForBoard``. ``KanbanError/virtualTagName(tag:)`` when a new tag would get the name of a
     ///   virtual tag as its slug.
@@ -94,9 +97,11 @@ extension KanbanResolver {
         arguments: OptionalInputArguments<AddTagInput>
     ) async throws -> TagObject? {
         let input = arguments.input
-        return try await context.changeNode(named: MutationName.addTag, on: .named(input?.board)) { work, _, time in
-            let name = try TagName(normalizing: input?.name ?? input?.id?.text ?? "")
-            let slug = try input?.id.map { id in try TagName(normalizing: id.text).slug } ?? name.slug
+        let board = MutationBoard.named(input?.board)
+        return try await context.changeNode(named: MutationName.addTag, on: board) { work, resolver, time in
+            let key = try input?.id.map { id in try resolver.newNodeKey(for: id.text, ofType: .tag) }
+            let name = try TagName(normalizing: input?.name ?? key ?? "")
+            let slug = try key.map { key in try TagName(normalizing: key).slug } ?? name.slug
             let values = [
                 PropertyName.name: PatchValue.string(name.name),
                 PropertyName.color: .string(input?.color ?? slug.autoColor),

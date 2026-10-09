@@ -46,7 +46,8 @@ struct OptionalInputArguments<Input: Decodable & Sendable>: Decodable, Sendable 
 
 /// The `input` object of `addColumn` (plan.md §4.2).
 private struct AddColumnInput: Codable, Sendable {
-    /// The id of the new column, or `nil` for the slug of ``name``. The id is the slug of this text (plan.md §3.2).
+    /// The id of the new column, or `nil` for the slug of ``name``. The id is the slug of this text, or the slug of a
+    /// full column URI of the board (plan.md §3.2).
     let id: NodeID?
 
     /// The name of the column.
@@ -81,7 +82,8 @@ private struct UpdateColumnInput: Decodable, Sendable {
 
 /// The `input` object of `addActor` (plan.md §4.2).
 private struct AddActorInput: Codable, Sendable {
-    /// The id of the new actor, or `nil` for the slug of ``name``. The id is the slug of this text (plan.md §3.2).
+    /// The id of the new actor, or `nil` for the slug of ``name``. The id is the slug of this text, or the slug of a
+    /// full actor URI of the board (plan.md §3.2).
     let id: NodeID?
 
     /// The name of the actor.
@@ -136,7 +138,8 @@ extension KanbanResolver {
     ///   - context: The context of the call.
     ///   - arguments: The new column.
     /// - Returns: The column. The GraphQL field is nullable, so that an error gives `null` for this field only.
-    /// - Throws: ``KanbanError/invalidSlug(name:)`` when the id gives an empty slug.
+    /// - Throws: ``KanbanError/notFound(type:reference:)`` when the id is a URI that does not name a column of the
+    ///   board. ``KanbanError/invalidSlug(name:)`` when the id gives an empty slug.
     ///   ``KanbanError/reservedSlug(type:)`` when the id gives the slug ``Slug/reservedForBoard``.
     ///   ``KanbanError/duplicateID(type:id:)`` when the board has a column with the slug, live or tombstoned.
     fileprivate func addColumn(
@@ -144,8 +147,10 @@ extension KanbanResolver {
         arguments: InputArguments<AddColumnInput>
     ) async throws -> ColumnObject? {
         let input = arguments.input
-        return try await context.changeNode(named: MutationName.addColumn, on: .named(input.board)) { work, _, time in
-            let ref = LocalRef.column(slug: try Slug(columnOrActorName: input.id?.text ?? input.name).value)
+        let board = MutationBoard.named(input.board)
+        return try await context.changeNode(named: MutationName.addColumn, on: board) { work, resolver, time in
+            let slug = try resolver.slug(ofNewNode: input.id, named: input.name, ofType: .column)
+            let ref = LocalRef.column(slug: slug.value)
             let order = input.order ?? work.graph.nextColumnOrder
             let values = [String: PatchValue](
                 givenValues: [PropertyName.name: .string(input.name), PropertyName.order: .integer(order)]
@@ -220,7 +225,8 @@ extension KanbanResolver {
     ///   - context: The context of the call.
     ///   - arguments: The new actor.
     /// - Returns: The actor. With `ensure`, the actor that the board has, with no change.
-    /// - Throws: ``KanbanError/invalidSlug(name:)`` when the id gives an empty slug.
+    /// - Throws: ``KanbanError/notFound(type:reference:)`` when the id is a URI that does not name an actor of the
+    ///   board. ``KanbanError/invalidSlug(name:)`` when the id gives an empty slug.
     ///   ``KanbanError/reservedSlug(type:)`` when the board has no actor with the slug, and the id gives the slug
     ///   ``Slug/reservedForBoard``.
     ///   ``KanbanError/duplicateID(type:id:)`` when the board has an actor with the slug and `ensure` is not `true`.
@@ -229,8 +235,10 @@ extension KanbanResolver {
         arguments: InputArguments<AddActorInput>
     ) async throws -> ActorObject? {
         let input = arguments.input
-        return try await context.changeNode(named: MutationName.addActor, on: .named(input.board)) { work, _, time in
-            let ref = LocalRef.actor(slug: try Slug(columnOrActorName: input.id?.text ?? input.name).value)
+        let board = MutationBoard.named(input.board)
+        return try await context.changeNode(named: MutationName.addActor, on: board) { work, resolver, time in
+            let slug = try resolver.slug(ofNewNode: input.id, named: input.name, ofType: .actor)
+            let ref = LocalRef.actor(slug: slug.value)
             if input.ensure == true, work.graph.hasNode(ref) {
                 return ref
             }
@@ -494,6 +502,24 @@ extension RefResolver {
             throw .notFound(type: type, reference: id.text)
         }
         return ref
+    }
+
+    /// Gives the slug of a column or an actor that an add mutation makes (plan.md §3.2). The slug comes from the id,
+    /// or from the name when the input gives no id. A full URI gives its local id (``newNodeKey(for:ofType:)``).
+    ///
+    /// - Parameters:
+    ///   - id: The id that the input gives, or `nil` for no id.
+    ///   - name: The name that the input gives.
+    ///   - type: The node type: ``PatchNodeType/column`` or ``PatchNodeType/actor``.
+    /// - Returns: The slug.
+    /// - Throws: ``KanbanError/notFound(type:reference:)`` when a URI does not parse, names a node of a different
+    ///   type, or has the key of a different board. ``KanbanError/invalidSlug(name:)`` when the text gives an empty
+    ///   slug.
+    func slug(ofNewNode id: NodeID?, named name: String, ofType type: PatchNodeType) throws(KanbanError) -> Slug {
+        guard let id else {
+            return try Slug(columnOrActorName: name)
+        }
+        return try Slug(columnOrActorName: newNodeKey(for: id.text, ofType: type))
     }
 }
 

@@ -86,10 +86,26 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsKanbanTests/Tags/TagRenameToTombstoneTests.swift. `swift test --filter TagRenameToTombstoneTests`: 4 tests in 1 suite passed. `swift test`: 1093 tests in 79 suites passed; the only build warning is the accepted SwiftPM "missing creator for mutated node".
     - next: /review
   timestamp: 2026-10-09T18:11:43.547837+00:00
+- actor: claude-code
+  id: 01m4gxzmmv3yrqmbca021737jk
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD, 0 findings (0 confirmed, 0 refuted, 7 attempted, 0 failed). 1 file reviewed; 2 .kanban files not reviewed (ignore rule). All prior Review Findings items are checked. The HEAD commit message (6ef4b42) is true for the diff: sessionWithTarget calls HistoryTests.taggedSession, renamedSession and expectRename are added, the rename tests and renamedTaskShowsTarget use them, and the kanban files of ^we86dv8 are updated.
+    - next: none — task moved to done
+  timestamp: 2026-10-09T18:14:39.003143+00:00
+- actor: claude-code
+  id: 01m4gxznkcdt62e2bk6cfr3h20
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — 1 file
+    - test: green — swift test, 1093 tests in 79 suites passed
+    - commit: 6ef4b42
+    - review: clean — 0 findings
+  timestamp: 2026-10-09T18:14:39.980539+00:00
 depends_on:
 - 01M4G9J9NMNJR8NZPSYPC53Z77
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: cf80
 title: Rename to a deleted tag makes the target tag live again
 ---
 ## What

@@ -75,6 +75,13 @@ struct TagMutationTests {
     /// The name that the `INVALID_TAG_NAME` error gives when the input of `addTag` gives no name and no id.
     private static let noName = ""
 
+    /// The `input` fields of `addTag` that name ``bug`` when the board has it: the name in uppercase with a color,
+    /// and the full URI of the tag.
+    private static let existingBugInputs = [
+        #"name: "\#(bug.uppercased())", color: "\#(ColumnActorTests.red)""#,
+        #"id: "\#(ColumnActorTests.id(of: bugTag))""#,
+    ]
+
     // MARK: - Helpers
 
     /// Makes an `addTag` field.
@@ -292,10 +299,12 @@ struct TagMutationTests {
         #expect(response == #"{"data":{"addTag":\#(tag)}}"#)
     }
 
-    @Test("addTag with the slug of a tag that exists returns that tag and writes nothing")
-    func addTagIsIdempotent() async throws {
+    @Test(
+        "addTag with the slug or the URI of a tag that exists returns that tag and writes nothing",
+        arguments: existingBugInputs
+    )
+    func addTagIsIdempotent(input: String) async throws {
         let directory = try TemporaryDirectory()
-        let input = #"name: "\#(Self.bug.uppercased())", color: "\#(ColumnActorTests.red)""#
         let response = try await ColumnActorTests.respondWritingNothing(
             to: AddUpdateTaskTests.mutation(of: Self.addTag(with: input)),
             after: Self.addBug,
@@ -337,6 +346,14 @@ struct TagMutationTests {
         let directory = try TemporaryDirectory()
         let error = try await CommentTests.failure(of: Self.addTag(with: input), in: directory)
         #expect(error == .invalidTagName(name: name))
+    }
+
+    @Test("addTag with the URI of a task gives NOT_FOUND of the tag type and writes nothing")
+    func addTagWithTaskURI() async throws {
+        let directory = try TemporaryDirectory()
+        let uri = ColumnActorTests.id(of: .task(try AddUpdateTaskTests.fixtureTask()))
+        let error = try await CommentTests.failure(of: Self.addTag(with: #"id: "\#(uri)""#), in: directory)
+        #expect(error == .notFound(type: .tag, reference: uri))
     }
 
     @Test("addTag with no input argument passes validation and gives INVALID_TAG_NAME")

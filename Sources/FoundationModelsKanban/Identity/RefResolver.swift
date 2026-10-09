@@ -71,6 +71,31 @@ struct RefResolver: Sendable {
         return .local(try localRef(forKey: shortForm(of: ref), in: lookup))
     }
 
+    /// Changes the id of a node that a mutation can make to the short form of the node in this board (plan.md §3.2).
+    ///
+    /// A full URI gets the same checks as in ``storedRef(for:ofType:acceptingRemote:includingTombstones:)``: the URI
+    /// must parse, name a node of the expected type, and have the key of this board. Then the URI gives its local id.
+    /// The graph does not need the node, so that the mutation can make it. A short form stays as the caller wrote it.
+    /// The caller applies its slug rule to the result.
+    ///
+    /// - Parameters:
+    ///   - reference: The id as the caller wrote it. White space at the two ends of a URI is ignored.
+    ///   - type: The node type that the mutation makes.
+    /// - Returns: The local id of the URI, or the reference when it is not a URI.
+    /// - Throws: ``KanbanError/notFound(type:reference:)`` when the URI does not parse, names a node of a different
+    ///   type, or has the key of a different board.
+    func newNodeKey(for reference: String, ofType type: PatchNodeType) throws(KanbanError) -> String {
+        let text = reference.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard NodeURI.hasScheme(atStartOf: text) else {
+            return reference
+        }
+        let lookup = Lookup(reference: reference, type: type, includesTombstones: false)
+        guard let ref = try parsedURI(from: text, in: lookup).localRef(inBoard: boardKey) else {
+            throw lookup.notFound
+        }
+        return shortForm(of: ref)
+    }
+
     /// Finds the node of any type that a forgiving ref names in this board, live or tombstoned (plan.md §3.3, rule 3).
     ///
     /// A full URI names the type of its node. A short form tries the node types of ``shortFormTypes`` in order, and

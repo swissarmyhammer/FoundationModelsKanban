@@ -21,6 +21,11 @@ struct ReservedSlugTests {
     /// The order of the column with the reserved slug in the old log: after the fixture column `todo`.
     static let oldColumnOrder = 1
 
+    /// The text that a URI id adds after the id. The parse reads a URI whose last segment is `board` as the board
+    /// URI, so this text keeps the URI a URI of a column, an actor, or a tag. The slug rule removes a
+    /// ``Slug/separator`` at the end, so the slug of the URI is the slug of the id.
+    static let uriIDSuffix = String(Slug.separator)
+
     /// One mutation field that makes a column, an actor, or a tag with the reserved slug. ``field(on:naming:id:)``
     /// can also give a different name or id, for example the name of a virtual tag (``VirtualTagNameTests``).
     enum Refusal: CaseIterable, Sendable {
@@ -30,6 +35,9 @@ struct ReservedSlugTests {
         /// `addColumn` with an id that gives the reserved slug.
         case addColumnByID
 
+        /// `addColumn` with a column URI whose local id gives the reserved slug.
+        case addColumnByURI
+
         /// `moveTask` to a column slug that no column has, so that the move makes the column.
         case moveTaskToNewColumn
 
@@ -38,6 +46,9 @@ struct ReservedSlugTests {
 
         /// `addActor` with an id that gives the reserved slug.
         case addActorByID
+
+        /// `addActor` with an actor URI whose local id gives the reserved slug.
+        case addActorByURI
 
         /// `addActor` with `ensure: true` on an actor that the board does not have.
         case addActorEnsure
@@ -50,6 +61,9 @@ struct ReservedSlugTests {
 
         /// `addTag` with an id that gives the reserved slug.
         case addTagByID
+
+        /// `addTag` with a tag URI whose local id gives the reserved slug.
+        case addTagByURI
 
         /// `renameTag` to a name that gives the reserved slug.
         case renameTag
@@ -79,16 +93,19 @@ struct ReservedSlugTests {
         func field(on task: ULID, naming name: String = reservedName, id: String = reservedID) -> String {
             switch self {
             case .addColumnByName: #"addColumn(input: { name: "\#(name)" }) { id }"#
-            case .addColumnByID: #"addColumn(input: { id: "\#(id)", name: "\#(legalName)" }) { id }"#
+            case .addColumnByID: Self.idField(MutationName.addColumn, id: id)
+            case .addColumnByURI: Self.idField(MutationName.addColumn, id: Self.uri(of: LocalRef.column, id: id))
             case .moveTaskToNewColumn:
                 TaskOperationTests.taskField("moveTask", of: task, with: TaskOperationTests.moveInput(to: name))
             case .addActorByName: #"addActor(input: { name: "\#(name)" }) { id }"#
-            case .addActorByID: #"addActor(input: { id: "\#(id)", name: "\#(legalName)" }) { id }"#
+            case .addActorByID: Self.idField(MutationName.addActor, id: id)
+            case .addActorByURI: Self.idField(MutationName.addActor, id: Self.uri(of: LocalRef.actor, id: id))
             case .addActorEnsure: #"addActor(input: { name: "\#(name)", ensure: true }) { id }"#
             case .addCommentByNewActor:
                 CommentTests.addComment(to: AddUpdateTaskTests.sigilRef(of: task), with: #"actor: "\#(name)""#)
             case .addTagByName: TagMutationTests.addTag(named: name)
-            case .addTagByID: #"addTag(input: { id: "\#(id)", name: "\#(legalName)" }) { id }"#
+            case .addTagByID: Self.idField(MutationName.addTag, id: id)
+            case .addTagByURI: Self.idField(MutationName.addTag, id: Self.uri(of: LocalRef.tag, id: id))
             case .renameTag: TagMutationTests.renameTag(from: TagMutationTests.bug, to: name)
             case .addTaskTag: AddUpdateTaskTests.addTask(with: TaskOperationTests.tagsInput(name))
             case .addTaskMarker: AddUpdateTaskTests.addTask(with: Self.markerBody(naming: name))
@@ -96,6 +113,26 @@ struct ReservedSlugTests {
             case .updateTaskMarker: AddUpdateTaskTests.updateTask(task, with: Self.markerBody(naming: name))
             case .tagTask: TaskOperationTests.taskField("tagTask", of: task, with: TaskOperationTests.tagsInput(name))
             }
+        }
+
+        /// Makes a field that makes a node with an id and the name ``legalName``.
+        ///
+        /// - Parameters:
+        ///   - mutation: The name of the mutation, for example `addColumn`.
+        ///   - id: The id of the new node: a short form or a full URI.
+        /// - Returns: The field.
+        private static func idField(_ mutation: String, id: String) -> String {
+            #"\#(mutation)(input: { id: "\#(id)", name: "\#(legalName)" }) { id }"#
+        }
+
+        /// Gives the full URI of a node of the fixture board whose local id is an id and ``uriIDSuffix``.
+        ///
+        /// - Parameters:
+        ///   - makeRef: Makes the local ref of the node from its local id, for example `LocalRef.column`.
+        ///   - id: The id.
+        /// - Returns: The URI text.
+        private static func uri(of makeRef: (String) -> LocalRef, id: String) -> String {
+            ColumnActorTests.id(of: makeRef(id + uriIDSuffix))
         }
 
         /// Makes the body text that a marker field writes: a body with a marker of a name.
@@ -125,9 +162,11 @@ struct ReservedSlugTests {
         /// The error that the field gives.
         var error: KanbanError {
             switch self {
-            case .addColumnByName, .addColumnByID, .moveTaskToNewColumn: .reservedSlug(type: .column)
-            case .addActorByName, .addActorByID, .addActorEnsure, .addCommentByNewActor: .reservedSlug(type: .actor)
-            case .addTagByName, .addTagByID, .renameTag, .addTaskTag, .addTaskMarker, .updateTaskTag,
+            case .addColumnByName, .addColumnByID, .addColumnByURI, .moveTaskToNewColumn:
+                .reservedSlug(type: .column)
+            case .addActorByName, .addActorByID, .addActorByURI, .addActorEnsure, .addCommentByNewActor:
+                .reservedSlug(type: .actor)
+            case .addTagByName, .addTagByID, .addTagByURI, .renameTag, .addTaskTag, .addTaskMarker, .updateTaskTag,
                 .updateTaskMarker, .tagTask:
                 .reservedTagName
             }
