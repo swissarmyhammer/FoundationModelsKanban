@@ -145,22 +145,28 @@ extension BoardKey {
     /// work tree on the first line, and the common git directory on the second line.
     static let repoPathsArguments = ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"]
 
+    /// The text in the standard error of git when a directory is not in a git repo, for example in
+    /// `fatal: not a git repository (or any of the parent directories): .git`. The match ignores case.
+    static let notInRepoMessage = "not a git repository"
+
     /// Reads the key of the board of a directory (plan.md §3.2, §12 item 4). Git is not necessary.
     ///
     /// - When the directory is the top-level directory of a clone or of a worktree, the key comes from the current
-    ///   `origin` remote. When the repo has no remote, or the `origin` URL gives no key (for example a local path or
-    ///   a `file://` URL), the key is `local/<directory-name>`, with the name of the directory of the main clone.
-    ///   Thus, a worktree gets the same key as its main clone.
-    /// - When the directory is not in a git repo, when git is not installed, or when the directory is a subdirectory
-    ///   of a repo, the key is `local/<directory-name>`, with the name of the directory. Thus, two boards in one repo
-    ///   do not have the same key.
+    ///   `origin` remote. When the repo has no remote, or the `origin` URL gives no key (a URL with no host, for
+    ///   example a local path or a `file://` URL, or a URL with a host but no path), the key is
+    ///   `local/<directory-name>`, with the name of the directory of the main clone. Thus, a worktree gets the same
+    ///   key as its main clone.
+    /// - When git says that the directory is not in a git repo, when git is not installed or cannot start, or when
+    ///   the directory is a subdirectory of a repo, the key is `local/<directory-name>`, with the name of the
+    ///   directory. Thus, two boards in one repo do not have the same key.
     ///
     /// - Parameter directory: The directory of the board.
     /// - Returns: The key of the board.
     /// - Throws: ``BoardKeyError/gitTimedOut(arguments:)`` when git does not end in its time limit.
     ///   ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled before git ends.
-    ///   ``BoardKeyError/gitFailed(arguments:status:message:)`` when git fails in a repo, or when the output of git
-    ///   does not have the two paths of the repo.
+    ///   ``BoardKeyError/gitFailed(arguments:status:message:)`` when git fails for a different cause in a repo (for
+    ///   example a config file that git cannot read), or when the output of git does not have the two paths of the
+    ///   repo.
     static func read(fromRepoAt directory: URL) async throws(BoardKeyError) -> BoardKey {
         guard let paths = try await repoPaths(at: directory), paths.hasTopLevel(at: directory) else {
             return BoardKey(localDirectoryName: directory.standardizedFileURL.lastPathComponent)
@@ -173,10 +179,15 @@ extension BoardKey {
 
     /// Reads the paths of the repo of a directory with `git rev-parse`.
     ///
+    /// The directory has no repo only in three cases: git cannot start, git is not installed (``Git/launcherPath``
+    /// exits with ``Git/programNotFoundStatus``), or the standard error of git has ``notInRepoMessage`` (in any
+    /// case). Each other failure status of git is a real failure in a repo, so it throws.
+    ///
     /// - Parameter directory: The directory.
-    /// - Returns: The paths, or `nil` when git cannot start, when git is not installed, or when the directory is not
-    ///   in a git repo.
-    /// - Throws: A ``BoardKeyError`` when git does not end, or when its output does not have the two paths.
+    /// - Returns: The paths, or `nil` when the directory has no repo.
+    /// - Throws: ``BoardKeyError/gitFailed(arguments:status:message:)`` when git exits with each other failure status,
+    ///   or when its output does not have the two paths. ``BoardKeyError/gitTimedOut(arguments:)`` and
+    ///   ``BoardKeyError/gitCancelled(arguments:)`` when git does not end.
     private static func repoPaths(at directory: URL) async throws(BoardKeyError) -> RepoPaths? {
         let result: Git.Output
         do throws(BoardKeyError) {
@@ -185,6 +196,9 @@ extension BoardKey {
             return nil
         }
         guard result.status == Git.successStatus else {
+            guard isNoRepoFailure(result) else {
+                throw .gitFailed(arguments: repoPathsArguments, status: result.status, message: result.errorOutput)
+            }
             return nil
         }
         guard let paths = RepoPaths(gitOutput: result.output) else {
@@ -193,11 +207,25 @@ extension BoardKey {
         return paths
     }
 
+    /// Tells if a failed `git rev-parse` shows that the directory has no repo.
+    ///
+    /// - Parameter result: The result of git, with a failure status.
+    /// - Returns: `true` when git is not installed (the status is ``Git/programNotFoundStatus``), or when the
+    ///   standard error has ``notInRepoMessage`` (in any case).
+    private static func isNoRepoFailure(_ result: Git.Output) -> Bool {
+        result.status == Git.programNotFoundStatus
+            || result.errorOutput.range(of: notInRepoMessage, options: .caseInsensitive) != nil
+    }
+
     /// Reads the key of the current `origin` remote of a repo.
     ///
+    /// An `origin` URL that ``init(remoteURL:)`` refuses gives no key: a URL with no host (for example a local path
+    /// or a `file://` URL), or a URL with a host but no path (for example `https://example.com/`). The caller then
+    /// uses the key `local/<main-clone-name>`, the same as for a repo with no remote, so that a board always opens.
+    ///
     /// - Parameter directory: A directory in the repo.
-    /// - Returns: The key, or `nil` when the repo has no `origin` remote, or when the `origin` URL gives no key (for
-    ///   example a local path or a `file://` URL).
+    /// - Returns: The key, or `nil` when the repo has no `origin` remote, or when ``init(remoteURL:)`` refuses the
+    ///   `origin` URL.
     /// - Throws: A ``BoardKeyError`` when git cannot start or fails.
     private static func originKey(ofRepoAt directory: URL) async throws(BoardKeyError) -> BoardKey? {
         try await originURL(ofRepoAt: directory).flatMap { url in try? BoardKey(remoteURL: url) }
@@ -297,6 +325,9 @@ enum Git {
 
     /// The name of the git program, which ``launcherPath`` finds.
     static let programName = "git"
+
+    /// The exit status of ``launcherPath`` when it cannot find ``programName`` on the `PATH`: git is not installed.
+    static let programNotFoundStatus: Int32 = 127
 
     /// The number of seconds in ``defaultTimeLimit``.
     private static let defaultTimeLimitSeconds = 30

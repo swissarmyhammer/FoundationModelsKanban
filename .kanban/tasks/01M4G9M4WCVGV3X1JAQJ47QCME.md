@@ -29,6 +29,31 @@ comments:
     - evidence: 5 files — Sources/FoundationModelsKanban/Identity/BoardKey.swift, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift, Tests/FoundationModelsKanbanTests/Identity/BoardKeyTests.swift, Tests/FoundationModelsKanbanTests/Tool/KanbanGraphTests.swift, plan.md. `swift test`: 1100 tests in 80 suites passed, 0 failures. The only build warning is the accepted SwiftPM "missing creator for mutated node".
     - next: /review
   timestamp: 2026-10-09T20:24:08.107348+00:00
+- actor: claude-code
+  id: 01m4h5kwrsvw9snvzzex1xgank
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 5 files
+    - test: green — swift test, 1100 tests in 80 suites passed; IntegrationTests build complete
+    - commit: 64a693d
+    - review: findings — Sources/FoundationModelsKanban/Identity/BoardKey.swift:187, Sources/FoundationModelsKanban/Identity/BoardKey.swift:203
+  timestamp: 2026-10-09T20:28:02.713683+00:00
+- actor: claude-code
+  id: 01m4h5vnxhdkfcpk4hrwkzpfqr
+  text: |-
+    Review findings (iteration 2) done. Decisions from the orchestrator.
+    - Finding BoardKey.swift:187 (repoPaths): `repoPaths` now gives `nil` only when git cannot start (`gitUnavailable`), when `/usr/bin/env` exits with `Git.programNotFoundStatus` (127, git is not installed), or when the standard error has `BoardKey.notInRepoMessage` ("not a git repository", case-insensitive match). Each other failure status throws `gitFailed(arguments: repoPathsArguments, status:, message: errorOutput)`. Helper: `isNoRepoFailure(_:)`. Doc comments of `read` and `repoPaths` state this rule.
+    - Finding BoardKey.swift:203 (originKey): the fallback stays. Doc comment of `originKey` and of `read`, and plan.md §3.2 and §12 item 4, say that an `origin` with no host, or with a host but no path, gives `local/<main-clone-name>`, so that a board always opens.
+    - Discovery: a corrupt `.git/HEAD` does NOT make a git failure in a repo. Git then does not see the folder as a repo, and prints "fatal: not a git repository", so it gives the local key. The new test uses a `.git/config` that git cannot read ("not a config line"): exit 128, standard error "fatal: bad config line 1 in file .git/config\n" (git 2.55.0).
+    - Tests: `gitFailureInRepoThrows` (RED: returned "local/broken-repo"; GREEN after the change), `originWithoutPathGivesLocalKey` (origin `https://example.com/`; it passed at once, because it documents behavior that stays). The not-a-repo test `folderOutsideRepoGivesLocalKey` stays.
+  timestamp: 2026-10-09T20:32:17.841003+00:00
+- actor: claude-code
+  id: 01m4h5vqabakws7aggx18tgcf2
+  text: |-
+    ### implement — changed
+    - evidence: 3 files — Sources/FoundationModelsKanban/Identity/BoardKey.swift, Tests/FoundationModelsKanbanTests/Identity/BoardKeyTests.swift, plan.md. `swift test`: 1102 tests in 80 suites passed, 0 failures. The only build warning is the accepted SwiftPM "missing creator for mutated node".
+    - next: /review
+  timestamp: 2026-10-09T20:32:19.275700+00:00
 depends_on:
 - 01M4G9GXTJSANGYS1315NRZSQH
 - 01M4G9GQ28QA3Z7MYQG9JE3H3Z
@@ -65,3 +90,16 @@ Other changes:
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-09 15:26)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `plan.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsKanban/Identity/BoardKey.swift:187` `completeness/public-output-contract` — repoPaths returns nil for every non-zero git status. A real failure inside a repo, such as a corrupt repo or a git safe.directory refusal, is treated as 'not in a repo'. The board then gets the key local/<folder-name> with no error or warning. The doc comments say that a failure in a repo throws gitFailed, so the code contradicts its own contract and silently hides the problem. Return nil only when git reports that the directory is not in a repo (for example, by checking the message, or by a separate check). For any other non-zero status, throw .gitFailed(arguments: repoPathsArguments, status: result.status, message: result.errorOutput), as originURL already does. Add one test that makes rev-parse fail inside a repo and checks that the error is thrown.
+- [x] `Sources/FoundationModelsKanban/Identity/BoardKey.swift:203` `completeness/public-output-contract` — The new originKey uses try? on BoardKey(remoteURL:). So an origin URL that is malformed (for example, a host with no path) now gives no error. It silently falls back to local/<main-clone-name>. The old read path threw invalidRemoteURL for such a remote. The new code does not warn or return the error, and no test checks this case. The change hides a bad origin, and the operator is not told. Decide the intended behaviour for a malformed origin. If the fallback to local/<main-clone-name> is correct, state that in the doc comment of originKey and add one test that gives a malformed origin and checks the local key. If the error should reach the caller, use try and let invalidRemoteURL propagate, as the old code did, and keep the fallback only for the no-host case that the doc names.

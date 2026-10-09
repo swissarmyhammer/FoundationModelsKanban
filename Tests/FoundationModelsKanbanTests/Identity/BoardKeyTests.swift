@@ -44,6 +44,22 @@ struct BoardKeyTests {
     /// The name of the folder that is not in a git repo.
     static let plainFolderName = "plain-directory"
 
+    /// An `origin` URL with a host but no path. ``BoardKey/init(remoteURL:)`` refuses it, so the repo gets the key
+    /// of a repo with no remote.
+    static let pathlessOrigin = "https://example.com/"
+
+    /// The name of the config file in the git directory of a repo.
+    static let gitConfigFileName = "config"
+
+    /// The text of a git config file that git cannot read: one line that is not a section and not a key.
+    static let brokenConfigText = "not a config line\n"
+
+    /// The standard error of git in a repo whose config file is ``brokenConfigText``.
+    static let brokenConfigMessage = "fatal: bad config line 1 in file .git/config\n"
+
+    /// The exit status of git after a fatal error.
+    static let gitFatalStatus: Int32 = 128
+
     // MARK: - Normalization
 
     @Test("SSH, HTTPS, and ssh:// forms of one remote give the same key", arguments: remoteForms)
@@ -126,6 +142,27 @@ struct BoardKeyTests {
         let sandbox = try GitSandbox()
         let folder = try GitSandbox.makeFolder(named: Self.plainFolderName, in: sandbox.root)
         #expect(try await BoardKey.read(fromRepoAt: folder) == BoardKey(localDirectoryName: Self.plainFolderName))
+    }
+
+    @Test("A git failure in a repo throws gitFailed, and does not give a local key")
+    func gitFailureInRepoThrows() async throws {
+        let sandbox = try GitSandbox()
+        let repo = try await sandbox.makeRepo(named: "broken-repo")
+        let configFile = repo.appending(path: BoardKey.gitDirectoryName).appending(path: Self.gitConfigFileName)
+        try Self.brokenConfigText.write(to: configFile, atomically: true, encoding: .utf8)
+        let expected = BoardKeyError.gitFailed(
+            arguments: BoardKey.repoPathsArguments,
+            status: Self.gitFatalStatus,
+            message: Self.brokenConfigMessage
+        )
+        await #expect(throws: expected) { try await BoardKey.read(fromRepoAt: repo) }
+    }
+
+    @Test("An origin with a host but no path gives local/<main-clone-name>")
+    func originWithoutPathGivesLocalKey() async throws {
+        let sandbox = try GitSandbox()
+        let repo = try await sandbox.makeRepo(named: "main-clone", origin: Self.pathlessOrigin)
+        #expect(try await BoardKey.read(fromRepoAt: repo) == BoardKey(localDirectoryName: "main-clone"))
     }
 
     @Test("An origin with no host gives local/<main-clone-name>, also in a worktree", arguments: localOrigins)
