@@ -1,4 +1,5 @@
 import Foundation
+import GraphQL
 import Testing
 import ULID
 
@@ -13,7 +14,39 @@ import ULID
 /// The undo, commit, and tool tests cover the other codes of the catalog.
 @Suite("Error codes through execute")
 struct ErrorCoverageTests {
+    /// A document with a syntax error: the selection set of the operation does not close.
+    static let syntaxErrorDocument = "{ board { name }"
+
+    /// A document with a field that `Board` does not have. The rewrite matches no name, so validation fails.
+    static let unknownFieldDocument = "{ board { nmae } }"
+
+    /// A document with a name that the rewrite matches to two names of `Board`: `task` and `tasks`.
+    static let tieDocument = "{ board { taskz } }"
+
     // MARK: - Helpers
+
+    /// Runs a document through `KanbanGraph.execute` on a new engine of the fixture repo, and expects that the call
+    /// fails as a whole: the response has no `data` and one error with the code.
+    ///
+    /// - Parameters:
+    ///   - document: The GraphQL document.
+    ///   - code: The code that `extensions.code` must give, for example `GRAPHQL_PARSE_FAILED`.
+    /// - Throws: An error when the response has no `errors` list.
+    static func expectRequestFailure(of document: String, coded code: String) async throws {
+        let response = try await ColumnActorTests.respond(to: document, onFixtureIn: TemporaryDirectory())
+        #expect(try KanbanGraphTests.object(of: response)["data"] == nil)
+        let errors = try NameRewriteTests.errors(of: response)
+        #expect(errors.count == 1)
+        #expect(errors.first.map(Self.code(of:)) == code)
+    }
+
+    /// Gives the `extensions.code` of one error of a response.
+    ///
+    /// - Parameter error: The error object.
+    /// - Returns: The code, or `nil` when the error has no code.
+    static func code(of error: [String: Any]) -> String? {
+        (error["extensions"] as? [String: Any])?["code"] as? String
+    }
 
     /// Expects that a response has one error, from a root field that failed with a ``KanbanError``.
     ///
@@ -35,7 +68,7 @@ struct ErrorCoverageTests {
         let error = try #require(errors.first)
         #expect(error["message"] as? String == expected.message)
         #expect(error["path"] as? [String] == [field])
-        #expect((error["extensions"] as? [String: Any])?["code"] as? String == code)
+        #expect(Self.code(of: error) == code)
     }
 
     /// Runs a mutation document with one field on a new engine of the fixture repo.
@@ -173,6 +206,38 @@ struct ErrorCoverageTests {
         let response = try await Self.respond(toMutationOf: AddUpdateTaskTests.addTask(with: input))
         let expected = KanbanError.invalidOrdinal(ordinal: AddUpdateTaskTests.invalidOrdinal)
         try Self.expectFailure(of: "addTask", in: response, giving: expected, coded: "INVALID_ORDINAL")
+    }
+
+    // MARK: - Codes of the parse, validation, and rewrite
+
+    @Test("A document with a syntax error gives one error with GRAPHQL_PARSE_FAILED")
+    func parseFailed() async throws {
+        try await Self.expectRequestFailure(of: Self.syntaxErrorDocument, coded: "GRAPHQL_PARSE_FAILED")
+    }
+
+    @Test("A document with an unknown field gives one error with GRAPHQL_VALIDATION_FAILED")
+    func validationFailed() async throws {
+        try await Self.expectRequestFailure(of: Self.unknownFieldDocument, coded: "GRAPHQL_VALIDATION_FAILED")
+    }
+
+    @Test("A name that ties in the rewrite gives one error with AMBIGUOUS_NAME")
+    func ambiguousName() async throws {
+        try await Self.expectRequestFailure(of: Self.tieDocument, coded: "AMBIGUOUS_NAME")
+    }
+
+    @Test("A resolver error that is not a KanbanError gives INTERNAL, with the message of the engine")
+    func internalFailure() {
+        let fault = EventError.malformed(detail: "the line is not JSON")
+        let error = GraphQLError(
+            message: String(describing: fault),
+            path: IndexPath([MutationName.addTask]),
+            originalError: fault
+        )
+        let coded = error.codedAsResultError()
+        let codeKey = KanbanError.ResponseError.Extensions.CodingKeys.code.stringValue
+        #expect(coded.extensions[codeKey] == .string("INTERNAL"))
+        #expect(coded.message == error.message)
+        #expect(coded.path.elements.count == error.path.elements.count)
     }
 
     // MARK: - Partial result

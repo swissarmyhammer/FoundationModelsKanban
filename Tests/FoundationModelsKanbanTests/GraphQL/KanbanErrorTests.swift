@@ -28,6 +28,10 @@ struct KanbanErrorTests {
         ShortID(ofULIDString: "01KT6SA4911JQPK09YQRC9RB4G"),
     ]
 
+    /// A message of the GraphQL engine, with its "did you mean" suggestion. The parse, validation, and internal
+    /// cases keep this message as it is.
+    static let engineMessage = #"Cannot query field "nmae" on type "Board". Did you mean "name"?"#
+
     /// One error of each case, with the code that the case must give.
     static let codes: [(KanbanError, String)] = [
         (.invalidVariables(received: "a number"), "INVALID_VARIABLES"),
@@ -55,6 +59,10 @@ struct KanbanErrorTests {
         (.conflictingPlacement(fields: ["before", "after"]), "CONFLICTING_PLACEMENT"),
         (.boardBusy(attempts: commitAttempts), "BOARD_BUSY"),
         (.subscriptionNotInTool, "SUBSCRIPTION_NOT_IN_TOOL"),
+        (.graphQLParseFailed(detail: engineMessage), "GRAPHQL_PARSE_FAILED"),
+        (.graphQLValidationFailed(detail: engineMessage), "GRAPHQL_VALIDATION_FAILED"),
+        (.ambiguousName(name: "taskz", matches: ["task", "tasks"]), "AMBIGUOUS_NAME"),
+        (.internalFailure(detail: engineMessage), "INTERNAL"),
     ]
 
     // MARK: - Codes
@@ -64,7 +72,7 @@ struct KanbanErrorTests {
         #expect(error.code == expectedCode)
     }
 
-    @Test("The cases give seventeen different codes")
+    @Test("The cases give twenty-one different codes")
     func codesAreDistinct() {
         #expect(Set(Self.codes.map { $0.0.code }).count == Self.codes.count)
     }
@@ -268,6 +276,26 @@ struct KanbanErrorTests {
                 == "The tool does not run a subscription. Use board { history(since: <txn>) } "
                 + "to get the changes after a known transaction."
         )
+    }
+
+    @Test("AMBIGUOUS_NAME gives the matching names")
+    func ambiguousNameMessage() {
+        #expect(
+            KanbanError.ambiguousName(name: "taskz", matches: ["task", "tasks"]).message
+                == "The name \"taskz\" matches more than one name: task, tasks. Use one of these names."
+        )
+    }
+
+    @Test(
+        "GRAPHQL_PARSE_FAILED, GRAPHQL_VALIDATION_FAILED, and INTERNAL keep the message of the engine",
+        arguments: [
+            KanbanError.graphQLParseFailed(detail: Self.engineMessage),
+            .graphQLValidationFailed(detail: Self.engineMessage),
+            .internalFailure(detail: Self.engineMessage),
+        ]
+    )
+    func engineMessageStays(error: KanbanError) {
+        #expect(error.message == Self.engineMessage)
     }
 
     // MARK: - GraphQL error JSON

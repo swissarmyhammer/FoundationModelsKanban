@@ -70,6 +70,22 @@ enum KanbanError: Error, Hashable, Sendable {
 
     /// `SUBSCRIPTION_NOT_IN_TOOL`: the call sent a `subscription` through the tool.
     case subscriptionNotInTool
+
+    /// `GRAPHQL_PARSE_FAILED`: the document has a syntax error. The detail is the message of the GraphQL parser.
+    case graphQLParseFailed(detail: String)
+
+    /// `GRAPHQL_VALIDATION_FAILED`: the document is not valid for the schema, for example it has an unknown field
+    /// or an argument of the wrong type. The detail is the message of the GraphQL engine, with its "did you mean"
+    /// suggestion.
+    case graphQLValidationFailed(detail: String)
+
+    /// `AMBIGUOUS_NAME`: the name rewrite matches a name of the document to more than one name of the schema
+    /// (plan.md §4.5). The matches are these names.
+    case ambiguousName(name: String, matches: [String])
+
+    /// `INTERNAL`: a fault that is not a ``KanbanError``, for example an ``EventError`` of a resolver. The detail is
+    /// the message of the GraphQL engine.
+    case internalFailure(detail: String)
 }
 
 // MARK: - Code and message
@@ -104,6 +120,10 @@ extension KanbanError {
         case .conflictingPlacement: "CONFLICTING_PLACEMENT"
         case .boardBusy: "BOARD_BUSY"
         case .subscriptionNotInTool: "SUBSCRIPTION_NOT_IN_TOOL"
+        case .graphQLParseFailed: "GRAPHQL_PARSE_FAILED"
+        case .graphQLValidationFailed: "GRAPHQL_VALIDATION_FAILED"
+        case .ambiguousName: "AMBIGUOUS_NAME"
+        case .internalFailure: "INTERNAL"
         }
     }
 
@@ -168,6 +188,11 @@ extension KanbanError {
         case .subscriptionNotInTool:
             "The tool does not run a subscription. Use board { history(since: <txn>) } "
                 + "to get the changes after a known transaction."
+        case .graphQLParseFailed(let detail), .graphQLValidationFailed(let detail), .internalFailure(let detail):
+            detail
+        case .ambiguousName(let name, let matches):
+            "The name \"\(name)\" matches more than one name: \(matches.joined(separator: Self.listSeparator)). "
+                + "Use one of these names."
         }
     }
 

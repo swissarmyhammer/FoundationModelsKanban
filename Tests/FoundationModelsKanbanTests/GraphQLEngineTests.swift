@@ -128,7 +128,7 @@ struct GraphQLEngineTests {
         )
     }
 
-    @Test("A patch mutation whose node is not a local ref gives an error and no data")
+    @Test("A patch mutation whose node is not a local ref gives an INTERNAL error and no data")
     func patchRefusesANodeThatIsNotALocalRef() async throws {
         let response = try await PatchSchema().respond(
             to: #"mutation { patch(input: { node: "task/01K6Z3", type: Task }) }"#,
@@ -136,7 +136,7 @@ struct GraphQLEngineTests {
         )
         #expect(
             response
-                == #"{"errors":[{"message":"invalidULID(ref: \"task/01K6Z3\")","locations":[{"line":1,"column":12}],"path":["patch"]}]}"#
+                == #"{"errors":[{"message":"invalidULID(ref: \"task/01K6Z3\")","locations":[{"line":1,"column":12}],"path":["patch"],"extensions":{"code":"INTERNAL"}}]}"#
         )
     }
 

@@ -513,7 +513,8 @@ private struct RewriteWalk {
         case .found(let canonical):
             return canonical
         case .tie(let matches):
-            ties.append(GraphQLError(message: Self.tieMessage(for: name.text, matching: matches), nodes: [name.node]))
+            let tie = KanbanError.ambiguousName(name: name.text, matches: matches)
+            ties.append(GraphQLError(message: tie.message, nodes: [name.node]).coded(as: tie))
             return nil
         case .notFound:
             return nil
@@ -578,17 +579,6 @@ private struct RewriteWalk {
     /// - Returns: The candidates of the name matcher.
     private static func candidates(_ fields: GraphQLFieldMap) -> [CanonicalName] {
         fields.keys.map(CanonicalName.init(field:))
-    }
-
-    /// Gives the message of a tie: the name, the names that it matches, and how to correct the call.
-    ///
-    /// - Parameters:
-    ///   - name: The name that the caller wrote.
-    ///   - matches: The names that the name matches.
-    /// - Returns: The message.
-    private static func tieMessage(for name: String, matching matches: [String]) -> String {
-        "The name \"\(name)\" matches more than one name: \(matches.joined(separator: KanbanError.listSeparator)). "
-            + "Use one of these names."
     }
 }
 

@@ -1061,9 +1061,9 @@ extension API {
     /// The response follows the GraphQL specification: `{"data": …}`, and
     /// `"errors"` when the document has an error. A GraphQL error does not
     /// throw (plan.md §4.4): a document that does not parse gives a response
-    /// with one error and no `data`. An error that a resolver threw as a
-    /// ``KanbanError`` has its message and `extensions.code`, and a field that
-    /// failed is `null`. With no formatting, the keys of `data`
+    /// with one error and no `data`. Each error has `extensions.code`: an error
+    /// that a resolver threw as a ``KanbanError`` has its message and code, and
+    /// a field that failed is `null`. With no formatting, the keys of `data`
     /// are in the order of the selection. A `/` is not escaped, so a ref such
     /// as `tag/bug` stays easy to read.
     ///
@@ -1176,10 +1176,11 @@ extension API {
         return try await run(rewritten)
     }
 
-    /// Gives the response of one GraphQL error, with no `data` and no rewrites.
+    /// Gives the response of the error of a document that does not parse, with no `data` and no rewrites. The error
+    /// has the code `GRAPHQL_PARSE_FAILED` (plan.md §4.4).
     ///
     /// - Parameters:
-    ///   - error: The error.
+    ///   - error: The parse error.
     ///   - formatting: The formatting of the JSON text.
     /// - Returns: The response as JSON text.
     /// - Throws: An error from the JSON encoder.
@@ -1187,7 +1188,8 @@ extension API {
         _ error: GraphQLError,
         formattedWith formatting: GraphQLJSONEncoder.OutputFormatting
     ) throws -> String {
-        try RewriteResponse(result: GraphQLResult(errors: [error]), rewrites: []).encoded(formattedWith: formatting)
+        let result = GraphQLResult(errors: [error.codedAsParseFailure()])
+        return try RewriteResponse(result: result, rewrites: []).encoded(formattedWith: formatting)
     }
 
     /// Runs a rewritten document, and gives the result in the form of the
@@ -1223,39 +1225,16 @@ extension API {
 
 extension RewrittenDocument {
     /// Gives a result of the engine in the form of the document that the caller wrote, with the message and the
-    /// code of each error that a ``KanbanError`` caused.
+    /// code of each error (plan.md §4.4).
+    ///
+    /// The engine makes the message of a resolver error from the Swift text of the error, and it gives no
+    /// `extensions`. Thus each error gets the message and `extensions.code` of its ``KanbanError``.
     ///
     /// - Parameter result: The result of the rewritten document.
     /// - Returns: The result with the names of the caller.
     fileprivate func codedCallerResult(from result: GraphQLResult) -> GraphQLResult {
         let callerResult = callerResult(from: result)
-        return GraphQLResult(data: callerResult.data, errors: callerResult.errors.map(Self.codedError(from:)))
-    }
-
-    /// Gives an error of the execution in the form of plan.md §4.4 when a resolver threw a ``KanbanError``.
-    ///
-    /// The engine makes the message of a resolver error from the Swift text of the error, and it gives no
-    /// `extensions`. Thus the error gets the message and `extensions.code` of the GraphQL error JSON of the
-    /// ``KanbanError``. The path, the locations, and the original error do not change.
-    ///
-    /// - Parameter error: An error of the result.
-    /// - Returns: The error with the message and the code of its ``KanbanError``, or the error as it is when no
-    ///   ``KanbanError`` caused it.
-    private static func codedError(from error: GraphQLError) -> GraphQLError {
-        guard let kanbanError = error.originalError as? KanbanError else {
-            return error
-        }
-        let responseError = kanbanError.responseError()
-        let codeKey = KanbanError.ResponseError.Extensions.CodingKeys.code.stringValue
-        return GraphQLError(
-            message: responseError.message,
-            nodes: error.nodes,
-            source: error.source,
-            positions: error.positions,
-            path: error.path,
-            originalError: kanbanError,
-            extensions: [codeKey: .string(responseError.extensions.code)]
-        )
+        return GraphQLResult(data: callerResult.data, errors: callerResult.errors.map { $0.codedAsResultError() })
     }
 }
 

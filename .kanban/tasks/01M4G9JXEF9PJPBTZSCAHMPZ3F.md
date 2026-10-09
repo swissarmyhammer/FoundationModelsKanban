@@ -59,10 +59,26 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsKanbanTests/Tool/AgentPlanPostTests.swift. `swift test --filter AgentPlanPostTests`: 8 of 8 pass. `swift test`: 1058 tests in 74 suites pass; the only build warning is the accepted SwiftPM "missing creator for mutated node". Both findings are `- [x]`.
     - next: /review
   timestamp: 2026-10-09T14:09:58.728423+00:00
+- actor: claude-code
+  id: 01m4gg4vw2j5cdkg2jha0166sk
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings (0 confirmed, 0 refuted); 1 file reviewed, 2 .kanban files excluded by .reviewignore. Both round 1 findings are `- [x]`. The HEAD commit message (f6635d2) agrees with the diff: Harness.init takes timedBy and observingBatchesWith with defaults, Harness has a root property, init(graph:at:keeping:) takes the root, and the two-board test gives repos.app.
+    - next: none — task is in done
+  timestamp: 2026-10-09T14:12:50.178274+00:00
+- actor: claude-code
+  id: 01m4gg4wt7bcngvefc7hencwas
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 file
+    - test: green — swift test, 1058 tests in 74 suites passed
+    - commit: f6635d2
+    - review: clean — 0 findings
+  timestamp: 2026-10-09T14:12:51.143088+00:00
 depends_on:
 - 01M4G9HNAFASWXCDCPFTDYBDKJ
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: c980
 title: 'Agent plan: no post on a failed commit, and tests for each §7.3 rule'
 ---
 ## What

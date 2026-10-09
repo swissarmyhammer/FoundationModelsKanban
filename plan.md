@@ -329,7 +329,9 @@ mutation {
 The response follows the GraphQL specification: `{ "data": …, "errors": [ … ] }`.
 
 - Each error has `message`, `path`, and `extensions.code`.
-- The codes are: `INVALID_VARIABLES`, `NOT_FOUND`, `AMBIGUOUS_ID`, `ACTOR_NOT_FOUND`, `DUPLICATE_ID`, `COLUMN_NOT_EMPTY`, `DEPENDENCY_CYCLE`, `TAG_RENAME_CYCLE`, `NOTHING_TO_UNDO`, `UNDO_CONFLICT`, `INVALID_FILTER`, `INVALID_TAG_NAME`, `INVALID_SLUG`, `INVALID_ORDINAL`, `CONFLICTING_PLACEMENT`, `BOARD_BUSY`, `SUBSCRIPTION_NOT_IN_TOOL`.
+- The codes are: `INVALID_VARIABLES`, `NOT_FOUND`, `AMBIGUOUS_ID`, `ACTOR_NOT_FOUND`, `DUPLICATE_ID`, `COLUMN_NOT_EMPTY`, `DEPENDENCY_CYCLE`, `TAG_RENAME_CYCLE`, `NOTHING_TO_UNDO`, `UNDO_CONFLICT`, `INVALID_FILTER`, `INVALID_TAG_NAME`, `INVALID_SLUG`, `INVALID_ORDINAL`, `CONFLICTING_PLACEMENT`, `BOARD_BUSY`, `SUBSCRIPTION_NOT_IN_TOOL`, `GRAPHQL_PARSE_FAILED`, `GRAPHQL_VALIDATION_FAILED`, `AMBIGUOUS_NAME`, `INTERNAL`.
+- `GRAPHQL_PARSE_FAILED` is for a document with a syntax error. `GRAPHQL_VALIDATION_FAILED` is for a document that is not valid for the schema, for example an unknown field, an argument of the wrong type, or a variable value of the wrong type. `AMBIGUOUS_NAME` is for a name that matches two or more names in the name rewrite (§4.5). These three errors keep the message of the GraphQL engine or of the rewrite.
+- `INTERNAL` is for an error of a resolver that is not one of the codes above, for example an error of the event log rules. The error keeps the message of the GraphQL engine.
 - `CONFLICTING_PLACEMENT` is for an input that gives more than one place field. The message names the place fields that the input gave, and tells the caller to give only one of them. Of the inputs, only `moveTask` has more than one place field (`ordinal`, `before`, `after`). `addTask` has only `ordinal`, so it cannot give this error.
 - The message must tell the model how to correct the call. For example, an `AMBIGUOUS_ID` error gives the matching ids.
 - A syntax or validation error gives the GraphQL "did you mean" suggestion. This is after the name rewrite in §4.5.
