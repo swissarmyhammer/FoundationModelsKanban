@@ -14,17 +14,30 @@ struct NodeURITests {
     /// The board key of a different board.
     static let otherKey = "github.com/swissarmyhammer/swissarmyhammer"
 
+    /// The key ``currentKey`` with its host in mixed case.
+    static let mixedCaseKey = "GitHub.COM/swissarmyhammer/FoundationModelsKanban"
+
+    /// The start of a board key before the repo name: the host and the owner of a remote, and the host of a repo
+    /// with no remote.
+    static let keyPrefixes = ["github.com/acme", BoardKey.localHost]
+
+    /// The name of each node type other than the board. A board URI test uses each name as the name of a repo.
+    static let typeNames = PatchNodeType.allCases.filter { type in type != .board }.map(\.pathSegment)
+
     /// The ULID text of the test task.
     static let taskULID = "01KT6R6HR3KJT6JVNDRAJV8V4T"
 
     /// The ULID text of the test comment.
     static let commentULID = "01KT6SAMJAJ40XVQ9Y7JRAJ9VG"
 
+    /// The slug of the test actor.
+    static let actorSlug = "claude-code"
+
     /// The full URI of each of the six node types in the current board.
     static let uriTexts = [
         "kanban://\(currentKey)/board",
         "kanban://\(currentKey)/column/doing",
-        "kanban://\(currentKey)/actor/claude-code",
+        "kanban://\(currentKey)/actor/\(actorSlug)",
         "kanban://\(currentKey)/task/\(taskULID)",
         "kanban://\(currentKey)/tag/bug",
         "kanban://\(currentKey)/comment/\(commentULID)",
@@ -61,10 +74,27 @@ struct NodeURITests {
         #expect(uri == NodeURI(boardKey: "local/my-repo", ref: .tag(slug: "bug")))
     }
 
-    @Test("A column with the slug board is a column, not the board")
-    func columnNamedBoardIsColumn() throws {
-        let uri = try NodeURI(parsing: "kanban://\(Self.currentKey)/column/board")
-        #expect(uri == NodeURI(boardKey: Self.currentKey, ref: .column(slug: "board")))
+    @Test(
+        "A board URI whose repo name is a node type is the board URI with the full key",
+        arguments: keyPrefixes, typeNames
+    )
+    func boardURIOfTypeNamedRepo(prefix: String, typeName: String) throws {
+        let key = "\(prefix)/\(typeName)"
+        let uri = try NodeURI(parsing: "kanban://\(key)/board")
+        #expect(uri == NodeURI(boardKey: key, ref: .board))
+    }
+
+    @Test("The parse makes the host of the key lowercase with the rule of a remote key, and the path keeps its case")
+    func parseMakesHostLowercase() throws {
+        let uri = try NodeURI(parsing: "kanban://\(Self.mixedCaseKey)/task/\(Self.taskULID)")
+        #expect(uri.boardKey == Self.currentKey)
+        #expect(uri.boardKey == (try BoardKey(remoteURL: "https://\(Self.mixedCaseKey)")).description)
+    }
+
+    @Test("A URI whose host differs from the current key only in case gives its local ref")
+    func mixedCaseHostGivesLocalRef() throws {
+        let uri = try NodeURI(parsing: "kanban://\(Self.mixedCaseKey)/actor/\(Self.actorSlug)")
+        #expect(uri.localRef(inBoard: Self.currentKey) == .actor(slug: Self.actorSlug))
     }
 
     @Test("The scheme and the type segment ignore case")
@@ -130,13 +160,13 @@ struct NodeURITests {
 
     @Test("A URI with the current key gives its local ref")
     func uriInCurrentBoardGivesLocalRef() {
-        let uri = NodeURI(boardKey: Self.currentKey, ref: .actor(slug: "claude-code"))
-        #expect(uri.localRef(inBoard: Self.currentKey) == .actor(slug: "claude-code"))
+        let uri = NodeURI(boardKey: Self.currentKey, ref: .actor(slug: Self.actorSlug))
+        #expect(uri.localRef(inBoard: Self.currentKey) == .actor(slug: Self.actorSlug))
     }
 
     @Test("A URI with a different key gives no local ref")
     func uriInOtherBoardGivesNoLocalRef() {
-        let uri = NodeURI(boardKey: Self.otherKey, ref: .actor(slug: "claude-code"))
+        let uri = NodeURI(boardKey: Self.otherKey, ref: .actor(slug: Self.actorSlug))
         #expect(uri.localRef(inBoard: Self.currentKey) == nil)
     }
 }

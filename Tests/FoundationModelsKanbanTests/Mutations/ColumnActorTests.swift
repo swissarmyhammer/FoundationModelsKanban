@@ -95,11 +95,16 @@ struct ColumnActorTests {
 
     /// Writes the fixture logs to a temporary repo, and makes a new engine for the repo.
     ///
-    /// - Parameter directory: The temporary repo directory.
+    /// - Parameters:
+    ///   - directory: The temporary repo directory.
+    ///   - keyReader: Reads the key of the board. The default gives the fake key of ``KanbanGraphTests``.
     /// - Returns: The engine, and the ULID of the fixture task.
-    static func makeFixtureGraph(in directory: TemporaryDirectory) throws -> (graph: KanbanGraph, task: ULID) {
+    static func makeFixtureGraph(
+        in directory: TemporaryDirectory,
+        readingKeyWith keyReader: @escaping BoardKeyReader = KanbanGraphTests.fakeKey
+    ) throws -> (graph: KanbanGraph, task: ULID) {
         let task = try KanbanGraphTests.writeFixture(inRepoAt: directory.url).task
-        return (try KanbanGraphTests.makeGraph(at: directory.url), task)
+        return (try KanbanGraphTests.makeGraph(at: directory.url, readingKeyWith: keyReader), task)
     }
 
     /// Runs one document on a new engine of the fixture repo.

@@ -47,9 +47,10 @@ extension NodeURI {
 
     /// Reads a URI from its text.
     ///
-    /// When the second-to-last segment is a node type other than the board, the last two segments are the local
-    /// ref. Else, when the last segment is `board`, that segment is the local ref. Thus, a column with the slug
-    /// `board` is a column. All segments before the local ref are the board key.
+    /// When the last segment is `board`, that segment is the local ref, also when the segment before it is the name
+    /// of a node type: `kanban://github.com/acme/task/board` is the board of the repo `task`. Else, the last two
+    /// segments are the local ref. All segments before the local ref are the board key. The host of the key ignores
+    /// case, so the key has the host in lowercase (``BoardKey/normalizedText(ofSegments:)``).
     ///
     /// - Parameter text: The text of the URI, for example `kanban://local/my-repo/tag/bug`.
     /// - Throws: ``NodeRefError/missingScheme(uri:)`` when the text does not start with the scheme.
@@ -69,20 +70,16 @@ extension NodeURI {
             throw .invalidBoardKey(uri: text)
         }
         let ref = try LocalRef(parsing: segments.suffix(refSegmentCount).joined(separator: separator))
-        self.init(boardKey: keySegments.joined(separator: separator), ref: ref)
+        self.init(boardKey: BoardKey.normalizedText(ofSegments: keySegments), ref: ref)
     }
 
     /// Finds the number of segments at the end of a URI path that make the local ref.
     ///
     /// - Parameter segments: The segments of the URI after the scheme.
-    /// - Returns: ``LocalRef/boardSegmentCount`` for the board ref, else ``LocalRef/typedSegmentCount``.
+    /// - Returns: ``LocalRef/boardSegmentCount`` when the last segment is `board`, else
+    ///   ``LocalRef/typedSegmentCount``.
     private static func refSegmentCount(in segments: [String]) -> Int {
-        let typeIndex = segments.count - LocalRef.typedSegmentCount
-        let typeOfPair = segments.indices.contains(typeIndex) ? PatchNodeType(pathSegment: segments[typeIndex]) : nil
         let typeOfLast = segments.last.flatMap(PatchNodeType.init(pathSegment:))
-        guard typeOfPair == nil || typeOfPair == .board, typeOfLast == .board else {
-            return LocalRef.typedSegmentCount
-        }
-        return LocalRef.boardSegmentCount
+        return typeOfLast == .board ? LocalRef.boardSegmentCount : LocalRef.typedSegmentCount
     }
 }

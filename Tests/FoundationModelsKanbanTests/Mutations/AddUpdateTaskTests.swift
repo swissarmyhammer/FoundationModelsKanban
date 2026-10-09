@@ -84,6 +84,10 @@ struct AddUpdateTaskTests {
     /// The full URI of a task of a different board.
     private static let remoteTask = "kanban://github.com/o/other/task/01K6X2ABCDEFGHJKMNPQRSTVWX"
 
+    /// A board key from a remote, with its host in mixed case. The key of the board is the same text with the host
+    /// in lowercase.
+    private static let mixedCaseKey = "GitHub.com/acme/kanban"
+
     /// A ref that names no task.
     static let unknownTask = "^zzzzzzz"
 
@@ -168,6 +172,36 @@ struct AddUpdateTaskTests {
     /// - Returns: The URI text.
     private static func id(of task: ULID) -> String {
         ColumnActorTests.id(of: .task(task))
+    }
+
+    /// Gives the full URI of a task of the fixture board of ``makeRemoteKeyFixture(in:)``, with the host of the key
+    /// in mixed case.
+    ///
+    /// - Parameter task: The ULID of the task.
+    /// - Returns: The URI text.
+    private static func mixedCaseID(of task: ULID) -> String {
+        NodeURI(boardKey: mixedCaseKey, ref: .task(task)).description
+    }
+
+    /// Gives the board key of ``mixedCaseKey`` from its remote: the host is in lowercase.
+    ///
+    /// - Parameter root: The root directory of the repo. The key does not use it.
+    /// - Returns: The key.
+    /// - Throws: ``BoardKeyError/invalidRemoteURL(url:)`` when the remote is not valid.
+    @Sendable
+    private static func remoteKey(ofRepoAt root: URL) throws(BoardKeyError) -> BoardKey {
+        try BoardKey(remoteURL: "https://\(mixedCaseKey)")
+    }
+
+    /// Writes the fixture logs to a temporary repo, and makes an engine whose board key comes from the remote of
+    /// ``mixedCaseKey``.
+    ///
+    /// - Parameter directory: The temporary repo directory.
+    /// - Returns: The engine, and the ULID of the fixture task.
+    private static func makeRemoteKeyFixture(
+        in directory: TemporaryDirectory
+    ) throws -> (graph: KanbanGraph, task: ULID) {
+        try ColumnActorTests.makeFixtureGraph(in: directory, readingKeyWith: remoteKey(ofRepoAt:))
     }
 
     /// Gives the ULID of each task URI in a response, in the order of the response.
@@ -769,6 +803,37 @@ struct AddUpdateTaskTests {
             #"body: "Needs \#(Self.id(of: added))""#
         }
         #expect(error == expected)
+    }
+
+    @Test("updateTask with a dependsOn URI whose host is in mixed case stores a local ref; a done target does not block")
+    func updateTaskDependsOnMixedCaseHost() async throws {
+        let directory = try TemporaryDirectory()
+        let fixture = try Self.makeRemoteKeyFixture(in: directory)
+        let added = try await Self.addedTasks(by: Self.mutation(of: Self.addTask(with: "")), on: fixture.graph)
+        let task = try #require(added.first)
+        let input = #"dependsOn: ["\#(Self.mixedCaseID(of: fixture.task))"]"#
+        let update = Self.updateTask(task, with: input, selecting: "{ ready }")
+        let response = try await KanbanGraphTests.execute(Self.mutation(of: update), on: fixture.graph)
+        #expect(response == #"{"data":{"updateTask":{"ready":true}}}"#)
+        let expected = try PatchInput(node: .task(task), add: [PropertyName.dependsOn: [.local(.task(fixture.task))]])
+        #expect(try Self.lastPatch(of: task, in: directory) == expected)
+    }
+
+    @Test("A dependsOn URI whose host is in mixed case and that closes a cycle gives DEPENDENCY_CYCLE")
+    func mixedCaseHostCycleIsRefused() async throws {
+        let directory = try TemporaryDirectory()
+        let fixture = try Self.makeRemoteKeyFixture(in: directory)
+        let setup = Self.mutation(of: Self.addTask(with: Self.dependsOn(fixture.task)))
+        let dependent = try #require(try await Self.addedTasks(by: setup, on: fixture.graph).first)
+        let input = #"dependsOn: ["\#(Self.mixedCaseID(of: dependent))"]"#
+        let response = try await CommentTests.run(Self.updateTask(fixture.task, with: input), on: fixture.graph)
+        let path = [fixture.task, dependent, fixture.task].map(Self.sigilRef(of:))
+        try ErrorCoverageTests.expectFailure(
+            of: MutationName.updateTask,
+            in: response,
+            giving: .dependencyCycle(path: path),
+            coded: "DEPENDENCY_CYCLE"
+        )
     }
 
     // MARK: - Mint and concurrency

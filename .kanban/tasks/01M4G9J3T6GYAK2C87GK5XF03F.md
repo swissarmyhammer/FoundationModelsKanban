@@ -75,8 +75,24 @@ comments:
     - evidence: `git commit --amend --only` changed only the message. Commit 843d2a0 is now 86e2d18. The tree is 1a31d97b before and after the amend, and `git diff 843d2a0 86e2d18` is empty. `git show` showed that the diff changes only the two task files of ^k5xf03f. It adds three comments (`### finish iteration 1 — findings`, `### review — findings`, and the `### implement — changed` record of the message correction) and the Review Findings section with the checked finding plan.md:332. The `### implement — changed` record is not a review comment, so the body names it. New message: subject "chore(kanban): record review round 1 of ^k5xf03f", body "Add the review record, the ledger comment, the implement record of the message correction and the checked finding of ^k5xf03f." The finding `.kanban/tasks/01M4G9J3T6GYAK2C87GK5XF03F.md:32` is `- [x]`. No code change, no other commit. The commit was not pushed (no remote branch contains it).
     - next: /review
   timestamp: 2026-10-09T15:02:33.328436+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4gk3ym7y993zmnzd9nyzqbc
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — engine 0 findings (0 confirmed, 0 refuted); 2 .kanban files excluded by .reviewignore. Commit message check: 86e2d18 (HEAD~1) is true for its diff (it adds the `### review — findings` record, the `### finish iteration 1 — findings` ledger comment, the `### implement — changed` record of the message correction, and the Review Findings section with the checked finding plan.md:332). 8310f1e (HEAD) is true for its diff (it changes only the two task files of ^k5xf03f and records review round 2). All prior findings are checked.
+    - next: none — task moved to done
+  timestamp: 2026-10-09T15:04:45.959736+00:00
+- actor: claude-code
+  id: 01m4gk3zmpfgzz0rjv9tsz3npt
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — message of 843d2a0 amended to 86e2d18
+    - test: green — swift test, 1064 tests in 74 suites passed
+    - commit: 8310f1e
+    - review: clean — 0 findings
+  timestamp: 2026-10-09T15:04:46.998904+00:00
+position_column: done
+position_ordinal: ca80
 title: Each GraphQL error has extensions.code
 ---
 ## What

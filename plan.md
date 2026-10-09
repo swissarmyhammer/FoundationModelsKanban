@@ -110,6 +110,8 @@ kanban://github.com/swissarmyhammer/FoundationModelsKanban/actor/claude-code
 ```
 
 - **`board-key`** comes from the current git remote `origin`, normalized to `host/owner/repo`. If there is no remote, the key is `local/<directory-name>`. The tool reads the key from git each time that it opens the board. The key is **not** stored in the log. Thus, when the repo moves, the URIs of its nodes follow the repo. See §12, items 4 and 18.
+- **The host part of a key ignores case.** The key from the remote has the host in lowercase. When the tool parses a URI, it also makes the host segment of the key lowercase, with the same rule. The path keeps its case. Thus, `kanban://GitHub.com/owner/repo/task/<ULID>` names a task of the board `github.com/owner/repo`.
+- **Board URI parse.** When the last segment of a URI is `board`, the URI is the board URI, and all segments before it are the key. This is also true when the segment before `board` is a node type name: `kanban://local/tag/board` is the board of the key `local/tag`.
 - **Stored form: local ref.** The log stores the id of a node in the same board as a **local ref**: the URI without the `kanban://<board-key>/` prefix.
 
   | Node | Local ref | Full URI (only in GraphQL input and output) |

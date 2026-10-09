@@ -55,7 +55,7 @@ struct BoardKey: Hashable, Sendable, CustomStringConvertible {
         else {
             throw .invalidRemoteURL(url: url)
         }
-        description = ([host.lowercased()] + pathSegments).joined(separator: String(LocalRef.separator))
+        description = Self.normalizedText(ofSegments: [String(host)] + pathSegments)
     }
 
     /// Makes the key of a repo with no remote: `local/<directory-name>`.
@@ -69,6 +69,19 @@ struct BoardKey: Hashable, Sendable, CustomStringConvertible {
 // MARK: - Normalization
 
 extension BoardKey {
+    /// Makes the text of a key from its segments. The host (the first segment) ignores case, so the text has the
+    /// host in lowercase. Each other segment keeps its case.
+    ///
+    /// The key of a remote and the key in a parsed ``NodeURI`` both use this rule, so `GitHub.com/owner/repo` and
+    /// `github.com/owner/repo` name the same board.
+    ///
+    /// - Parameter segments: The segments of the key, the host first.
+    /// - Returns: The text of the key, for example `github.com/swissarmyhammer/FoundationModelsKanban`.
+    static func normalizedText(ofSegments segments: some Collection<String>) -> String {
+        let host = segments.first.map { host in [host.lowercased()] } ?? []
+        return (host + segments.dropFirst()).joined(separator: String(LocalRef.separator))
+    }
+
     /// Splits a remote URL into its authority (the user, the host, and the port) and its path.
     ///
     /// - Parameter text: The remote URL, with no spaces at the start or at the end.
