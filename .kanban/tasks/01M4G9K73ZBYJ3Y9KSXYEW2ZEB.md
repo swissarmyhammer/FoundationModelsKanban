@@ -48,10 +48,19 @@ comments:
     - finding `SubscriptionTests.swift:269` `reuse/reuse` is checked.
     - next: /review
   timestamp: 2026-10-09T19:42:19.960422+00:00
+- actor: claude-code
+  id: 01m4h34bv8nrfq8vp1hrk278tc
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 2 files
+    - test: green — swift test, 1097 tests in 80 suites passed
+    - commit: b1fcb14
+    - review: clean — 0 findings
+  timestamp: 2026-10-09T19:44:36.712392+00:00
 depends_on:
 - 01M4G9K2DV1V2ZVYNZBW3TAWFM
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: d480
 title: 'Watcher batch: do not repeat derived updates in each Change'
 ---
 ## What

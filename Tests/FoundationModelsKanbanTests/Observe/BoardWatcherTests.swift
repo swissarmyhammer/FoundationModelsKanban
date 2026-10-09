@@ -19,6 +19,13 @@ struct BoardWatcherTests {
     /// column of the fixture is the terminal column, so its tasks are done, and the search also finds them.
     static let laterTitleSearch = TaskSearchTests.query(TaskSearchTests.titleWord)
 
+    /// The number of changes that the merge test reads from `history`. It is more than the number of changes of the
+    /// task, so that an unexpected change also shows in the compare.
+    static let mergeHistoryPageSize = 10
+
+    /// The selection of the task query of the merge test: the title and the column name.
+    static let titleAndColumnSelection = "{ title column { name } }"
+
     // MARK: - Fixture
 
     /// Waits for the first batch that satisfies a condition.
@@ -115,6 +122,37 @@ struct BoardWatcherTests {
             try await TaskSearchTests.hits(searchingWith: Self.laterTitleSearch, on: graph).map(\.task.id) == [id]
         }
         #expect(isFound)
+        await graph.close()
+    }
+
+    @Test("A union merge that adds lines to a task log updates the task, and history gets their transactions")
+    func mergedLinesUpdateTaskAndHistory() async throws {
+        let directory = try TemporaryDirectory()
+        _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
+        let recorder = BatchRecorder()
+        let graph = try KanbanGraphTests.makeGraph(at: directory.url, observingBatchesWith: recorder)
+        _ = try await CommentTests.run(AddUpdateTaskTests.doneColumn, on: graph)
+        let id = try await CrossRepoFixture.addTask(with: "", on: graph)
+        let task = try AddUpdateTaskTests.firstTask(in: id)
+        let addTxn = try await SubscriptionTests.latestTxn(on: graph)
+        let log = EventLog(repositoryAt: directory.url)
+        var ids = GitGraphFixture.secondEngineIDs
+        let titleTxn = SubscriptionTests.nextTxn(of: ids)
+        try Self.writeLaterTitle(to: task, mintingFrom: &ids, in: log)
+        let doneTxn = SubscriptionTests.nextTxn(of: ids)
+        try SubscriptionTests.writeDoneMove(of: id, mintingFrom: &ids, in: log)
+        let done = try #require(DefaultColumn.all.last).name
+        let mergedTask = #"{"column":{"name":"\#(done)"},"title":"\#(KanbanGraphTests.laterTitle)"}"#
+        let merged = #"{"data":{"board":{"task":\#(mergedTask)}}}"#
+        let query = CommentTests.taskQuery(of: task, selecting: Self.titleAndColumnSelection)
+        #expect(try await Self.query(query, reaches: merged, on: graph, recordedBy: recorder))
+        let expected = [(addTxn, UpdateKind.created), (titleTxn, .updated), (doneTxn, .updated)].map { txn, kind in
+            let update = ChangeFilterTests.UpdateRow(type: NodeType.task.rawValue, kind: kind.rawValue, id: id)
+            return ChangeFilterTests.ChangeRow(txn: txn, updates: [update])
+        }
+        let filter = AddUpdateTaskTests.sigilRef(of: task)
+        let count = Self.mergeHistoryPageSize
+        #expect(try await ChangeFilterTests.history(filteredBy: filter, count: count, on: graph) == expected)
         await graph.close()
     }
 
