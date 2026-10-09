@@ -53,6 +53,9 @@ struct BoardLocatorTests {
     /// The path of ``outsideName`` from the sandbox root. The folder is two levels down, so the scan does not find it.
     static let outsidePath = "outside/\(outsideName)"
 
+    /// The path ref of ``outsidePath`` from the root directory of a current repo in the sandbox root.
+    static let outsideReferenceFromRoot = "../\(outsidePath)"
+
     /// The name of a folder that no test makes.
     static let missingName = "missing"
 
@@ -178,6 +181,26 @@ struct BoardLocatorTests {
             currentRoot: root,
             readingKeysWith: BoardKey.read(fromRepoAt:)
         )
+    }
+
+    /// Makes a folder at ``outsidePath``, where the scan does not look, and checks that a path ref to the folder
+    /// resolves to a copy with the key of the folder.
+    ///
+    /// - Parameters:
+    ///   - kind: The kind of the folder. A git repo gets ``libOrigin``.
+    ///   - reference: Gives the path ref from the folder.
+    /// - Throws: An error when the folder cannot be made, or when a git command fails.
+    static func expectOutsideFolderResolves(
+        as kind: CrossRepoFixture.FolderKind,
+        namedBy reference: (URL) -> String
+    ) async throws {
+        let sandbox = try GitSandbox()
+        let app = try await sandbox.makeRepo(named: appName, origin: appOrigin)
+        let other = try await kind.makeFolder(named: outsidePath, origin: libOrigin, in: sandbox)
+        #expect(names(in: try await scan(around: app)) == [appName])
+        let key = try kind.key(ofFolderNamed: outsideName, origin: libOrigin)
+        let expected = BoardResolution.copy(BoardCopy(directory: other, key: key, isEnabled: false))
+        #expect(try await resolveFolder(reference(other), around: app) == expected)
     }
 
     // MARK: - Scan
@@ -345,23 +368,15 @@ struct BoardLocatorTests {
         arguments: CrossRepoFixture.FolderKind.allCases
     )
     func pathOutsidePlacesResolvesToFolder(kind: CrossRepoFixture.FolderKind) async throws {
-        let sandbox = try GitSandbox()
-        let app = try await sandbox.makeRepo(named: Self.appName, origin: Self.appOrigin)
-        let other = try await kind.makeFolder(named: Self.outsidePath, origin: Self.libOrigin, in: sandbox)
-        #expect(Self.names(in: try await Self.scan(around: app)) == [Self.appName])
-        let key = try kind.key(ofFolderNamed: Self.outsideName, origin: Self.libOrigin)
-        let expected = BoardResolution.copy(BoardCopy(directory: other, key: key, isEnabled: false))
-        #expect(try await Self.resolveFolder(other.path, around: app) == expected)
+        try await Self.expectOutsideFolderResolves(as: kind) { folder in folder.path }
     }
 
-    @Test("A path from the current root to a folder that the scan does not find resolves to that folder")
-    func relativePathOutsidePlacesResolvesToFolder() async throws {
-        let sandbox = try GitSandbox()
-        let app = try await sandbox.makeRepo(named: Self.appName, origin: Self.appOrigin)
-        let other = try GitSandbox.makeFolder(named: Self.outsidePath, in: sandbox.root)
-        let key = BoardKey(localDirectoryName: Self.outsideName)
-        let expected = BoardResolution.copy(BoardCopy(directory: other, key: key, isEnabled: false))
-        #expect(try await Self.resolveFolder("../\(Self.outsidePath)", around: app) == expected)
+    @Test(
+        "A path from the current root to a folder that the scan does not find resolves to that folder",
+        arguments: CrossRepoFixture.FolderKind.allCases
+    )
+    func relativePathOutsidePlacesResolvesToFolder(kind: CrossRepoFixture.FolderKind) async throws {
+        try await Self.expectOutsideFolderResolves(as: kind) { _ in Self.outsideReferenceFromRoot }
     }
 
     @Test("The path of the current repo resolves to the current board with no scan")

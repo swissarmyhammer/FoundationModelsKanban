@@ -87,19 +87,15 @@ public struct BoardLocator: Sendable {
         currentRoot root: URL,
         readingKeysWith keyReader: BoardKeyReader
     ) async throws(BoardKeyError) -> BoardResolution? {
-        guard let directory = BoardIndex.directory(ofPath: reference, currentRoot: root), isFolder(directory) else {
+        var isDirectory: ObjCBool = false
+        guard let directory = BoardIndex.directory(ofPath: reference, currentRoot: root),
+            FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDirectory),
+            isDirectory.boolValue
+        else {
             return nil
         }
         let key = try await key(ofRepoAt: directory, knownKey: nil, readingKeysWith: keyReader).get()
         return key.map { key in BoardResolution(of: BoardCopy(directory: directory, key: key), currentRoot: root) }
-    }
-
-    /// Tells if a URL names a folder that exists.
-    ///
-    /// - Parameter url: The file URL.
-    /// - Returns: `true` when a directory has the path. A file, or a path with nothing at it, gives `false`.
-    private static func isFolder(_ url: URL) -> Bool {
-        (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
     }
 
     /// Lists the repos one level down in a place: each directory that ``isCandidate(_:)`` accepts.
@@ -270,6 +266,13 @@ struct BoardIndex: Sendable {
     }
 
     /// Gives the directory that a path ref names (plan.md §6.6, board refs).
+    ///
+    /// Trust decision (plan.md §6.6, trust of a path ref): the tool runs with the rights of its process, so a path can
+    /// name any folder that exists, also a folder outside the current repo and outside the search roots. There is no
+    /// containment check. The tool never makes the folder: a path to a folder that does not exist gives `NOT_FOUND`.
+    /// The tool reads and writes only inside `<folder>/.kanban/`, because each read and each write of a board goes
+    /// through ``EventLog``, whose files are all in that directory. The one exception is the key read: the tool runs
+    /// `git` in the folder, and `git` only reads.
     ///
     /// - Parameters:
     ///   - reference: The board ref. White space at the two ends is ignored.

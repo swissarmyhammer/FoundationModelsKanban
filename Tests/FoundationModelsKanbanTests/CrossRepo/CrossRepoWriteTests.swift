@@ -64,6 +64,12 @@ struct CrossRepoWriteTests {
     /// The slug of a default column that is not the first column.
     static let doingSlug = "doing"
 
+    /// The name of a file that a test makes in a folder before a write through a path ref.
+    static let folderFileName = "README.md"
+
+    /// The text of ``folderFileName``.
+    static let folderFileText = "A file of the folder, outside .kanban/.\n"
+
     /// The mutation fields of the `board` field test.
     static let boardFieldCases = [
         BoardFieldCase(name: MutationName.initBoard, setup: nil, input: #"name: "\#(boardName)""#, ref: .board),
@@ -180,6 +186,66 @@ struct CrossRepoWriteTests {
         try BoardMutationTests.events(of: .task(AddUpdateTaskTests.firstTask(in: task)), inRepoAt: root)
     }
 
+    /// Makes a folder at ``BoardLocatorTests/outsidePath`` in the sandbox of two repos. The scan does not look there.
+    ///
+    /// - Parameters:
+    ///   - kind: The kind of the folder. A git repo gets ``BoardLocatorTests/newOrigin``.
+    ///   - repos: The repos of the sandbox.
+    /// - Returns: The folder.
+    /// - Throws: An error when the folder cannot be made, or when a git command fails.
+    static func makeOutsideFolder(
+        as kind: CrossRepoFixture.FolderKind,
+        in repos: CrossRepoFixture.SideBySide
+    ) async throws -> URL {
+        try await kind.makeFolder(
+            named: BoardLocatorTests.outsidePath,
+            origin: BoardLocatorTests.newOrigin,
+            in: repos.sandbox
+        )
+    }
+
+    /// Makes a folder with ``makeOutsideFolder(as:in:)``, adds a task to it through a path ref, and checks the key of
+    /// the task and the log of the task in the folder.
+    ///
+    /// - Parameters:
+    ///   - kind: The kind of the folder.
+    ///   - reference: Gives the path ref from the folder.
+    /// - Throws: An error when the folder cannot be made, when a git command fails, or when the log cannot be read.
+    static func expectAddTaskWritesOutsideFolder(
+        as kind: CrossRepoFixture.FolderKind,
+        namedBy reference: (URL) -> String
+    ) async throws {
+        let repos = try await CrossRepoFixture.SideBySide.make()
+        let other = try await makeOutsideFolder(as: kind, in: repos)
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
+        let task = try await CrossRepoFixture.addTask(with: boardField(reference(other)), on: app)
+        let key = try kind.key(ofFolderNamed: BoardLocatorTests.outsideName, origin: BoardLocatorTests.newOrigin)
+        #expect(try NodeURI(parsing: task).boardKey == key.description)
+        let patch = try #require(try events(ofTask: task, inRepoAt: other).first?.patch)
+        #expect(patch.set[PropertyName.title] == .string(AddUpdateTaskTests.title))
+    }
+
+    /// Reads each file of a folder and of its subfolders.
+    ///
+    /// - Parameter folder: The folder.
+    /// - Returns: The contents of each file, by the path of the file.
+    /// - Throws: An error when the folder or a file cannot be read.
+    static func files(inFolderAt folder: URL) throws -> [String: Data] {
+        let files = try FileManager.default.subpathsOfDirectory(atPath: folder.path)
+            .map { path in folder.appending(path: path, directoryHint: .notDirectory) }
+            .filter(isFile(_:))
+        return Dictionary(uniqueKeysWithValues: try files.map { file in (file.path, try Data(contentsOf: file)) })
+    }
+
+    /// Tells if a URL names a file that exists, and not a folder.
+    ///
+    /// - Parameter url: The file URL.
+    /// - Returns: `true` when a file has the path. A folder, or a path with nothing at it, gives `false`.
+    private static func isFile(_ url: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && !isDirectory.boolValue
+    }
+
     // MARK: - Board field
 
     @Test("addTask with the board field writes the task to the log of the related board, and nothing to the current")
@@ -263,29 +329,37 @@ struct CrossRepoWriteTests {
         arguments: CrossRepoFixture.FolderKind.allCases
     )
     func pathOutsidePlacesWritesFolder(kind: CrossRepoFixture.FolderKind) async throws {
-        let repos = try await CrossRepoFixture.SideBySide.make()
-        let origin = BoardLocatorTests.newOrigin
-        let other = try await kind.makeFolder(named: BoardLocatorTests.outsidePath, origin: origin, in: repos.sandbox)
-        let app = try GitGraphFixture.makeGraph(at: repos.app)
-        let task = try await CrossRepoFixture.addTask(with: Self.boardField(other.path), on: app)
-        let key = try kind.key(ofFolderNamed: BoardLocatorTests.outsideName, origin: origin)
-        #expect(try NodeURI(parsing: task).boardKey == key.description)
-        let patch = try #require(try Self.events(ofTask: task, inRepoAt: other).first?.patch)
-        #expect(patch.set[PropertyName.title] == .string(AddUpdateTaskTests.title))
+        try await Self.expectAddTaskWritesOutsideFolder(as: kind) { folder in folder.path }
     }
 
-    @Test("addTask with the board field set to a path that starts with ../ writes to the folder from the current root")
-    func relativePathWritesFolderFromRoot() async throws {
+    @Test(
+        "addTask with the board field set to a path that starts with ../ writes to the folder from the current root",
+        arguments: CrossRepoFixture.FolderKind.allCases
+    )
+    func relativePathWritesFolderFromRoot(kind: CrossRepoFixture.FolderKind) async throws {
+        try await Self.expectAddTaskWritesOutsideFolder(as: kind) { _ in BoardLocatorTests.outsideReferenceFromRoot }
+    }
+
+    @Test(
+        "addTask through a path ref changes no file of the folder outside .kanban/ (plan.md §6.6, trust)",
+        arguments: CrossRepoFixture.FolderKind.allCases
+    )
+    func pathRefWritesOnlyBoardDirectory(kind: CrossRepoFixture.FolderKind) async throws {
         let repos = try await CrossRepoFixture.SideBySide.make()
-        let other = try GitSandbox.makeFolder(named: BoardLocatorTests.outsidePath, in: repos.sandbox.root)
-        let reference = "../\(BoardLocatorTests.outsidePath)"
+        let other = try await Self.makeOutsideFolder(as: kind, in: repos)
+        let folderFile = other.appending(path: Self.folderFileName, directoryHint: .notDirectory)
+        try Data(Self.folderFileText.utf8).write(to: folderFile)
+        let before = try Self.files(inFolderAt: other)
         let task = try await CrossRepoFixture.addTask(
-            with: Self.boardField(reference),
+            with: Self.boardField(BoardLocatorTests.outsideReferenceFromRoot),
             on: GitGraphFixture.makeGraph(at: repos.app)
         )
-        let key = BoardKey(localDirectoryName: BoardLocatorTests.outsideName)
-        #expect(try NodeURI(parsing: task).boardKey == key.description)
-        #expect(try !Self.events(ofTask: task, inRepoAt: other).isEmpty)
+        let after = try Self.files(inFolderAt: other)
+        let boardLog = EventLog(repositoryAt: other)
+        let boardPrefix = boardLog.directory.path + "/"
+        #expect(after.filter { path, _ in !path.hasPrefix(boardPrefix) } == before)
+        let taskLog = boardLog.fileURL(for: .task(try AddUpdateTaskTests.firstTask(in: task)))
+        #expect(after.keys.contains(taskLog.path))
     }
 
     @Test("addTask with the board field set to the path of a folder that does not exist gives NOT_FOUND")

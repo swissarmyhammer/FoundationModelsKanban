@@ -806,6 +806,11 @@ A **related board** is the board of a different repo on the same disk. The tool 
   - a board key, for example `github.com/o/other`;
   - a repo directory name, for example `FoundationModelsMultitool`, if it is unique in the index;
   - a path. A value that starts with `/`, `~`, `./` or `../` is a path. A path that starts with `./` or `../` starts from the root directory of the current repo. A path to any folder that exists names the board of that folder, also when the scan does not find the folder. The key of that board comes from the same rule as the scan: the `origin` of a git repo, or `local/<folder-name>` for a folder that is not a git repo. A path to a folder that does not exist gives `NOT_FOUND`.
+- **Trust of a path ref.** The owner decided that a path can name any folder. There is no containment check, and a path does not have to be in the current repo or in a search root. The rules are:
+  - The tool runs with the rights of its process. It can read and write only the folders that its process can read and write.
+  - A path can name any folder that exists.
+  - The tool never makes the folder. A path to a folder that does not exist gives `NOT_FOUND`.
+  - The tool reads and writes only inside `<folder>/.kanban/`. It changes no other file in the folder. The one exception is the key read: the tool runs `git` in the folder, and `git` only reads.
 - **Enable a related repo.** If the `board` argument names a related repo that is not enabled, the first mutation initializes its board (the same auto-init rule as §6). `initBoard(board:)` does the same thing explicitly. The key comes from the `origin` of that repo. A query on a repo that is not enabled returns an empty board and writes nothing.
 - **Short ids.** For a mutation on an existing node, short ids, slugs, and tag names resolve in the board of that node. For a mutation that makes a node, they resolve in the board that the `board` field names, or in the current repo. A full URI always resolves in its own board.
 - **Edges.** `dependsOn` can point to any board. `column`, `tags`, `assignees`, and `author` point only to nodes in the same board as the task.
