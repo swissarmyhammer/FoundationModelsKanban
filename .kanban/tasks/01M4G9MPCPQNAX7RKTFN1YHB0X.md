@@ -30,12 +30,21 @@ comments:
     - evidence: 5 files — README.md, Tests/FoundationModelsKanbanTests/ReadmeExamplesTests.swift (new), Tests/FoundationModelsKanbanTests/DocumentationTests.swift, Tests/FoundationModelsKanbanTests/RepositoryFile.swift, Tests/FoundationModelsKanbanTests/Multitool/CodeModeTests.swift; `swift test --filter "ReadmeExamples|Documentation"` 15 tests passed; `swift test` 1129 tests in 81 suites passed; only the accepted "missing creator" warning.
     - next: /review
   timestamp: 2026-10-09T21:13:15.482106+00:00
+- actor: claude-code
+  id: 01m4h8dj643wv4cq8pt0bb6qaq
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 5 files
+    - test: green — swift test, 1129 tests in 81 suites passed
+    - commit: 2b23d72
+    - review: clean — 0 findings
+  timestamp: 2026-10-09T21:17:00.996394+00:00
 depends_on:
 - 01M4G9GQ28QA3Z7MYQG9JE3H3Z
 - 01M4G9M4WCVGV3X1JAQJ47QCME
 - 01M4G9X4JXCBM7XGC5NYQNXGE1
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: dc80
 title: 'Examples: Get started in the README, with tests that run each example'
 ---
 ## What
