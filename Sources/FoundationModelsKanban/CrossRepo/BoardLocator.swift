@@ -8,8 +8,10 @@ typealias BoardKeyReader = @Sendable (URL) async throws(BoardKeyError) -> BoardK
 ///
 /// The locator looks one level down in the parent directory of the current repo, and then one level down in each
 /// search root of the config, in config order. In each place, it reads the directory names in sort order. A
-/// directory with a `.git` entry (the directory of a clone, or the file of a worktree) is a repo. The key of a repo
-/// comes from its current `origin`, and the board of the repo is enabled when `.kanban/board.jsonl` exists.
+/// directory with a `.git` entry (the directory of a clone, or the file of a worktree) is a repo. A directory with
+/// `.kanban/board.jsonl` and no `.git` entry is also a repo: git is not necessary. The key of a repo comes from
+/// ``BoardKey/read(fromRepoAt:)``: from its current `origin`, or `local/<folder-name>` for a folder that is not a git
+/// repo. The board of the repo is enabled when `.kanban/board.jsonl` exists.
 public struct BoardLocator: Sendable {
     /// The locator with no search root: it looks only in the parent directory of the current repo.
     public static let `default` = BoardLocator(searchRoots: [])
@@ -69,7 +71,7 @@ public struct BoardLocator: Sendable {
         return BoardIndex(places: places, copies: copies)
     }
 
-    /// Lists the repos one level down in a place.
+    /// Lists the repos one level down in a place: each directory that ``isCandidate(_:)`` accepts.
     ///
     /// - Parameter place: The place.
     /// - Returns: The root directory of each repo, in the sort order of the names. A place that cannot be read gives
@@ -87,9 +89,17 @@ public struct BoardLocator: Sendable {
         }
         return names.sorted()
             .map { name in place.appending(path: name, directoryHint: .isDirectory) }
-            .filter { directory in
-                FileManager.default.fileExists(atPath: directory.appending(path: BoardKey.gitDirectoryName).path)
-            }
+            .filter(isCandidate(_:))
+    }
+
+    /// Tells if a directory can hold a board: it has a `.git` entry (the directory of a clone, or the file of a
+    /// worktree), or it has `.kanban/board.jsonl`. Git is not necessary.
+    ///
+    /// - Parameter directory: The directory.
+    /// - Returns: `true` when the directory has a `.git` entry or a board log.
+    private static func isCandidate(_ directory: URL) -> Bool {
+        let gitEntry = directory.appending(path: BoardKey.gitDirectoryName)
+        return FileManager.default.fileExists(atPath: gitEntry.path) || BoardCopy.hasBoardLog(at: directory)
     }
 
     /// Gives the key of each repo. A repo of the earlier scan keeps its key. The keys of the new repos are read at the
@@ -163,7 +173,8 @@ struct BoardCopy: Hashable, Sendable {
     /// The root directory of the copy.
     let directory: URL
 
-    /// The key of the board of the copy, from its current `origin`.
+    /// The key of the board of the copy, from its current `origin`, or `local/<folder-name>` for a folder that is not
+    /// a git repo.
     let key: BoardKey
 
     /// `true` when the copy has `.kanban/board.jsonl`.
@@ -177,8 +188,16 @@ extension BoardCopy {
     ///   - directory: The root directory of the copy.
     ///   - key: The key of the board of the copy.
     init(directory: URL, key: BoardKey) {
+        self.init(directory: directory, key: key, isEnabled: Self.hasBoardLog(at: directory))
+    }
+
+    /// Tells if a directory has `.kanban/board.jsonl` now.
+    ///
+    /// - Parameter directory: The directory.
+    /// - Returns: `true` when the board log exists.
+    static func hasBoardLog(at directory: URL) -> Bool {
         let boardLog = EventLog(repositoryAt: directory).fileURL(for: .board)
-        self.init(directory: directory, key: key, isEnabled: FileManager.default.fileExists(atPath: boardLog.path))
+        return FileManager.default.fileExists(atPath: boardLog.path)
     }
 }
 

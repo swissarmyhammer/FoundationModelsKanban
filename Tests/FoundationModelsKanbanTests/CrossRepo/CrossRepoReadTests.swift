@@ -8,8 +8,8 @@ import ULID
 /// of `Query.boards(enabled:)`, `node(id:)` with a URI of a related board, and the readiness of a cross-board
 /// `dependsOn` edge.
 ///
-/// Each test makes real git repos in a ``GitSandbox`` and engines that read the board keys from git. A test that
-/// waits for a change of a related board waits for a batch that the engine applies, with no fixed sleep.
+/// Each test makes real git repos or plain folders in a ``GitSandbox`` and engines that read the board keys from git.
+/// A test that waits for a change of a related board waits for a batch that the engine applies, with no fixed sleep.
 @Suite("Cross-repo: read related boards", .timeLimit(.minutes(1)))
 struct CrossRepoReadTests {
     /// The key of a board that no scan finds.
@@ -140,9 +140,12 @@ struct CrossRepoReadTests {
         #expect(response == #"{"data":{"board":{"task":{"blockedBy":\#(edge),"dependsOn":\#(edge)}}}}"#)
     }
 
-    @Test("node(id:) with the URI of a node of a related board gives that node")
-    func nodeReadsRelatedBoard() async throws {
-        let repos = try await CrossRepoFixture.SideBySide.make()
+    @Test(
+        "node(id:) with the URI of a node of a related board gives that node, also in plain folders with no .git",
+        arguments: CrossRepoFixture.FolderKind.allCases
+    )
+    func nodeReadsRelatedBoard(kind: CrossRepoFixture.FolderKind) async throws {
+        let repos = try await CrossRepoFixture.SideBySide.make(as: kind)
         let target = try await CrossRepoFixture.addTask(with: "", on: GitGraphFixture.makeGraph(at: repos.lib))
         let query = #"{ node(id: "\#(target)") { id ... on Task { title } } }"#
         let response = try await KanbanGraphTests.execute(query, on: GitGraphFixture.makeGraph(at: repos.app))

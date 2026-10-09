@@ -54,11 +54,27 @@ comments:
     - evidence: 3 files — Sources/FoundationModelsKanban/Identity/BoardKey.swift, Tests/FoundationModelsKanbanTests/Identity/BoardKeyTests.swift, plan.md. `swift test`: 1102 tests in 80 suites passed, 0 failures. The only build warning is the accepted SwiftPM "missing creator for mutated node".
     - next: /review
   timestamp: 2026-10-09T20:32:19.275700+00:00
+- actor: claude-code
+  id: 01m4h60jjrjtz7rtqv7pc03hcc
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 3 files
+    - test: green — swift test, 1102 tests in 80 suites passed
+    - commit: d660cf2
+    - review: clean — 0 findings
+  timestamp: 2026-10-09T20:34:58.264963+00:00
+- actor: claude-code
+  id: 01m4h60n72yt5av015jkymt17x
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings (7 attempted, 1 refuted, 0 confirmed). Both prior items in "Review Findings (2026-10-09 15:26)" are checked. The HEAD commit message (d660cf2) agrees with the diff: repoPaths throws gitFailed for each non-repo failure status, the no-host and no-path origin fallback is documented in the doc comments and plan.md, and the tests gitFailureInRepoThrows and originWithoutPathGivesLocalKey are added. plan.md and .kanban/ were not reviewed (no validator, .reviewignore).
+    - next: task moved to done. BoardLocator work continues in ^fv1dcq3.
+  timestamp: 2026-10-09T20:35:00.962390+00:00
 depends_on:
 - 01M4G9GXTJSANGYS1315NRZSQH
 - 01M4G9GQ28QA3Z7MYQG9JE3H3Z
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: d980
 title: 'BoardKey: a board works in any folder, git is not required'
 ---
 ## What

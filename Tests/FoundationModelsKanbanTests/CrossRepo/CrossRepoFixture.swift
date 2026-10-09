@@ -3,9 +3,33 @@ import Testing
 
 @testable import FoundationModelsKanban
 
-/// The shared parts of the cross-repo suites (plan.md §6.6): two real git repos side by side and the fields that add
-/// tasks. ``GitGraphFixture`` makes the engines that read the board keys from git.
+/// The shared parts of the cross-repo suites (plan.md §6.6): two real folders side by side (git repos or plain
+/// folders) and the fields that add tasks. ``GitGraphFixture`` makes the engines that read the board keys from git.
 enum CrossRepoFixture {
+    /// The kind of the two folders of a ``SideBySide`` sandbox.
+    enum FolderKind: CaseIterable, Sendable {
+        /// Each folder is a git repo with an `origin` remote.
+        case gitRepo
+
+        /// Each folder is a plain folder with no `.git`. Its key is `local/<folder-name>`.
+        case plainFolder
+
+        /// Makes one folder of this kind in a sandbox.
+        ///
+        /// - Parameters:
+        ///   - name: The name of the folder.
+        ///   - origin: The `origin` remote of a git repo. A plain folder does not use it.
+        ///   - sandbox: The sandbox that holds the folder.
+        /// - Returns: The folder.
+        /// - Throws: An error when the directory cannot be made, or when a git command fails.
+        func makeFolder(named name: String, origin: String, in sandbox: GitSandbox) async throws -> URL {
+            switch self {
+            case .gitRepo: try await sandbox.makeRepo(named: name, origin: origin)
+            case .plainFolder: try GitSandbox.makeFolder(named: name, in: sandbox.root)
+            }
+        }
+    }
+
     /// The repos of a sandbox with the current repo and one related repo, side by side.
     struct SideBySide {
         /// The sandbox of the test. It removes the repos when the test ends.
@@ -17,14 +41,23 @@ enum CrossRepoFixture {
         /// The related repo, ``BoardLocatorTests/libName``.
         let lib: URL
 
-        /// Makes the sandbox, and runs git to make the repos in it.
+        /// Makes the sandbox and the two folders in it.
         ///
-        /// - Returns: The sandbox and its repos.
-        /// - Throws: An error when the sandbox directory cannot be made, or when a git command fails.
-        static func make() async throws -> SideBySide {
+        /// - Parameter kind: The kind of the two folders. The default is ``FolderKind/gitRepo``.
+        /// - Returns: The sandbox and its folders.
+        /// - Throws: An error when a directory cannot be made, or when a git command fails.
+        static func make(as kind: FolderKind = .gitRepo) async throws -> SideBySide {
             let sandbox = try GitSandbox()
-            let app = try await sandbox.makeRepo(named: BoardLocatorTests.appName, origin: BoardLocatorTests.appOrigin)
-            let lib = try await sandbox.makeRepo(named: BoardLocatorTests.libName, origin: BoardLocatorTests.libOrigin)
+            let app = try await kind.makeFolder(
+                named: BoardLocatorTests.appName,
+                origin: BoardLocatorTests.appOrigin,
+                in: sandbox
+            )
+            let lib = try await kind.makeFolder(
+                named: BoardLocatorTests.libName,
+                origin: BoardLocatorTests.libOrigin,
+                in: sandbox
+            )
             return SideBySide(sandbox: sandbox, app: app, lib: lib)
         }
     }

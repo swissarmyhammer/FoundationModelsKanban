@@ -4,11 +4,11 @@ import Testing
 
 @testable import FoundationModelsKanban
 
-/// Tests the board locator: the scan of the places for git repos, the index of the copies, and the board refs
-/// (plan.md §6.6, §12 items 13 and 26).
+/// Tests the board locator: the scan of the places for git repos and for folders with a board, the index of the
+/// copies, and the board refs (plan.md §6.6, §12 items 13 and 26).
 ///
-/// Each test makes real git repos in a ``GitSandbox``. The sandbox directory is the parent directory of the current
-/// repo, so the scan looks in it first.
+/// Each test makes real git repos or plain folders in a ``GitSandbox``. The sandbox directory is the parent directory
+/// of the current repo, so the scan looks in it first.
 @Suite("Cross-repo: board locator")
 struct BoardLocatorTests {
     /// The `origin` of the current repo of the tests.
@@ -156,6 +156,25 @@ struct BoardLocatorTests {
         let lib = try await sandbox.makeRepo(named: Self.libName, origin: Self.libOrigin)
         _ = try KanbanGraphTests.writeFixture(inRepoAt: lib)
         #expect(try await Self.scan(around: app).copies.map(\.isEnabled) == [false, true])
+    }
+
+    @Test("A scan finds a folder with .kanban/board.jsonl and no .git, with the key local/<folder-name>")
+    func scanFindsBoardInFolderWithNoGit() async throws {
+        let sandbox = try GitSandbox()
+        let app = try await sandbox.makeRepo(named: Self.appName, origin: Self.appOrigin)
+        let lib = try GitSandbox.makeFolder(named: Self.libName, in: sandbox.root)
+        _ = try KanbanGraphTests.writeFixture(inRepoAt: lib)
+        let index = try await Self.scan(around: app)
+        let expected = BoardCopy(directory: lib, key: BoardKey(localDirectoryName: Self.libName), isEnabled: true)
+        #expect(try Self.copy(at: lib, in: index) == expected)
+    }
+
+    @Test("A folder with no .git and no .kanban/board.jsonl is not a copy")
+    func folderWithNoGitAndNoBoardIsNotCopy() async throws {
+        let sandbox = try GitSandbox()
+        let app = try await sandbox.makeRepo(named: Self.appName, origin: Self.appOrigin)
+        _ = try GitSandbox.makeFolder(named: Self.libName, in: sandbox.root)
+        #expect(Self.names(in: try await Self.scan(around: app)) == [Self.appName])
     }
 
     @Test("The scan order is the parent directory, then each search root in config order, with the names sorted")
