@@ -256,6 +256,49 @@ struct CrossRepoWriteTests {
         try ErrorCoverageTests.expectFailure(of: name, in: response, giving: expected, coded: "NOT_FOUND")
     }
 
+    // MARK: - Path refs
+
+    @Test(
+        "addTask with the board field set to the path of a folder that the scan does not find writes to that folder",
+        arguments: CrossRepoFixture.FolderKind.allCases
+    )
+    func pathOutsidePlacesWritesFolder(kind: CrossRepoFixture.FolderKind) async throws {
+        let repos = try await CrossRepoFixture.SideBySide.make()
+        let origin = BoardLocatorTests.newOrigin
+        let other = try await kind.makeFolder(named: BoardLocatorTests.outsidePath, origin: origin, in: repos.sandbox)
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
+        let task = try await CrossRepoFixture.addTask(with: Self.boardField(other.path), on: app)
+        let key = try kind.key(ofFolderNamed: BoardLocatorTests.outsideName, origin: origin)
+        #expect(try NodeURI(parsing: task).boardKey == key.description)
+        let patch = try #require(try Self.events(ofTask: task, inRepoAt: other).first?.patch)
+        #expect(patch.set[PropertyName.title] == .string(AddUpdateTaskTests.title))
+    }
+
+    @Test("addTask with the board field set to a path that starts with ../ writes to the folder from the current root")
+    func relativePathWritesFolderFromRoot() async throws {
+        let repos = try await CrossRepoFixture.SideBySide.make()
+        let other = try GitSandbox.makeFolder(named: BoardLocatorTests.outsidePath, in: repos.sandbox.root)
+        let reference = "../\(BoardLocatorTests.outsidePath)"
+        let task = try await CrossRepoFixture.addTask(
+            with: Self.boardField(reference),
+            on: GitGraphFixture.makeGraph(at: repos.app)
+        )
+        let key = BoardKey(localDirectoryName: BoardLocatorTests.outsideName)
+        #expect(try NodeURI(parsing: task).boardKey == key.description)
+        #expect(try !Self.events(ofTask: task, inRepoAt: other).isEmpty)
+    }
+
+    @Test("addTask with the board field set to the path of a folder that does not exist gives NOT_FOUND")
+    func missingFolderPathGivesNotFound() async throws {
+        let repos = try await CrossRepoFixture.SideBySide.make()
+        let missing = repos.sandbox.root.appending(path: BoardLocatorTests.missingName, directoryHint: .isDirectory)
+        let field = AddUpdateTaskTests.addTask(with: Self.boardField(missing.path))
+        let response = try await CommentTests.run(field, on: GitGraphFixture.makeGraph(at: repos.app))
+        let expected = KanbanError.boardNotFound(reference: missing.path, searchRoots: [repos.sandbox.root.path])
+        try ErrorCoverageTests.expectFailure(of: MutationName.addTask, in: response, giving: expected, coded: "NOT_FOUND")
+        #expect(!FileManager.default.fileExists(atPath: missing.path))
+    }
+
     // MARK: - Existing nodes
 
     @Test("A mutation on a node of a related board writes to that board, and its short refs resolve there")

@@ -29,10 +29,26 @@ comments:
     - evidence: 5 files — Sources/FoundationModelsKanban/CrossRepo/BoardLocator.swift, Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoFixture.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoReadTests.swift, plan.md. `swift test`: 1104 tests in 80 suites passed, 0 failures; only build warning is the accepted SwiftPM "missing creator for mutated node".
     - next: /review
   timestamp: 2026-10-09T20:40:14.172240+00:00
+- actor: claude-code
+  id: 01m4h6f9xd8mvvqwpadg31k3yn
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings (4 source and test files reviewed; .kanban/ files are excluded by .reviewignore; no validator matches plan.md). The commit message of afca516 is true for the diff. Each acceptance item and test item is met. The two Git.run callers in BoardKey.swift do not throw for a folder that is not a git repo.
+    - next: done
+  timestamp: 2026-10-09T20:43:00.909326+00:00
+- actor: claude-code
+  id: 01m4h6farqgcv0az0hke65e11n
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 5 files
+    - test: green — swift test, 1104 tests in 80 suites passed
+    - commit: afca516
+    - review: clean — 0 findings
+  timestamp: 2026-10-09T20:43:01.783190+00:00
 depends_on:
 - 01M4G9M4WCVGV3X1JAQJ47QCME
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: da80
 title: BoardLocator finds boards in folders that are not git repos
 ---
 ## What

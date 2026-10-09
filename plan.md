@@ -798,14 +798,14 @@ A **related board** is the board of a different repo on the same disk. The tool 
 - **Many copies of one repo.** Git allows many copies of one repo on a disk: clones and worktrees. All copies have the same key, and this is not an error. A board key resolves to one copy with this rule:
   - The key of the current repo always resolves to the current directory.
   - A different key resolves to the first copy in scan order: the parent directory of the current repo first, then each search root in config order, and in each place the directory names in sort order. Thus, the choice is the same on each call.
-  - To use a different copy, the agent gives its path in the `board` argument.
+  - To use a different copy, the agent gives its path in the `board` argument. The path can name any folder, also a folder that the scan does not look in.
   - `Query.boards` lists each copy, with its path.
 - **Index life.** The index stays in memory for the life of `KanbanGraph`. On an unknown key, the tool scans one more time.
 - **Board name.** A board that is not enabled shows the repo directory name as its `name`.
 - **Board refs.** A `board` argument (and `Query.board(id:)`) accepts:
   - a board key, for example `github.com/o/other`;
   - a repo directory name, for example `FoundationModelsMultitool`, if it is unique in the index;
-  - a path.
+  - a path. A value that starts with `/`, `~`, `./` or `../` is a path. A path that starts with `./` or `../` starts from the root directory of the current repo. A path to any folder that exists names the board of that folder, also when the scan does not find the folder. The key of that board comes from the same rule as the scan: the `origin` of a git repo, or `local/<folder-name>` for a folder that is not a git repo. A path to a folder that does not exist gives `NOT_FOUND`.
 - **Enable a related repo.** If the `board` argument names a related repo that is not enabled, the first mutation initializes its board (the same auto-init rule as §6). `initBoard(board:)` does the same thing explicitly. The key comes from the `origin` of that repo. A query on a repo that is not enabled returns an empty board and writes nothing.
 - **Short ids.** For a mutation on an existing node, short ids, slugs, and tag names resolve in the board of that node. For a mutation that makes a node, they resolve in the board that the `board` field names, or in the current repo. A full URI always resolves in its own board.
 - **Edges.** `dependsOn` can point to any board. `column`, `tags`, `assignees`, and `author` point only to nodes in the same board as the task.

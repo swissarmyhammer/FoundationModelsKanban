@@ -71,6 +71,37 @@ public struct BoardLocator: Sendable {
         return BoardIndex(places: places, copies: copies)
     }
 
+    /// Finds the board of the folder that a path ref names, also when the scan does not look in that folder (plan.md
+    /// §6.6, board refs). Any folder that exists has a board: the key comes from the key reader with the rule of the
+    /// scan, from the `origin` of a git repo, or `local/<folder-name>` for a folder that is not a git repo.
+    ///
+    /// - Parameters:
+    ///   - reference: The board ref. White space at the two ends is ignored.
+    ///   - root: The root directory of the current repo. A path that starts with `./` or `../` starts from it.
+    ///   - keyReader: Reads the key of the folder.
+    /// - Returns: The current board for the path of the current repo, the copy of the folder, or `nil` when the ref is
+    ///   not a path, when no folder has the path, or when the key of the folder cannot be read.
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the key read.
+    static func resolution(
+        ofFolderAt reference: String,
+        currentRoot root: URL,
+        readingKeysWith keyReader: BoardKeyReader
+    ) async throws(BoardKeyError) -> BoardResolution? {
+        guard let directory = BoardIndex.directory(ofPath: reference, currentRoot: root), isFolder(directory) else {
+            return nil
+        }
+        let key = try await key(ofRepoAt: directory, knownKey: nil, readingKeysWith: keyReader).get()
+        return key.map { key in BoardResolution(of: BoardCopy(directory: directory, key: key), currentRoot: root) }
+    }
+
+    /// Tells if a URL names a folder that exists.
+    ///
+    /// - Parameter url: The file URL.
+    /// - Returns: `true` when a directory has the path. A file, or a path with nothing at it, gives `false`.
+    private static func isFolder(_ url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+    }
+
     /// Lists the repos one level down in a place: each directory that ``isCandidate(_:)`` accepts.
     ///
     /// - Parameter place: The place.
@@ -214,7 +245,8 @@ struct BoardIndex: Sendable {
     /// - A board key, or the URI of a board: the current key gives the current board, and a different key gives the
     ///   first copy with the key in scan order.
     /// - A repo directory name that only one copy has.
-    /// - A path, absolute or from the home directory (`~`). The path of the current repo gives the current board.
+    /// - A path: absolute, from the home directory (`~`), or from the root directory of the current repo (`./` or
+    ///   `../`). The path of the current repo gives the current board.
     ///
     /// - Parameters:
     ///   - reference: The board ref. White space at the two ends is ignored.
@@ -231,11 +263,37 @@ struct BoardIndex: Sendable {
                 return .copy(copy)
             }
         }
-        guard Self.isPath(text) else {
-            return copy(named: text).map { copy in resolution(of: copy, currentRoot: root) }
+        guard let directory = Self.directory(ofPath: text, currentRoot: root) else {
+            return copy(named: text).map { copy in BoardResolution(of: copy, currentRoot: root) }
         }
-        return resolution(ofPath: text, currentRoot: root)
+        return resolution(ofFolderAt: directory, currentRoot: root)
     }
+
+    /// Gives the directory that a path ref names (plan.md §6.6, board refs).
+    ///
+    /// - Parameters:
+    ///   - reference: The board ref. White space at the two ends is ignored.
+    ///   - root: The root directory of the current repo. A path that starts with `./` or `../` starts from it.
+    /// - Returns: The directory with no `.` and `..` parts, or `nil` when the ref is not a path. The directory does
+    ///   not have to exist.
+    static func directory(ofPath reference: String, currentRoot root: URL) -> URL? {
+        let text = reference.trimmingCharacters(in: .whitespacesAndNewlines)
+        if relativePathPrefixes.contains(where: text.hasPrefix) {
+            return root.appending(path: text, directoryHint: .isDirectory).standardizedFileURL
+        }
+        guard absolutePathPrefixes.contains(where: text.hasPrefix) else {
+            return nil
+        }
+        let path = NSString(string: text).expandingTildeInPath
+        return URL(filePath: path, directoryHint: .isDirectory).standardizedFileURL
+    }
+
+    /// The prefixes of a path ref that does not depend on the current repo: `/` for an absolute path, and `~` for a
+    /// path from the home directory.
+    private static let absolutePathPrefixes = ["/", "~"]
+
+    /// The prefixes of a path ref from the root directory of the current repo.
+    private static let relativePathPrefixes = ["./", "../"]
 
     /// Gives the board key that a ref names: the key of a board URI, or the ref itself. The host of the key ignores
     /// case, so the key has the host in lowercase (``BoardKey/normalizedText(of:)``).
@@ -261,38 +319,19 @@ struct BoardIndex: Sendable {
         return named.count == 1 ? named.first : nil
     }
 
-    /// Finds the board of a path.
+    /// Finds the board of the directory of a path ref in the index.
     ///
     /// - Parameters:
-    ///   - text: The ref: a path, absolute or from the home directory.
+    ///   - directory: The directory that the path names.
     ///   - root: The root directory of the current repo.
-    /// - Returns: The current board for the path of the current repo, the copy of the path, or `nil` when no copy
-    ///   has the path.
-    private func resolution(ofPath text: String, currentRoot root: URL) -> BoardResolution? {
-        let path = URL(filePath: NSString(string: text).expandingTildeInPath, directoryHint: .isDirectory)
-            .canonicalPath
+    /// - Returns: The current board for the directory of the current repo, the copy of the directory, or `nil` when
+    ///   no copy has the directory.
+    private func resolution(ofFolderAt directory: URL, currentRoot root: URL) -> BoardResolution? {
+        let path = directory.canonicalPath
         guard path != root.canonicalPath else {
             return .current
         }
         return copies.first { copy in copy.directory.canonicalPath == path }.map(BoardResolution.copy)
-    }
-
-    /// Gives the board of a copy: the current board when the copy is the current repo.
-    ///
-    /// - Parameters:
-    ///   - copy: The copy.
-    ///   - root: The root directory of the current repo.
-    /// - Returns: The board.
-    func resolution(of copy: BoardCopy, currentRoot root: URL) -> BoardResolution {
-        copy.directory.canonicalPath == root.canonicalPath ? .current : .copy(copy)
-    }
-
-    /// Tells if a ref is a path: it starts with `/`, or with `~` for the home directory.
-    ///
-    /// - Parameter text: The ref.
-    /// - Returns: `true` when the ref is a path.
-    private static func isPath(_ text: String) -> Bool {
-        text.hasPrefix("/") || text.hasPrefix("~")
     }
 }
 
@@ -306,6 +345,17 @@ enum BoardResolution: Hashable, Sendable {
 
     /// No board: the scan cannot find one.
     case notFound
+}
+
+extension BoardResolution {
+    /// Makes the board of a copy: the current board when the copy is the current repo.
+    ///
+    /// - Parameters:
+    ///   - copy: The copy.
+    ///   - root: The root directory of the current repo.
+    init(of copy: BoardCopy, currentRoot root: URL) {
+        self = copy.directory.canonicalPath == root.canonicalPath ? .current : .copy(copy)
+    }
 }
 
 extension URL {

@@ -690,14 +690,16 @@ public actor KanbanGraph {
         return resolution ?? .notFound
     }
 
-    /// Finds the board that a board ref names in the index of the scan (plan.md §6.6, index life). The first call
-    /// scans. A later call whose ref names no copy of the index scans one more time.
+    /// Finds the board that a board ref names in the index of the scan (plan.md §6.6, index life, board refs). The
+    /// first call scans. A path to a folder that the index does not have gives the board of that folder, with no scan.
+    /// A later call whose ref names no copy of the index and no folder scans one more time.
     ///
     /// - Parameters:
     ///   - reference: The board ref.
     ///   - key: The current key of the current board.
-    /// - Returns: The board, or `nil` when no copy of the index has the ref.
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the scan.
+    /// - Returns: The board, or `nil` when no copy of the index and no folder has the ref.
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the scan or during the
+    ///   key read of a folder.
     private func resolution(
         of reference: String,
         currentKey key: BoardKey
@@ -706,6 +708,14 @@ public actor KanbanGraph {
         let resolve = { (index: BoardIndex) in index.resolution(of: reference, currentRoot: root, currentKey: key) }
         if case .scanned(let index) = scanState, let found = resolve(index) {
             return found
+        }
+        let folder = try await BoardLocator.resolution(
+            ofFolderAt: reference,
+            currentRoot: root,
+            readingKeysWith: keyReader
+        )
+        if let folder {
+            return folder
         }
         return resolve(try await rescan())
     }
@@ -717,7 +727,7 @@ public actor KanbanGraph {
     ///   ``BoardWatcherError`` or an ``EventLogError`` when a board cannot load.
     private func loadEachCopy() async throws -> [ListedCopy] {
         let index = try await rescan()
-        let resolutions = index.copies.map { copy in index.resolution(of: copy, currentRoot: root) }
+        let resolutions = index.copies.map { copy in BoardResolution(of: copy, currentRoot: root) }
         for case .copy(let copy) in resolutions {
             try await loadRelatedBoard(copy)
         }

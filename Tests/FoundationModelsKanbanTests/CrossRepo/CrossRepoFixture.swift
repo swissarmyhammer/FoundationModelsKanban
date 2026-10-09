@@ -28,6 +28,20 @@ enum CrossRepoFixture {
             case .plainFolder: try GitSandbox.makeFolder(named: name, in: sandbox.root)
             }
         }
+
+        /// Gives the key of a folder of this kind (plan.md §6.6, scan).
+        ///
+        /// - Parameters:
+        ///   - name: The name of the folder, without the names of its parent folders.
+        ///   - origin: The `origin` remote of a git repo. A plain folder does not use it.
+        /// - Returns: The key of the `origin` for a git repo, or `local/<name>` for a plain folder.
+        /// - Throws: An error when the remote URL of a git repo is not valid.
+        func key(ofFolderNamed name: String, origin: String) throws -> BoardKey {
+            switch self {
+            case .gitRepo: try BoardKey(remoteURL: origin)
+            case .plainFolder: BoardKey(localDirectoryName: name)
+            }
+        }
     }
 
     /// The repos of a sandbox with the current repo and one related repo, side by side.

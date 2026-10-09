@@ -47,6 +47,18 @@ struct BoardLocatorTests {
     /// The key of ``libOrigin`` with its host in mixed case.
     static let mixedCaseLibKey = "GitHub.com/example/lib"
 
+    /// The name of the folder of a board outside the places of the scan.
+    static let outsideName = "other"
+
+    /// The path of ``outsideName`` from the sandbox root. The folder is two levels down, so the scan does not find it.
+    static let outsidePath = "outside/\(outsideName)"
+
+    /// The name of a folder that no test makes.
+    static let missingName = "missing"
+
+    /// The name of a file that a test makes in the sandbox root.
+    static let fileName = "notes.txt"
+
     // MARK: - Fixture
 
     /// The repos of a sandbox with two copies of the current repo and two copies of the related repo.
@@ -131,6 +143,41 @@ struct BoardLocatorTests {
     /// - Throws: An error when the key of the current repo is not valid.
     static func resolve(_ reference: String, in repos: TwoCopies, index: BoardIndex) throws -> BoardResolution? {
         index.resolution(of: reference, currentRoot: repos.current, currentKey: try key(of: appOrigin))
+    }
+
+    /// Resolves a board ref in the index of a new sandbox with two copies of each repo, and gives the board of one copy
+    /// for the comparison.
+    ///
+    /// - Parameters:
+    ///   - reference: The board ref.
+    ///   - name: The directory name of the copy that the ref must name.
+    /// - Returns: The resolution of the ref, and the board of the copy with the name.
+    /// - Throws: An error when a git command fails, or when the index has no copy with the name.
+    static func resolveInTwoCopies(
+        _ reference: String,
+        expectingCopyNamed name: String
+    ) async throws -> (actual: BoardResolution?, expected: BoardResolution) {
+        let sandbox = try GitSandbox()
+        let repos = try await TwoCopies.make(in: sandbox)
+        let index = try await scan(around: repos.current)
+        let directory = sandbox.root.appending(path: name, directoryHint: .isDirectory)
+        let expected = BoardResolution(of: try copy(at: directory, in: index), currentRoot: repos.current)
+        return (try resolve(reference, in: repos, index: index), expected)
+    }
+
+    /// Resolves a path ref to the board of any folder, with the keys from git.
+    ///
+    /// - Parameters:
+    ///   - reference: The board ref.
+    ///   - root: The root directory of the current repo.
+    /// - Returns: The resolution, or `nil` when the ref is not a path to a folder.
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the test is cancelled during the key read.
+    static func resolveFolder(_ reference: String, around root: URL) async throws(BoardKeyError) -> BoardResolution? {
+        try await BoardLocator.resolution(
+            ofFolderAt: reference,
+            currentRoot: root,
+            readingKeysWith: BoardKey.read(fromRepoAt:)
+        )
     }
 
     // MARK: - Scan
@@ -249,12 +296,8 @@ struct BoardLocatorTests {
         arguments: [(mixedCaseAppKey, currentCopyName), (mixedCaseLibKey, firstCopyName)]
     )
     func mixedCaseHostKeyResolves(reference: String, expectedCopyName: String) async throws {
-        let sandbox = try GitSandbox()
-        let repos = try await TwoCopies.make(in: sandbox)
-        let index = try await Self.scan(around: repos.current)
-        let directory = sandbox.root.appending(path: expectedCopyName, directoryHint: .isDirectory)
-        let expected = index.resolution(of: try Self.copy(at: directory, in: index), currentRoot: repos.current)
-        #expect(try Self.resolve(reference, in: repos, index: index) == expected)
+        let resolved = try await Self.resolveInTwoCopies(reference, expectingCopyNamed: expectedCopyName)
+        #expect(resolved.actual == resolved.expected)
     }
 
     @Test("A unique repo directory name resolves to its copy")
@@ -286,6 +329,71 @@ struct BoardLocatorTests {
         let resolution = try Self.resolve(repos.secondCopy.path, in: repos, index: index)
         #expect(resolution == .copy(try Self.copy(at: repos.secondCopy, in: index)))
         #expect(try Self.resolve(repos.current.path, in: repos, index: index) == .current)
+    }
+
+    @Test(
+        "A path that starts with ./ or ../ resolves from the current root",
+        arguments: [("../\(secondCopyName)", secondCopyName), ("./", currentCopyName)]
+    )
+    func relativePathResolvesFromRoot(reference: String, expectedCopyName: String) async throws {
+        let resolved = try await Self.resolveInTwoCopies(reference, expectingCopyNamed: expectedCopyName)
+        #expect(resolved.actual == resolved.expected)
+    }
+
+    @Test(
+        "A path to a folder that the scan does not find resolves to a copy with the key of the folder",
+        arguments: CrossRepoFixture.FolderKind.allCases
+    )
+    func pathOutsidePlacesResolvesToFolder(kind: CrossRepoFixture.FolderKind) async throws {
+        let sandbox = try GitSandbox()
+        let app = try await sandbox.makeRepo(named: Self.appName, origin: Self.appOrigin)
+        let other = try await kind.makeFolder(named: Self.outsidePath, origin: Self.libOrigin, in: sandbox)
+        #expect(Self.names(in: try await Self.scan(around: app)) == [Self.appName])
+        let key = try kind.key(ofFolderNamed: Self.outsideName, origin: Self.libOrigin)
+        let expected = BoardResolution.copy(BoardCopy(directory: other, key: key, isEnabled: false))
+        #expect(try await Self.resolveFolder(other.path, around: app) == expected)
+    }
+
+    @Test("A path from the current root to a folder that the scan does not find resolves to that folder")
+    func relativePathOutsidePlacesResolvesToFolder() async throws {
+        let sandbox = try GitSandbox()
+        let app = try await sandbox.makeRepo(named: Self.appName, origin: Self.appOrigin)
+        let other = try GitSandbox.makeFolder(named: Self.outsidePath, in: sandbox.root)
+        let key = BoardKey(localDirectoryName: Self.outsideName)
+        let expected = BoardResolution.copy(BoardCopy(directory: other, key: key, isEnabled: false))
+        #expect(try await Self.resolveFolder("../\(Self.outsidePath)", around: app) == expected)
+    }
+
+    @Test("The path of the current repo resolves to the current board with no scan")
+    func folderPathOfCurrentRepoResolvesToCurrent() async throws {
+        let sandbox = try GitSandbox()
+        let app = try await sandbox.makeRepo(named: Self.appName, origin: Self.appOrigin)
+        #expect(try await Self.resolveFolder(app.path, around: app) == .current)
+    }
+
+    @Test("A path to a folder that does not exist resolves to nothing")
+    func missingFolderPathResolvesToNothing() async throws {
+        let sandbox = try GitSandbox()
+        let app = try await sandbox.makeRepo(named: Self.appName, origin: Self.appOrigin)
+        let missing = sandbox.root.appending(path: Self.missingName, directoryHint: .isDirectory)
+        #expect(try await Self.resolveFolder(missing.path, around: app) == nil)
+    }
+
+    @Test("A path to a file resolves to nothing")
+    func filePathResolvesToNothing() async throws {
+        let sandbox = try GitSandbox()
+        let app = try await sandbox.makeRepo(named: Self.appName, origin: Self.appOrigin)
+        let file = sandbox.root.appending(path: Self.fileName, directoryHint: .notDirectory)
+        try Data().write(to: file)
+        #expect(try await Self.resolveFolder(file.path, around: app) == nil)
+    }
+
+    @Test("A ref that is not a path does not resolve to a folder, also when a folder has the name")
+    func nameIsNotFolderPath() async throws {
+        let sandbox = try GitSandbox()
+        let app = try await sandbox.makeRepo(named: Self.appName, origin: Self.appOrigin)
+        _ = try GitSandbox.makeFolder(named: Self.libName, in: app)
+        #expect(try await Self.resolveFolder(Self.libName, around: app) == nil)
     }
 
     @Test("A board URI resolves by its key")

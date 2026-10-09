@@ -191,6 +191,16 @@ struct CrossRepoReadTests {
         #expect(try await Self.board("path", of: repos.secondCopy.path, on: graph) == repos.secondCopy.path)
     }
 
+    @Test("board(id:) with the path of a folder that the scan does not find reads the board in that folder")
+    func pathOutsidePlacesReadsFolder() async throws {
+        let repos = try await CrossRepoFixture.SideBySide.make()
+        let other = try GitSandbox.makeFolder(named: BoardLocatorTests.outsidePath, in: repos.sandbox.root)
+        _ = try KanbanGraphTests.writeFixture(inRepoAt: other)
+        let graph = try GitGraphFixture.makeGraph(at: repos.app)
+        #expect(try await Self.board("name", of: other.path, on: graph) == KanbanGraphTests.boardName)
+        #expect(try await Self.board("path", of: other.path, on: graph) == other.path)
+    }
+
     @Test("board(id:) with a unique repo directory name selects that copy")
     func directoryNameSelectsCopy() async throws {
         let sandbox = try GitSandbox()
