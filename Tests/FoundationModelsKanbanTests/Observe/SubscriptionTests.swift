@@ -266,7 +266,7 @@ struct SubscriptionTests {
     /// - Throws: An error when the list of the columns of a new board is empty.
     static func donePatch(of task: LocalRef) throws -> PatchInput {
         let done = try #require(DefaultColumn.all.last).slug
-        return try PatchInput(node: task, set: [PropertyName.column: .ref(.local(.column(slug: done)))])
+        return try ReplayTests.movePatch(of: task, to: .column(slug: done))
     }
 
     /// Writes the move of a task to the `done` column of a board, as a different process writes it.

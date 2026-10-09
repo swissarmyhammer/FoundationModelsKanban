@@ -165,12 +165,14 @@ struct ReplayTests {
         try PatchInput(node: taskRef(), edit: PatchEdit(body: diff(from: old, to: new)))
     }
 
-    /// Makes a patch that moves the test task to a column.
+    /// Makes a patch that moves a task to a column.
     ///
-    /// - Parameter column: The local ref of the column.
+    /// - Parameters:
+    ///   - task: The local ref of the task. With no ref, the patch moves the test task.
+    ///   - column: The local ref of the column.
     /// - Returns: The patch.
-    static func movePatch(to column: LocalRef) throws -> PatchInput {
-        try PatchInput(node: taskRef(), set: ["column": .ref(.local(column))])
+    static func movePatch(of task: LocalRef? = nil, to column: LocalRef) throws -> PatchInput {
+        try PatchInput(node: task ?? taskRef(), set: ["column": .ref(.local(column))])
     }
 
     // MARK: - Set and unset

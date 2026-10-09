@@ -31,6 +31,23 @@ comments:
     - rule choice: a node that two or more transactions of one batch patch has its update only in the Change of the last of them (closest to plan.md §6.7: the values are the values after the batch, and no update is sent two times). Written in plan.md §6.7.
     - next: /review
   timestamp: 2026-10-09T19:36:14.990664+00:00
+- actor: claude-code
+  id: 01m4h2x5qx8c53y8tmr2em1p24
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 5 files
+    - test: green — swift test x3, 1097 tests in 80 suites passed each run
+    - commit: e955ffa
+    - review: findings — Tests/FoundationModelsKanbanTests/Observe/SubscriptionTests.swift:269
+  timestamp: 2026-10-09T19:40:41.085643+00:00
+- actor: claude-code
+  id: 01m4h3069rga1kjv95jckcpzbp
+  text: |-
+    ### implement — changed
+    - evidence: 2 files — Tests/FoundationModelsKanbanTests/Events/ReplayTests.swift (movePatch now is `movePatch(of task: LocalRef? = nil, to column: LocalRef)`, with taskRef() when no task is given), Tests/FoundationModelsKanbanTests/Observe/SubscriptionTests.swift (donePatch keeps the done-column lookup and calls `ReplayTests.movePatch(of: task, to: .column(slug: done))`). The existing callers `movePatch(to:)` in ReplayTests did not change. `swift test`: 1097 tests in 80 suites passed; the only build warning is the accepted SwiftPM "missing creator for mutated node".
+    - finding `SubscriptionTests.swift:269` `reuse/reuse` is checked.
+    - next: /review
+  timestamp: 2026-10-09T19:42:19.960422+00:00
 depends_on:
 - 01M4G9K2DV1V2ZVYNZBW3TAWFM
 position_column: doing
@@ -53,3 +70,15 @@ title: 'Watcher batch: do not repeat derived updates in each Change'
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-09 14:38)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `plan.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsKanbanTests/Observe/SubscriptionTests.swift:269` `reuse/reuse` — The new donePatch(of:) builds a column-move PatchInput that ReplayTests.movePatch already builds. It is a near-match that was not extended. movePatch(to:) only hard-codes the fixture task (taskRef()), so the right move was to add an `of` task parameter to movePatch and have donePatch call it with the done column, instead of writing a parallel copy of the same PatchInput(node:set: [column: .ref(.local(...))]) construction. Generalize ReplayTests.movePatch to take the node: `static func movePatch(of task: LocalRef? = nil, to column: LocalRef)`, defaulting to taskRef(). Then donePatch becomes a one-line call: `movePatch(of: task, to: .column(slug: done))`. Keep the done-column lookup in donePatch.
