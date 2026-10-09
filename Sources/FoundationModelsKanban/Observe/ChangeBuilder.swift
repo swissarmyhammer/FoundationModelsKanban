@@ -1,112 +1,165 @@
 import Foundation
 import GraphQL
 import OrderedCollections
+import ULID
 
 // MARK: - Builder
 
-/// Makes the ``Change`` of one transaction from the projection before and after the transaction (plan.md §5.3 step 5,
-/// §6.7).
+/// Makes the ``Change`` of each transaction of a batch from the projection before and after the batch (plan.md §5.3
+/// step 5, §6.7). A batch is one transaction of a call, or the transactions of one batch of a file watcher.
 ///
-/// The change has one update for each node that a patch of the transaction changed, in the order of the first patch of
-/// each node. Then it has one update for each other live node whose field values changed, in slot order: for example
-/// a task that becomes ready when the task that it depends on is done, a task whose tags change with a tag rename, and
-/// the board, whose summary changes. One node has at most one update. The values are the values that a query shows
-/// before and after the transaction (``NodeObject/trackedFields``), not the raw patches.
+/// Each node that changed has one update in one change of the batch only. A node that a patch changed has its update
+/// in the change of the last transaction of the batch that patched it, in the order of the first patch of each node.
+/// Each other live node whose field values changed has its update in the change of the last transaction of the batch,
+/// after the updates of the patched nodes, in slot order: for example a task that becomes ready when the task that it
+/// depends on is done, a task whose tags change with a tag rename, and the board, whose summary changes. The values
+/// are the values that a query shows before and after the batch (``NodeObject/trackedFields``), not the raw patches.
 struct ChangeBuilder: Sendable {
-    /// The read view of the graph before the transaction.
+    /// The read view of the graph before the batch.
     private let before: BoardView
 
-    /// The read view of the graph after the transaction.
+    /// The read view of the graph after the batch.
     private let after: BoardView
 
-    /// Makes a builder for one transaction.
+    /// Makes a builder for one batch.
     ///
     /// - Parameters:
-    ///   - before: The read view of the graph just before the transaction.
-    ///   - after: The read view of the graph just after the transaction.
+    ///   - before: The read view of the graph just before the batch.
+    ///   - after: The read view of the graph just after the batch.
     init(from before: BoardView, to after: BoardView) {
         self.before = before
         self.after = after
     }
 
-    /// Makes the change of the events of one transaction.
+    /// Makes the change of the events of one transaction, when the transaction is the whole batch.
     ///
     /// - Parameters:
     ///   - events: The events of the transaction, in the order of their ids. All of them have the same `txn`.
     ///   - isUndone: `true` when a later transaction that is not undone reverses this transaction (plan.md §6.5).
     /// - Returns: The change, or `nil` when there are no events.
     func change(of events: [Event], markingUndone isUndone: Bool) -> Change? {
-        let patched = OrderedSet(events.map(\.patch.node))
-        return change(of: events, patching: patched, inBoard: after.boardKey, markingUndone: isUndone)
-    }
-
-    /// Makes the change that a transaction of a different board makes in this board: only the updates of the nodes of
-    /// this board whose fields changed (plan.md §6.7, updates across boards). For example, a task of a related board
-    /// becomes done, and a task of this board that depends on it becomes ready.
-    ///
-    /// - Parameters:
-    ///   - events: The events of the transaction in the other board, in the order of their ids.
-    ///   - key: The current key of the other board. It is the first key of `boards`.
-    ///   - isUndone: `true` when a later transaction that is not undone reverses this transaction (plan.md §6.5).
-    /// - Returns: The change, or `nil` when there are no events.
-    func changeOfOtherBoard(of events: [Event], inBoard key: String, markingUndone isUndone: Bool) -> Change? {
-        change(of: events, patching: [], inBoard: key, markingUndone: isUndone)
-    }
-
-    /// Makes the change of the events of one transaction.
-    ///
-    /// - Parameters:
-    ///   - events: The events of the transaction, in the order of their ids.
-    ///   - patched: The local refs of the nodes of this board that a patch of the transaction changed.
-    ///   - key: The current key of the board of the events. It is the first key of `boards`.
-    ///   - isUndone: `true` when a later transaction that is not undone reverses this transaction.
-    /// - Returns: The change, or `nil` when there are no events.
-    private func change(
-        of events: [Event],
-        patching patched: OrderedSet<LocalRef>,
-        inBoard key: String,
-        markingUndone isUndone: Bool
-    ) -> Change? {
         guard let first = events.first else {
             return nil
         }
+        let transaction = BatchTransaction(
+            txn: first.txn,
+            events: events,
+            boardKey: after.boardKey,
+            isUndone: isUndone
+        )
+        return changes(ofBatch: [transaction]).first
+    }
+
+    /// Makes the changes of the transactions of a batch of this board.
+    ///
+    /// - Parameter batch: The transactions of the batch, in `txn` order.
+    /// - Returns: One change for each transaction that has events, in the order of `batch`.
+    func changes(ofBatch batch: [BatchTransaction]) -> [Change] {
+        changes(ofBatch: batch) { transaction in OrderedSet(transaction.events.map(\.patch.node)) }
+    }
+
+    /// Makes the changes that the transactions of a batch of different boards make in this board: only the updates of
+    /// the nodes of this board whose fields changed, all in the change of the last transaction (plan.md §6.7, updates
+    /// across boards). For example, a task of a related board becomes done, and a task of this board that depends on
+    /// it becomes ready.
+    ///
+    /// - Parameter batch: The transactions of the batch in the other boards, in `txn` order.
+    /// - Returns: One change for each transaction that has events, in the order of `batch`.
+    func changesOfOtherBoards(ofBatch batch: [BatchTransaction]) -> [Change] {
+        changes(ofBatch: batch) { _ in [] }
+    }
+
+    /// Makes the changes of the transactions of a batch.
+    ///
+    /// - Parameters:
+    ///   - batch: The transactions of the batch, in `txn` order.
+    ///   - patchedNodes: Gives the local refs of the nodes of this board that the patches of a transaction changed.
+    /// - Returns: One change for each transaction that has events, in the order of `batch`.
+    private func changes(
+        ofBatch batch: [BatchTransaction],
+        patching patchedNodes: (BatchTransaction) -> OrderedSet<LocalRef>
+    ) -> [Change] {
+        let patched = batch.map(patchedNodes)
+        let lastPatchers = Self.lastPatchers(of: patched)
+        let derived = derivedUpdates(besides: Set(lastPatchers.keys))
+        return zip(batch.indices, batch).compactMap { index, transaction in
+            change(
+                of: transaction,
+                patching: patched[index].filter { ref in lastPatchers[ref] == index },
+                adding: index == batch.indices.last ? derived : []
+            )
+        }
+    }
+
+    /// Gives the last transaction that patched each node.
+    ///
+    /// - Parameter patched: The local refs of the nodes that the patches of each transaction changed, in the order
+    ///   of the transactions.
+    /// - Returns: The index of the last transaction that patched each node, by the local ref of the node.
+    private static func lastPatchers(of patched: [OrderedSet<LocalRef>]) -> [LocalRef: Int] {
+        let pairs = patched.enumerated().flatMap { index, refs in refs.map { ref in (ref, index) } }
+        return Dictionary(pairs) { _, later in later }
+    }
+
+    /// Makes the update of each node whose field values changed and that no patch of the batch changed.
+    ///
+    /// - Parameter patched: The local refs of the nodes that a patch of the batch changed.
+    /// - Returns: The updates, in slot order.
+    private func derivedUpdates(besides patched: Set<LocalRef>) -> [NodeUpdate] {
+        after.graph.allSlots.compactMap { slot in update(ofNodeAt: slot, besides: patched) }
+    }
+
+    /// Makes the change of one transaction.
+    ///
+    /// - Parameters:
+    ///   - transaction: The transaction.
+    ///   - patched: The local refs of the nodes of this board whose update goes to this change.
+    ///   - derived: The updates of the nodes that no patch of the batch changed, or none.
+    /// - Returns: The change, or `nil` when the transaction has no events.
+    private func change(
+        of transaction: BatchTransaction,
+        patching patched: OrderedSet<LocalRef>,
+        adding derived: [NodeUpdate]
+    ) -> Change? {
+        guard let first = transaction.events.first else {
+            return nil
+        }
         let patchedUpdates = patched.compactMap { ref in update(of: ref, keepingNoFieldChange: true) }
-        let otherUpdates = after.graph.allSlots.compactMap { slot in update(ofNodeAt: slot, besides: patched) }
         return Change(
             txn: NodeID(text: first.txn.ulidString),
             at: first.at,
             actorRef: first.actor,
             ops: first.ops,
-            boards: [key] + (first.boards ?? []),
-            undone: isUndone,
+            boards: [transaction.boardKey] + (first.boards ?? []),
+            undone: transaction.isUndone,
             undoes: first.undoes.map { txn in NodeID(text: txn.ulidString) },
-            nodeUpdates: patchedUpdates + otherUpdates
+            nodeUpdates: patchedUpdates + derived
         )
     }
 
-    /// Makes the update of the node in a slot that no patch of the transaction changed.
+    /// Makes the update of the node in a slot that no patch of the batch changed.
     ///
     /// - Parameters:
-    ///   - slot: A slot of the graph after the transaction.
-    ///   - patched: The local refs of the nodes that a patch of the transaction changed. Each one already has its
-    ///     update, so one node never gets two updates.
+    ///   - slot: A slot of the graph after the batch.
+    ///   - patched: The local refs of the nodes that a patch of the batch changed. Each one already has its update,
+    ///     so one node never gets two updates.
     /// - Returns: The update, or `nil` when a patch changed the node, the node is a tombstone, the slot holds no
     ///   node, or no field value of the node changed.
-    private func update(ofNodeAt slot: Int, besides patched: OrderedSet<LocalRef>) -> NodeUpdate? {
+    private func update(ofNodeAt slot: Int, besides patched: Set<LocalRef>) -> NodeUpdate? {
         guard let node = after.graph.node(at: slot), !patched.contains(node.ref), !node.state.fields.isDeleted else {
             return nil
         }
         return update(of: node.ref, keepingNoFieldChange: false)
     }
 
-    /// Makes the update of one node: the change of each field value from before to after the transaction.
+    /// Makes the update of one node: the change of each field value from before to after the batch.
     ///
     /// - Parameters:
     ///   - ref: The local ref of the node.
-    ///   - keepsEmpty: `true` to give an update also when no field value changed: a patch of the transaction
-    ///     changed the node.
-    /// - Returns: The update, or `nil` when the graph after the transaction does not have the node, or when no field
-    ///   value changed and `keepsEmpty` is `false`.
+    ///   - keepsEmpty: `true` to give an update also when no field value changed: a patch of the batch changed the
+    ///     node.
+    /// - Returns: The update, or `nil` when the graph after the batch does not have the node, or when no field value
+    ///   changed and `keepsEmpty` is `false`.
     private func update(of ref: LocalRef, keepingNoFieldChange keepsEmpty: Bool) -> NodeUpdate? {
         guard let newFields = after.trackedFields(of: ref) else {
             return nil
@@ -126,11 +179,11 @@ struct ChangeBuilder: Sendable {
         )
     }
 
-    /// Tells how the transaction changed a node (plan.md §6.7, Kind).
+    /// Tells how the batch changed a node (plan.md §6.7, Kind).
     ///
     /// - Parameter ref: The local ref of the node.
-    /// - Returns: `CREATED` when the graph before the transaction does not have the node, `DELETED` when the node
-    ///   became a tombstone, `RESTORED` when the tombstone went away, else `UPDATED`.
+    /// - Returns: `CREATED` when the graph before the batch does not have the node, `DELETED` when the node became a
+    ///   tombstone, `RESTORED` when the tombstone went away, else `UPDATED`.
     private func kind(of ref: LocalRef) -> UpdateKind {
         guard let old = before.graph.node(for: ref) else {
             return .created
@@ -140,6 +193,38 @@ struct ChangeBuilder: Sendable {
         case (false, true): return .deleted
         case (true, false): return .restored
         default: return .updated
+        }
+    }
+}
+
+/// One transaction of a batch: its events, the board of the events, and its undone state.
+struct BatchTransaction: Sendable {
+    /// The transaction ULID.
+    let txn: ULID
+
+    /// The events of the transaction, in the order of their ids. All of them have the same `txn`.
+    let events: [Event]
+
+    /// The current key of the board of the events. It is the first key of `Change.boards`.
+    let boardKey: String
+
+    /// `true` when a later transaction that is not undone reverses this transaction (plan.md §6.5).
+    let isUndone: Bool
+
+    /// Groups the events of one board by transaction.
+    ///
+    /// - Parameters:
+    ///   - events: The events, in the order of their ids.
+    ///   - key: The current key of the board of the events.
+    ///   - undone: The undone state of the transactions of the board.
+    /// - Returns: One transaction for each `txn`, in the order of the first event of each transaction.
+    static func grouping(
+        _ events: [Event],
+        inBoard key: String,
+        markingUndoneBy undone: UndoneState
+    ) -> [BatchTransaction] {
+        events.groupedByTransaction().map { txn, events in
+            BatchTransaction(txn: txn, events: events, boardKey: key, isUndone: undone.isUndone(txn: txn))
         }
     }
 }

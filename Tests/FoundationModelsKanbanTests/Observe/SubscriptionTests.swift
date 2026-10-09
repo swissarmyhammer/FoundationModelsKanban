@@ -152,14 +152,14 @@ struct SubscriptionTests {
         return #"{"data":{"changes":{"ops":["\#(operation)"],"txn":"\#(txn)","updates":[\#(updateList)]}}}"#
     }
 
-    /// Gives the JSON object of one update of a task with ``selection``.
+    /// Gives the JSON object of one update of a node with ``selection``.
     ///
     /// - Parameters:
-    ///   - task: The full URI of the task.
+    ///   - node: The full URI of the node.
     ///   - kind: The kind of the update.
     /// - Returns: The JSON object, with sorted keys.
-    static func update(ofTask task: String, kind: UpdateKind) -> String {
-        #"{"id":"\#(task)","kind":"\#(kind.rawValue)"}"#
+    static func update(ofNode node: String, kind: UpdateKind) -> String {
+        #"{"id":"\#(node)","kind":"\#(kind.rawValue)"}"#
     }
 
     /// Gives the full URI of a task of the fixture board.
@@ -190,7 +190,7 @@ struct SubscriptionTests {
     ///   - operation: The one public mutation of the transaction.
     /// - Returns: The response JSON text.
     private static func patchEvent(of task: ULID, kind: UpdateKind, txn: String, operation: String) -> String {
-        event(txn: txn, operation: operation, updates: [update(ofTask: id(of: task), kind: kind)])
+        event(txn: txn, operation: operation, updates: [update(ofNode: id(of: task), kind: kind)])
     }
 
     /// Gives the newest transaction of the current board.
@@ -257,6 +257,28 @@ struct SubscriptionTests {
         var probe = ids
         _ = probe.makeULID()
         return probe.makeULID().ulidString
+    }
+
+    /// Makes the patch that moves a task to the `done` column, the last column of a new board.
+    ///
+    /// - Parameter task: The local ref of the task.
+    /// - Returns: The patch.
+    /// - Throws: An error when the list of the columns of a new board is empty.
+    static func donePatch(of task: LocalRef) throws -> PatchInput {
+        let done = try #require(DefaultColumn.all.last).slug
+        return try PatchInput(node: task, set: [PropertyName.column: .ref(.local(.column(slug: done)))])
+    }
+
+    /// Writes the move of a task to the `done` column of a board, as a different process writes it.
+    ///
+    /// - Parameters:
+    ///   - task: The full URI of the task.
+    ///   - ids: The ULID source of the event id and the transaction id.
+    ///   - log: The event log of the board of the task.
+    /// - Throws: An error when the URI holds no ULID, or when the append fails.
+    static func writeDoneMove(of task: String, mintingFrom ids: inout FixedULIDSource, in log: EventLog) throws {
+        let patch = try donePatch(of: .task(AddUpdateTaskTests.firstTask(in: task)))
+        try KanbanGraphTests.append(patch, mintingFrom: &ids, to: log)
     }
 
     // MARK: - Changes from this process
@@ -347,6 +369,34 @@ struct SubscriptionTests {
         await graph.close()
     }
 
+    @Test("Two transactions that a different process writes give each Change only its own updates")
+    func outsideTransactionsSendNoUpdateTwoTimes() async throws {
+        let directory = try TemporaryDirectory()
+        let task = try KanbanGraphTests.writeFixture(inRepoAt: directory.url).task
+        let graph = try KanbanGraphTests.makeGraph(at: directory.url)
+        _ = try await CommentTests.run(AddUpdateTaskTests.doneColumn, on: graph)
+        let target = try await CrossRepoFixture.addTask(with: "", on: graph)
+        let dependent = try await CrossRepoFixture.addTask(dependingOn: target, on: graph)
+        let stream = try await Self.subscribe(Self.subscription(""), on: graph)
+        let log = EventLog(repositoryAt: directory.url)
+        var ids = GitGraphFixture.secondEngineIDs
+        let titleTxn = Self.nextTxn(of: ids)
+        try BoardWatcherTests.writeLaterTitle(to: task, mintingFrom: &ids, in: log)
+        let doneTxn = Self.nextTxn(of: ids)
+        try Self.writeDoneMove(of: target, mintingFrom: &ids, in: log)
+        let doneUpdates = [target, ColumnActorTests.id(of: .board), dependent].map { node in
+            Self.update(ofNode: node, kind: .updated)
+        }
+        let expected = [
+            Self.titleEvent(of: task, txn: titleTxn, operation: KanbanGraphTests.fixtureOperation),
+            Self.event(txn: doneTxn, operation: KanbanGraphTests.fixtureOperation, updates: doneUpdates),
+        ]
+        // FSEvents can give the two writes in one batch or in two batches, and two batches can come in either order.
+        // Each Change has the same updates in each case, so the test compares the events and not their order.
+        #expect(try await Self.events(Self.twoEvents, of: stream).sorted() == expected.sorted())
+        await graph.close()
+    }
+
     // MARK: - Related boards
 
     @Test("A task of a related board that becomes done sends a ready update to a subscriber on the dependent board")
@@ -362,14 +412,9 @@ struct SubscriptionTests {
         let fieldSelection = "{ txn ops updates { id kind fields { name before after } } }"
         let document = Self.subscription(Self.taskArguments, selecting: fieldSelection)
         let stream = try await Self.subscribe(document, on: watcher)
-        let done = try #require(DefaultColumn.all.last).slug
-        let patch = try PatchInput(
-            node: .task(AddUpdateTaskTests.firstTask(in: target)),
-            set: [PropertyName.column: .ref(.local(.column(slug: done)))]
-        )
         var ids = GitGraphFixture.thirdEngineIDs
         let txn = Self.nextTxn(of: ids)
-        try KanbanGraphTests.append(patch, mintingFrom: &ids, to: EventLog(repositoryAt: repos.lib))
+        try Self.writeDoneMove(of: target, mintingFrom: &ids, in: EventLog(repositoryAt: repos.lib))
         let event = try #require(try await Self.events(Self.oneEvent, of: stream).first)
         #expect(event.contains(#""txn":"\#(txn)""#))
         #expect(event.contains(#""id":"\#(task)","kind":"\#(UpdateKind.updated.rawValue)""#))

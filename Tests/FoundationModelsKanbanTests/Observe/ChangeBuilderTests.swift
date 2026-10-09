@@ -735,6 +735,147 @@ struct ChangeBuilderTests {
         #expect(task.fields == [tags])
     }
 
+    // MARK: - Batches of transactions
+
+    /// The refs that a batch case names: the fixture task, and a task that depends on it.
+    struct BatchRefs: Sendable {
+        /// The local ref of the fixture task.
+        let task: LocalRef
+
+        /// The local ref of the task that depends on the fixture task.
+        let dependent: LocalRef
+    }
+
+    /// One batch of transactions that a different process writes, and the refs of the updates of each `Change` that
+    /// the change feed makes of the batch.
+    struct BatchCase: Sendable, CustomTestStringConvertible {
+        /// What the case proves.
+        let testDescription: String
+
+        /// Gives the patch of each transaction of the batch, in order. Each patch is one transaction.
+        let patches: @Sendable (BatchRefs) throws -> [PatchInput]
+
+        /// Gives the local refs of the updates of each `Change` of the board of the batch, in the order of the
+        /// transactions.
+        let updates: @Sendable (BatchRefs) -> [[LocalRef]]
+
+        /// Gives the local refs of the updates of each `Change` when the batch is of a different board, in the order
+        /// of the transactions. All the updates are then derived updates.
+        let otherBoardUpdates: @Sendable (BatchRefs) -> [[LocalRef]]
+    }
+
+    /// One batch that a test applied to a commit session.
+    struct AppliedBatch {
+        /// The temporary repo directory. The value holds it, so that the repo stays on disk while the test runs.
+        let directory: TemporaryDirectory
+
+        /// The refs of the case.
+        let refs: BatchRefs
+
+        /// The commit session before the batch.
+        let before: CommitSession
+
+        /// The commit session after the batch.
+        let after: CommitSession
+
+        /// The changes of the live graph that the batch added.
+        let changes: [LiveGraphChange]
+    }
+
+    /// The cases of ``batchGivesEachUpdateToOneChange(batchCase:)`` and
+    /// ``otherBoardBatchGivesUpdatesToLastChange(batchCase:)``.
+    static let batchCases = [
+        BatchCase(
+            testDescription: "The derived updates of the first transaction go only to the Change of the last one",
+            patches: { refs in
+                let board = try PatchInput(node: .board, set: [PropertyName.name: .json(.string(newTitle))])
+                return [try SubscriptionTests.donePatch(of: refs.task), board]
+            },
+            updates: { refs in [[refs.task], [.board, refs.dependent]] },
+            otherBoardUpdates: { refs in [[], [.board, refs.task, refs.dependent]] }
+        ),
+        BatchCase(
+            testDescription: "A node that two transactions patch has its update only in the Change of the last one",
+            patches: { refs in
+                let title = try ReplayTests.titlePatch(setting: newTitle, of: refs.task)
+                return [title, try SubscriptionTests.donePatch(of: refs.task)]
+            },
+            updates: { refs in [[], [refs.task, .board, refs.dependent]] },
+            otherBoardUpdates: { refs in [[], [.board, refs.task, refs.dependent]] }
+        ),
+    ]
+
+    /// Gives the local ref of the task that depends on the fixture task.
+    ///
+    /// - Parameters:
+    ///   - task: The ULID of the fixture task.
+    ///   - session: The commit session. Its board has the fixture task and one more task.
+    /// - Returns: The local ref of the other task.
+    static func dependentRef(of task: ULID, in session: CommitSession) throws -> LocalRef {
+        let graph = session.live.graph
+        let refs = graph.allSlots.compactMap { slot in graph.node(at: slot)?.ref }
+        return try #require(refs.first { ref in ref.nodeType == .task && ref != .task(task) })
+    }
+
+    /// Adds a task that depends on the fixture task, writes the transactions of a case to the logs as a different
+    /// process writes them, and applies them to the session as one batch of the file watcher.
+    ///
+    /// - Parameter batchCase: The case.
+    /// - Returns: The batch.
+    static func applyBatch(of batchCase: BatchCase) async throws -> AppliedBatch {
+        let directory = try TemporaryDirectory()
+        var (session, task) = try await baseSession(inRepoAt: directory)
+        let addDependent = AddUpdateTaskTests.addTask(with: AddUpdateTaskTests.dependsOn(task))
+        try await run(AddUpdateTaskTests.mutation(of: addDependent), in: &session)
+        let refs = BatchRefs(task: .task(task), dependent: try dependentRef(of: task, in: session))
+        _ = session.takeLiveChanges()
+        let before = session
+        for (step, patch) in zip(LiveGraphApplyTests.laterStep..., try batchCase.patches(refs)) {
+            _ = try LoaderTests.append(patch, atStep: step, to: session.live.log)
+        }
+        _ = try await session.apply(watchedPaths: [session.live.log.directory])
+        let changes = session.takeLiveChanges()
+        return AppliedBatch(directory: directory, refs: refs, before: before, after: session, changes: changes)
+    }
+
+    /// Gives the local refs of the updates of each change.
+    ///
+    /// - Parameter changes: The changes.
+    /// - Returns: The local refs of the updates of each change, in order.
+    static func updateRefs(of changes: [Change]) -> [[LocalRef]] {
+        changes.map { change in change.nodeUpdates.map(\.ref) }
+    }
+
+    @Test("A batch of transactions gives each update to one Change only", arguments: batchCases)
+    func batchGivesEachUpdateToOneChange(batchCase: BatchCase) async throws {
+        let batch = try await Self.applyBatch(of: batchCase)
+        let path = batch.directory.url.path
+        let changed = try #require(BoardChanges(of: batch.after, changes: batch.changes))
+        let round = ChangeRound(
+            of: [path: changed],
+            amongBoards: [path: batch.after],
+            currentPath: path,
+            reading: .loadable
+        )
+        let changes = round.changes(of: batch.after, atPath: path)
+        #expect(Self.updateRefs(of: changes) == batchCase.updates(batch.refs))
+    }
+
+    @Test(
+        "A batch of transactions of a different board gives the updates only to its last Change",
+        arguments: batchCases
+    )
+    func otherBoardBatchGivesUpdatesToLastChange(batchCase: BatchCase) async throws {
+        let batch = try await Self.applyBatch(of: batchCase)
+        let undone = UndoneState(of: batch.after.live.events)
+        let transactions = batch.changes.flatMap { change in
+            BatchTransaction.grouping(change.events, inBoard: LoaderTests.remoteBoardKey, markingUndoneBy: undone)
+        }
+        let builder = ChangeBuilder(from: Self.view(of: batch.before), to: Self.view(of: batch.after))
+        let changes = builder.changesOfOtherBoards(ofBatch: transactions)
+        #expect(Self.updateRefs(of: changes) == batchCase.otherBoardUpdates(batch.refs))
+    }
+
     // MARK: - Resolvers
 
     @Test("The actor of a Change made by an actor that was later deleted is the tombstone of the actor")

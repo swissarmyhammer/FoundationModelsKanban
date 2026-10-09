@@ -32,9 +32,11 @@ struct BoardChanges: Sendable {
 ///
 /// A board that changed gets one `Change` for each new transaction, in `txn` order. The values before and after come
 /// from the live graph before and after each change of the board, so a watcher batch with many transactions gives
-/// each of them the values before and after the batch. A board that did not change, but whose tasks depend on a task
-/// of a board that changed, gets the updates of its nodes whose fields changed in each transaction of that board
-/// (plan.md §6.7, updates across boards).
+/// each of them the values before and after the batch. Each update goes to one `Change` of the batch only: the update
+/// of a patched node goes to the last transaction that patched it, and each other update goes to the last transaction
+/// of the batch. A board that did not change, but whose tasks depend on a task of a board that changed, gets one
+/// `Change` for each transaction of the boards that changed. The last of them, in `txn` order, has the updates of its
+/// nodes whose fields changed (plan.md §6.7, updates across boards).
 ///
 /// The cross-board dependencies of each view read the other boards: before the operation for the view before, and
 /// after the operation for the view after.
@@ -87,14 +89,14 @@ struct ChangeRound {
             return changesOfOtherBoards(in: session)
         }
         let undone = UndoneState(of: session.live.events)
+        let key = session.key.description
         return own.changes.flatMap { change in
             let builder = ChangeBuilder(
                 from: Self.snapshot(of: session, graph: change.before).view(reading: before),
                 to: Self.snapshot(of: session, graph: change.after).view(reading: after)
             )
-            return change.events.groupedByTransaction().compactMap { txn, events in
-                builder.change(of: events, markingUndone: undone.isUndone(txn: txn))
-            }
+            let batch = BatchTransaction.grouping(change.events, inBoard: key, markingUndoneBy: undone)
+            return builder.changes(ofBatch: batch)
         }
     }
 
@@ -106,23 +108,23 @@ struct ChangeRound {
         view(of: session, reading: after)
     }
 
-    /// Makes the changes of a board that did not change: one for each transaction of each board that changed, with
-    /// the updates of the nodes of this board whose fields changed.
+    /// Makes the changes of a board that did not change: one for each transaction of each board that changed. The
+    /// change of the last transaction, in `txn` order, has the updates of the nodes of this board whose fields
+    /// changed. The other changes have no update.
     ///
     /// - Parameter session: The session of the board.
     /// - Returns: The changes, in `txn` order.
     private func changesOfOtherBoards(in session: CommitSession) -> [Change] {
         let builder = ChangeBuilder(from: view(of: session, reading: before), to: view(of: session))
-        let changes = changed.values.flatMap { board in
+        let batch = changed.values.flatMap { board in
             let undone = UndoneState(of: board.session.live.events)
             let key = board.session.key.description
             return board.changes.flatMap { change in
-                change.events.groupedByTransaction().compactMap { txn, events in
-                    builder.changeOfOtherBoard(of: events, inBoard: key, markingUndone: undone.isUndone(txn: txn))
-                }
+                BatchTransaction.grouping(change.events, inBoard: key, markingUndoneBy: undone)
             }
         }
-        return changes.sorted { lhs, rhs in lhs.txn.text < rhs.txn.text }
+        let ordered = batch.sorted { lhs, rhs in lhs.txn.ulidString < rhs.txn.ulidString }
+        return builder.changesOfOtherBoards(ofBatch: ordered)
     }
 
     /// Gives the read view of the live graph of a board, with the other boards of a time.

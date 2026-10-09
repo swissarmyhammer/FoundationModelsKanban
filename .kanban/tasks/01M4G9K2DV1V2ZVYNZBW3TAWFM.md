@@ -26,8 +26,17 @@ comments:
     - evidence: 4 files — Sources/FoundationModelsKanban/Observe/ChangeFilter.swift, Sources/FoundationModelsKanban/Filter/TaskFilter.swift, Tests/FoundationModelsKanbanTests/Observe/ChangeFilterTests.swift (new), plan.md. `swift test --filter ChangeFilterTests`: 1 test, 3 cases, passed. `swift test`: 1094 tests in 80 suites passed; the only build warning is the accepted SwiftPM "missing creator for mutated node".
     - next: /review
   timestamp: 2026-10-09T19:17:14.956909+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4h1qtf4qwmtpewe90km6sgp
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 4 files
+    - test: green — swift test, 1094 tests in 80 suites passed
+    - commit: 1a37b61
+    - review: clean — 0 findings
+  timestamp: 2026-10-09T19:20:17.124820+00:00
+position_column: done
+position_ordinal: d380
 title: Change feed with no filter hides tombstones, the same as a task list
 ---
 ## What
