@@ -29,6 +29,31 @@ comments:
     - evidence: 4 files — Sources/FoundationModelsKanban/Body/DiffApply.swift, Tests/FoundationModelsKanbanTests/Body/DiffApplyTests.swift, Tests/FoundationModelsKanbanTests/Events/ReplayTests.swift, Tests/FoundationModelsKanbanTests/Design/MergeTests.swift. `swift test`: 1054 tests in 74 suites passed, 0 failures; only the accepted SwiftPM "missing creator for mutated node" warning.
     - next: /review
   timestamp: 2026-10-09T13:44:03.168061+00:00
+- actor: claude-code
+  id: 01m4geqj8xb7p2wc6x2fr94md5
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD — engine: 0 findings (0 confirmed, 0 refuted), 4 source and test files reviewed, 4 .kanban files ignored by .reviewignore. Driver check of the commit message: 1 finding — 9bfb481 commit message has statements that are not true for the diff (old behavior made no conflict block; the task stays in column doing in this commit; the main fix "a hunk with no old lines applies only to the empty text" is not named). The 5 acceptance and test items agree with the diff: DiffApplyTests has the empty-body cases with and without a final newline, MergeTests has the two-branch merge test, ReplayTests has the two-log-line test. The implement record gives swift test 1054 tests in 74 suites passed.
+    - next: reword the commit message of 9bfb481, then /review
+  timestamp: 2026-10-09T13:48:05.789190+00:00
+- actor: claude-code
+  id: 01m4geqk4cch6vtnwk0948n5sq
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 4 files
+    - test: green — swift test, 1054 tests in 74 suites passed
+    - commit: 9bfb481
+    - review: findings — 9bfb481 (commit message)
+  timestamp: 2026-10-09T13:48:06.668912+00:00
+- actor: claude-code
+  id: 01m4gesnsxe2zrsqhatdnhe3fd
+  text: |-
+    Commit message of 9bfb481 reworded with `git commit --amend --only -m`. New HEAD 53362dd. Tree 8719d83 before and after, so the files did not change. The new message: (1) says that the old nearestMatch applied a hunk with no old lines at index 0 of any body, so two inserts into an empty body joined ("betaalpha", no conflict block); (2) names the main fix `HunkApplier.matches(_:withOldLines:at:)` (a hunk with no old lines applies only to the empty text; a hunk whose last new line has no final newline applies only at the end of the text; else replay writes a conflict block), plus `Hunk.endsWithoutNewline` and the `insertConflict` change; (3) names the 5 tests; (4) says only "Record the task files of ^ew12ah1 and ^tdybdkj", with no claim about columns. No code change and no other commit.
+
+    ### implement — changed
+    - evidence: HEAD 9bfb481 -> 53362dd (message only); `git show --stat HEAD` gives the same 8 files, 188 insertions, 19 deletions; tree 8719d83 unchanged.
+    - next: /review
+  timestamp: 2026-10-09T13:49:14.941059+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'Body diff: two inserts into an empty body must not join lines'
@@ -52,3 +77,12 @@ Scenario (plan.md §5.5): branch A sets the empty body of a task to `alpha`, bra
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-09 08:45)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `9bfb481` `commit/message` (driver check of the commit message, not an engine validator) — The commit message of 9bfb481 has statements that are not true for its diff. (1) The body says "When a second insert met a body that was no longer empty, the conflict block held no current lines". Before this change, `nearestMatch` matched a hunk with no old lines at each index, so the hunk applied at index 0 and no conflict block was made. (2) The body says "Task ^ew12ah1 moves to review with its comments". In this commit, `.kanban/tasks/01M4G9H9E68FKJMCA22EW12AH1.jsonl` keeps the task in column `doing`. (3) The bullet list does not name the main fix: a hunk with no old lines now applies only to the empty text (`matches(_:withOldLines:at:)`). Reword the commit message so that each statement agrees with the diff, and name the main fix.
