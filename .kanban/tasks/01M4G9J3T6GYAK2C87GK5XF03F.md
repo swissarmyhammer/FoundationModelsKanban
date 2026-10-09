@@ -29,6 +29,29 @@ comments:
     - evidence: 8 files — Sources/FoundationModelsKanban/GraphQL/CodedError.swift (new), GraphQL/Errors.swift, GraphQL/Schema.swift, GraphQL/NameRewrite.swift, plan.md, Tests/.../GraphQL/ErrorCoverageTests.swift, Tests/.../GraphQL/KanbanErrorTests.swift, Tests/.../GraphQLEngineTests.swift. `swift test`: 1064 tests in 74 suites passed, 0 failures; only the accepted SwiftPM "missing creator" warning.
     - next: /review
   timestamp: 2026-10-09T14:53:27.464398+00:00
+- actor: claude-code
+  id: 01m4gjq04dqk4avpg3gywmd6bz
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 8 files
+    - test: green — swift test, 1064 tests in 74 suites passed
+    - commit: 07921c7
+    - review: findings — plan.md:332 (the commit message says "plan.md section 7"; the change is in plan.md §4.4)
+  timestamp: 2026-10-09T14:57:41.517248+00:00
+- actor: claude-code
+  id: 01m4gjq189175a8gw030km64cr
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD — engine 0 findings (2 refuted); commit message check 1 finding — plan.md:332
+    - next: correct the message of commit 07921c7, then /review
+  timestamp: 2026-10-09T14:57:42.665416+00:00
+- actor: claude-code
+  id: 01m4gjrpsd4e4z9c9qwz2bd88v
+  text: |-
+    ### implement — changed
+    - evidence: `git commit --amend --only` changed only the message. Commit 07921c7 is now f825827. The tree is d4cd2342 before and after the amend, and `git diff 07921c7 f825827` is empty. The new message says: "In plan.md section 4.4 (Errors), add the four new codes to the list of codes. Also add two bullets that give the meaning of the codes: one bullet for GRAPHQL_PARSE_FAILED, GRAPHQL_VALIDATION_FAILED and AMBIGUOUS_NAME, and one bullet for INTERNAL." All other lines of the message did not change. The finding `plan.md:332` is `- [x]`. No code change, no other commit.
+    - next: /review
+  timestamp: 2026-10-09T14:58:37.485653+00:00
 position_column: doing
 position_ordinal: '80'
 title: Each GraphQL error has extensions.code
@@ -51,3 +74,15 @@ plan.md §4.4: "Each error has `message`, `path`, and `extensions.code`." Now `S
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-09 09:55)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 7 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `plan.md` — no validator matches this file
+
+- [x] `plan.md:332` `commit/message-accuracy` — The message of commit 07921c7 says "Add the four new codes to the list of codes in plan.md section 7". The change is in plan.md §4.4 Errors, not in section 7. The change also adds two bullets that give the meaning of `GRAPHQL_PARSE_FAILED`, `GRAPHQL_VALIDATION_FAILED`, `AMBIGUOUS_NAME` and `INTERNAL`, and the message does not tell about them. Correct the message so that it names §4.4 and tells about the two new bullets.
