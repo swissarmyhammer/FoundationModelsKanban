@@ -29,7 +29,18 @@ struct NameRewriteTests {
     /// A filter that does not parse.
     static let invalidFilter = "&&"
 
+    /// The selection of a task field that gives the names of its tags.
+    private static let tagNamesSelection = "{ tags { name } }"
+
     // MARK: - Helpers
+
+    /// Gives the end of a response that has one rewrite in `extensions.rewrites`.
+    ///
+    /// - Parameter rewrite: The JSON object text of the rewrite.
+    /// - Returns: The text after `data` in the response.
+    private static func extensionsSuffix(rewrite: String) -> String {
+        #","extensions":{"rewrites":[\#(rewrite)]}}"#
+    }
 
     /// Runs the rewriter of the public schema on a document.
     ///
@@ -163,7 +174,8 @@ struct NameRewriteTests {
 
     @Test(
         "A selection field in a different case, style, number, alias, or spelling gets the canonical name",
-        arguments: [("Title", "title"), ("short_id", "shortId"), ("tag", "tags"), ("desc", "body"), ("titl", "title")]
+        arguments: [("Title", "title"), ("short_id", "shortId"), ("tag", "tags"), ("desc", "body"), ("titl", "title"),
+                    ("label", "tags"), ("labels", "tags")]
     )
     func selectionFieldGetsCanonicalName(written: String, canonical: String) throws {
         let rewritten = try Self.rewritten(from: #"{ board { task(id: "\#(Self.taskRef)") { \#(written) } } }"#)
@@ -201,7 +213,7 @@ struct NameRewriteTests {
     @Test(
         "An input field in a different case, style, number, alias, or spelling gets the canonical name",
         arguments: [("Title", "title"), ("depends_on", "dependsOn"), ("tag", "tags"), ("desc", "body"),
-                    ("titl", "title")]
+                    ("titl", "title"), ("label", "tags"), ("labels", "tags")]
     )
     func inputFieldGetsCanonicalName(written: String, canonical: String) throws {
         let rewritten = try Self.rewritten(from: #"mutation { addTask(input: { \#(written): "x" }) { id } }"#)
@@ -386,7 +398,25 @@ struct NameRewriteTests {
             onFixtureIn: try TemporaryDirectory()
         )
         let rewrite = #"{"from":"taskAdd","path":["taskAdd"],"to":"addTask"}"#
-        #expect(response.hasSuffix(#","extensions":{"rewrites":[\#(rewrite)]}}"#))
+        #expect(response.hasSuffix(Self.extensionsSuffix(rewrite: rewrite)))
+    }
+
+    @Test("tagTask with the input field label tags the task, and the response has label to tags in extensions.rewrites")
+    func labelInputFieldIsInExtensions() async throws {
+        let label = "label: \(AddUpdateTaskTests.list(of: [TagMutationTests.bug]))"
+        let field = TaskOperationTests.taskField(
+            MutationName.tagTask,
+            of: try AddUpdateTaskTests.fixtureTask(),
+            with: label,
+            selecting: Self.tagNamesSelection
+        )
+        let response = try await ColumnActorTests.respond(
+            to: AddUpdateTaskTests.mutation(of: field),
+            onFixtureIn: try TemporaryDirectory()
+        )
+        let tagged = #"{"data":{"tagTask":{"tags":[{"name":"\#(TagMutationTests.bug)"}]}}"#
+        let rewrite = #"{"from":"label","path":["tagTask","input","label"],"to":"tags"}"#
+        #expect(response == tagged + Self.extensionsSuffix(rewrite: rewrite))
     }
 
     @Test("createBoard does not map to initBoard, and writes nothing")

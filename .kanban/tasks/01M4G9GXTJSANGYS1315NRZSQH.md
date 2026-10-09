@@ -67,8 +67,17 @@ comments:
     - evidence: 13 files — Sources/FoundationModelsKanban/Tags/TagSlug.swift, Sources/FoundationModelsKanban/GraphQL/Errors.swift, Sources/FoundationModelsKanban/GraphQL/ColumnActorMutations.swift, Sources/FoundationModelsKanban/GraphQL/CommentMutations.swift, Sources/FoundationModelsKanban/GraphQL/TagMutations.swift, Sources/FoundationModelsKanban/GraphQL/TaskMutations.swift, Sources/FoundationModelsKanban/GraphQL/TaskOperationMutations.swift, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift, Tests/FoundationModelsKanbanTests/Mutations/ReservedSlugTests.swift (new), Tests/FoundationModelsKanbanTests/Identity/NodeURITests.swift, Tests/FoundationModelsKanbanTests/GraphQL/KanbanErrorTests.swift, plan.md. `swift test`: 1075 tests in 75 suites pass, 0 failures; the only build warning is the accepted SwiftPM "missing creator for mutated node".
     - next: /review
   timestamp: 2026-10-09T16:27:47.942206+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4gr46rk16mtv5a152wtxdv6
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 12 files
+    - test: green — swift test, 1075 tests in 75 suites passed
+    - commit: 371cd90
+    - review: clean — 0 findings
+  timestamp: 2026-10-09T16:32:17.171650+00:00
+position_column: done
+position_ordinal: cb80
 title: Board URI parse and case-insensitive board key host
 ---
 ## What

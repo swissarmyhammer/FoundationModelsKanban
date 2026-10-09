@@ -39,13 +39,6 @@ private struct UndoInput: Decodable, Sendable {
     let board: String?
 }
 
-/// The arguments of `undo` and `redo`. The `input` argument is optional, because ``UndoInput`` has no required field
-/// (plan.md §4.2).
-private struct UndoArguments: Decodable, Sendable {
-    /// The transaction, the force flag, and the board, or `nil` for the newest target and no force.
-    let input: UndoInput?
-}
-
 // MARK: - Resolvers
 
 extension KanbanResolver {
@@ -53,11 +46,15 @@ extension KanbanResolver {
     ///
     /// - Parameters:
     ///   - context: The context of the call.
-    ///   - arguments: The transaction, the force flag, and the board.
+    ///   - arguments: The transaction, the force flag, and the board. The `input` argument is optional, because
+    ///     ``UndoInput`` has no required field (plan.md §4.2). No `input` gives the newest target and no force.
     /// - Returns: The change that the undo wrote. The GraphQL field is nullable, so that an error gives `null` for this
     ///   field only, and the other fields of the call keep their data.
     /// - Throws: An error of ``BoardStore/reverse(_:with:at:)``.
-    fileprivate func undo(context: KanbanContext, arguments: UndoArguments) async throws -> Change? {
+    fileprivate func undo(
+        context: KanbanContext,
+        arguments: OptionalInputArguments<UndoInput>
+    ) async throws -> Change? {
         try await context.store.reverse(.undo, with: arguments.input, at: context.clock())
     }
 
@@ -65,11 +62,15 @@ extension KanbanResolver {
     ///
     /// - Parameters:
     ///   - context: The context of the call.
-    ///   - arguments: The transaction, the force flag, and the board.
+    ///   - arguments: The transaction, the force flag, and the board. The `input` argument is optional, the same as
+    ///     for `undo`.
     /// - Returns: The change that the redo wrote. The GraphQL field is nullable, so that an error gives `null` for this
     ///   field only, and the other fields of the call keep their data.
     /// - Throws: An error of ``BoardStore/reverse(_:with:at:)``.
-    fileprivate func redo(context: KanbanContext, arguments: UndoArguments) async throws -> Change? {
+    fileprivate func redo(
+        context: KanbanContext,
+        arguments: OptionalInputArguments<UndoInput>
+    ) async throws -> Change? {
         try await context.store.reverse(.redo, with: arguments.input, at: context.clock())
     }
 }

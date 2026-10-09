@@ -126,7 +126,7 @@ struct NameMatcherTests {
     @Test(
         "An alias of a field gives the field",
         arguments: [("description", "body"), ("desc", "body"), ("text", "body"), ("content", "body"),
-                    ("Desc", "body"), ("status", "column"), ("labels", "tags")]
+                    ("Desc", "body"), ("status", "column"), ("labels", "tags"), ("label", "tags")]
     )
     func aliasGivesField(name: String, expected: String) {
         #expect(Self.fieldMatch(for: name, among: Self.taskFields) == .found(canonical: expected))
@@ -136,12 +136,6 @@ struct NameMatcherTests {
     func inputFieldAliases() {
         #expect(Self.fieldMatch(for: "task_id", among: Self.moveTaskInputFields) == .found(canonical: "id"))
         #expect(Self.fieldMatch(for: "status", among: Self.moveTaskInputFields) == .found(canonical: "column"))
-    }
-
-    @Test("The label alias gives tag")
-    func labelAliasGivesTag() {
-        let candidates = [CanonicalName(field: "tag"), CanonicalName(field: "id")]
-        #expect(Self.fieldMatch(for: "label", among: candidates) == .found(canonical: "tag"))
     }
 
     // MARK: - Step 6: one wrong letter

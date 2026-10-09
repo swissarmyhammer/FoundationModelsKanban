@@ -146,13 +146,6 @@ enum MutationBoard: Sendable {
     }
 }
 
-/// The arguments of `initBoard` and `updateBoard`. The `input` argument is optional, because ``BoardInput`` has no
-/// required field (plan.md §4.2).
-private struct BoardMutationArguments: Decodable, Sendable {
-    /// The changes to the board, or `nil` for no change.
-    let input: BoardInput?
-}
-
 // MARK: - Default columns
 
 /// A column that a new board gets (plan.md §6, "Default columns"). `undo` keeps the default columns of an auto-init,
@@ -183,13 +176,14 @@ extension KanbanResolver {
     ///
     /// - Parameters:
     ///   - context: The context of the call.
-    ///   - arguments: The changes to the board.
+    ///   - arguments: The changes to the board. The `input` argument is optional, because ``BoardInput`` has no
+    ///     required field (plan.md §4.2). No `input` gives no change.
     /// - Returns: The board after the change. The GraphQL field is nullable, so that an error gives `null` for this
     ///   field only, and the other fields of the call keep their data.
     /// - Throws: An ``EventError`` when a patch breaks a rule of the log.
     fileprivate func initBoard(
         context: KanbanContext,
-        arguments: BoardMutationArguments
+        arguments: OptionalInputArguments<BoardInput>
     ) async throws -> BoardObject? {
         try await changeBoard(as: MutationName.initBoard, context: context, arguments: arguments)
     }
@@ -204,7 +198,7 @@ extension KanbanResolver {
     /// - Throws: An ``EventError`` when a patch breaks a rule of the log.
     fileprivate func updateBoard(
         context: KanbanContext,
-        arguments: BoardMutationArguments
+        arguments: OptionalInputArguments<BoardInput>
     ) async throws -> BoardObject? {
         try await changeBoard(as: MutationName.updateBoard, context: context, arguments: arguments)
     }
@@ -221,7 +215,7 @@ extension KanbanResolver {
     private func changeBoard(
         as operation: String,
         context: KanbanContext,
-        arguments: BoardMutationArguments
+        arguments: OptionalInputArguments<BoardInput>
     ) async throws -> BoardObject? {
         let view = try await context.store.changeBoard(with: arguments.input, as: operation, at: context.clock())
         return try view.map(BoardObject.init(in:))

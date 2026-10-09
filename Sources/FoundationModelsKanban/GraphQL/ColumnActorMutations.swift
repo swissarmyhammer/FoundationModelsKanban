@@ -37,6 +37,13 @@ struct InputArguments<Input: Decodable & Sendable>: Decodable, Sendable {
     let input: Input
 }
 
+/// The arguments of a mutation whose `input` argument is optional, because the `input` type has no required field
+/// (plan.md §4.2). For example, `mutation { addTag { id } }` is valid, and the resolver gets no `input`.
+struct OptionalInputArguments<Input: Decodable & Sendable>: Decodable, Sendable {
+    /// The `input` object of the mutation, or `nil` when the call gives no `input`.
+    let input: Input?
+}
+
 /// The `input` object of `addColumn` (plan.md §4.2).
 private struct AddColumnInput: Codable, Sendable {
     /// The id of the new column, or `nil` for the slug of ``name``. The id is the slug of this text (plan.md §3.2).

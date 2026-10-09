@@ -1001,14 +1001,14 @@ enum GraphQLTypeName {
 /// schemas above, and its aliases apply at each position where the schema has the name.
 enum GraphQLFieldAliases {
     /// The aliases of each name. The old names `description` (Board, Tag, Task) and `text` (Comment) are aliases of
-    /// `body` (plan.md §12, item 19).
+    /// `body` (plan.md §12, item 19). A key must be a name that the schema has: `label` is an alias of `tags`, because
+    /// no field, argument, or `input` field has the name `tag`.
     static let byName: [String: [String]] = [
         "body": ["description", "desc", "text", "content"],
         "column": ["status"],
         "assignees": ["assignee"],
         "id": ["task_id"],
-        "tag": ["label"],
-        "tags": ["labels"],
+        "tags": ["labels", "label"],
     ]
 }
 

@@ -82,23 +82,25 @@ extension KanbanResolver {
     ///
     /// - Parameters:
     ///   - context: The context of the call.
-    ///   - arguments: The new tag.
+    ///   - arguments: The new tag. The `input` argument is optional, because ``AddTagInput`` has no required field
+    ///     (plan.md §4.2). No `input` is the same as an `input` with no field.
     /// - Returns: The tag. The GraphQL field is nullable, so that an error gives `null` for this field only.
-    /// - Throws: ``KanbanError/invalidTagName(name:)`` when the id or the name gives an empty slug.
-    ///   ``KanbanError/reservedTagName`` when a new tag would get the slug ``Slug/reservedForBoard``.
+    /// - Throws: ``KanbanError/invalidTagName(name:)`` when the id or the name gives an empty slug, or when the input
+    ///   gives no id and no name. ``KanbanError/reservedTagName`` when a new tag would get the slug
+    ///   ``Slug/reservedForBoard``.
     fileprivate func addTag(
         context: KanbanContext,
-        arguments: InputArguments<AddTagInput>
+        arguments: OptionalInputArguments<AddTagInput>
     ) async throws -> TagObject? {
         let input = arguments.input
-        return try await context.changeNode(named: MutationName.addTag, on: .named(input.board)) { work, _, time in
-            let name = try TagName(normalizing: input.name ?? input.id?.text ?? "")
-            let slug = try input.id.map { id in try TagName(normalizing: id.text).slug } ?? name.slug
+        return try await context.changeNode(named: MutationName.addTag, on: .named(input?.board)) { work, _, time in
+            let name = try TagName(normalizing: input?.name ?? input?.id?.text ?? "")
+            let slug = try input?.id.map { id in try TagName(normalizing: id.text).slug } ?? name.slug
             let values = [
                 PropertyName.name: PatchValue.string(name.name),
-                PropertyName.color: .string(input.color ?? slug.autoColor),
+                PropertyName.color: .string(input?.color ?? slug.autoColor),
             ]
-            return try work.ensureLiveTag(.tag(slug: slug.value), setting: values, body: input.body, at: time)
+            return try work.ensureLiveTag(.tag(slug: slug.value), setting: values, body: input?.body, at: time)
         }
     }
 

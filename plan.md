@@ -190,21 +190,23 @@ type Board implements Node {
   actors: [Actor!]!                   # shared nodes
   tags: [Tag!]!                       # shared nodes
   task(id: ID!): Task
-  tasks(filter: String, first: Int = 10, after: String): TaskConnection!
+  tasks(filter: String, first: Int = 10, after: String): TaskConnection
                                       # only the filter selects; no filter gives each live task, done or not;
                                       # no tombstone unless the filter names #DELETED (§3.3 rule 3, §6.3)
   nextTask(filter: String): Task
-  searchTasks(query: String!, filter: String, first: Int = 10): [TaskHit!]!   # §6.4
+  searchTasks(query: String!, filter: String, first: Int = 10): [TaskHit!]   # §6.4
   summary: BoardSummary!              # counts: total, ready, blocked, done, percent
   path: String                        # repo directory of this copy (§6.6); null only for a board in memory
-  history(filter: String, since: ID, first: Int = 20): [Change!]!
+  history(filter: String, since: ID, first: Int = 20): [Change!]
                                       # §6.5, newest first; since = only after that txn (§6.7)
 }
+# A field with a filter argument (tasks, searchTasks, history, Column/Actor/Tag.tasks, Change.updates) is nullable:
+# an error, for example INVALID_FILTER, gives null for that field only, and the other data stays (§4.4).
 
 type Change {                         # one transaction (one tool call); §6.5, §6.7
   txn: ID!  at: DateTime!  actor: Actor!  ops: [String!]!  boards: [String!]!
   undone: Boolean!  undoes: ID
-  updates(filter: String): [NodeUpdate!]!   # one item for each node that changed; at most one for each node
+  updates(filter: String): [NodeUpdate!]   # one item for each node that changed; at most one for each node
 }
 type NodeUpdate {
   id: ID!                             # the node URI; always set, also for a deleted node
@@ -223,9 +225,9 @@ type FieldChange {
 # The filter of history, changes, and Change.updates keeps the updates whose node matches it (§6.3, §6.7). For
 # example, history(filter: "^<id>") gives the Changes that have an update of that node.
 
-type Column implements Node { id: ID!  body: String!  name: String!  order: Int!  tasks(filter: String): [Task!]! }
-type Actor  implements Node { id: ID!  body: String!  name: String!  color: String  tasks(filter: String): [Task!]! }
-type Tag    implements Node { id: ID!  body: String!  name: String!  color: String!  tasks(filter: String): [Task!]! }
+type Column implements Node { id: ID!  body: String!  name: String!  order: Int!  tasks(filter: String): [Task!] }
+type Actor  implements Node { id: ID!  body: String!  name: String!  color: String  tasks(filter: String): [Task!] }
+type Tag    implements Node { id: ID!  body: String!  name: String!  color: String!  tasks(filter: String): [Task!] }
 
 type Task implements Node {
   id: ID!
@@ -280,7 +282,7 @@ The root has only four fields. All other reads go down the tree from `board`. Fo
 
 Each Rust write op becomes one mutation field. The names use the `verbNoun` form. Each public mutation writes one or more property patches to the log (§5.1).
 
-Each mutation takes one `input` object. The table lists the fields of that object. `input` is optional when it has no required field (for example `undo`, `redo`, `initBoard`).
+Each mutation takes one `input` object. The table lists the fields of that object. `input` is optional when it has no required field: `initBoard`, `updateBoard`, `addTag`, `undo`, and `redo`.
 
 **Notation.** In this plan, `f(x: v)` means `f(input: { x: v })`.
 
@@ -361,7 +363,7 @@ The agent can make many small mistakes in names. The tool corrects each name tha
 2. The same name with the case and style made the same: `camelCase`, `snake_case`, `kebab-case`, and any letter case.
 3. The singular or plural form.
 4. For a top-level mutation: the other word order (verbNoun or nounVerb) and the verb synonyms. The synonyms are `create`/`new`/`insert` → `add`, `remove`/`rm`/`del` → `delete`, `edit`/`modify`/`set`/`patch` → `update`, `mv` → `move`, `done`/`finish`/`close` → `complete`, `label` → `tag`, `unlabel` → `untag`, and `restore` / `unarchive` / `recover` → `undelete`, `archive` → `delete`. These are the Rust verb aliases, with archive mapped to delete.
-5. The alias table of the field, for example `description` / `desc` / `text` / `content` → `body`, `label` → `tag`, `status` → `column`, `assignee` → `assignees`, `task_id` → `id`.
+5. The alias table of the field, for example `description` / `desc` / `text` / `content` → `body`, `label` / `labels` → `tags`, `status` → `column`, `assignee` → `assignees`, `task_id` → `id`. A key of the table is a name that the schema has, so that the alias can match.
 6. A close spelling: one changed, added, or removed letter. This step applies only to names of 4 or more letters.
 
 **Rules:**

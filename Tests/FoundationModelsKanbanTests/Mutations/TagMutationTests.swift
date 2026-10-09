@@ -69,8 +69,11 @@ struct TagMutationTests {
     /// id, each with the name that the `INVALID_TAG_NAME` error gives.
     private static let invalidNameInputs = [
         (#"name: "\#(ColumnActorTests.emptySlugName)""#, ColumnActorTests.emptySlugName),
-        ("", ""),
+        ("", noName),
     ]
+
+    /// The name that the `INVALID_TAG_NAME` error gives when the input of `addTag` gives no name and no id.
+    private static let noName = ""
 
     // MARK: - Helpers
 
@@ -334,6 +337,17 @@ struct TagMutationTests {
         let directory = try TemporaryDirectory()
         let error = try await CommentTests.failure(of: Self.addTag(with: input), in: directory)
         #expect(error == .invalidTagName(name: name))
+    }
+
+    @Test("addTag with no input argument passes validation and gives INVALID_TAG_NAME")
+    func addTagWithoutInput() async throws {
+        let response = try await ErrorCoverageTests.respond(toMutationOf: "\(MutationName.addTag) \(Self.tagSelection)")
+        try ErrorCoverageTests.expectFailure(
+            of: MutationName.addTag,
+            in: response,
+            giving: .invalidTagName(name: Self.noName),
+            coded: "INVALID_TAG_NAME"
+        )
     }
 
     // MARK: - updateTag
