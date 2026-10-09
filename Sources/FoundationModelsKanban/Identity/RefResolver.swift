@@ -32,6 +32,10 @@ struct RefResolver: Sendable {
     /// that a prefix of a task and a comment is ambiguous, and a canonical form wins over a prefix.
     private static let ulidTypes: Set<PatchNodeType> = [.task, .comment]
 
+    /// The smallest number of nodes that make a shared short id. When this number of nodes or more have the same
+    /// short id, the short id names no node, and the resolve gives `AMBIGUOUS_ID` (plan.md §3.2).
+    private static let sharedShortIDOwnerCount = 2
+
     /// The graph of the target board.
     let graph: Graph
 
@@ -324,7 +328,7 @@ extension RefResolver {
             .filter { ref in types.contains(ref.nodeType) }
             .compactMap(\.localID)
         let owners = ShortID.ulids(withShortIDOf: key, among: ulids)
-        guard owners.count < 2 else {
+        guard owners.count < Self.sharedShortIDOwnerCount else {
             throw .sharedShortID(reference: reference, ids: owners)
         }
     }
