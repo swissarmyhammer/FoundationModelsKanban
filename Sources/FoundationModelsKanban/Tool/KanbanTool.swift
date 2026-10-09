@@ -9,8 +9,8 @@ import GraphQL
 /// clients, for example a GUI that subscribes, so that all clients in one process share one live graph and one serial
 /// gate.
 ///
-/// The tool does not run a subscription. A `subscription` document gives the error `SUBSCRIPTION_NOT_IN_TOOL`, and
-/// the agent then polls `board { history(since:) }`.
+/// The tool does not run a subscription. When the selected operation is a `subscription`, the tool gives the error
+/// `SUBSCRIPTION_NOT_IN_TOOL`, and the agent then polls `board { history(since:) }`.
 public struct KanbanTool: Tool {
     /// The example query of the description. A test runs it, so that it cannot go out of date (plan.md §7.1).
     static let exampleQuery = """
@@ -56,8 +56,8 @@ public struct KanbanTool: Tool {
     /// Runs the document of the arguments against the engine.
     ///
     /// A GraphQL error does not throw: the response has it in `errors`. Variables that are not a JSON object give the
-    /// error `INVALID_VARIABLES`, and a subscription gives the error `SUBSCRIPTION_NOT_IN_TOOL`. In both cases the
-    /// engine runs nothing.
+    /// error `INVALID_VARIABLES`, and a selected subscription gives the error `SUBSCRIPTION_NOT_IN_TOOL`. In both cases
+    /// the engine runs nothing.
     ///
     /// When a host runs the call with a ``ToolContext``, the engine posts the ACP agent plan of each board whose
     /// tasks the call changed to that context (plan.md §7.3). The model does not get the plan.
@@ -82,21 +82,26 @@ public struct KanbanTool: Tool {
 
     /// Tells if the operation to run is a subscription.
     ///
+    /// The tool selects the operation with the same rule as the engine: the operation that has the name, or the one
+    /// operation of the document when the name is `nil`. When the tool cannot select an operation, the engine gives
+    /// the error, for example "Must provide operation name" for a document with two operations and no name.
+    ///
     /// - Parameters:
     ///   - query: The GraphQL document.
-    ///   - operationName: The name of the operation to run, or `nil` to look at each operation of the document.
-    /// - Returns: `true` when a subscription of the document has the name, or when the name is `nil` and the
-    ///   document has a subscription. A document that does not parse gives `false`, so that the engine reports the
-    ///   syntax error.
+    ///   - operationName: The name of the operation to run, or `nil` when the call sent no name.
+    /// - Returns: `true` when the selected operation is a subscription. A document that does not parse, and a
+    ///   document whose operation the tool cannot select, give `false`, so that the engine reports the error.
     private static func selectsSubscription(_ query: String, named operationName: String?) -> Bool {
         guard let document = try? parse(source: query) else {
             return false
         }
-        return document.definitions.contains { definition in
-            guard let operation = definition as? OperationDefinition, operation.operation == .subscription else {
-                return false
+        let operations = document.definitions.compactMap { definition in definition as? OperationDefinition }
+        let selected: OperationDefinition? =
+            if let operationName {
+                operations.first { operation in operation.name?.value == operationName }
+            } else {
+                operations.count == 1 ? operations.first : nil
             }
-            return operationName == nil || operation.name?.value == operationName
-        }
+        return selected?.operation == .subscription
     }
 }

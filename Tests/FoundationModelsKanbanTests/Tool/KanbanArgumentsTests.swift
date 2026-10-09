@@ -52,6 +52,14 @@ struct KanbanArgumentsTests {
     /// The name of the operation of the operation-name test.
     static let operationName = "Names"
 
+    /// The `operationName` values that hold no name: empty, spaces, and other white space.
+    static let blankOperationNames = ["", "  ", "\n\t"]
+
+    /// Each `operationName` that the call sends, with the name that the decode gives. `nil` leaves out the key. A
+    /// blank name gives `nil`, the same as no key.
+    static let operationNameForms: [(sent: String?, decoded: String?)] =
+        [(operationName, operationName), (nil, nil)] + blankOperationNames.map { blank in (blank, nil) }
+
     // MARK: - Helpers
 
     /// Gives a string as JSON text: in quotes, with each special character escaped.
@@ -67,10 +75,16 @@ struct KanbanArgumentsTests {
     /// - Parameters:
     ///   - document: The GraphQL document.
     ///   - variables: The JSON value of `variables`, or `nil` to leave out the key.
+    ///   - operationName: The text of `operationName`, or `nil` to leave out the key.
     /// - Returns: The arguments as JSON text.
-    static func argumentsJSON(query document: String, variables: String?) throws -> String {
+    static func argumentsJSON(
+        query document: String,
+        variables: String?,
+        operationName: String? = nil
+    ) throws -> String {
         let variablesMember = variables.map { #", "variables": \#($0)"# } ?? ""
-        return #"{"query": \#(try jsonLiteral(of: document))\#(variablesMember)}"#
+        let operationMember = try operationName.map { name in #", "operationName": \#(try jsonLiteral(of: name))"# }
+        return #"{"query": \#(try jsonLiteral(of: document))\#(variablesMember)\#(operationMember ?? "")}"#
     }
 
     /// Decodes the tool arguments of ``query`` with a `variables` JSON value.
@@ -123,12 +137,14 @@ struct KanbanArgumentsTests {
         #expect(error.localizedDescription.contains("query"))
     }
 
-    @Test("The operation name is read, and no key gives nil")
-    func operationName() throws {
-        let document = try Self.jsonLiteral(of: "query \(Self.operationName) \(Self.query)")
-        let json = #"{"query": \#(document), "operationName": "\#(Self.operationName)"}"#
-        #expect(try KanbanArguments(GeneratedContent(json: json)).operationName == Self.operationName)
-        #expect(try Self.arguments(withVariables: nil).operationName == nil)
+    @Test(
+        "The operation name is read; no key, an empty name, and a blank name give nil",
+        arguments: operationNameForms
+    )
+    func operationName(sent: String?, decoded: String?) throws {
+        let document = "query \(Self.operationName) \(Self.query)"
+        let json = try Self.argumentsJSON(query: document, variables: nil, operationName: sent)
+        #expect(try KanbanArguments(GeneratedContent(json: json)).operationName == decoded)
     }
 
     // MARK: - Schema

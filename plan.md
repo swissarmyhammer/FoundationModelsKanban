@@ -843,7 +843,7 @@ More filters: `filter: "~column"` gives the column updates, `filter: "^<id>"` th
 - **Changes from other processes, `git pull`, or a merge.** The file watcher of the board (§5.6) applies the changed files to the live graph and finds the event ids that are new. It does not use file positions, because a `union` merge can rewrite a file. It groups the new events by `txn` and sends one `Change` for each transaction, in `txn` order. The values before and after come from the live graph before and after the batch.
 - **Serial gate.** A subscription stream does not hold the serial gate of `execute` (§7.2). Each `Change` is resolved through the gate, one at a time.
 - **Engine.** `graphqlSubscribe` of GraphQLSwift/GraphQL returns `Result<any AsyncSequence & Sendable, GraphQLErrors>`. Graphiti declares the `changes` field with `SubscriptionField`, whose resolver returns an `AsyncSequence & Sendable`. `KanbanGraph` gives an `AsyncStream<Change>` for each subscriber.
-- **In the tool.** A `subscription` sent through `KanbanTool` returns the error `SUBSCRIPTION_NOT_IN_TOOL`. The message tells the agent to use `board { history(since: <txn>) }` to get the changes after a known transaction.
+- **In the tool.** When the selected operation of a document sent through `KanbanTool` is a `subscription`, the tool returns the error `SUBSCRIPTION_NOT_IN_TOOL` (§7.1). The message tells the agent to use `board { history(since: <txn>) }` to get the changes after a known transaction.
 - **In the CLI.** `kanban watch '<subscription>'` prints one JSON line for each event, until the user stops it.
 
 See §12, item 17.
@@ -892,9 +892,11 @@ struct KanbanArguments: ConvertibleFromGeneratedContent {
   test accepts the string form and an object, but an empty object fails. The test does not use the on-device
   `SystemLanguageModel`, because that model sent `"variables": {}` in 3 of 3 runs.
 - The decoder keeps the JSON types: number, boolean, null, list, and object. GraphQL input coercion then converts them, for example a JSON number to `Int` or `Float`.
-- The tool description is short. It gives the purpose of the tool, the root fields (`board`, `boards`, `node`, `nodes`), and one example query. It does not hold the schema.
+- **`operationName` is forgiving too.** An empty string, or a string of only white space, is the same as no key. The engine then runs the one operation of the document.
+- **Subscriptions.** The tool gives `SUBSCRIPTION_NOT_IN_TOOL` only when the selected operation is a subscription: the operation that has the name, or the one operation of the document when there is no name. When the document has two or more operations and no name, the tool selects no operation. The engine then gives the normal "Must provide operation name" error with the code `GRAPHQL_VALIDATION_FAILED` (§4.4).
+- The tool description is short. It gives the purpose of the tool, the root fields (`board`, `boards`, `node`, `nodes`), and tested examples: one example query and one example of the history filter. It does not hold the schema.
 - To learn the schema, the agent uses standard GraphQL introspection (`__schema`, `__type`). The engine answers from the live schema, so the answer is always correct.
-- The example query in the description is also a test case, so it cannot go out of date.
+- Each example in the description is also a test case, so it cannot go out of date.
 - Validation errors give "did you mean" suggestions (§4.4), so the model can correct a field name without introspection.
 - See §12, item 10.
 
@@ -1118,7 +1120,7 @@ The owner made each decision below.
    `"variables": {}` in 3 of 3 runs, because guided generation picked the object choice with no properties. Thus the
    model test uses Qwen 3.8, which Extras `PooledModel` loads (§7.1).
 9. **GraphQL engine. — DECIDED.** Use `GraphQLSwift/GraphQL` for parse, validate, and execute. Use `GraphQLSwift/Graphiti` to build the schema from Swift types, so that the Swift types are the one source of truth. The SDL is generated, not written. The forgiving name rewrite (§4.5) changes the parsed document before validation. The internal `patch` mutation is in a separate schema, so that the model cannot write a patch directly.
-10. **Schema in the tool description. — DECIDED.** The description does not hold the schema. It holds the purpose, the root fields, and one tested example query. The agent learns the schema with standard introspection (§7.1). Thus, the schema has one view, and it cannot go out of date.
+10. **Schema in the tool description. — DECIDED.** The description does not hold the schema. It holds the purpose, the root fields, and tested examples: one example query and one example of the history filter. The agent learns the schema with standard introspection (§7.1). Thus, the schema has one view, and it cannot go out of date.
 11. **Import of old boards. — DECIDED.** No import. The tool does not read the Rust `.kanban/` data. Replay reads only `*.jsonl` files, so old Rust files (`.yaml`, `.md`) in the same directory are ignored.
 12. **Undo. — DECIDED.** Undo and redo are in the first version (§6.5). A transaction is one tool call. `undo` appends inverse patches and never changes the log. A conflict with a later change is refused unless `force: true`. The undone state is derived from the log, so it survives git merges. A `history` query lists transactions.
 13. **Cross-repo location. — DECIDED.** Scan the parent directory of the current repo, plus search roots from the config, for git repos. No key-to-path map. The scan finds enabled boards (with `.kanban/board.jsonl`) and related repos that are not enabled yet (key from `origin`). The tool can read and change related boards in the same format, and its first mutation in a related repo that is not enabled makes the board there (§6.6).

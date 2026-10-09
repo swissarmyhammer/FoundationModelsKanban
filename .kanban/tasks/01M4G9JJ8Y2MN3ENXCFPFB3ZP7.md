@@ -55,10 +55,26 @@ comments:
     - evidence: Tests/FoundationModelsKanbanTests/Tags/TagMarkersTests.swift; `swift test --filter TagMarkersTests` 3 tests (28 + 39 + 2 cases) pass; `swift test` 1091 tests in 79 suites pass (1100 − 9 deleted); the only build warning is the accepted SwiftPM "missing creator" warning
     - next: /review
   timestamp: 2026-10-09T18:57:08.345320+00:00
+- actor: claude-code
+  id: 01m4h0k7npgthdteemgyvpcn12
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD, 0 findings (1 file reviewed, 2 .kanban files excluded by .reviewignore). All 3 prior findings are checked. The commit message is true for the diff. The case tables cover each input of the deleted tests: parse 5 tests to 9 cases in parseCases; remove 16 + append 7 + case 1 + underscore 2 + bystander 13 = 39 cases in removeCases.
+    - next: none, the task is in done
+  timestamp: 2026-10-09T19:00:18.230603+00:00
+- actor: claude-code
+  id: 01m4h0k8ntvt1qfm82z4k3g1qx
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 file
+    - test: green — swift test, 1091 tests in 79 suites passed
+    - commit: d680a33
+    - review: clean — 0 findings
+  timestamp: 2026-10-09T19:00:19.258134+00:00
 depends_on:
 - 01M4G9J9NMNJR8NZPSYPC53Z77
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: d180
 title: Body tag markers accept _ in the tag name
 ---
 ## What

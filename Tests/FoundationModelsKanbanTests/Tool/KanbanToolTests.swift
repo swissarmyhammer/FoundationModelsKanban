@@ -34,8 +34,35 @@ struct KanbanToolTests {
         #""```json\n{\"first\": 0}\n```""#,
     ]
 
+    /// The selection set of each subscription of the tests.
+    static let subscriptionSelection = "{ changes { txn } }"
+
     /// A subscription document. The tool does not run it.
-    static let subscription = "subscription { changes { txn } }"
+    static let subscription = "subscription \(subscriptionSelection)"
+
+    /// The name of the subscription of ``querySubscriptionDocument``.
+    static let subscriptionName = "Changes"
+
+    /// A document with two named operations: the board-name query and a subscription.
+    static let querySubscriptionDocument = """
+        query \(KanbanArgumentsTests.operationName) \(KanbanGraphTests.nameQuery) \
+        subscription \(subscriptionName) \(subscriptionSelection)
+        """
+
+    /// The message of the GraphQL engine for a document with two or more operations and no operation name.
+    static let operationNameRequired = "Must provide operation name if query contains multiple operations."
+
+    /// Each document and `operationName` that selects a subscription. `nil` leaves out the key. No name and a blank
+    /// name select the one operation of the document.
+    static let subscriptionCalls: [(document: String, operationName: String?)] =
+        [(subscription, nil), (querySubscriptionDocument, subscriptionName)]
+        + KanbanArgumentsTests.blankOperationNames.map { blank in (subscription, blank) }
+
+    /// Each document and `operationName` that selects the board-name query: the one operation with each blank name,
+    /// and the query of ``querySubscriptionDocument`` by its name.
+    static let nameQueryCalls: [(document: String, operationName: String)] =
+        KanbanArgumentsTests.blankOperationNames.map { blank in (KanbanGraphTests.nameQuery, blank) }
+        + [(querySubscriptionDocument, KanbanArgumentsTests.operationName)]
 
     // MARK: - Helpers
 
@@ -52,12 +79,21 @@ struct KanbanToolTests {
     /// - Parameters:
     ///   - document: The GraphQL document.
     ///   - variables: The JSON value of `variables`, or `nil` to leave out the key.
+    ///   - operationName: The text of `operationName`, or `nil` to leave out the key.
     /// - Returns: The output of the tool: the GraphQL response JSON.
-    static func call(query document: String, variables: String?) async throws -> String {
+    static func call(
+        query document: String,
+        variables: String?,
+        operationName: String? = nil
+    ) async throws -> String {
         let directory = try TemporaryDirectory()
         _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
         let tool = try makeTool(inRepoAt: directory.url)
-        let json = try KanbanArgumentsTests.argumentsJSON(query: document, variables: variables)
+        let json = try KanbanArgumentsTests.argumentsJSON(
+            query: document,
+            variables: variables,
+            operationName: operationName
+        )
         return try await tool.call(arguments: KanbanArguments(GeneratedContent(json: json)))
     }
 
@@ -107,12 +143,32 @@ struct KanbanToolTests {
         #expect(error.message == KanbanError.invalidVariables(received: "text that holds a list").message)
     }
 
-    @Test("A subscription gives SUBSCRIPTION_NOT_IN_TOOL, and the message names history(since:)")
-    func subscriptionNotInTool() async throws {
-        let response = try await Self.call(query: Self.subscription, variables: nil)
+    @Test(
+        "A selected subscription gives SUBSCRIPTION_NOT_IN_TOOL with its message",
+        arguments: subscriptionCalls
+    )
+    func subscriptionNotInTool(document: String, operationName: String?) async throws {
+        let response = try await Self.call(query: document, variables: nil, operationName: operationName)
         let error = try Self.onlyError(of: response)
         #expect(error.code == "SUBSCRIPTION_NOT_IN_TOOL")
-        #expect(error.message?.contains("history(since:") == true)
+        #expect(error.message == KanbanError.subscriptionNotInTool.message)
+    }
+
+    @Test(
+        "A blank operation name runs the one operation, and a name selects the query of a mixed document",
+        arguments: nameQueryCalls
+    )
+    func operationNameSelectsQuery(document: String, operationName: String) async throws {
+        let response = try await Self.call(query: document, variables: nil, operationName: operationName)
+        #expect(response == KanbanGraphTests.nameResponse)
+    }
+
+    @Test("A query and a subscription with no operation name give the operation-name error with its code")
+    func mixedDocumentNeedsOperationName() async throws {
+        let response = try await Self.call(query: Self.querySubscriptionDocument, variables: nil)
+        let error = try Self.onlyError(of: response)
+        #expect(error.code == "GRAPHQL_VALIDATION_FAILED")
+        #expect(error.message == KanbanError.graphQLValidationFailed(detail: Self.operationNameRequired).message)
     }
 
     @Test("The example query of the description runs and returns data")

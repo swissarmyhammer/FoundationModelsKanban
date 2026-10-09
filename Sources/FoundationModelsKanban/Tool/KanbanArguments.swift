@@ -59,7 +59,8 @@ public struct KanbanArguments: ConvertibleFromGeneratedContent {
     /// variables decoded.
     let variablesError: String?
 
-    /// The operation of the document to run, or `nil` when the document has one operation.
+    /// The operation of the document to run, or `nil` when the call sent no name. An empty name and a name of only
+    /// white space also give `nil`.
     let operationName: String?
 
     /// The schema of the arguments that the model and Multitool see.
@@ -118,11 +119,7 @@ public struct KanbanArguments: ConvertibleFromGeneratedContent {
             throw MissingQueryError()
         }
         query = document
-        if case .string(let name)? = properties[Key.operationName]?.kind {
-            operationName = name
-        } else {
-            operationName = nil
-        }
+        operationName = Self.operationName(from: properties[Key.operationName])
         switch Self.decodedVariables(from: properties[Key.variables]) {
         case .values(let values):
             variables = values
@@ -131,6 +128,20 @@ public struct KanbanArguments: ConvertibleFromGeneratedContent {
             variables = [:]
             variablesError = received
         }
+    }
+
+    /// Decodes an `operationName` value. A string that is empty or holds only white space gives `nil`, the same as no
+    /// key, so that the engine runs the one operation of the document (plan.md §7.1).
+    ///
+    /// - Parameter content: The value, or `nil` when the arguments have no `operationName` key.
+    /// - Returns: The name as the call sent it, or `nil` when the value is not a string that holds a name.
+    private static func operationName(from content: GeneratedContent?) -> String? {
+        guard case .string(let name)? = content?.kind,
+            !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return nil
+        }
+        return name
     }
 
     /// Decodes a `variables` value: an object converts directly, and a string is read as JSON text one time.
