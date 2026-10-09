@@ -19,6 +19,33 @@ comments:
     - evidence: 3 files — Sources/FoundationModelsKanban/Events/EventLog.swift, Tests/FoundationModelsKanbanTests/Events/EventLogTests.swift, Tests/FoundationModelsKanbanTests/Mutations/AddUpdateTaskTests.swift. `swift test`: 1082 tests in 76 suites passed, 0 failures; only the accepted SwiftPM "missing creator for mutated node" warning.
     - next: /review
   timestamp: 2026-10-09T16:55:01.852311+00:00
+- actor: claude-code
+  id: 01m4gsk5rmk3ep9hcm9g340ts9
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD — 1 finding — Tests/FoundationModelsKanbanTests/Events/EventLogTests.swift:95 (duplication/duplication). The commit message cfbb39c is true for the diff. All acceptance and test items are met.
+    - next: /implement the open finding
+  timestamp: 2026-10-09T16:57:56.244845+00:00
+- actor: claude-code
+  id: 01m4gsk6w4k57vc45bjsvmwzjb
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 3 files
+    - test: green — swift test, 1082 tests in 76 suites passed
+    - commit: cfbb39c
+    - review: findings — Tests/FoundationModelsKanbanTests/Events/EventLogTests.swift:95
+  timestamp: 2026-10-09T16:57:57.380291+00:00
+- actor: claude-code
+  id: 01m4gspr481wvmfp78dy7vd6qn
+  text: 'Finding fix: `firstAndLastTitleEvents(lastTitle:)` now takes the title of step 2 as a parameter. The default is `"last"`, so the old callers did not change. `unicodeBreakTitleEvents()` is deleted. Its three callers (`readKeepsUnicodeBreaksInLine`, `readAcceptsCRLFLines`, `signatureReadsLastLineWithUnicodeBreaks`) now call `firstAndLastTitleEvents(lastTitle: Self.unicodeBreakText)`. The finding asked for a separate task for the edit to `firstAndLastTitleEvents`. The dispatcher said that no separate task is necessary, because one copy stays in the same file. Thus no new task. Note: the `files` edit tool with `replace_all` changed only the first of the three call sites. I edited the other two one at a time.'
+  timestamp: 2026-10-09T16:59:53.352575+00:00
+- actor: claude-code
+  id: 01m4gspsh1d1de3ed5t1kytdgr
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsKanbanTests/Events/EventLogTests.swift. `swift test`: 1082 tests in 76 suites passed, 0 failures; only the accepted SwiftPM "missing creator for mutated node" warning. Finding EventLogTests.swift:95 duplication/duplication checked.
+    - next: /review
+  timestamp: 2026-10-09T16:59:54.785771+00:00
 position_column: doing
 position_ordinal: '80'
 title: Split log lines only at \n so that U+2028 does not lose events
@@ -40,3 +67,12 @@ title: Split log lines only at \n so that U+2028 does not lose events
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-09 11:56)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Tests/FoundationModelsKanbanTests/Events/EventLogTests.swift:95` `duplication/duplication` — unicodeBreakTitleEvents repeats the body of firstAndLastTitleEvents. Both build the same two title events for steps 1 and 2, and they differ only by the literal title of step 2. A fix to one copy can drift out of sync with the other. Extract one helper that takes the title of step 2 as a parameter, and call it from both sites. Delete the copy the change added. Changing firstAndLastTitleEvents edits code outside this change, so report that edit as a separate task.

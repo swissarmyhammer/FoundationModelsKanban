@@ -81,19 +81,12 @@ struct EventLogTests {
     }
 
     /// Makes the events of steps 1 and 2 of the test task: the first sets the title `first`, and the second sets the
-    /// title `last`.
+    /// title `lastTitle`.
     ///
+    /// - Parameter lastTitle: The title that the event of step 2 sets. The default is `last`.
     /// - Returns: The two events, in step order.
-    static func firstAndLastTitleEvents() throws -> [Event] {
-        [try titleEvent(atStep: 1, setting: "first"), try titleEvent(atStep: 2, setting: "last")]
-    }
-
-    /// Makes the events of steps 1 and 2 of the test task: the first sets the title `first`, and the second sets the
-    /// title ``unicodeBreakText``.
-    ///
-    /// - Returns: The two events, in step order.
-    static func unicodeBreakTitleEvents() throws -> [Event] {
-        [try titleEvent(atStep: 1, setting: "first"), try titleEvent(atStep: 2, setting: unicodeBreakText)]
+    static func firstAndLastTitleEvents(lastTitle: String = "last") throws -> [Event] {
+        [try titleEvent(atStep: 1, setting: "first"), try titleEvent(atStep: 2, setting: lastTitle)]
     }
 
     /// Writes events to the log file of the test task as appended lines, and gives the log of the board.
@@ -321,7 +314,7 @@ struct EventLogTests {
     @Test("A read keeps a line whose value holds U+2028, U+2029 and U+0085 as one event")
     func readKeepsUnicodeBreaksInLine() throws {
         let directory = try TemporaryDirectory()
-        let events = try Self.unicodeBreakTitleEvents()
+        let events = try Self.firstAndLastTitleEvents(lastTitle: Self.unicodeBreakText)
         let (log, task) = try Self.appendToTaskLog(events, in: directory)
         let read = try log.readLog(of: task)
         #expect(read.events == events)
@@ -333,7 +326,7 @@ struct EventLogTests {
         let directory = try TemporaryDirectory()
         let log = EventLog(repositoryAt: directory.url)
         let task = try ReplayTests.taskRef()
-        let events = try Self.unicodeBreakTitleEvents()
+        let events = try Self.firstAndLastTitleEvents(lastTitle: Self.unicodeBreakText)
         let text = try events.map { event in try event.encodedLine() + Self.crlfLineBreak }.joined()
         try Self.writeLogFile(text, of: task, in: log)
         #expect(try log.readLog(of: task).events == events)
@@ -366,7 +359,7 @@ struct EventLogTests {
     @Test("The signature gives the id of a last line whose value holds U+2028, U+2029 and U+0085")
     func signatureReadsLastLineWithUnicodeBreaks() throws {
         let directory = try TemporaryDirectory()
-        let events = try Self.unicodeBreakTitleEvents()
+        let events = try Self.firstAndLastTitleEvents(lastTitle: Self.unicodeBreakText)
         let (log, task) = try Self.appendToTaskLog(events, in: directory)
         #expect(try log.signature(of: task)?.lastEventID == events.last?.id)
     }
