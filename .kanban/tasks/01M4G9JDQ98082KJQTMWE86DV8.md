@@ -54,6 +54,38 @@ comments:
     - evidence: 3 files — Sources/FoundationModelsKanban/GraphQL/TagMutations.swift, Tests/FoundationModelsKanbanTests/Tags/TagRenameToTombstoneTests.swift, plan.md. `swift test --filter 'TagRenameToTombstoneTests|TagMutationTests'`: 32 tests in 2 suites passed. `swift test`: 1093 tests in 79 suites passed; only build warning is the accepted SwiftPM "missing creator for mutated node".
     - next: /review
   timestamp: 2026-10-09T18:04:56.291801+00:00
+- actor: claude-code
+  id: 01m4gxma81czfmjqrq14w6wsn5
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD, 2 findings (2 confirmed, 0 refuted) — Tests/FoundationModelsKanbanTests/Tags/TagRenameToTombstoneTests.swift:43, Tests/FoundationModelsKanbanTests/Tags/TagRenameToTombstoneTests.swift:99. The HEAD commit message (64ba233) is true for the diff: undeleteTag(redirectedFrom:at:) is added, renameTag has a known/unknown target branch, the live-target test is added, and the doc comments, plan.md §6.2 and the kanban files are updated.
+    - next: /implement — correct the 2 reuse/reuse findings
+  timestamp: 2026-10-09T18:08:27.905868+00:00
+- actor: claude-code
+  id: 01m4gxmbmr2x6jybdcb2razbfs
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 3 files
+    - test: green — swift test, 1093 tests in 79 suites passed
+    - commit: 64ba233
+    - review: findings — Tests/FoundationModelsKanbanTests/Tags/TagRenameToTombstoneTests.swift:43, Tests/FoundationModelsKanbanTests/Tags/TagRenameToTombstoneTests.swift:99
+  timestamp: 2026-10-09T18:08:29.336908+00:00
+- actor: claude-code
+  id: 01m4gxt7xkka3njd2994fh5sn6
+  text: |-
+    Findings `reuse/reuse` (Tags/TagRenameToTombstoneTests.swift):
+    - `sessionWithTarget(isDeleted:inRepoAt:)` now calls `HistoryTests.taggedSession(inRepoAt:running:)` with a fields closure: the `addTag` of `defect`, and the `deleteTag` of `defect` when `isDeleted` is true. The copy of the base setup and the run loop is gone. `taggedSession` was already internal, so no visibility change was necessary.
+    - New helper `renamedSession(isDeleted:inRepoAt:)`: the setup, then `renameBugToDefect(in:)`. It returns the session, the fixture task and the `renameTag` value. `renamedTaskShowsTarget` uses it, so its copy of setup-then-rename is gone too.
+    - New helper `expectRename(isDeleted:writing:)`: makes the repo, runs `renamedSession`, expects the exact `renameTag` value and the exact target patch list. `renameRevivesTarget` passes `deletesAfterRename`; `mergeIntoLiveTargetWritesNoTargetPatch` passes `deletesAfterMerge`. This follows the `static func expect...` helper pattern of the other suites (for example `UndoTests.expectProjection`).
+    - `undoRestoresDeletedTarget` keeps its own steps: it must read the projection between the setup and the rename.
+  timestamp: 2026-10-09T18:11:42.131821+00:00
+- actor: claude-code
+  id: 01m4gxt99vs55kdfgpthsp4jme
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsKanbanTests/Tags/TagRenameToTombstoneTests.swift. `swift test --filter TagRenameToTombstoneTests`: 4 tests in 1 suite passed. `swift test`: 1093 tests in 79 suites passed; the only build warning is the accepted SwiftPM "missing creator for mutated node".
+    - next: /review
+  timestamp: 2026-10-09T18:11:43.547837+00:00
 depends_on:
 - 01M4G9J9NMNJR8NZPSYPC53Z77
 position_column: doing
@@ -88,3 +120,16 @@ title: Rename to a deleted tag makes the target tag live again
 > - `plan.md` — no validator matches this file
 
 - [x] `Sources/FoundationModelsKanban/GraphQL/TagMutations.swift:247` `completeness/invariant-propagation` — A rename to the slug of a live tag (a merge) now goes through ensureLiveTag, which always applies a `delete: false` patch to an existing target, not only to a tombstone. The doc comment at lines 227-229 says a merge writes no patch 1 and that only a tombstoned chain end gets `delete: false`. The code writes an extra `delete: false` patch to a live target, so the log gains an event the documented contract does not describe. Either guard the rename call so `delete: false` is written only when the chain end of the target is a tombstone, or update the doc comment at lines 227-229 to say a merge also writes `delete: false` on a live target. Add a rename-to-live-tag test that asserts the exact target patch list, so the chosen behaviour is locked.
+
+## Review Findings (2026-10-09 13:06)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 2 file(s) reviewed, 3 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `plan.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsKanbanTests/Tags/TagRenameToTombstoneTests.swift:43` `reuse/reuse` — sessionWithTarget rebuilds the base-setup-then-run-fields pattern that already exists in HistoryTests.session and HistoryTests.taggedSession. Its only extra work is the tag field plus the addTag and optional deleteTag fields, which taggedSession can take through its fields closure. A parallel helper gives the suite a second copy of the setup logic to keep in step. Replace the body of sessionWithTarget with a call to HistoryTests.taggedSession(inRepoAt: directory) { refs in [TagMutationTests.addTag(named: TagMutationTests.defect)] + (isDeleted ? [CommentTests.nodeField(MutationName.deleteTag, naming: TagMutationTests.defect)] : []) }. Then drop the duplicated base-setup and run loop. If the task field must stay separate, keep only the fields closure in this file and reuse session(inRepoAt:running:).
+- [x] `Tests/FoundationModelsKanbanTests/Tags/TagRenameToTombstoneTests.swift:99` `reuse/reuse` — The new test mergeIntoLiveTargetWritesNoTargetPatch repeats the body of renameRevivesTarget. The only differences are the isDeleted flag, the expected delete values, and the test name. The author copied the test instead of extending the existing one, so the two copies can drift apart. Move the shared steps into one helper, such as a static func that takes isDeleted and the expected deletes and returns the renamed map and the target patches. Then have both tests call it with their own values. Keep the test names and the per-case constants (deletesAfterRename, deletesAfterMerge) in their own tests.
