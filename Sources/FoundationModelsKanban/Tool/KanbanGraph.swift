@@ -2,7 +2,8 @@ import Foundation
 import FoundationModelsExtras
 import GraphQL
 
-/// The engine of the kanban tool: one GraphQL endpoint over the board of a repo (plan.md §7.2).
+/// The engine of the kanban tool: one GraphQL endpoint over the board of a folder (plan.md §7.2). The folder can be a
+/// git repo, but git is not necessary.
 ///
 /// The tool, a GUI, and the tests use the same engine. The host makes one engine and gives it to each client
 /// in the process, so that all clients share one live graph and one serial gate.
@@ -26,7 +27,7 @@ import GraphQL
 /// a URI of the board) or when a cross-board dependency reads it. A loaded related board stays live, with its own
 /// file watcher.
 public actor KanbanGraph {
-    /// The root directory of the repo of the current board.
+    /// The folder of the current board.
     private let root: URL
 
     /// Reads the key of the board from the repo.
@@ -108,10 +109,12 @@ public actor KanbanGraph {
         }
     }
 
-    /// Makes an engine for the board of a repo. The engine reads nothing until the first call.
+    /// Makes an engine for the board of a folder. The engine reads nothing until the first call.
+    ///
+    /// The folder does not have to be a git repo. The board is in `<root>/.kanban/` (plan.md §3.2).
     ///
     /// - Parameters:
-    ///   - root: The root directory of the repo.
+    ///   - root: The folder of the board.
     ///   - actor: The name of the session actor of the mutations, or `nil` for the name of the OS user.
     ///   - locator: Finds the related boards: it holds the extra search roots (plan.md §6.6).
     ///   - embedder: The embedder of `searchTasks`, for example a `PooledEmbedder`, or `nil` for a search with BM25
@@ -139,7 +142,7 @@ public actor KanbanGraph {
     /// observers that a test gives.
     ///
     /// - Parameters:
-    ///   - root: The root directory of the repo.
+    ///   - root: The folder of the board.
     ///   - keyReader: Reads the key of the board of a repo: the current repo and each related repo.
     ///   - clock: Gives the time of a change.
     ///   - actor: The session actor.

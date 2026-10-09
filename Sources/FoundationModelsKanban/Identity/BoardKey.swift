@@ -5,7 +5,8 @@ import Synchronization
 /// item 4).
 ///
 /// The SSH form (`git@host:owner/repo.git`), the HTTPS form (`https://host/owner/repo.git`), and the `ssh://` form of
-/// one remote give the same key. A repo with no remote has the key `local/<directory-name>`. The log does not store
+/// one remote give the same key. A repo with no remote has the key `local/<directory-name>`. A board in a directory
+/// that is not the top-level directory of a git repo also has the key `local/<directory-name>`. The log does not store
 /// the key. Each call that opens a board reads the key from git again with ``read(fromRepoAt:)``, so a repo that moves
 /// to a new remote gets a new key, and its data does not change. ``NodeURI`` holds the text of the key
 /// (``description``).
@@ -140,22 +141,66 @@ extension BoardKey {
 // MARK: - Read from git
 
 extension BoardKey {
-    /// Reads the key of a repo from git.
+    /// The arguments of the `git rev-parse` command that gives the paths of a repo: the top-level directory of the
+    /// work tree on the first line, and the common git directory on the second line.
+    static let repoPathsArguments = ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"]
+
+    /// Reads the key of the board of a directory (plan.md §3.2, §12 item 4). Git is not necessary.
     ///
-    /// The key comes from the current `origin` remote. When the repo has no remote, the key is
-    /// `local/<directory-name>`, with the name of the directory of the main clone. Thus, a worktree gets the same key
-    /// as its main clone, with or without a remote.
+    /// - When the directory is the top-level directory of a clone or of a worktree, the key comes from the current
+    ///   `origin` remote. When the repo has no remote, or the `origin` URL gives no key (for example a local path or
+    ///   a `file://` URL), the key is `local/<directory-name>`, with the name of the directory of the main clone.
+    ///   Thus, a worktree gets the same key as its main clone.
+    /// - When the directory is not in a git repo, when git is not installed, or when the directory is a subdirectory
+    ///   of a repo, the key is `local/<directory-name>`, with the name of the directory. Thus, two boards in one repo
+    ///   do not have the same key.
     ///
-    /// - Parameter directory: A directory in the repo: the root of a clone or of a worktree, or a subdirectory.
-    /// - Returns: The key of the repo.
-    /// - Throws: ``BoardKeyError/gitUnavailable(message:)`` when git cannot start.
-    ///   ``BoardKeyError/gitFailed(arguments:status:message:)`` when git fails, for example when the directory is not
-    ///   in a git repo. ``BoardKeyError/invalidRemoteURL(url:)`` when the `origin` URL has no host or no path.
+    /// - Parameter directory: The directory of the board.
+    /// - Returns: The key of the board.
+    /// - Throws: ``BoardKeyError/gitTimedOut(arguments:)`` when git does not end in its time limit.
+    ///   ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled before git ends.
+    ///   ``BoardKeyError/gitFailed(arguments:status:message:)`` when git fails in a repo, or when the output of git
+    ///   does not have the two paths of the repo.
     static func read(fromRepoAt directory: URL) async throws(BoardKeyError) -> BoardKey {
-        if let url = try await originURL(ofRepoAt: directory) {
-            return try BoardKey(remoteURL: url)
+        guard let paths = try await repoPaths(at: directory), paths.hasTopLevel(at: directory) else {
+            return BoardKey(localDirectoryName: directory.standardizedFileURL.lastPathComponent)
         }
-        return BoardKey(localDirectoryName: try await mainCloneName(ofRepoAt: directory))
+        if let key = try await originKey(ofRepoAt: directory) {
+            return key
+        }
+        return BoardKey(localDirectoryName: paths.mainCloneName)
+    }
+
+    /// Reads the paths of the repo of a directory with `git rev-parse`.
+    ///
+    /// - Parameter directory: The directory.
+    /// - Returns: The paths, or `nil` when git cannot start, when git is not installed, or when the directory is not
+    ///   in a git repo.
+    /// - Throws: A ``BoardKeyError`` when git does not end, or when its output does not have the two paths.
+    private static func repoPaths(at directory: URL) async throws(BoardKeyError) -> RepoPaths? {
+        let result: Git.Output
+        do throws(BoardKeyError) {
+            result = try await Git.run(withArguments: repoPathsArguments, inDirectory: directory)
+        } catch .gitUnavailable {
+            return nil
+        }
+        guard result.status == Git.successStatus else {
+            return nil
+        }
+        guard let paths = RepoPaths(gitOutput: result.output) else {
+            throw .gitFailed(arguments: repoPathsArguments, status: result.status, message: result.output)
+        }
+        return paths
+    }
+
+    /// Reads the key of the current `origin` remote of a repo.
+    ///
+    /// - Parameter directory: A directory in the repo.
+    /// - Returns: The key, or `nil` when the repo has no `origin` remote, or when the `origin` URL gives no key (for
+    ///   example a local path or a `file://` URL).
+    /// - Throws: A ``BoardKeyError`` when git cannot start or fails.
+    private static func originKey(ofRepoAt directory: URL) async throws(BoardKeyError) -> BoardKey? {
+        try await originURL(ofRepoAt: directory).flatMap { url in try? BoardKey(remoteURL: url) }
     }
 
     /// Reads the URL of the `origin` remote with `git config --get remote.origin.url`.
@@ -172,27 +217,51 @@ extension BoardKey {
         default: throw .gitFailed(arguments: arguments, status: result.status, message: result.errorOutput)
         }
     }
+}
 
-    /// Finds the name of the directory of the main clone with `git rev-parse --git-common-dir`.
+/// The paths of a repo that ``BoardKey/repoPathsArguments`` gives.
+private struct RepoPaths {
+    /// The number of lines in the output of git: one for each path.
+    private static let lineCount = 2
+
+    /// The top-level directory of the work tree: the root of a clone or of a worktree.
+    let topLevel: URL
+
+    /// The common git directory. A worktree shares the git directory of its main clone, so the common git directory
+    /// is the same for each copy.
+    let commonDirectory: URL
+
+    /// Reads the paths from the output of git.
     ///
-    /// A worktree shares the git directory of its main clone, so the common git directory is the same for each copy.
+    /// - Parameter output: The standard output of git: the top-level directory on the first line, and the common git
+    ///   directory on the second line.
+    /// - Returns: `nil` when the output does not have the two lines.
+    init?(gitOutput output: String) {
+        let lines = output.split(whereSeparator: \.isNewline).map(String.init)
+        guard lines.count == Self.lineCount, let topLevelPath = lines.first, let commonPath = lines.last else {
+            return nil
+        }
+        topLevel = URL(filePath: topLevelPath, directoryHint: .isDirectory)
+        commonDirectory = URL(filePath: commonPath, directoryHint: .isDirectory)
+    }
+
+    /// The name of the directory of the main clone.
+    ///
     /// The main clone is the directory that holds the common `.git` directory. A bare repo has no `.git` directory,
     /// so its main clone is the common git directory.
-    ///
-    /// - Parameter directory: A directory in the repo.
-    /// - Returns: The name of the directory of the main clone.
-    /// - Throws: A ``BoardKeyError`` when git cannot start or fails.
-    private static func mainCloneName(ofRepoAt directory: URL) async throws(BoardKeyError) -> String {
-        let arguments = ["rev-parse", "--path-format=absolute", "--git-common-dir"]
-        let result = try await Git.run(withArguments: arguments, inDirectory: directory)
-        guard result.status == Git.successStatus else {
-            throw .gitFailed(arguments: arguments, status: result.status, message: result.errorOutput)
-        }
-        let commonPath = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
-        let commonDirectory = URL(filePath: commonPath, directoryHint: .isDirectory)
-        let isInMainClone = commonDirectory.lastPathComponent == gitDirectoryName
+    var mainCloneName: String {
+        let isInMainClone = commonDirectory.lastPathComponent == BoardKey.gitDirectoryName
         let mainClone = isInMainClone ? commonDirectory.deletingLastPathComponent() : commonDirectory
         return mainClone.lastPathComponent
+    }
+
+    /// Tells if a directory is the top-level directory of the work tree. The two paths are compared with the symbolic
+    /// links resolved.
+    ///
+    /// - Parameter directory: The directory.
+    /// - Returns: `true` when the directory is the root of the clone or of the worktree, and not a subdirectory.
+    func hasTopLevel(at directory: URL) -> Bool {
+        topLevel.canonicalPath == directory.canonicalPath
     }
 }
 

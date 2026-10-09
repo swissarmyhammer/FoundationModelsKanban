@@ -31,10 +31,26 @@ comments:
     - evidence: 5 files — plan.md, README.md, Tests/FoundationModelsKanbanTests/DocumentationTests.swift (new), Tests/FoundationModelsKanbanTests/RepositoryFile.swift (new), Tests/FoundationModelsKanbanTests/CIWorkflowTests.swift; `swift test` 1096 tests in 80 suites pass; `rg -n "\bCLI\b|kanban watch|kanban --schema|kanban '" plan.md README.md` gives no result; no file under Sources/ changed.
     - next: /review
   timestamp: 2026-10-09T20:13:22.647554+00:00
+- actor: claude-code
+  id: 01m4h4xytmtec4nvpqzr55qe9x
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings (attempted 7, failed 0). The validators reviewed 3 Swift files. README.md and plan.md have no validator, and .kanban/ is in .reviewignore. Manual checks: the commit message of 762ddfe is true for the diff. The acceptance rg gives no result. No file under Sources/ or Package.swift changed. §11 had no CLI text before this commit. README.md has the four graphql blocks with the same selection sets.
+    - next: none — the task is in done.
+  timestamp: 2026-10-09T20:16:03.924063+00:00
+- actor: claude-code
+  id: 01m4h4xzqfgmd65p06bnkx47xy
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 5 files
+    - test: green — swift test, 1096 tests in 80 suites passed
+    - commit: 762ddfe
+    - review: clean — 0 findings
+  timestamp: 2026-10-09T20:16:04.847567+00:00
 depends_on:
 - 01M4G9GQ28QA3Z7MYQG9JE3H3Z
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: d880
 title: Remove the CLI from plan.md and README.md
 ---
 ## What

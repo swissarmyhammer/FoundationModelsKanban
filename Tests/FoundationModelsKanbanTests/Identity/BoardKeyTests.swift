@@ -31,6 +31,19 @@ struct BoardKeyTests {
         "  git@github.com:swissarmyhammer/FoundationModelsKanban.git\n",
     ]
 
+    /// The `origin` URLs with no host: local paths and a `file://` URL. Each one gives the key of a repo with no
+    /// remote.
+    static let localOrigins = ["/srv/git/repo.git", "../upstream", "file:///srv/git/repo.git"]
+
+    /// The name of the subfolder of a repo in the subfolder test.
+    static let subfolderName = "Sources"
+
+    /// The `origin` of the repo in the subfolder test: no remote, and a remote with a host.
+    static let subfolderOrigins: [String?] = [nil, httpsRemote]
+
+    /// The name of the folder that is not in a git repo.
+    static let plainFolderName = "plain-directory"
+
     // MARK: - Normalization
 
     @Test("SSH, HTTPS, and ssh:// forms of one remote give the same key", arguments: remoteForms)
@@ -100,13 +113,28 @@ struct BoardKeyTests {
         #expect(try await BoardKey.read(fromRepoAt: httpsRepo).description == Self.expectedKey)
     }
 
-    @Test("A subdirectory of a repo gives the key of the repo")
-    func subdirectoryGivesKeyOfRepo() async throws {
+    @Test("A subfolder of a repo gives local/<subfolder-name>, not the repo key", arguments: subfolderOrigins)
+    func subfolderGivesLocalKeyOfSubfolder(origin: String?) async throws {
         let sandbox = try GitSandbox()
-        let repo = try await sandbox.makeRepo(named: "my-repo")
-        let subdirectory = repo.appending(path: "Sources", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: subdirectory, withIntermediateDirectories: true)
-        #expect(try await BoardKey.read(fromRepoAt: subdirectory) == BoardKey(localDirectoryName: "my-repo"))
+        let repo = try await sandbox.makeRepo(named: "my-repo", origin: origin)
+        let subfolder = try GitSandbox.makeFolder(named: Self.subfolderName, in: repo)
+        #expect(try await BoardKey.read(fromRepoAt: subfolder) == BoardKey(localDirectoryName: Self.subfolderName))
+    }
+
+    @Test("A folder that is not in a git repo gives local/<folder-name>")
+    func folderOutsideRepoGivesLocalKey() async throws {
+        let sandbox = try GitSandbox()
+        let folder = try GitSandbox.makeFolder(named: Self.plainFolderName, in: sandbox.root)
+        #expect(try await BoardKey.read(fromRepoAt: folder) == BoardKey(localDirectoryName: Self.plainFolderName))
+    }
+
+    @Test("An origin with no host gives local/<main-clone-name>, also in a worktree", arguments: localOrigins)
+    func originWithoutHostGivesLocalKey(origin: String) async throws {
+        let sandbox = try GitSandbox()
+        let repo = try await sandbox.makeRepo(named: "main-clone", origin: origin)
+        let worktree = try await sandbox.addWorktree(named: "feature-worktree", to: repo)
+        #expect(try await BoardKey.read(fromRepoAt: repo) == BoardKey(localDirectoryName: "main-clone"))
+        #expect(try await BoardKey.read(fromRepoAt: worktree) == BoardKey(localDirectoryName: "main-clone"))
     }
 
     @Test("A worktree gives the same key as its main clone, with an origin")
@@ -137,31 +165,42 @@ struct BoardKeyTests {
         #expect(try await BoardKey.read(fromRepoAt: repo).description == "gitlab.com/new-owner/moved-repo")
     }
 
-    @Test("A directory that is not in a git repo is a git failure")
-    func directoryOutsideRepoThrows() async throws {
+    @Test("An engine that reads the key from git gives local/<folder-name> outside a git repo")
+    func engineOutsideRepoGivesLocalKey() async throws {
         let sandbox = try GitSandbox()
-        let directory = sandbox.root.appending(path: "plain-directory", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        await #expect(performing: { try await BoardKey.read(fromRepoAt: directory) }, throws: Self.isGitFailure)
+        let response = try await Self.keyResponse(ofEngineAt: sandbox.root)
+        let key = BoardKey(localDirectoryName: sandbox.root.lastPathComponent)
+        #expect(response == KanbanGraphTests.keyResponse(of: key))
     }
 
-    @Test("An engine that reads the key from git throws a git failure at its first call outside a git repo")
-    func engineOutsideRepoThrows() async throws {
+    @Test("An engine in a subfolder of a repo gives local/<subfolder-name>, not the repo key")
+    func engineInSubfolderGivesLocalKey() async throws {
         let sandbox = try GitSandbox()
-        let graph = try GitGraphFixture.makeGraph(at: sandbox.root)
-        await #expect(
-            performing: { try await KanbanGraphTests.execute(KanbanGraphTests.nameQuery, on: graph) },
-            throws: Self.isGitFailure
-        )
-        await graph.close()
+        let repo = try await sandbox.makeRepo(named: "my-repo", origin: Self.httpsRemote)
+        let subfolder = try GitSandbox.makeFolder(named: Self.subfolderName, in: repo)
+        let response = try await Self.keyResponse(ofEngineAt: subfolder)
+        #expect(response == KanbanGraphTests.keyResponse(of: BoardKey(localDirectoryName: Self.subfolderName)))
     }
 
-    /// Tells if an error is a git failure of the board key read.
+    @Test("An engine in a repo whose origin is a local path gives local/<main-clone-name>")
+    func engineWithLocalOriginGivesLocalKey() async throws {
+        let sandbox = try GitSandbox()
+        let origin = try #require(Self.localOrigins.first)
+        let repo = try await sandbox.makeRepo(named: "main-clone", origin: origin)
+        let response = try await Self.keyResponse(ofEngineAt: repo)
+        #expect(response == KanbanGraphTests.keyResponse(of: BoardKey(localDirectoryName: "main-clone")))
+    }
+
+    /// Runs ``KanbanGraphTests/keyQuery`` on an engine that reads the key from git, and closes the engine.
     ///
-    /// - Parameter error: The error that a call threw.
-    /// - Returns: `true` when the error is ``BoardKeyError/gitFailed(arguments:status:message:)``.
-    private static func isGitFailure(_ error: any Error) -> Bool {
-        if case .gitFailed = error as? BoardKeyError { true } else { false }
+    /// - Parameter root: The folder of the board of the engine.
+    /// - Returns: The response JSON text.
+    /// - Throws: An error when the engine cannot start or the query throws.
+    private static func keyResponse(ofEngineAt root: URL) async throws -> String {
+        let graph = try GitGraphFixture.makeGraph(at: root)
+        let response = try await KanbanGraphTests.execute(KanbanGraphTests.keyQuery, on: graph)
+        await graph.close()
+        return response
     }
 
     // MARK: - Git process
@@ -406,8 +445,7 @@ final class GitSandbox {
     /// - Returns: The repo directory.
     /// - Throws: An error when the directory cannot be made, or when a git command cannot start or fails.
     func makeRepo(named name: String, origin: String? = nil) async throws -> URL {
-        let repo = root.appending(path: name, directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        let repo = try Self.makeFolder(named: name, in: root)
         try await runGit(withArguments: ["init", "--quiet"], in: repo)
         let commitArguments = ["commit", "--quiet", "--allow-empty", "-m", "Start"]
         try await runGit(withArguments: Self.identityArguments + Self.unsignedArguments + commitArguments, in: repo)
@@ -415,6 +453,19 @@ final class GitSandbox {
             try await runGit(withArguments: ["remote", "add", "origin", origin], in: repo)
         }
         return repo
+    }
+
+    /// Makes an empty folder in a folder. The new folder is not a git repo.
+    ///
+    /// - Parameters:
+    ///   - name: The name of the new folder.
+    ///   - parent: The folder that holds the new folder.
+    /// - Returns: The new folder.
+    /// - Throws: An error from `FileManager` when the folder cannot be made.
+    static func makeFolder(named name: String, in parent: URL) throws -> URL {
+        let folder = parent.appending(path: name, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
     }
 
     /// Adds a worktree of a repo in the sandbox.

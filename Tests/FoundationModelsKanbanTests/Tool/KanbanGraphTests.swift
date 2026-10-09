@@ -12,7 +12,7 @@ import ULID
 /// response is deterministic (plan.md §11).
 @Suite("KanbanGraph: execute, serial gate, and board load")
 struct KanbanGraphTests {
-    /// The fake key of the board. No test runs git.
+    /// The fake key of the board. Only the test of a folder that is not a git repo runs git.
     static let boardKey = BoardKey(localDirectoryName: "kanban")
 
     /// The time of the fixed clock and of each fixture event.
@@ -65,6 +65,17 @@ struct KanbanGraphTests {
 
     /// The response to ``nameQuery`` on the fixture logs.
     static let nameResponse = #"{"data":{"board":{"name":"\#(boardName)"}}}"#
+
+    /// A query that reads the key of the board.
+    static let keyQuery = "{ board { key } }"
+
+    /// Gives the response to ``keyQuery``.
+    ///
+    /// - Parameter key: The key of the board.
+    /// - Returns: The response JSON text.
+    static func keyResponse(of key: BoardKey) -> String {
+        #"{"data":{"board":{"key":"\#(key)"}}}"#
+    }
 
     // MARK: - Fixture
 
@@ -268,6 +279,19 @@ struct KanbanGraphTests {
         let board = #"{"created":"\#(Self.time.rfc3339)","name":"\#(Self.emptyRepoName)","tasks":{"totalCount":0}}"#
         #expect(response == #"{"data":{"board":\#(board)}}"#)
         #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+    }
+
+    @Test("An engine in a folder that is not a git repo makes .kanban/ and gives the key local/<folder-name>")
+    func boardInPlainFolder() async throws {
+        let directory = try TemporaryDirectory()
+        let graph = try KanbanGraph(root: directory.url, actor: Self.actorName)
+        let task = try await CrossRepoFixture.addTask(with: "", on: graph)
+        let response = try await Self.execute(Self.keyQuery, on: graph)
+        await graph.close()
+        let key = BoardKey(localDirectoryName: directory.url.lastPathComponent)
+        #expect(try NodeURI(parsing: task).boardKey == key.description)
+        #expect(response == Self.keyResponse(of: key))
+        #expect(FileManager.default.fileExists(atPath: EventLog(repositoryAt: directory.url).directory.path))
     }
 
     @Test("Two concurrent execute calls on one KanbanGraph run one at a time")
