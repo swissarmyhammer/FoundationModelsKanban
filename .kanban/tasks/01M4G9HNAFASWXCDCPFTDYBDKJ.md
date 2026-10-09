@@ -66,8 +66,24 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsKanbanTests/Tool/CommitRollbackTests.swift. `swift test --filter CommitRollbackTests`: 5 of 5 pass. `swift test`: 1049 tests in 74 suites pass. The only compiler warning is the accepted SwiftPM "missing creator for mutated node". Finding and 7 met items checked (8/8).
     - next: /review
   timestamp: 2026-10-09T13:35:44.189921+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4ge66v3cfbg5ptv35sm6d5a
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings (0 confirmed, 0 refuted). 1 file reviewed: Tests/FoundationModelsKanbanTests/Tool/CommitRollbackTests.swift. The prior finding is checked. The commit message of 0ad22c8 agrees with the diff. The subject names the shared fault check and the shared setup. The body names the two-board setup helper, but it does not name the one-board setup helper `makeFailingBoard()`. No statement in the message is false.
+    - next: none — task moved to done.
+  timestamp: 2026-10-09T13:38:37.027913+00:00
+- actor: claude-code
+  id: 01m4ge67xgx6k0m9yyq2sjq2fw
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 file
+    - test: green — swift test, 1049 tests in 74 suites passed
+    - commit: 0ad22c8
+    - review: clean — 0 findings
+  timestamp: 2026-10-09T13:38:38.128533+00:00
+position_column: done
+position_ordinal: c780
 title: 'Commit: no partial transaction on disk when an append fails'
 ---
 ## What

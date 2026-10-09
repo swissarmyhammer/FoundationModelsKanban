@@ -19,7 +19,9 @@ extension UnifiedDiff {
     /// applies at the nearest position where they match exactly, as `patch`
     /// does with no fuzz. At equal distance, the earlier position wins. The
     /// line number of a hunk moves by the shift that the previous hunk had,
-    /// and a hunk never matches lines that an earlier hunk used.
+    /// and a hunk never matches lines that an earlier hunk used. A hunk with
+    /// no old lines applies only to the empty text, and a hunk whose last
+    /// line has no final newline applies only at the end of the text.
     ///
     /// A hunk that does not match at any position is not lost. A conflict
     /// block replaces the current lines at its line number. See
@@ -94,7 +96,7 @@ extension UnifiedDiff {
         /// - Parameter hunk: The next hunk of the diff.
         mutating func apply(_ hunk: Hunk) {
             let expected = hunk.oldOffset + shift
-            guard let position = nearestMatch(of: hunk.oldLines, near: expected) else {
+            guard let position = nearestMatch(of: hunk, near: expected) else {
                 insertConflict(for: hunk, near: expected)
                 return
             }
@@ -102,26 +104,60 @@ extension UnifiedDiff {
             replace(position..<position + hunk.oldCount, with: hunk.newLines)
         }
 
-        /// Finds the nearest position where the old lines of a hunk match the
-        /// text exactly.
+        /// Finds the nearest position where a hunk matches the text exactly.
         ///
         /// - Parameters:
-        ///   - oldLines: The context lines and the `-` lines of the hunk.
+        ///   - hunk: The hunk.
         ///   - expected: The index where the hunk is expected to match.
-        /// - Returns: The index of the nearest match, or `nil` when the lines
-        ///   do not match after ``cursor``.
-        private func nearestMatch(of oldLines: [TextLine], near expected: Int) -> Int? {
+        /// - Returns: The index of the nearest match, or `nil` when the hunk
+        ///   does not match after ``cursor``.
+        private func nearestMatch(of hunk: Hunk, near expected: Int) -> Int? {
+            let oldLines = hunk.oldLines
             let last = lines.count - oldLines.count
             guard cursor <= last else {
                 return nil
             }
             return (cursor...last)
-                .filter { lines[$0..<$0 + oldLines.count].elementsEqual(oldLines) }
+                .filter { matches(hunk, withOldLines: oldLines, at: $0) }
                 .min { (abs($0 - expected), $0) < (abs($1 - expected), $1) }
+        }
+
+        /// Tells if a hunk can apply at a position of the text.
+        ///
+        /// The old lines must be equal to the lines at the position. Two more
+        /// rules stop a hunk that would put its lines in the wrong place:
+        ///
+        /// - A hunk with no old lines comes from the empty text. Thus, it
+        ///   applies only to the empty text. If not, it would match at each
+        ///   position, and two such hunks from two branches would join their
+        ///   texts.
+        /// - A hunk whose last new line has no final newline comes from the
+        ///   end of a text. Thus, it applies only where its old lines end at
+        ///   the end of the text. If not, its last line would join the line
+        ///   after it.
+        ///
+        /// - Parameters:
+        ///   - hunk: The hunk.
+        ///   - oldLines: The old lines of the hunk.
+        ///   - position: The index of the first line to compare.
+        /// - Returns: True when the hunk can apply at the position.
+        private func matches(_ hunk: Hunk, withOldLines oldLines: [TextLine], at position: Int) -> Bool {
+            let end = position + oldLines.count
+            guard lines[position..<end].elementsEqual(oldLines) else {
+                return false
+            }
+            guard !oldLines.isEmpty || lines.isEmpty else {
+                return false
+            }
+            return !hunk.endsWithoutNewline || end == lines.count
         }
 
         /// Replaces the current lines at the line number of a hunk with a
         /// conflict block.
+        ///
+        /// A hunk with no old lines comes from the empty text, so the
+        /// current side of its block holds all lines of the text after
+        /// ``cursor``.
         ///
         /// - Parameters:
         ///   - hunk: The hunk that cannot apply.
@@ -129,7 +165,7 @@ extension UnifiedDiff {
         private mutating func insertConflict(for hunk: Hunk, near expected: Int) {
             hasUnmatchedHunk = true
             let start = min(max(expected, cursor), lines.count)
-            let end = min(start + hunk.oldCount, lines.count)
+            let end = hunk.oldCount == 0 ? lines.count : min(start + hunk.oldCount, lines.count)
             let block = ConflictBlock.lines(
                 between: Array(lines[start..<end]),
                 and: hunk.newLines,
@@ -158,6 +194,12 @@ extension UnifiedDiff.Hunk {
     /// index of the first old line, also for an empty old range.
     var oldOffset: Int {
         oldCount == 0 ? oldStart : oldStart - 1
+    }
+
+    /// True when the last new line of the hunk has no final newline. Only
+    /// the last line of a text can have no final newline.
+    var endsWithoutNewline: Bool {
+        newLines.last?.hasNewline == false
     }
 }
 

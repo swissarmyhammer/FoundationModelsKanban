@@ -191,6 +191,16 @@ extension Design {
             UndoTests.bodyField(bodyLines(changing: index, to: line), of: task)
         }
 
+        /// Makes an `updateTask` field that gives a task a body of one line with no final newline.
+        ///
+        /// - Parameters:
+        ///   - line: The text of the line.
+        ///   - task: The ULID of the task.
+        /// - Returns: The field.
+        static func oneLineBodyField(_ line: String, of task: ULID) -> String {
+            AddUpdateTaskTests.updateTask(task, with: #"body: "\#(line)""#)
+        }
+
         // MARK: - Queries
 
         /// Runs a query in the session of a branch, and expects that it gives no error.
@@ -319,6 +329,21 @@ extension Design {
             let otherEdit = try #require(other.session.live.events.last { event in event.patch.edit != nil })
             #expect(mainFirst.contains(UnifiedDiff.ConflictBlock.endPrefix + otherEdit.id.ulidString))
             #expect(otherFirst == mainFirst)
+        }
+
+        @Test("Two branches set the empty body to different texts, and the merged body has a block with both texts")
+        func bodiesFromEmptyGiveConflictBlock() async throws {
+            let task = try AddUpdateTaskTests.fixtureTask()
+            let (main, other) = try await Self.branches(
+                runningOnMain: [Self.oneLineBodyField("alpha", of: task)],
+                runningOnOther: [Self.oneLineBodyField("beta", of: task)]
+            )
+            let merged = try await Self.merge(other, into: main)
+            let otherEdit = try #require(other.session.live.events.last { event in event.patch.edit != nil })
+            let block = DiffApplyTests.conflictBlock(current: "alpha", wanted: "beta", label: otherEdit.id.ulidString)
+            let body = try await Self.task(task, selecting: Self.bodySelection, in: merged)["body"]
+            #expect(body == .string(block))
+            #expect(try await Self.virtualTags(of: task, in: merged).contains(Self.conflictTag))
         }
 
         @Test("A task with a conflict block from a merge has the virtual tag CONFLICT, and #CONFLICT finds it")

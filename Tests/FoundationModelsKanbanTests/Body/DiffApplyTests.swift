@@ -29,6 +29,17 @@ struct DiffApplyTests {
         (1...baseLineCount).map { $0 == line ? "\(content)\n" : "\($0)\n" }.joined()
     }
 
+    /// Gives the text of a conflict block with one current line and one wanted line.
+    ///
+    /// - Parameters:
+    ///   - current: The current line, without its newline.
+    ///   - wanted: The wanted line, without its newline.
+    ///   - conflictLabel: The text after the end marker. The default is ``label``.
+    /// - Returns: The text of the block. Each line ends with a newline.
+    static func conflictBlock(current: String, wanted: String, label conflictLabel: String = label) -> String {
+        "<<<<<<< current\n\(current)\n=======\n\(wanted)\n>>>>>>> \(conflictLabel)\n"
+    }
+
     // MARK: - Exact and shifted apply
 
     @Test("A diff applies to the text that it was made from")
@@ -78,6 +89,34 @@ struct DiffApplyTests {
         let applied = UnifiedDiff(from: "", to: "a\nb\n").applied(to: "", withConflictLabel: Self.label)
         #expect(applied.text == "a\nb\n")
         #expect(!applied.hasConflict)
+    }
+
+    // MARK: - Inserted lines
+
+    @Test(
+        "A diff from the empty text to one line applies to the empty text, with and without a final newline",
+        arguments: ["beta", "beta\n"]
+    )
+    func diffFromEmptyTextToOneLine(new: String) {
+        let applied = UnifiedDiff(from: "", to: new).applied(to: "", withConflictLabel: Self.label)
+        #expect(applied == AppliedBody(text: new, hasConflict: false))
+    }
+
+    @Test(
+        "A diff from the empty text does not apply to a text that is not empty, and the block holds both texts",
+        arguments: [("alpha", "beta"), ("alpha\n", "beta\n")]
+    )
+    func diffFromEmptyTextGivesConflictOnText(current: String, new: String) {
+        let diff = UnifiedDiff(from: "", to: new)
+        let applied = diff.applied(to: current, withConflictLabel: Self.label)
+        #expect(applied == AppliedBody(text: Self.conflictBlock(current: "alpha", wanted: "beta"), hasConflict: true))
+        #expect(!diff.applies(exactlyTo: current))
+    }
+
+    @Test("A hunk whose last line has no final newline does not join the line after its match")
+    func lineWithNoFinalNewlineDoesNotJoinNextLine() {
+        let applied = UnifiedDiff(from: "a\n", to: "a").applied(to: "a\nb\n", withConflictLabel: Self.label)
+        #expect(applied == AppliedBody(text: Self.conflictBlock(current: "a", wanted: "a") + "b\n", hasConflict: true))
     }
 
     // MARK: - Merge

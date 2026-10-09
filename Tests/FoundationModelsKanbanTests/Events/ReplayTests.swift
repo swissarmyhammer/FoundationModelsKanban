@@ -287,6 +287,16 @@ struct ReplayTests {
         #expect(fields.body.contains(UnifiedDiff.ConflictBlock.endPrefix + eventID))
     }
 
+    @Test("Two edits from the empty body, as after a union merge, give a conflict block with each body on its own line")
+    func twoEditsFromEmptyBodyGiveConflictBlock() throws {
+        let later = try Self.line(atStep: 2, patch: Self.editPatch(from: "", to: "beta"))
+        let lines = [try Self.line(atStep: 1, patch: Self.editPatch(from: "", to: "alpha")), later]
+        let label = try Event(parsing: later).id.ulidString
+        let fields = try Self.task(folding: lines).fields
+        #expect(fields.body == DiffApplyTests.conflictBlock(current: "alpha", wanted: "beta", label: label))
+        #expect(fields.hasConflict)
+    }
+
     @Test("An edit whose diff does not parse leaves the body, and the other parts of the patch still apply")
     func badDiffIsSkipped() throws {
         let badEdit = try PatchInput(
