@@ -81,12 +81,17 @@ struct Slug: Hashable, Sendable, CustomStringConvertible {
 
 extension LocalRef {
     /// Checks that a mutation can make a node with this ref: a column, an actor, or a tag must not have the slug
-    /// ``Slug/reservedForBoard`` (plan.md §3.2). A slug is in lowercase, so the check ignores the case of the name
-    /// that gave the slug. Replay does not use this check, so a log that already has such a node still loads.
+    /// ``Slug/reservedForBoard`` (plan.md §3.2), and a tag must not have the name of a virtual tag as its slug
+    /// (plan.md §6). A slug is in lowercase, so the check ignores the case of the name that gave the slug. Replay does
+    /// not use this check, so a log that already has such a node still loads.
     ///
-    /// - Throws: ``KanbanError/reservedTagName`` for a tag, and ``KanbanError/reservedSlug(type:)`` for a column or
-    ///   an actor, when the slug is ``Slug/reservedForBoard``.
+    /// - Throws: ``KanbanError/virtualTagName(tag:)`` for a tag whose slug is the name of a virtual tag.
+    ///   ``KanbanError/reservedTagName`` for a tag, and ``KanbanError/reservedSlug(type:)`` for a column or an actor,
+    ///   when the slug is ``Slug/reservedForBoard``.
     func checkSlugIsNotReserved() throws(KanbanError) {
+        if nodeType == .tag, let virtualTag = localID.flatMap(VirtualTag.init(named:)) {
+            throw .virtualTagName(tag: virtualTag)
+        }
         guard localID == Slug.reservedForBoard else {
             return
         }

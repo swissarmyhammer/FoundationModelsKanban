@@ -87,7 +87,8 @@ extension KanbanResolver {
     /// - Returns: The tag. The GraphQL field is nullable, so that an error gives `null` for this field only.
     /// - Throws: ``KanbanError/invalidTagName(name:)`` when the id or the name gives an empty slug, or when the input
     ///   gives no id and no name. ``KanbanError/reservedTagName`` when a new tag would get the slug
-    ///   ``Slug/reservedForBoard``.
+    ///   ``Slug/reservedForBoard``. ``KanbanError/virtualTagName(tag:)`` when a new tag would get the name of a
+    ///   virtual tag as its slug.
     fileprivate func addTag(
         context: KanbanContext,
         arguments: OptionalInputArguments<AddTagInput>
@@ -169,6 +170,7 @@ extension KanbanResolver {
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live tag has the `from` ref.
     ///   ``KanbanError/invalidTagName(name:)`` when the new name gives an empty slug.
     ///   ``KanbanError/reservedTagName`` when the new tag would get the slug ``Slug/reservedForBoard``.
+    ///   ``KanbanError/virtualTagName(tag:)`` when the new tag would get the name of a virtual tag as its slug.
     ///   ``KanbanError/tagRenameCycle(path:)`` when the redirect makes a rename cycle.
     fileprivate func renameTag(
         context: KanbanContext,
@@ -198,7 +200,8 @@ extension WorkingCopy {
     ///   - body: The body of an unknown tag, or `nil` for no body.
     ///   - time: The time of the change.
     /// - Returns: The local ref of the tag at the end of the rename chain.
-    /// - Throws: ``KanbanError/reservedTagName`` when an unknown tag has the slug ``Slug/reservedForBoard``. An
+    /// - Throws: ``KanbanError/reservedTagName`` when an unknown tag has the slug ``Slug/reservedForBoard``.
+    ///   ``KanbanError/virtualTagName(tag:)`` when an unknown tag has the name of a virtual tag as its slug. An
     ///   ``EventError`` when a patch breaks a rule of the log.
     mutating func ensureLiveTag(
         _ ref: LocalRef,

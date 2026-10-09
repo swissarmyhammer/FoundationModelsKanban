@@ -21,7 +21,8 @@ struct ReservedSlugTests {
     /// The order of the column with the reserved slug in the old log: after the fixture column `todo`.
     static let oldColumnOrder = 1
 
-    /// One mutation field that makes a column, an actor, or a tag with the reserved slug.
+    /// One mutation field that makes a column, an actor, or a tag with the reserved slug. ``field(on:naming:id:)``
+    /// can also give a different name or id, for example the name of a virtual tag (``VirtualTagNameTests``).
     enum Refusal: CaseIterable, Sendable {
         /// `addColumn` with a name that gives the reserved slug.
         case addColumnByName
@@ -70,35 +71,48 @@ struct ReservedSlugTests {
 
         /// The mutation field, with its selection.
         ///
-        /// - Parameter task: The ULID of the fixture task.
+        /// - Parameters:
+        ///   - task: The ULID of the fixture task.
+        ///   - name: The name that the field gives to the new node. The default is ``reservedName``.
+        ///   - id: The id that a field with an id gives to the new node. The default is ``reservedID``.
         /// - Returns: The field.
-        func field(on task: ULID) -> String {
+        func field(on task: ULID, naming name: String = reservedName, id: String = reservedID) -> String {
             switch self {
-            case .addColumnByName: #"addColumn(input: { name: "\#(reservedName)" }) { id }"#
-            case .addColumnByID: #"addColumn(input: { id: "\#(reservedID)", name: "\#(legalName)" }) { id }"#
+            case .addColumnByName: #"addColumn(input: { name: "\#(name)" }) { id }"#
+            case .addColumnByID: #"addColumn(input: { id: "\#(id)", name: "\#(legalName)" }) { id }"#
             case .moveTaskToNewColumn:
-                TaskOperationTests.taskField("moveTask", of: task, with: TaskOperationTests.moveInput(to: reservedName))
-            case .addActorByName: #"addActor(input: { name: "\#(reservedName)" }) { id }"#
-            case .addActorByID: #"addActor(input: { id: "\#(reservedID)", name: "\#(legalName)" }) { id }"#
-            case .addActorEnsure: #"addActor(input: { name: "\#(reservedName)", ensure: true }) { id }"#
+                TaskOperationTests.taskField("moveTask", of: task, with: TaskOperationTests.moveInput(to: name))
+            case .addActorByName: #"addActor(input: { name: "\#(name)" }) { id }"#
+            case .addActorByID: #"addActor(input: { id: "\#(id)", name: "\#(legalName)" }) { id }"#
+            case .addActorEnsure: #"addActor(input: { name: "\#(name)", ensure: true }) { id }"#
             case .addCommentByNewActor:
-                CommentTests.addComment(to: AddUpdateTaskTests.sigilRef(of: task), with: #"actor: "\#(reservedName)""#)
-            case .addTagByName: TagMutationTests.addTag(named: reservedName)
-            case .addTagByID: #"addTag(input: { id: "\#(reservedID)", name: "\#(legalName)" }) { id }"#
-            case .renameTag: TagMutationTests.renameTag(from: TagMutationTests.bug, to: reservedName)
-            case .addTaskTag: AddUpdateTaskTests.addTask(with: Self.tagsInput)
-            case .addTaskMarker: AddUpdateTaskTests.addTask(with: Self.markerBody)
-            case .updateTaskTag: AddUpdateTaskTests.updateTask(task, with: Self.tagsInput)
-            case .updateTaskMarker: AddUpdateTaskTests.updateTask(task, with: Self.markerBody)
-            case .tagTask: TaskOperationTests.taskField("tagTask", of: task, with: Self.tagsInput)
+                CommentTests.addComment(to: AddUpdateTaskTests.sigilRef(of: task), with: #"actor: "\#(name)""#)
+            case .addTagByName: TagMutationTests.addTag(named: name)
+            case .addTagByID: #"addTag(input: { id: "\#(id)", name: "\#(legalName)" }) { id }"#
+            case .renameTag: TagMutationTests.renameTag(from: TagMutationTests.bug, to: name)
+            case .addTaskTag: AddUpdateTaskTests.addTask(with: TaskOperationTests.tagsInput(name))
+            case .addTaskMarker: AddUpdateTaskTests.addTask(with: Self.markerBody(naming: name))
+            case .updateTaskTag: AddUpdateTaskTests.updateTask(task, with: TaskOperationTests.tagsInput(name))
+            case .updateTaskMarker: AddUpdateTaskTests.updateTask(task, with: Self.markerBody(naming: name))
+            case .tagTask: TaskOperationTests.taskField("tagTask", of: task, with: TaskOperationTests.tagsInput(name))
             }
         }
 
-        /// The `tags` part of a task input with the reserved name.
-        private static let tagsInput = TaskOperationTests.tagsInput(reservedName)
+        /// Makes the body text that a marker field writes: a body with a marker of a name.
+        ///
+        /// - Parameter name: The name of the marker, with no `#`.
+        /// - Returns: The body text.
+        static func markedBody(naming name: String) -> String {
+            "Fix #\(name)"
+        }
 
-        /// The `body` part of a task input whose body has a marker of the reserved name.
-        private static let markerBody = #"body: "Fix #\#(reservedName)""#
+        /// Makes the `body` part of a task input whose body has a marker of a name (``markedBody(naming:)``).
+        ///
+        /// - Parameter name: The name of the marker, with no `#`.
+        /// - Returns: The `input` field.
+        private static func markerBody(naming name: String) -> String {
+            #"body: "\#(markedBody(naming: name))""#
+        }
 
         /// The document that runs before the field, or `nil` for none.
         var setup: String? {

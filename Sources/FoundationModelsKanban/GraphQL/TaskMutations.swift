@@ -91,7 +91,8 @@ extension KanbanResolver {
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when a column or a dependency names no node.
     ///   ``KanbanError/actorNotFound(reference:)`` when an assignee is not an actor.
     ///   ``KanbanError/invalidOrdinal(ordinal:)``, ``KanbanError/invalidTagName(name:)``,
-    ///   ``KanbanError/reservedTagName``, and ``KanbanError/dependencyCycle(path:)``.
+    ///   ``KanbanError/reservedTagName``, ``KanbanError/virtualTagName(tag:)``, and
+    ///   ``KanbanError/dependencyCycle(path:)``.
     fileprivate func addTask(
         context: KanbanContext,
         arguments: InputArguments<AddTaskInput>
@@ -132,7 +133,8 @@ extension KanbanResolver {
     /// - Returns: The task after the change.
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live task has the id, or a dependency names no
     ///   task. ``KanbanError/actorNotFound(reference:)``, ``KanbanError/invalidTagName(name:)``,
-    ///   ``KanbanError/reservedTagName``, and ``KanbanError/dependencyCycle(path:)``.
+    ///   ``KanbanError/reservedTagName``, ``KanbanError/virtualTagName(tag:)``, and
+    ///   ``KanbanError/dependencyCycle(path:)``.
     fileprivate func updateTask(
         context: KanbanContext,
         arguments: InputArguments<UpdateTaskInput>
@@ -272,8 +274,8 @@ extension WorkingCopy {
     ///   - key: The current key of the board. A dependency marker with this key names a task of the board.
     ///   - time: The time of the change.
     /// - Throws: ``KanbanError/dependencyCycle(path:)`` when an edge or a marker makes a cycle.
-    ///   ``KanbanError/invalidTagName(name:)``, ``KanbanError/reservedTagName``, or an ``EventError`` when a patch
-    ///   breaks a rule of the log.
+    ///   ``KanbanError/invalidTagName(name:)``, ``KanbanError/reservedTagName``, ``KanbanError/virtualTagName(tag:)``,
+    ///   or an ``EventError`` when a patch breaks a rule of the log.
     fileprivate mutating func write(
         _ change: TaskChange,
         toTask ref: LocalRef,
@@ -378,6 +380,7 @@ extension WorkingCopy {
     /// - Returns: The stored refs of the tags, after the rename redirect.
     /// - Throws: ``KanbanError/invalidTagName(name:)`` when a name gives an empty slug.
     ///   ``KanbanError/reservedTagName`` when an unknown tag would get the slug ``Slug/reservedForBoard``.
+    ///   ``KanbanError/virtualTagName(tag:)`` when an unknown tag would get the name of a virtual tag as its slug.
     ///   ``KanbanError/notFound(type:reference:)`` when a tag URI names no live tag.
     mutating func tagRefs(
         named names: [String],
@@ -395,7 +398,8 @@ extension WorkingCopy {
     }
 
     /// Makes sure that each new `#marker` of a body names a live tag (plan.md §6.1). A marker that the old body
-    /// already had does not change.
+    /// already had does not change. A marker that names a virtual tag, in any case, makes no tag: it stays a filter
+    /// word only (plan.md §6).
     ///
     /// - Parameters:
     ///   - newBody: The body after the change.
@@ -405,7 +409,8 @@ extension WorkingCopy {
     ///   graph has no tag with it. An ``EventError`` when a patch breaks a rule of the log.
     private mutating func addMarkerTags(in newBody: String, after oldBody: String, at time: DateTime) throws {
         let oldSlugs = Set(TagMarkers.slugs(in: oldBody))
-        for slug in TagMarkers.slugs(in: newBody) where !oldSlugs.contains(slug) {
+        let newSlugs = TagMarkers.slugs(in: newBody).filter { slug in !oldSlugs.contains(slug) }
+        for slug in newSlugs where VirtualTag(named: slug.value) == nil {
             _ = try addTag(TagName(normalizing: slug.value), at: time)
         }
     }
@@ -416,7 +421,8 @@ extension WorkingCopy {
     ///   - name: The tag name.
     ///   - time: The time of the change.
     /// - Returns: The local ref of the tag at the end of the rename chain.
-    /// - Throws: ``KanbanError/reservedTagName`` when an unknown tag would get the slug ``Slug/reservedForBoard``. An
+    /// - Throws: ``KanbanError/reservedTagName`` when an unknown tag would get the slug ``Slug/reservedForBoard``.
+    ///   ``KanbanError/virtualTagName(tag:)`` when an unknown tag would get the name of a virtual tag as its slug. An
     ///   ``EventError`` when a patch breaks a rule of the log.
     private mutating func addTag(_ name: TagName, at time: DateTime) throws -> LocalRef {
         try ensureLiveTag(.tag(slug: name.slug.value), setting: [PropertyName.name: .string(name.name)], at: time)

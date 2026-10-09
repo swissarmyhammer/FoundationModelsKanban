@@ -388,8 +388,9 @@ extension WorkingCopy {
     ///   - body: The body of the node, or `nil` for no body.
     ///   - time: The time of the change.
     /// - Throws: ``KanbanError/reservedSlug(type:)`` or ``KanbanError/reservedTagName`` when the slug of the node is
-    ///   ``Slug/reservedForBoard`` (``LocalRef/checkSlugIsNotReserved()``). ``KanbanError/duplicateID(type:id:)`` when
-    ///   the graph has the node, live or tombstoned. A patch on a tombstone does not make it live, so the caller must
+    ///   ``Slug/reservedForBoard``, and ``KanbanError/virtualTagName(tag:)`` when the slug of a tag is the name of a
+    ///   virtual tag (``LocalRef/checkSlugIsNotReserved()``). ``KanbanError/duplicateID(type:id:)`` when the graph
+    ///   has the node, live or tombstoned. A patch on a tombstone does not make it live, so the caller must
     ///   undelete it. An ``EventError`` when the patch breaks a rule of the log.
     mutating func addNode(
         _ ref: LocalRef,

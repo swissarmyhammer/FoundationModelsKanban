@@ -59,6 +59,11 @@ enum KanbanError: Error, Hashable, Sendable {
     /// (plan.md §3.2).
     case reservedTagName
 
+    /// `INVALID_TAG_NAME`: the tag name gives a slug that is the name of a virtual tag, in lowercase (plan.md §6). The
+    /// filter atom of that name matches only the virtual tag, so a real tag with this slug is not useful. The tag is
+    /// the virtual tag that the slug names.
+    case virtualTagName(tag: VirtualTag)
+
     /// `INVALID_SLUG`: the name of a column or an actor gives an empty slug.
     case invalidSlug(name: String)
 
@@ -108,6 +113,9 @@ extension KanbanError {
     /// The correction for a name that gives an empty slug.
     static let emptySlugCorrection = "Use a name that has one or more letters or digits."
 
+    /// The correction for a tag name whose slug no tag can have.
+    static let tagNameCorrection = "Use a tag name that gives a different slug."
+
     /// The code of the error, as `extensions.code` gives it, for example `NOT_FOUND`.
     var code: String {
         switch self {
@@ -122,7 +130,7 @@ extension KanbanError {
         case .nothingToUndo: "NOTHING_TO_UNDO"
         case .undoConflict: "UNDO_CONFLICT"
         case .invalidFilter: "INVALID_FILTER"
-        case .invalidTagName, .reservedTagName: "INVALID_TAG_NAME"
+        case .invalidTagName, .reservedTagName, .virtualTagName: "INVALID_TAG_NAME"
         case .invalidSlug, .reservedSlug: "INVALID_SLUG"
         case .invalidOrdinal: "INVALID_ORDINAL"
         case .conflictingPlacement: "CONFLICTING_PLACEMENT"
@@ -182,7 +190,11 @@ extension KanbanError {
         case .invalidTagName(let name):
             "The tag name \"\(name)\" gives an empty slug. \(Self.emptySlugCorrection)"
         case .reservedTagName:
-            "\(Self.reservedSlugProblem(for: .tag)) Use a tag name that gives a different slug."
+            "\(Self.reservedSlugProblem(for: .tag)) \(Self.tagNameCorrection)"
+        case .virtualTagName(let tag):
+            "The slug \"\(tag.rawValue.lowercased())\" is the name of the virtual tag \(tag.rawValue), and the filter "
+                + "\(FilterAtomKind.tag.sigil)\(tag.rawValue) matches only the virtual tag, so a tag cannot have it. "
+                + Self.tagNameCorrection
         case .invalidSlug(let name):
             "The name \"\(name)\" gives an empty slug. \(Self.emptySlugCorrection)"
         case .reservedSlug(let type):

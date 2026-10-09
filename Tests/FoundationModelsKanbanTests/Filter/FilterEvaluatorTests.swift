@@ -204,11 +204,20 @@ struct FilterEvaluatorTests {
     @Test("A tag atom ignores the case of a real tag")
     func tagCaseInsensitive() throws {
         var board = ReadinessFixture()
+        board.addTag(withSlug: "bug")
+        try board.addTask(withULID: Self.first, taggedWith: ["bug"])
+        try board.addTask(withULID: Self.second)
+        #expect(try Self.matches(of: "#BUG", in: board) == [Self.first])
+    }
+
+    @Test("A virtual tag name matches only the virtual tag, not a real tag of an old log with that slug")
+    func virtualTagNameIgnoresRealTag() throws {
+        var board = ReadinessFixture()
         board.addTag(withSlug: "ready")
         try board.addTask(withULID: Self.first, taggedWith: ["ready"], dependingOn: [Self.ghost])
         try board.addTask(withULID: Self.second)
-        // The first task is blocked, so only its real tag `ready` can match. The second task has the virtual tag.
-        #expect(try Self.matches(of: "#READY", in: board) == [Self.first, Self.second])
+        // The first task is blocked and has only the real tag `ready`. The second task has the virtual tag.
+        #expect(try Self.matches(of: "#READY", in: board) == [Self.second])
     }
 
     @Test("An assignee atom matches a task assigned to the actor")

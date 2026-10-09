@@ -8,7 +8,8 @@ import Foundation
 /// (``KanbanError/sharedShortID(reference:ids:)``), because a short id is a unique ULID prefix (plan.md §3.2).
 ///
 /// - `#tag` matches a task that has the tag from an edge or from a `#marker` in its body, after the rename redirect
-///   (``Graph/tagSlots(of:)``). It also matches a task that has the virtual tag of that name (``VirtualTag``).
+///   (``Graph/tagSlots(of:)``). The name of a virtual tag (``VirtualTag``) matches only a task that has that
+///   virtual tag, also when a real tag from an old log has that slug.
 /// - `@user` matches a task that is assigned to a live actor whose slug, or the slug of whose name, is the slug of
 ///   the value.
 /// - `^id` matches the task itself, and each task that depends on it, from an edge or a dependency marker. The value
@@ -173,14 +174,19 @@ private struct FilterCompiler {
 // MARK: - Tags
 
 extension FilterCompiler {
-    /// Makes the test of a `#tag` atom: a real tag from an edge or a marker, or a virtual tag.
+    /// Makes the test of a `#tag` atom: a virtual tag, or a real tag from an edge or a marker.
+    ///
+    /// A name of a virtual tag, in any case, matches only the virtual tag (plan.md §6). Thus a real tag with that slug
+    /// from an old log does not change the result of the atom.
     ///
     /// - Parameter name: The tag name, the slug, or the name of a virtual tag, in any case.
     /// - Returns: The test.
     private func tagTest(named name: String) -> NodeTest {
-        let virtualTag = VirtualTag(named: name)
+        if let virtualTag = VirtualTag(named: name) {
+            return { slot in readiness.hasVirtualTag(virtualTag, taskAt: slot) }
+        }
         let tagSlot = liveTagSlot(named: name)
-        return { slot in isTagged(taskAt: slot, with: virtualTag) || isTagged(taskAt: slot, withTagAt: tagSlot) }
+        return { slot in isTagged(taskAt: slot, withTagAt: tagSlot) }
     }
 
     /// Finds the live tag that a tag name names, after the rename redirect (``RefResolver``).
@@ -193,19 +199,6 @@ extension FilterCompiler {
             return nil
         }
         return graph.slot(for: ref)
-    }
-
-    /// Tells if a task has a virtual tag.
-    ///
-    /// - Parameters:
-    ///   - slot: The slot of the task.
-    ///   - virtualTag: The virtual tag, or `nil` when the atom names no virtual tag.
-    /// - Returns: `true` when the virtual tag applies to the task.
-    private func isTagged(taskAt slot: Int, with virtualTag: VirtualTag?) -> Bool {
-        guard let virtualTag else {
-            return false
-        }
-        return readiness.hasVirtualTag(virtualTag, taskAt: slot)
     }
 
     /// Tells if a task has a real tag, from an edge or a marker.

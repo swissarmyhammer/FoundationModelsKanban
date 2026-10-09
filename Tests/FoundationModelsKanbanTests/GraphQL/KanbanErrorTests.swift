@@ -65,12 +65,14 @@ struct KanbanErrorTests {
         (.internalFailure(detail: engineMessage), "INTERNAL"),
     ]
 
-    /// The errors of the reserved slug `board`, with the code of the slug rule of each node type. These cases share
-    /// the codes of ``codes``, so the test of distinct codes does not read them.
+    /// The errors of the reserved slugs: the slug `board`, and the names of the virtual tags. Each has the code of the
+    /// slug rule of its node type. These cases share the codes of ``codes``, so the test of distinct codes does not
+    /// read them.
     static let reservedSlugCodes: [(KanbanError, String)] = [
         (.reservedSlug(type: .column), "INVALID_SLUG"),
         (.reservedSlug(type: .actor), "INVALID_SLUG"),
         (.reservedTagName, "INVALID_TAG_NAME"),
+        (.virtualTagName(tag: .done), "INVALID_TAG_NAME"),
     ]
 
     // MARK: - Codes
@@ -274,6 +276,15 @@ struct KanbanErrorTests {
             KanbanError.reservedTagName.message
                 == "The slug \"board\" is reserved for the board URI kanban://<board-key>/board, so a tag cannot "
                 + "have it. Use a tag name that gives a different slug."
+        )
+    }
+
+    @Test("INVALID_TAG_NAME for the name of a virtual tag names the virtual tag")
+    func virtualTagNameMessage() {
+        #expect(
+            KanbanError.virtualTagName(tag: .deleted).message
+                == "The slug \"deleted\" is the name of the virtual tag DELETED, and the filter #DELETED matches only "
+                + "the virtual tag, so a tag cannot have it. Use a tag name that gives a different slug."
         )
     }
 

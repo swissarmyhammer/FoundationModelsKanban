@@ -284,6 +284,7 @@ extension KanbanResolver {
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live task has the id, or a tag URI names no live
     ///   tag. ``KanbanError/invalidTagName(name:)`` when a name gives an empty slug.
     ///   ``KanbanError/reservedTagName`` when a new tag would get the slug ``Slug/reservedForBoard``.
+    ///   ``KanbanError/virtualTagName(tag:)`` when a new tag would get the name of a virtual tag as its slug.
     fileprivate func tagTask(
         context: KanbanContext,
         arguments: InputArguments<TagTaskInput>
