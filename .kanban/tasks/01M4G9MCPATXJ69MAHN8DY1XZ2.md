@@ -58,10 +58,19 @@ comments:
     - note: the write path already writes only under `<folder>/.kanban/` (all writes go through `EventLog`), so no code change on the write path was necessary. The new tests are coverage of behavior that exists, so they passed on the first run.
     - next: /review
   timestamp: 2026-10-09T21:00:28.866165+00:00
+- actor: claude-code
+  id: 01m4h7m0x1nz2s1j7ef064vb99
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 4 files
+    - test: green — swift test, 1116 tests in 80 suites passed
+    - commit: b0880a1
+    - review: clean — 0 findings
+  timestamp: 2026-10-09T21:03:04.097315+00:00
 depends_on:
 - 01M4G9Z14EEZ85ZSRQHFV1DCQ3
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: db80
 title: 'board: path argument accepts any folder path'
 ---
 ## What

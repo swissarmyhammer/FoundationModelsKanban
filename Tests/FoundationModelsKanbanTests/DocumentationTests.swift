@@ -8,7 +8,7 @@ import Testing
 @Suite("Documentation")
 struct DocumentationTests {
     /// The README, relative to the repository root.
-    private static let readmePath = "README.md"
+    static let readmePath = "README.md"
 
     /// The documents that must not name the removed command-line tool, relative to the repository root.
     private static let documentPaths = ["plan.md", readmePath]
@@ -16,13 +16,28 @@ struct DocumentationTests {
     /// A text that names the removed command-line tool: the word `CLI`, or a `kanban` shell command.
     private static let commandLinePattern = #"\bCLI\b|kanban watch|kanban --schema|kanban '"#
 
-    /// The four filter examples of the README, each as the full text of its ```` ```graphql ```` code block. A filter
-    /// that starts with `#` follows a `"`, so each raw string has two `#` delimiters.
+    /// The filter example of the tasks that have the tag `bug` and the assignee `alice`. A filter that starts with `#`
+    /// follows a `"`, so each raw string of a filter example has two `#` delimiters.
+    static let bugsOfAliceQuery = ##"{ board { tasks(filter: "#bug && @alice") { edges { node { id title } } } } }"##
+
+    /// The filter example of the five newest changes that have a column update.
+    static let columnHistoryQuery =
+        ##"{ board { history(filter: "~column", first: 5) { txn ops updates { id kind } } } }"##
+
+    /// The filter example of the changes that have an update of one node.
+    static let nodeHistoryQuery =
+        ##"{ board { history(filter: "^01jabcd") { txn actor { name } updates { fields { name before after } } } } }"##
+
+    /// The filter example of a subscription to the updates of the tasks with the tag `bug` and of each comment.
+    static let bugOrCommentSubscription =
+        ##"subscription { changes(filter: "#bug || ~comment") { txn ops updates { id type kind } } }"##
+
+    /// The four filter examples of the README, each as the full text of its ```` ```graphql ```` code block.
     private static let filterExamples = [
-        ##"{ board { tasks(filter: "#bug && @alice") { edges { node { id title } } } } }"##,
-        ##"{ board { history(filter: "~column", first: 5) { txn ops updates { id kind } } } }"##,
-        ##"{ board { history(filter: "^01jabcd") { txn actor { name } updates { fields { name before after } } } } }"##,
-        ##"subscription { changes(filter: "#bug || ~comment") { txn ops updates { id type kind } } }"##,
+        bugsOfAliceQuery,
+        columnHistoryQuery,
+        nodeHistoryQuery,
+        bugOrCommentSubscription,
     ]
 
     /// No line of the document names the removed command-line tool.
@@ -37,16 +52,8 @@ struct DocumentationTests {
     /// The README has the filter example as the full text of one ```` ```graphql ```` code block.
     @Test("README.md has the filter example in a graphql code block", arguments: filterExamples)
     func readmeHoldsFilterExample(_ example: String) throws {
-        let blocks = try Self.graphQLBlocks(in: RepositoryFile.text(at: Self.readmePath))
+        let blocks = try RepositoryFile.codeBlocks(of: .graphql, at: Self.readmePath)
 
         #expect(blocks.contains(example), "README.md must have the graphql block \(example); found \(blocks)")
-    }
-
-    /// Finds each ```` ```graphql ```` code block of a Markdown text.
-    ///
-    /// - Parameter markdown: the Markdown text.
-    /// - Returns: the text between the opening fence and the closing fence of each block, in document order.
-    private static func graphQLBlocks(in markdown: String) -> [String] {
-        markdown.matches(of: #/```graphql\n(?<body>[\s\S]*?)\n```/#).map { String($0.body) }
     }
 }

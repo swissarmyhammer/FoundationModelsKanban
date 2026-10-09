@@ -47,7 +47,7 @@ struct CodeModeTests {
     ///   - code: The JavaScript snippet.
     ///   - graph: The engine of the `kanban` tool.
     /// - Returns: The rendered result of `runCode`.
-    private static func run(_ code: String, on graph: KanbanGraph) async throws -> String {
+    static func run(_ code: String, on graph: KanbanGraph) async throws -> String {
         let registry = try MultiTool.Builder()
             .addTool(KanbanTool(graph: graph))
             .buildRegistry()
