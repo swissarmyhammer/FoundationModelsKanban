@@ -40,6 +40,39 @@ comments:
     - evidence: 7 files — Sources/FoundationModelsKanban/Identity/RefResolver.swift, Sources/FoundationModelsKanban/GraphQL/ColumnActorMutations.swift, Sources/FoundationModelsKanban/GraphQL/TagMutations.swift, Tests/FoundationModelsKanbanTests/Mutations/ColumnActorTests.swift, Tests/FoundationModelsKanbanTests/Mutations/TagMutationTests.swift, Tests/FoundationModelsKanbanTests/Mutations/ReservedSlugTests.swift, Tests/FoundationModelsKanbanTests/Mutations/VirtualTagNameTests.swift. `swift test`: 1095 tests in 79 suites passed, 0 failures. The only build warning is the accepted SwiftPM "missing creator for mutated node" warning.
     - next: /review
   timestamp: 2026-10-09T18:23:09.825586+00:00
+- actor: claude-code
+  id: 01m4gypqnkyjzgqmgygpntv7g1
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD, 3 findings (3 confirmed, 0 refuted) — Sources/FoundationModelsKanban/GraphQL/TagMutations.swift:102, Sources/FoundationModelsKanban/Identity/RefResolver.swift:88, Sources/FoundationModelsKanban/Identity/RefResolver.swift:93. The HEAD commit message agrees with the diff. Each acceptance criterion has a test.
+    - next: /implement the open items in "## Review Findings (2026-10-09 13:25)"
+  timestamp: 2026-10-09T18:27:15.763957+00:00
+- actor: claude-code
+  id: 01m4gyps3sw10qjqtg7275b6m1
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 7 files
+    - test: green — swift test, 1095 tests in 79 suites passed
+    - commit: 4aaa5b0
+    - review: findings — Sources/FoundationModelsKanban/GraphQL/TagMutations.swift:102, Sources/FoundationModelsKanban/Identity/RefResolver.swift:88, Sources/FoundationModelsKanban/Identity/RefResolver.swift:93
+  timestamp: 2026-10-09T18:27:17.241265+00:00
+- actor: claude-code
+  id: 01m4gz08rwnqc35aybwgbmx2hr
+  text: |-
+    Review findings of 2026-10-09 13:25 are fixed. This is a refactor only. Behavior does not change.
+
+    - RefResolver.swift: each URI step now has one copy. `RefText(_:)` trims the ref and sorts it into a short form or a URI. `localKey(forURI:)` maps a URI with `localRef(inBoard:)` and `shortForm(of:)`. `target(of:in:)` returns a `RefTarget` (`.shortForm`, `.sameBoard(key:)`, `.otherBoard(NodeURI)`): it uses `RefText`, `parsedURI(from:in:)` and `localKey(forURI:)`. `storedRef` and `newNodeKey` call `target(of:in:)`. Each keeps its own handling: storedRef makes the remote ref, and newNodeKey throws NOT_FOUND. `anyLocalRef` calls `RefText` and `localKey(forURI:)`. It keeps its `try?` parse and has no type check.
+    - The helper returns an enum and not `String?`, because storedRef needs the parsed URI for `remoteRef`. A `String?` helper would make storedRef parse the URI two times.
+    - `newNodeKey(for: String, ...)` still returns the untrimmed reference for a short form. If it returned the trimmed text, the error text of `invalidSlug` and `invalidTagName` would change for a whitespace-only id.
+    - ColumnActorMutations.swift: the new `RefResolver.newNodeKey(for: NodeID?, named:ofType:)` is the shared id-to-key step. `slug(ofNewNode:named:ofType:)` applies `Slug(columnOrActorName:)` to it. addTag (TagMutations.swift) applies `TagName` to it. The tag name is `TagName(input.name ?? key)` and the slug is `TagName(key).slug`. The values and the error order are the same as before.
+  timestamp: 2026-10-09T18:32:28.188250+00:00
+- actor: claude-code
+  id: 01m4gz0ag0zhxa0zw8qcx6pz6s
+  text: |-
+    ### implement — changed
+    - evidence: 3 files — Sources/FoundationModelsKanban/Identity/RefResolver.swift, Sources/FoundationModelsKanban/GraphQL/ColumnActorMutations.swift, Sources/FoundationModelsKanban/GraphQL/TagMutations.swift. `swift test`: 1095 tests in 79 suites passed, 0 failures. The only build warning is the accepted SwiftPM "missing creator for mutated node" warning. All 3 review findings are checked.
+    - next: /test, then /review
+  timestamp: 2026-10-09T18:32:29.952460+00:00
 depends_on:
 - 01M4G9JDQ98082KJQTMWE86DV8
 position_column: doing
@@ -64,3 +97,14 @@ title: addTag, addColumn and addActor accept a full kanban:// URI as id
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-09 13:25)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 7 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsKanban/GraphQL/TagMutations.swift:102` `duplication/duplication` — addTag repeats the id-to-slug path that RefResolver.slug(ofNewNode:named:ofType:) already has: take the id, call newNodeKey(for:ofType:), then build the slug from the key. The tag version differs only in its slug type (TagName instead of Slug(columnOrActorName:)), so the two paths can drift apart. Give the id-to-key step one shared helper, for example a RefResolver method that returns the new node key from an optional NodeID and a name. Each caller then builds its own slug type: TagName for tags, Slug(columnOrActorName:) for columns and actors.
+- [x] `Sources/FoundationModelsKanban/Identity/RefResolver.swift:88` `duplication/duplication` — newNodeKey repeats the URI-to-local-id steps of storedRef and anyLocalRef: trim the text, check the scheme, parse the URI, map it with localRef(inBoard:), and take shortForm(of:). If one of these steps changes, the three copies can drift apart. Extract one private helper, for example localKey(forURI:in:), that returns the short form of a URI in this board, or nil. Call it from storedRef, anyLocalRef and newNodeKey. Each caller keeps its own error or nil handling.
+- [x] `Sources/FoundationModelsKanban/Identity/RefResolver.swift:93` `reuse/reuse` — `newNodeKey(for:ofType:)` repeats the URI branch of `storedRef(for:ofType:acceptingRemote:includingTombstones:)`: it parses the text with `parsedURI(from:in:)`, takes `localRef(inBoard:)`, and converts the result with `shortForm(of:)`. Two copies of the same board-key check mean a future change to URI handling has to be made in both places. Extract a helper, for example `sameBoardShortForm(of text: String, in lookup: Lookup) throws(KanbanError) -> String?`, that returns the short form of a URI when it names this board. Call it from `storedRef` and from `newNodeKey`, so each keeps only its own lookup and its own remote-ref handling.

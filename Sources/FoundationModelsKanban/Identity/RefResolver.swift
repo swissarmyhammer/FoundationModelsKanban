@@ -60,15 +60,12 @@ struct RefResolver: Sendable {
         includingTombstones includesTombstones: Bool = false
     ) throws(KanbanError) -> StoredRef {
         let lookup = Lookup(reference: reference, type: type, includesTombstones: includesTombstones)
-        let text = reference.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard NodeURI.hasScheme(atStartOf: text) else {
-            return .local(try localRef(forKey: text, in: lookup))
-        }
-        let uri = try parsedURI(from: text, in: lookup)
-        guard let ref = uri.localRef(inBoard: boardKey) else {
+        switch try target(of: reference, in: lookup) {
+        case .shortForm(let key), .sameBoard(let key):
+            return .local(try localRef(forKey: key, in: lookup))
+        case .otherBoard(let uri):
             return try remoteRef(to: uri, acceptingRemote: acceptsRemote, in: lookup)
         }
-        return .local(try localRef(forKey: shortForm(of: ref), in: lookup))
     }
 
     /// Changes the id of a node that a mutation can make to the short form of the node in this board (plan.md §3.2).
@@ -85,15 +82,15 @@ struct RefResolver: Sendable {
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when the URI does not parse, names a node of a different
     ///   type, or has the key of a different board.
     func newNodeKey(for reference: String, ofType type: PatchNodeType) throws(KanbanError) -> String {
-        let text = reference.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard NodeURI.hasScheme(atStartOf: text) else {
-            return reference
-        }
         let lookup = Lookup(reference: reference, type: type, includesTombstones: false)
-        guard let ref = try parsedURI(from: text, in: lookup).localRef(inBoard: boardKey) else {
+        switch try target(of: reference, in: lookup) {
+        case .shortForm:
+            return reference
+        case .sameBoard(let key):
+            return key
+        case .otherBoard:
             throw lookup.notFound
         }
-        return shortForm(of: ref)
     }
 
     /// Finds the node of any type that a forgiving ref names in this board, live or tombstoned (plan.md §3.3, rule 3).
@@ -106,15 +103,16 @@ struct RefResolver: Sendable {
     ///   names a node of a different board.
     /// - Throws: ``KanbanError/ambiguousID(reference:matches:)`` when the ref is a prefix of more than one ULID.
     func anyLocalRef(for reference: String) throws(KanbanError) -> LocalRef? {
-        let text = reference.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard NodeURI.hasScheme(atStartOf: text) else {
-            return try anyLocalRef(forKey: text, writtenAs: reference)
+        switch RefText(reference) {
+        case .shortForm(let key):
+            return try anyLocalRef(forKey: key, writtenAs: reference)
+        case .uri(let text):
+            guard let uri = try? NodeURI(parsing: text), let key = localKey(forURI: uri) else {
+                return nil
+            }
+            let lookup = Lookup(reference: reference, type: uri.ref.nodeType, includesTombstones: true)
+            return try candidateRef(forKey: key, in: lookup)
         }
-        guard let uri = try? NodeURI(parsing: text), let ref = uri.localRef(inBoard: boardKey) else {
-            return nil
-        }
-        let lookup = Lookup(reference: reference, type: ref.nodeType, includesTombstones: true)
-        return try candidateRef(forKey: shortForm(of: ref), in: lookup)
     }
 
     /// Checks that a short form is not a short id that two or more tasks or comments of this board have, live or
@@ -200,6 +198,64 @@ extension RefResolver {
     /// - Returns: The short form.
     private func shortForm(of ref: LocalRef) -> String {
         ref.localID ?? boardKey
+    }
+
+    /// The text of a ref without white space at the two ends, sorted by its form.
+    private enum RefText {
+        /// A short form: a ULID form, a slug or a name, or the key of the board.
+        case shortForm(String)
+
+        /// The text of a full `kanban://` URI.
+        case uri(String)
+
+        /// Sorts a ref by its form.
+        ///
+        /// - Parameter reference: The ref as the caller wrote it.
+        init(_ reference: String) {
+            let text = reference.trimmingCharacters(in: .whitespacesAndNewlines)
+            self = NodeURI.hasScheme(atStartOf: text) ? .uri(text) : .shortForm(text)
+        }
+    }
+
+    /// The node that a ref of the expected type names, as this board sees it.
+    private enum RefTarget {
+        /// A short form, without white space at the two ends.
+        case shortForm(String)
+
+        /// A URI with the key of this board, by the short form of its node.
+        case sameBoard(key: String)
+
+        /// A URI with the key of a different board.
+        case otherBoard(NodeURI)
+    }
+
+    /// Sorts a ref of the expected type into a short form, a URI of this board, or a URI of a different board.
+    ///
+    /// - Parameters:
+    ///   - reference: The ref as the caller wrote it. White space at the two ends is ignored.
+    ///   - lookup: The resolve.
+    /// - Returns: The target of the ref. The graph does not need the node.
+    /// - Throws: ``KanbanError/notFound(type:reference:)`` when the ref is a URI that does not parse, or a URI that
+    ///   names a node of a different type.
+    private func target(of reference: String, in lookup: Lookup) throws(KanbanError) -> RefTarget {
+        switch RefText(reference) {
+        case .shortForm(let key):
+            return .shortForm(key)
+        case .uri(let text):
+            let uri = try parsedURI(from: text, in: lookup)
+            guard let key = localKey(forURI: uri) else {
+                return .otherBoard(uri)
+            }
+            return .sameBoard(key: key)
+        }
+    }
+
+    /// Gives the short form of the node of a URI, when the URI has the key of this board.
+    ///
+    /// - Parameter uri: The URI.
+    /// - Returns: The short form, or `nil` when the URI has the key of a different board.
+    private func localKey(forURI uri: NodeURI) -> String? {
+        uri.localRef(inBoard: boardKey).map { ref in shortForm(of: ref) }
     }
 
     /// Reads a full URI, and checks that it names a node of the expected type.

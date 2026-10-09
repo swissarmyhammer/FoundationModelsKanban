@@ -99,9 +99,9 @@ extension KanbanResolver {
         let input = arguments.input
         let board = MutationBoard.named(input?.board)
         return try await context.changeNode(named: MutationName.addTag, on: board) { work, resolver, time in
-            let key = try input?.id.map { id in try resolver.newNodeKey(for: id.text, ofType: .tag) }
-            let name = try TagName(normalizing: input?.name ?? key ?? "")
-            let slug = try key.map { key in try TagName(normalizing: key).slug } ?? name.slug
+            let key = try resolver.newNodeKey(for: input?.id, named: input?.name ?? "", ofType: .tag)
+            let name = try TagName(normalizing: input?.name ?? key)
+            let slug = try TagName(normalizing: key).slug
             let values = [
                 PropertyName.name: PatchValue.string(name.name),
                 PropertyName.color: .string(input?.color ?? slug.autoColor),

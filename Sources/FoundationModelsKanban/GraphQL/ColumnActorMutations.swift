@@ -504,8 +504,8 @@ extension RefResolver {
         return ref
     }
 
-    /// Gives the slug of a column or an actor that an add mutation makes (plan.md §3.2). The slug comes from the id,
-    /// or from the name when the input gives no id. A full URI gives its local id (``newNodeKey(for:ofType:)``).
+    /// Gives the slug of a column or an actor that an add mutation makes (plan.md §3.2). The slug is the slug of the
+    /// key of the node (``newNodeKey(for:named:ofType:)``).
     ///
     /// - Parameters:
     ///   - id: The id that the input gives, or `nil` for no id.
@@ -516,10 +516,25 @@ extension RefResolver {
     ///   type, or has the key of a different board. ``KanbanError/invalidSlug(name:)`` when the text gives an empty
     ///   slug.
     func slug(ofNewNode id: NodeID?, named name: String, ofType type: PatchNodeType) throws(KanbanError) -> Slug {
+        try Slug(columnOrActorName: newNodeKey(for: id, named: name, ofType: type))
+    }
+
+    /// Gives the key of a node that an add mutation makes (plan.md §3.2): the id, or the name when the input gives
+    /// no id. A full URI gives its local id (``newNodeKey(for:ofType:)``). The caller applies the slug rule of the
+    /// node type to the key.
+    ///
+    /// - Parameters:
+    ///   - id: The id that the input gives, or `nil` for no id.
+    ///   - name: The name that the input gives.
+    ///   - type: The node type that the mutation makes.
+    /// - Returns: The key of the node.
+    /// - Throws: ``KanbanError/notFound(type:reference:)`` when a URI does not parse, names a node of a different
+    ///   type, or has the key of a different board.
+    func newNodeKey(for id: NodeID?, named name: String, ofType type: PatchNodeType) throws(KanbanError) -> String {
         guard let id else {
-            return try Slug(columnOrActorName: name)
+            return name
         }
-        return try Slug(columnOrActorName: newNodeKey(for: id.text, ofType: type))
+        return try newNodeKey(for: id.text, ofType: type)
     }
 }
 
