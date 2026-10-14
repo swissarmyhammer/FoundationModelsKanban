@@ -37,7 +37,7 @@ extension KanbanResolver {
     /// - Parameters:
     ///   - arguments: The board and the filter.
     ///   - store: The store of the `subscribe` call. It resolves the board.
-    ///   - feed: The change feed.
+    ///   - feed: The change feeds of the session view.
     /// - Returns: The events of the subscriber, or a stream that has ended when the engine did not load the board
     ///   yet. The engine then runs the call again after the load.
     /// - Throws: An error of ``BoardStore/view(ofBoard:)``, of ``ChangeFilter/init(parsing:)``, or of
@@ -48,7 +48,7 @@ extension KanbanResolver {
     private static func events(
         of arguments: ChangesArguments,
         readIn store: BoardStore,
-        from feed: ChangeFeed
+        from feed: SessionFeeds
     ) async throws(KanbanError) -> AsyncStream<ChangeEvent> {
         guard let view = try await store.view(ofBoard: arguments.board) else {
             return endedEvents()

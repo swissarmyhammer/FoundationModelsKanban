@@ -109,7 +109,7 @@ struct ModelVariablesTests {
     func modelSendsTheValuesOfTheVariables() async throws {
         try #require(MTLCreateSystemDefaultDevice() != nil, "This machine has no Metal device, thus MLX cannot run.")
         let turn = try await TemporaryGitRepo.withRepo(named: Self.repoName) { root in
-            let graph = try KanbanGraph(root: root, actor: Self.actorName)
+            let graph = try await KanbanHost.shared.session(workingDirectory: root, actor: Self.actorName)
             let tool = KanbanTool(graph: graph)
             let session = LanguageModelSession(model: PooledModel(ref: Self.model, pool: ModelPool()), tools: [tool])
             let options = GenerationOptions(samplingMode: .greedy, maximumResponseTokens: Self.maximumResponseTokens)

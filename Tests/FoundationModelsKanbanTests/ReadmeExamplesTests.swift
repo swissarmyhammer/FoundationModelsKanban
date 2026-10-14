@@ -115,7 +115,7 @@ struct ReadmeExamplesTests {
             directory = try TemporaryDirectory()
             root = try GitSandbox.makeFolder(named: ReadmeExamplesTests.folderName, in: directory.url)
             try await GitSandbox.initializeRepo(at: root)
-            graph = try KanbanGraph(root: root, actor: nil)
+            graph = try await KanbanHost.shared.session(workingDirectory: root, actor: nil)
         }
 
         /// The `.kanban/` directory of the board.

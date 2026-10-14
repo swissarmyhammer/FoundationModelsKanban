@@ -300,7 +300,7 @@ struct KanbanGraphTests {
     @Test("An engine in a folder that is not a git repo gives NOT_A_REPO, and makes no .kanban/")
     func boardInPlainFolder() async throws {
         let directory = try TemporaryDirectory()
-        let graph = try KanbanGraph(root: directory.url, actor: Self.actorName)
+        let graph = try await KanbanHost.shared.session(workingDirectory: directory.url, actor: Self.actorName)
         let response = try await Self.execute(Self.keyQuery, on: graph)
         await graph.close()
         #expect(response == (try KanbanError.notARepo(path: directory.url.path).responseJSON()))

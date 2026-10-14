@@ -273,9 +273,6 @@ struct CommitSession: Sendable {
     /// the related boards with it (plan.md §6.6).
     let key: BoardKey
 
-    /// The session actor: the actor of each event.
-    private let actor: SessionActor
-
     /// The source of the transaction ULIDs and the event ids.
     private var ids: any ULIDSource
 
@@ -288,12 +285,12 @@ struct CommitSession: Sendable {
     /// The writer of the appends of a commit to the logs of the board.
     fileprivate let writer: any EventLogWriter
 
-    /// Makes the session of a loaded board.
+    /// Makes the session of a loaded board. The session has no actor: each run gives the actor of its call, because
+    /// the session views of many working directories share one board (divergence.md §16).
     ///
     /// - Parameters:
     ///   - live: The live graph of the board.
     ///   - key: The key of the board.
-    ///   - actor: The session actor.
     ///   - ids: The source of the transaction ULIDs and the event ids.
     ///   - clock: The clock that gives the time of an empty board.
     ///   - search: The ranked search over the tasks of the board.
@@ -301,7 +298,6 @@ struct CommitSession: Sendable {
     init(
         of live: LiveGraph,
         inBoard key: BoardKey,
-        actingAs actor: SessionActor,
         mintingFrom ids: any ULIDSource,
         timedBy clock: @escaping @Sendable () -> DateTime,
         searchingWith search: TaskSearch,
@@ -309,7 +305,6 @@ struct CommitSession: Sendable {
     ) {
         self.live = live
         self.key = key
-        self.actor = actor
         self.ids = ids
         self.clock = clock
         self.search = search
@@ -391,30 +386,41 @@ struct CommitSession: Sendable {
     /// each of these boards under the locks, and then the append to each changed board. The engine gets the related
     /// sessions after each commit attempt.
     ///
+    /// Before each commit attempt, the session gives the boards of the commit to `admit`. A session view that does not
+    /// hold the serial gate of each of these boards throws there, takes the gates in a fixed order, and runs the call
+    /// again (divergence.md §16, locks across boards).
+    ///
     /// - Parameters:
+    ///   - actor: The session actor: the actor of each event of the call.
     ///   - load: Loads the related boards of some requests, and gives the new related boards of the run. The value
     ///     must answer each request. The default loads no board, so the run reads no related board.
     ///   - store: Stores the sessions of the related boards that a commit attempt changed, and gives the new related
     ///     boards of the next run. The default stores nothing.
+    ///   - admit: Gets the canonical paths of the repo directories of the boards of a commit attempt, before the
+    ///     attempt, and throws when the caller cannot commit them now. The default admits each commit.
     ///   - call: Runs the call against the store of the working copy, and gives the response.
     /// - Returns: The response of the run that committed, or of the run that kept no patch.
     /// - Throws: ``KanbanError/boardBusy(attempts:)`` when a log changed before the commit of each of the
     ///   ``maximumRuns`` runs. Then the call wrote nothing. An ``EventLogError`` when a log file cannot be read,
-    ///   locked, or written. An error of the loader. The error of the call.
+    ///   locked, or written. An error of the loader. The error of `admit`. The error of the call.
     mutating func run<Response: Sendable>(
+        actingAs actor: SessionActor,
         readingRelatedBoardsWith load: RelatedBoardLoad = { _, _ in .unavailable },
         storingRelatedBoardsWith store: RelatedBoardStore = { _, related in related },
+        admittingCommitsWith admit: CommitAdmission = { _ in },
         _ call: @Sendable (BoardStore) async throws -> Response
     ) async throws -> Response {
         let initialRequests = RelatedBoards.loadable.dependencyRequests(of: live.graph, inBoard: key.description)
         var related = try await load(.loadable, initialRequests)
         for _ in 1...Self.maximumRuns {
-            let (response, work, relatedWork) = try await runReading(&related, loadingWith: load, call)
+            let (response, work, relatedWork) = try await runReading(&related, actingAs: actor, loadingWith: load, call)
             guard !work.kept.isEmpty || relatedWork.contains(where: \.hasPatches) else {
                 return response
             }
             let readOnlyWork = readOnlyWork(of: work, along: relatedWork, in: related)
-            let attempt = try await commit(work, along: relatedWork + readOnlyWork)
+            let boards = relatedWork + readOnlyWork
+            try await admit(Set(boards.map(\.path)).union([directory.canonicalPath]))
+            let attempt = try await commit(work, along: boards)
             await updateSearch()
             related = await store(attempt.relatedSessions, related)
             if case .committed = attempt {
@@ -432,6 +438,7 @@ struct CommitSession: Sendable {
     ///
     /// - Parameters:
     ///   - related: The related boards of the run. The loop gives the related boards of the last run back.
+    ///   - actor: The session actor: the actor of each event of the call.
     ///   - load: Loads the related boards of some requests.
     ///   - call: Runs the call against the store of the working copy, and gives the response.
     /// - Returns: The response, the working copy, and the working copy of each related board that the last run
@@ -439,6 +446,7 @@ struct CommitSession: Sendable {
     /// - Throws: An error of the loader, or the error of the call.
     private mutating func runReading<Response: Sendable>(
         _ related: inout RelatedBoards,
+        actingAs actor: SessionActor,
         loadingWith load: RelatedBoardLoad,
         _ call: @Sendable (BoardStore) async throws -> Response
     ) async throws -> (response: Response, work: WorkingCopy, relatedWork: [RelatedWork]) {

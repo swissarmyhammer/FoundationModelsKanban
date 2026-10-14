@@ -32,38 +32,38 @@ struct ChangeEvent: Sendable {
 
 // MARK: - Feed
 
-/// The subscribers of the change feed of one engine (plan.md §6.7).
+/// The subscribers of the change feed of one board (plan.md §6.7, divergence.md §16).
 ///
-/// `Subscription.changes` adds a subscriber with its board and its filters, and gets one stream of events. The engine
-/// sends the changes of each board to the subscribers of the board, and each subscriber gets only the changes that
-/// keep an update after its filters. A subscriber goes away when its stream ends. ``finish()`` ends each stream, and
-/// a subscriber that comes later gets a stream that has ended.
+/// Each board engine has one feed. `Subscription.changes` adds a subscriber with its filters and its owner, and gets
+/// one stream of events. The owner is the session view that made the subscriber: a session view reads the board keys
+/// from its own current board, so each view makes the events of its own subscribers. Each subscriber gets only the
+/// changes that keep an update after its filters. A subscriber goes away when its stream ends.
+/// ``finish(ownedBy:)`` ends the streams of one owner. ``finish()`` ends each stream, and a subscriber that comes
+/// later gets a stream that has ended.
 ///
 /// The engine and the resolvers of different calls use the feed, so the subscribers are behind a lock.
 final class ChangeFeed: Sendable {
     /// The state of the feed, behind a lock.
     private let state = Mutex(FeedState.open(Subscribers()))
 
-    /// The canonical paths of the repo directories of the boards that have a subscriber.
-    var subscribedBoards: Set<String> {
-        state.withLock { state in
-            guard case .open(let subscribers) = state else {
-                return []
-            }
-            return Set(subscribers.byID.values.map(\.boardPath))
-        }
+    /// Tells if an owner has a subscriber in this feed.
+    ///
+    /// - Parameter owner: The owner.
+    /// - Returns: `true` when the owner has a subscriber.
+    func hasSubscribers(ownedBy owner: ObjectIdentifier) -> Bool {
+        !subscribers(ownedBy: owner).isEmpty
     }
 
     /// Adds a subscriber.
     ///
     /// - Parameters:
-    ///   - path: The canonical path of the repo directory of the board that the subscriber observes.
     ///   - filter: The filters of the subscriber.
-    /// - Returns: The events of the subscriber, in the order that the engine sends them. The stream has ended when
+    ///   - owner: The session view that makes the events of the subscriber.
+    /// - Returns: The events of the subscriber, in the order that the owner sends them. The stream has ended when
     ///   the feed is finished.
-    func subscribe(toBoardAt path: String, filteredBy filter: ChangeFilter) -> AsyncStream<ChangeEvent> {
+    func subscribe(filteredBy filter: ChangeFilter, ownedBy owner: ObjectIdentifier) -> AsyncStream<ChangeEvent> {
         let (events, continuation) = AsyncStream<ChangeEvent>.makeStream()
-        let subscriber = Subscriber(boardPath: path, filter: filter, continuation: continuation)
+        let subscriber = Subscriber(owner: owner, filter: filter, continuation: continuation)
         let id = state.withLock { state -> Int? in
             guard case .open(var subscribers) = state else {
                 return nil
@@ -82,27 +82,67 @@ final class ChangeFeed: Sendable {
         return events
     }
 
-    /// Sends the changes of one board to each subscriber of the board.
+    /// Sends the changes of the board to each subscriber of one owner.
     ///
     /// - Parameters:
     ///   - changes: The changes, each of one transaction, in the order of their transactions.
-    ///   - path: The canonical path of the repo directory of the board.
+    ///   - owner: The session view that made the changes.
     ///   - view: The read view of the board now. The filter of each subscriber tests its nodes.
     ///   - board: The board that the resolvers of the changes read.
     func publish(
         _ changes: [Change],
-        toBoardAt path: String,
+        to owner: ObjectIdentifier,
         readingNodesOf view: BoardView,
         resolvingIn board: EventBoard
     ) {
+        for subscriber in subscribers(ownedBy: owner) {
+            send(changes, to: subscriber, readingNodesOf: view, resolvingIn: board)
+        }
+    }
+
+    /// Ends the stream of each subscriber of one owner, for example when its session view closes. The other
+    /// subscribers stay.
+    ///
+    /// - Parameter owner: The owner.
+    func finish(ownedBy owner: ObjectIdentifier) {
+        let ended = state.withLock { state in
+            guard case .open(var subscribers) = state else {
+                return [Subscriber]()
+            }
+            let ended = subscribers.remove(ownedBy: owner)
+            state = .open(subscribers)
+            return ended
+        }
+        for subscriber in ended {
+            subscriber.continuation.finish()
+        }
+    }
+
+    /// Ends the stream of each subscriber, and refuses each later subscriber (plan.md §7.2, `close()`). A second
+    /// call does nothing.
+    func finish() {
         let subscribers = state.withLock { state in
             guard case .open(let subscribers) = state else {
                 return [Subscriber]()
             }
-            return subscribers.byID.values.filter { subscriber in subscriber.boardPath == path }
+            state = .closed
+            return Array(subscribers.byID.values)
         }
         for subscriber in subscribers {
-            send(changes, to: subscriber, readingNodesOf: view, resolvingIn: board)
+            subscriber.continuation.finish()
+        }
+    }
+
+    /// Gives the subscribers of one owner.
+    ///
+    /// - Parameter owner: The owner.
+    /// - Returns: The subscribers. The list is empty when the feed is finished.
+    private func subscribers(ownedBy owner: ObjectIdentifier) -> [Subscriber] {
+        state.withLock { state in
+            guard case .open(let subscribers) = state else {
+                return [Subscriber]()
+            }
+            return subscribers.byID.values.filter { subscriber in subscriber.owner == owner }
         }
     }
 
@@ -133,21 +173,6 @@ final class ChangeFeed: Sendable {
                 "The filter of a subscription fails on the board now; the subscription ends",
                 metadata: ["board": "\(view.boardKey)", "code": "\(error.code)", "message": "\(error.message)"]
             )
-            subscriber.continuation.finish()
-        }
-    }
-
-    /// Ends the stream of each subscriber, and refuses each later subscriber (plan.md §7.2, `close()`). A second
-    /// call does nothing.
-    func finish() {
-        let subscribers = state.withLock { state in
-            guard case .open(let subscribers) = state else {
-                return [Subscriber]()
-            }
-            state = .closed
-            return Array(subscribers.byID.values)
-        }
-        for subscriber in subscribers {
             subscriber.continuation.finish()
         }
     }
@@ -193,12 +218,22 @@ private struct Subscribers {
         byID[id] = subscriber
         return id
     }
+
+    /// Removes each subscriber of one owner.
+    ///
+    /// - Parameter owner: The owner.
+    /// - Returns: The removed subscribers.
+    mutating func remove(ownedBy owner: ObjectIdentifier) -> [Subscriber] {
+        let removed = byID.filter { _, subscriber in subscriber.owner == owner }
+        byID = byID.filter { _, subscriber in subscriber.owner != owner }
+        return Array(removed.values)
+    }
 }
 
-/// One subscriber of a ``ChangeFeed``: its board, its filters, and the continuation of its events.
+/// One subscriber of a ``ChangeFeed``: its owner, its filters, and the continuation of its events.
 private struct Subscriber: Sendable {
-    /// The canonical path of the repo directory of the board that the subscriber observes.
-    let boardPath: String
+    /// The session view that makes the events of the subscriber.
+    let owner: ObjectIdentifier
 
     /// The filters of the subscriber.
     let filter: ChangeFilter

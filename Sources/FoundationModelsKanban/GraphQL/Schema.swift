@@ -424,8 +424,9 @@ struct KanbanContext: Sendable {
     /// The ranked search over the tasks of the board, for `Board.searchTasks` (plan.md §6.4).
     let search: TaskSearch
 
-    /// The change feed of the engine. `Subscription.changes` adds a subscriber to it (plan.md §6.7).
-    let feed: ChangeFeed
+    /// The change feeds of the session view. `Subscription.changes` adds a subscriber to the feed of its board
+    /// (plan.md §6.7).
+    let feed: SessionFeeds
 
     /// The warnings of the run: `extensions.warnings` of its response (plan.md §4.4). Each context has a new
     /// collector, so each run has its own list.

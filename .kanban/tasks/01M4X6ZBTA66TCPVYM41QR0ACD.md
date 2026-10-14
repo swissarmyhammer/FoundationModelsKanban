@@ -1,13 +1,44 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m4xk7fdxjc7yhkc3b2f2wgvj
+  text: |-
+    Research done. Findings:
+    - KanbanGraph (S/Tool/KanbanGraph.swift) now holds all state: current board (loadState, watchState), relatedBoards, scanState, gate, feed, search. CommitSession (S/Tool/Commit.swift) holds the session actor; the actor must move to the view, because one engine serves many sessions.
+    - RelatedBoards and ChangeRound key boards by canonicalPath of the repo folder. canonicalPath resolves symlinks but not letter case. The host table must key by device and inode.
+    - Many tests build a KanbanGraph through the internal init (KanbanGraphTests.makeGraph, GitGraphFixture) and some tests make two graphs on one repo to act as two processes. Plan: keep the internal init; it makes a private test host that close() of that view closes. The public init goes away; README, ReadmeExamplesTests and IntegrationTests move to KanbanHost.shared.session.
+    - Design: KanbanHost (public actor, shared, internal init) keeps the engine table by FolderIdentity (load task stored before the first await), the scan indexes, and the live views. BoardEngine (actor) owns the session, watcher, serial gate, search and change feed of one board. KanbanGraph becomes the session view: working directory, actor, default engine, reached related engines. A call holds the gates of its boards in identity order; when the commit needs a board whose gate it does not hold, the call releases all gates, takes the larger set in order, and runs again.
+    - The feed: each engine owns one ChangeFeed; each subscriber records the view that owns it, because a view resolves keys from its own current board. After an operation, the changes go to each live view, so a write in session A reaches session B at once.
+    - The shared host needs the locator and the embedder: add configure(locator:embedder:) before the first board loads.
+  timestamp: 2026-10-14T16:16:49.085929+00:00
+- actor: claude-code
+  id: 01m4xm979d5e4s8q0jfjtm3mrh
+  text: |-
+    Implementation landed (first pass), tests running:
+    - New: S/Tool/KanbanHost.swift (public actor, `shared`, internal init, `session(workingDirectory:actor:)`, `configure(locator:embedder:)`, engine table by FolderIdentity with the load task stored before the first await, scan indexes, weak view registry, publish to views), S/Tool/BoardEngine.swift (engine actor: session, watcher, gate, feed; parallel load of key + files after the watcher starts; watcher moves to .kanban when it appears), S/Tool/BoardGates.swift (HeldGates in identity order, GateShortfall, CommitAdmission), S/Tool/FolderIdentity.swift (stat device+inode), S/Observe/SessionFeeds.swift (the feeds of one view; subscribers owned by the view).
+    - Changed: KanbanGraph is now the session view (public init removed; internal test init makes a private host that close() closes). CommitSession has no actor: run(actingAs:...) and an admission hook before each commit. ChangeFeed subscribers carry an owner. README example 1 and 5 use KanbanHost.shared.
+    - Discovery: a test host with the fixed ULID source gives each engine its own copy of the source, so two boards of one host mint the same ids. The worktree merge test uses SystemULIDSource for that reason.
+    - Discovery: the files tool echoes the whole file on each edit; keep edits of large files few.
+  timestamp: 2026-10-14T16:35:14.861863+00:00
+- actor: claude-code
+  id: 01m4xn0z6b5ctwrqhp10vjbtg2
+  text: |-
+    ### implement — changed
+    - evidence: swift build --build-tests clean (only the accepted SwiftPM warning). swift test --filter KanbanHostTests: 13/13 pass. Full swift test: 1182 tests in 86 suites pass, 0 failures.
+    - files: new S/Tool/KanbanHost.swift, S/Tool/BoardEngine.swift, S/Tool/BoardGates.swift, S/Tool/FolderIdentity.swift, S/Observe/SessionFeeds.swift, Tests/.../Tool/KanbanHostTests.swift, Tests/.../Tool/CommitSessionTestRun.swift; changed S/Tool/KanbanGraph.swift, S/Tool/Commit.swift, S/Observe/ChangeFeed.swift, S/Observe/ChangeSubscription.swift, S/GraphQL/Schema.swift, README.md, Tests (CommitTests, KanbanGraphTests, ReadmeExamplesTests), IntegrationTests (BoardSmokeTests, ModelVariablesTests).
+    - open: the IntegrationTests package build could not run here: SwiftPM cannot remove IntegrationTests/.build/checkouts/FoundationModelsMetadataRegistry (permission denied). The two integration files now call KanbanHost.shared.session and are not compiled yet.
+    - note: divergence.md §16 proposal text says "real path"; the code keys by device and inode, as the hard rules say. ARCHITECTURE.md does not exist.
+    - next: /review
+  timestamp: 2026-10-14T16:48:13.003757+00:00
 depends_on:
 - 01M4X6X6PS5P524DW45RBSSWN2
 - 01M4X6XKP0Y832GDRHQ1MG22VF
 - 01M4X6YD33YTSBBTG8VZFWTRZR
 - 01M4X6YRT3543TS3S5K6RGZMCJ
-position_column: todo
-position_ordinal: '8480'
+position_column: doing
+position_ordinal: '80'
 title: 'Add KanbanHost: one engine per board for each process, and a session view for each working directory'
 ---
 ## What

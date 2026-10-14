@@ -70,7 +70,6 @@ struct CommitTests {
         CommitSession(
             of: try await LiveGraphApplyTests.load(log),
             inBoard: KanbanGraphTests.boardKey,
-            actingAs: KanbanGraphTests.sessionActor,
             mintingFrom: ids,
             timedBy: { callTime },
             searchingWith: TaskSearch(embeddingWith: nil),
@@ -90,7 +89,7 @@ struct CommitTests {
         timedBy clock: @escaping @Sendable () -> DateTime = { CommitTests.callTime },
         searchingWith search: TaskSearch = TaskSearch(embeddingWith: nil)
     ) -> KanbanContext {
-        KanbanContext(store: store, clock: clock, search: search, feed: ChangeFeed())
+        KanbanContext(store: store, clock: clock, search: search, feed: SessionFeeds())
     }
 
     /// Runs one mutation field that applies one patch to the working copy.

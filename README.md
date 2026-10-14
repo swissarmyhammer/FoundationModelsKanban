@@ -28,26 +28,32 @@ product of [GraphQLSwift/GraphQL](https://github.com/GraphQLSwift/GraphQL) and
 
 ### 1. Open a board in a folder
 
-Make one `KanbanGraph` for the folder that you choose:
+Get a session for the folder that you choose from the host of the process,
+`KanbanHost.shared`:
 
 ```swift
 import Foundation
 import FoundationModelsKanban
 
-let graph = try KanbanGraph(root: URL(filePath: "/path/to/my-project"), actor: nil)
+let graph = try await KanbanHost.shared.session(
+    workingDirectory: URL(filePath: "/path/to/my-project"),
+    actor: nil
+)
 ```
 
 - The folder must be in a git repo. The board is in the `.kanban/` directory of
   the top folder of the worktree (`git rev-parse --show-toplevel`). When
   `/path/to/my-project` is the top folder of a repo, the board is in
-  `/path/to/my-project/.kanban/`, also for a `root` in a subfolder of the repo.
+  `/path/to/my-project/.kanban/`, also for a working directory in a subfolder
+  of the repo.
   In a linked worktree, the board is in the top folder of that worktree.
 - A folder that is not in a git repo has no board. Each call then gives the
   error `NOT_A_REPO`.
-- The engine does not read, change, or replace a `.kanban/` of the old Rust
+- The host does not read, change, or replace a `.kanban/` of the old Rust
   kanban, for example a `.kanban/` with a `boards/` directory or `*.yaml`
-  entity files. Each call that opens such a board gives the error
-  `INCOMPATIBLE_BOARD`. Remove the old board, then try again.
+  entity files. `session` then throws the error `INCOMPATIBLE_BOARD`, and so
+  does each call that reaches such a board. Remove the old board, then try
+  again.
 - In a git repo with an `origin` remote, the key comes from the remote, for
   example `github.com/owner/repo`. In a repo with no remote, the key is
   `local/<root commit>`: the first 12 hex digits of the root commit of the
@@ -57,14 +63,21 @@ let graph = try KanbanGraph(root: URL(filePath: "/path/to/my-project"), actor: n
   not take your staged files. Git must have a `user.name` and a `user.email`
   for this commit.
 - `actor` is the name of the actor of your changes. `nil` uses the name of the
-  user of the operating system.
-- The engine reads nothing until the first call. A query on a folder with no
+  user of the operating system. Give each session its own actor, so that
+  `undo` with no argument stays in its session.
+- `session` loads the board before it returns. A query on a folder with no
   `.kanban/` directory gives an empty board, and it writes no file.
 - The first mutation makes the board. The new board has the default columns
   `todo` (To Do), `doing` (Doing), `review` (Review), and `done` (Done).
 
-Make one engine for each folder, and give it to each client in your process.
-When you do not need the engine any more, call `await graph.close()`.
+The host loads each board one time for the process, also when many sessions
+use the same repo, a symbolic link to it, or a subfolder of it. The board then
+stays in memory, and a file watcher brings each change from outside the
+process into memory. A write of one session shows at once in a read of each
+other session. To give the related boards more search roots, or to give the
+search an embedder, call
+`await KanbanHost.shared.configure(locator:embedder:)` one time, before the
+first session. When a session ends, call `await graph.close()`.
 
 ### 2. Add and list tasks
 
@@ -226,8 +239,8 @@ _ = try await graph.execute(query: """
     """, variables: [:], operationName: nil)
 ```
 
-`close()` stops the file watchers and ends each stream. After `close()`, the
-loop of `watcher` ends:
+`close()` ends each stream of the session. The board stays loaded for the
+other sessions. After `close()`, the loop of `watcher` ends:
 
 ```swift
 await graph.close()
