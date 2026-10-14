@@ -246,6 +246,22 @@ struct ShortIDTests {
         #expect(ulids.allSatisfy { $0.timestamp == Self.fixedTimestamp })
     }
 
+    @Test("The test ULID source with a descending sequence gives each ULID smaller than the ULID before it")
+    func descendingFixedSourceGivesReverseSortedULIDs() {
+        var source = FixedULIDSource(at: Self.fixedTimestamp, generator: .descending)
+        let ulids = (0..<Self.sequenceLength).map { _ in source.makeULID() }
+        #expect(ulids == ulids.sorted(by: >))
+        #expect(Set(ulids).count == Self.sequenceLength)
+        #expect(ulids.allSatisfy { $0.timestamp == Self.fixedTimestamp })
+    }
+
+    @Test("The descending sequence starts at UInt64.max and goes down by one")
+    func descendingSequenceCountsDown() {
+        var generator = SequenceNumberGenerator.descending
+        #expect(generator.next() == UInt64.max)
+        #expect(generator.next() == UInt64.max - 1)
+    }
+
     @Test("The system ULID source gives different ULIDs")
     func systemSourceGivesDifferentULIDs() {
         let source = SystemULIDSource()

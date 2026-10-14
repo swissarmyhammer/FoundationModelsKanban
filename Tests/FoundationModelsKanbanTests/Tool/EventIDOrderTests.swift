@@ -24,6 +24,13 @@ struct EventIDOrderTests {
     /// The number of time steps that the clock moves back between the two calls of the clock test.
     static let clockBackSteps = 5
 
+    /// A ULID source whose ULIDs all have the time of a call, and where each ULID is smaller than the ULID before
+    /// it. Two random ids in one millisecond can come in this order.
+    static let descendingIDs = FixedULIDSource(
+        at: ReplayTests.date(atStep: CommitTests.callStep),
+        generator: .descending
+    )
+
     /// The events that one call wrote, and the largest event id of the log before the call.
     struct CallEvents {
         /// The largest event id of the log before the call.
@@ -92,8 +99,7 @@ struct EventIDOrderTests {
     @Test("Two calls in the same millisecond give ids in call order, also when the source gives smaller ids")
     func sameMillisecondKeepsCallOrder() async throws {
         let directory = try TemporaryDirectory()
-        let ids = DescendingULIDSource(at: ReplayTests.date(atStep: CommitTests.callStep))
-        var (session, task) = try await Self.session(mintingFrom: ids, inRepoAt: directory)
+        var (session, task) = try await Self.session(mintingFrom: Self.descendingIDs, inRepoAt: directory)
         let first = try await Self.run(UndoTests.titleField(Self.firstTitle, of: task), in: &session)
         let second = try await Self.run(UndoTests.titleField(Self.secondTitle, of: task), in: &session)
         Self.expect(first.events, after: first.largestBefore)
@@ -118,8 +124,7 @@ struct EventIDOrderTests {
     @Test("An undo has ids after the ids of its target, also when the source gives smaller ids")
     func undoFollowsTarget() async throws {
         let directory = try TemporaryDirectory()
-        let ids = DescendingULIDSource(at: ReplayTests.date(atStep: CommitTests.callStep))
-        var (session, task) = try await Self.session(mintingFrom: ids, inRepoAt: directory)
+        var (session, task) = try await Self.session(mintingFrom: Self.descendingIDs, inRepoAt: directory)
         let target = try await Self.run(UndoTests.titleField(Self.firstTitle, of: task), in: &session)
         let txn = try #require(target.events.first?.txn)
         let undoField = UndoTests.reverseField(MutationName.undo, with: UndoTests.txnInput(txn))
@@ -208,45 +213,5 @@ struct ClockULIDSource: ULIDSource {
     /// - Returns: A new ULID.
     func makeULID() -> ULID {
         ULID(timestamp: clock.now)
-    }
-}
-
-/// A ULID source for tests whose ULIDs all have one time, and whose random part goes down: each ULID is smaller than
-/// the ULID before it. Two random ids in one millisecond can come in this order.
-struct DescendingULIDSource: ULIDSource {
-    /// The time of each ULID of the source.
-    let timestamp: Date
-
-    /// The generator that gives the random part of each ULID.
-    private var generator = DescendingNumberGenerator()
-
-    /// Makes a source whose ULIDs all have the time `timestamp`.
-    ///
-    /// - Parameter timestamp: The time of each ULID.
-    init(at timestamp: Date) {
-        self.timestamp = timestamp
-    }
-
-    /// Makes the next ULID of the source.
-    ///
-    /// - Returns: A ULID with the fixed time, smaller than each ULID that the source gave before.
-    mutating func makeULID() -> ULID {
-        ULID(timestamp: timestamp, generator: &generator)
-    }
-}
-
-/// A random number generator that gives `UInt64.max`, then each number one smaller.
-///
-/// ``DescendingULIDSource`` uses it so that each ULID of the source is smaller than the ULID before it.
-struct DescendingNumberGenerator: RandomNumberGenerator, Sendable {
-    /// The number that the next call gives.
-    private var nextNumber = UInt64.max
-
-    /// Gives the next number of the sequence.
-    ///
-    /// - Returns: The next number. After 0, the sequence starts again at `UInt64.max`.
-    mutating func next() -> UInt64 {
-        defer { nextNumber &-= 1 }
-        return nextNumber
     }
 }

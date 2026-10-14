@@ -30,6 +30,32 @@ comments:
     - evidence: 6 files — Sources/FoundationModelsKanban/Observe/LiveGraph.swift, Sources/FoundationModelsKanban/Tool/Commit.swift, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift, Tests/FoundationModelsKanbanTests/Tool/EventIDOrderTests.swift (new), Tests/FoundationModelsKanbanTests/Design/MergeTests.swift, Tests/FoundationModelsKanbanTests/GraphQL/QueryFixture.swift; swift test 1228/1228 pass
     - next: /review
   timestamp: 2026-10-14T20:22:00.268295+00:00
+- actor: claude-code
+  id: 01m4y1sfyejmdskyqm1ejw0cvg
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 6 files
+    - test: green — swift test, 1228 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: f452c4c
+    - review: findings — Tests/FoundationModelsKanbanTests/Tool/EventIDOrderTests.swift:241
+  timestamp: 2026-10-14T20:31:19.502502+00:00
+- actor: claude-code
+  id: 01m4y238f7cksmn553hqhagcbn
+  text: |-
+    Review finding EventIDOrderTests.swift:241 reuse/reuse is fixed (TDD: the two new tests did not compile first because the API was missing, then passed).
+    - SequenceNumberGenerator now has init(startingAt:step:) with wrapping add, and the static `descending` sequence (UInt64.max, then one smaller each time).
+    - FixedULIDSource.init(at:generator:) takes the generator; the default sequence goes up as before.
+    - DescendingNumberGenerator and DescendingULIDSource are deleted. DescendingULIDSource was a near-copy of FixedULIDSource too, so the same cause is removed from the whole file. EventIDOrderTests.descendingIDs replaces the two identical call-site lines.
+    - New tests in ShortIDTests: the descending source gives ULIDs in reverse sort order, and the descending sequence starts at UInt64.max and goes down by one.
+    - swift test: 1230 tests in 91 suites passed; the only compiler warning is the accepted mlx "missing creator" warning.
+  timestamp: 2026-10-14T20:36:39.527600+00:00
+- actor: claude-code
+  id: 01m4y23a5j92a1dy5atcf9ff97
+  text: |-
+    ### implement — changed
+    - evidence: 3 files — Sources/FoundationModelsKanban/Identity/ULIDSource.swift, Tests/FoundationModelsKanbanTests/Tool/EventIDOrderTests.swift, Tests/FoundationModelsKanbanTests/Identity/ShortIDTests.swift; swift test 1230/1230 pass
+    - next: /review
+  timestamp: 2026-10-14T20:36:41.266095+00:00
 position_column: doing
 position_ordinal: '80'
 title: Make event ids increase from one call to the next
@@ -58,3 +84,12 @@ Change: start each call after the largest event id in the log of each board that
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-14 15:25)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 6 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Tests/FoundationModelsKanbanTests/Tool/EventIDOrderTests.swift:241` `reuse/reuse` — DescendingNumberGenerator is a near-copy of the existing SequenceNumberGenerator. Two generators that differ only in direction duplicate the same RandomNumberGenerator logic. Extend the existing generator with a direction or start parameter instead. Reuse SequenceNumberGenerator and give it a descending option, or pass the starting value and step as parameters. Delete DescendingNumberGenerator.
