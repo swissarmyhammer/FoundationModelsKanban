@@ -84,16 +84,6 @@ struct ResponseWarningsTests {
         return warnings.map { warning in (warning["message"] as? String, warning["code"] as? String) }
     }
 
-    /// Runs one document through the public schema with the test field, on a fixture board, with no engine and no
-    /// serial gate.
-    ///
-    /// - Parameter document: The GraphQL document.
-    /// - Returns: The response JSON text.
-    static func respondWithoutGate(to document: String) async throws -> String {
-        try await PublicSchema(extendedWith: addWarnField)
-            .respond(to: document, context: QueryFixture.context(reading: QueryFixture().graph))
-    }
-
     // MARK: - Tests
 
     @Test("A warning of a call is in extensions.warnings with its message and its code")
@@ -113,7 +103,8 @@ struct ResponseWarningsTests {
         let document = #"""
             { first: warn(message: "\#(Self.firstMessage)") second: warn(message: "\#(Self.secondMessage)") }
             """#
-        let messages = try Self.warnings(of: await Self.respondWithoutGate(to: document)).compactMap(\.message)
+        let response = try await QueryFixture().respond(to: document, extendedWith: Self.addWarnField)
+        let messages = try Self.warnings(of: response).compactMap(\.message)
         #expect(messages.sorted() == [Self.firstMessage, Self.secondMessage].sorted())
     }
 
@@ -127,7 +118,10 @@ struct ResponseWarningsTests {
 
     @Test("A call with a rewrite and no warning has extensions.rewrites and no extensions.warnings")
     func rewriteWithoutWarningGivesNoWarningsKey() async throws {
-        let response = try await Self.respondWithoutGate(to: "{ board { title: name } tasks { totalCount } }")
+        let response = try await QueryFixture().respond(
+            to: "{ board { title: name } tasks { totalCount } }",
+            extendedWith: Self.addWarnField
+        )
         let extensions = try #require(KanbanGraphTests.object(of: response)["extensions"] as? [String: Any])
         #expect(extensions["rewrites"] != nil)
         #expect(extensions["warnings"] == nil)
@@ -146,8 +140,9 @@ struct ResponseWarningsTests {
 
     @Test("Two runs of one schema at the same time, with no serial gate, each get only their own warning")
     func concurrentRunsOfSchemaKeepTheirWarnings() async throws {
-        async let first = Self.respondWithoutGate(to: Self.warnQuery(Self.firstMessage))
-        async let second = Self.respondWithoutGate(to: Self.warnQuery(Self.secondMessage))
+        let fixture = try QueryFixture()
+        async let first = fixture.respond(to: Self.warnQuery(Self.firstMessage), extendedWith: Self.addWarnField)
+        async let second = fixture.respond(to: Self.warnQuery(Self.secondMessage), extendedWith: Self.addWarnField)
         let responses = try await (first, second)
         #expect(try Self.warnings(of: responses.0).map(\.message) == [Self.firstMessage])
         #expect(try Self.warnings(of: responses.1).map(\.message) == [Self.secondMessage])

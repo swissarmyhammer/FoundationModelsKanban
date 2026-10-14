@@ -1120,9 +1120,12 @@ extension API where ContextType == KanbanContext {
             } catch let error as GraphQLError {
                 return try Self.errorResponse(error, formattedWith: formatting)
             }
-            let warnings = await context.warnings.take()
-            return try RewriteResponse(result: result, rewrites: rewritten.rewrites, warnings: warnings)
-                .encoded(formattedWith: formatting)
+            return try RewriteResponse.encoded(
+                result: result,
+                rewrites: rewritten.rewrites,
+                warnings: await context.warnings.take(),
+                formattedWith: formatting
+            )
         }
     }
 
@@ -1152,12 +1155,12 @@ extension API where ContextType == KanbanContext {
         let single: (String) -> AsyncThrowingStream<String, Error> = AsyncThrowingStream.single
         return try await rewriting(document, formattedWith: formatting, answeringFailureWith: single) { rewritten in
             let encode: @Sendable (GraphQLResult) throws -> String = { result in
-                try RewriteResponse(
+                try RewriteResponse.encoded(
                     result: rewritten.codedCallerResult(from: result),
                     rewrites: rewritten.rewrites,
-                    warnings: []
+                    warnings: [],
+                    formattedWith: formatting
                 )
-                .encoded(formattedWith: formatting)
             }
             guard rewritten.ties.isEmpty else {
                 return .single(try encode(GraphQLResult(errors: rewritten.ties)))
@@ -1214,8 +1217,12 @@ extension API where ContextType == KanbanContext {
         _ error: GraphQLError,
         formattedWith formatting: GraphQLJSONEncoder.OutputFormatting
     ) throws -> String {
-        let result = GraphQLResult(errors: [error.codedAsParseFailure()])
-        return try RewriteResponse(result: result, rewrites: [], warnings: []).encoded(formattedWith: formatting)
+        try RewriteResponse.encoded(
+            result: GraphQLResult(errors: [error.codedAsParseFailure()]),
+            rewrites: [],
+            warnings: [],
+            formattedWith: formatting
+        )
     }
 
     /// Runs a rewritten document, and gives the result in the form of the
@@ -1328,16 +1335,27 @@ private struct RewriteResponse: Encodable {
         try container.encode(extensions, forKey: .extensions)
     }
 
-    /// Encodes the response as JSON text.
+    /// Makes the response of a result and encodes it as JSON text. Each response of `API.respond` and of
+    /// `API.subscribe` comes from this one step.
     ///
-    /// - Parameter formatting: The formatting of the JSON text, for example `.sortedKeys`. Slashes are never
-    ///   escaped, so a ref such as `tag/bug` stays easy to read.
+    /// - Parameters:
+    ///   - result: The result, already in the form of the document that the caller wrote.
+    ///   - rewrites: The changes of the name rewrite. An empty list gives no `extensions.rewrites` key.
+    ///   - warnings: The warnings of the run. An empty list gives no `extensions.warnings` key.
+    ///   - formatting: The formatting of the JSON text, for example `.sortedKeys`. Slashes are never escaped, so a
+    ///     ref such as `tag/bug` stays easy to read.
     /// - Returns: The JSON text.
     /// - Throws: An error from the JSON encoder.
-    func encoded(formattedWith formatting: GraphQLJSONEncoder.OutputFormatting) throws -> String {
+    static func encoded(
+        result: GraphQLResult,
+        rewrites: [NameRewrite],
+        warnings: [ResponseWarning],
+        formattedWith formatting: GraphQLJSONEncoder.OutputFormatting
+    ) throws -> String {
+        let response = RewriteResponse(result: result, rewrites: rewrites, warnings: warnings)
         let encoder = GraphQLJSONEncoder()
         encoder.outputFormatting = formatting.union(.withoutEscapingSlashes)
-        return try String(decoding: encoder.encode(self), as: UTF8.self)
+        return try String(decoding: encoder.encode(response), as: UTF8.self)
     }
 }
 

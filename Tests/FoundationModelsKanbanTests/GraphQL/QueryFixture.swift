@@ -100,18 +100,22 @@ struct QueryFixture {
         )
     }
 
-    /// Runs one GraphQL document against the board through the public schema.
+    /// Runs one GraphQL document against the board through the public schema, with no engine and no serial gate.
     ///
     /// - Parameters:
     ///   - document: The GraphQL document.
     ///   - search: The task search of the call. The default search has no task.
+    ///   - extend: Adds more fields to the public schema. The default adds no field.
     /// - Returns: The response as JSON text.
-    /// - Throws: An error that is not a GraphQL error.
+    /// - Throws: An error that is not a GraphQL error, or an error from Graphiti when a type of the schema is not
+    ///   valid.
     func respond(
         to document: String,
-        searchingWith search: TaskSearch = TaskSearch(embeddingWith: nil)
+        searchingWith search: TaskSearch = TaskSearch(embeddingWith: nil),
+        extendedWith extend: SchemaExtension = PublicSchema.noExtension
     ) async throws -> String {
-        try await PublicSchema().respond(to: document, context: Self.context(reading: graph, searchingWith: search))
+        try await PublicSchema(extendedWith: extend)
+            .respond(to: document, context: Self.context(reading: graph, searchingWith: search))
     }
 
     /// Makes a task search that indexes the live tasks of the board.

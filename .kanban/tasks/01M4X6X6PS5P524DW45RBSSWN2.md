@@ -34,6 +34,37 @@ comments:
     - evidence: 9 files — Sources/FoundationModelsKanban/GraphQL/ResponseWarnings.swift (new), Sources/FoundationModelsKanban/GraphQL/Schema.swift, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift, Sources/FoundationModelsKanban/Tool/KanbanTool.swift, Tests/FoundationModelsKanbanTests/GraphQL/ResponseWarningsTests.swift (new), Tests/FoundationModelsKanbanTests/Tool/KanbanGraphTests.swift, Tests/FoundationModelsKanbanTests/Tool/KanbanToolTests.swift, Package.swift, plan.md. `swift test`: 1136 tests in 82 suites passed, 0 compiler warnings outside the accepted mlx ones.
     - next: /review
   timestamp: 2026-10-14T13:11:34.336954+00:00
+- actor: claude-code
+  id: 01m4x916a5ftrtdn64y5ktdkc7
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (7769edb); 2 findings, 2 confirmed, 0 refuted — Sources/FoundationModelsKanban/GraphQL/Schema.swift:1155, Tests/FoundationModelsKanbanTests/GraphQL/ResponseWarningsTests.swift:92
+    - next: implement the 2 open items in "Review Findings (2026-10-14 08:13)", then review again.
+  timestamp: 2026-10-14T13:18:37.381820+00:00
+- actor: claude-code
+  id: 01m4x91kyvdgq6695n7haq69n3
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 9 files (plan.md edit reverted by the orchestrator: plan.md is frozen)
+    - test: green — swift test, 1136 passed, 0 failed, 0 skipped
+    - commit: 7769edb
+    - review: findings — Sources/FoundationModelsKanban/GraphQL/Schema.swift:1155, Tests/FoundationModelsKanbanTests/GraphQL/ResponseWarningsTests.swift:92
+  timestamp: 2026-10-14T13:18:51.355214+00:00
+- actor: claude-code
+  id: 01m4x99hg21trbz2htzszd0ngh
+  text: |-
+    Review findings fixed.
+    - Schema.swift duplication: the one step that makes and encodes a response is now `RewriteResponse.encoded(result:rewrites:warnings:formattedWith:)` (a static of the private type). It replaces the instance `encoded(formattedWith:)`. `respond`, the `subscribe` encode closure, and `errorResponse` call it. The subscribe site keeps the `codedCallerResult` map.
+    - What did not work: a `private static func encodedResponse` in the `extension API where ContextType == KanbanContext`. The `@Sendable` encode closure of `subscribe` then captures `Self.Type` of the generic protocol, and the compiler gives the warning "capture of non-Sendable type 'Self.Type' in an isolated closure". A static on the concrete `RewriteResponse` has no such capture.
+    - ResponseWarningsTests reuse: `QueryFixture.respond` now has `extendedWith extend: SchemaExtension = PublicSchema.noExtension`. `respondWithoutGate` is removed; the warnings tests call `QueryFixture().respond(to:extendedWith:)`.
+  timestamp: 2026-10-14T13:23:10.978137+00:00
+- actor: claude-code
+  id: 01m4x99kg8s32qtfnzw9q1yg08
+  text: |-
+    ### implement — changed
+    - evidence: 3 files — Sources/FoundationModelsKanban/GraphQL/Schema.swift, Tests/FoundationModelsKanbanTests/GraphQL/QueryFixture.swift, Tests/FoundationModelsKanbanTests/GraphQL/ResponseWarningsTests.swift. `swift test`: 1136 tests in 82 suites passed; only the accepted SwiftPM "missing creator" warning. 2/2 findings checked.
+    - next: /review
+  timestamp: 2026-10-14T13:23:13.032604+00:00
 position_column: doing
 position_ordinal: '80'
 title: Add one warnings list to each GraphQL response
@@ -62,3 +93,13 @@ divergence.md §14 "Warnings" (DECIDED with P1–P4): use one list for all warni
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-14 08:13)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 8 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Sources/FoundationModelsKanban/GraphQL/Schema.swift:1155` `duplication/duplication` — The subscribe encode closure repeats the wrap step that respond and errorResponse also use: build RewriteResponse, then call encoded(formattedWith:). A fix to this step must be made at each copy, and the copies can drift apart. Add one private helper, for example encodedResponse(result:rewrites:warnings:formattedWith:), that builds RewriteResponse and encodes it. Call it from the three sites. Keep the codedCallerResult mapping at the subscribe site, so the helper takes an already mapped GraphQLResult.
+- [x] `Tests/FoundationModelsKanbanTests/GraphQL/ResponseWarningsTests.swift:92` `reuse/reuse` — `respondWithoutGate` is a near-match of the existing `QueryFixture.respond`, which already runs a document through `PublicSchema()` with a fixture context. The new helper copies that call and differs only in the schema it builds. The existing helper should take the schema extension as a parameter, so the test calls one helper, not a parallel copy. Add an `extendedWith` parameter with the default `PublicSchema.noExtension` to `QueryFixture.respond` (for example `respond(to:searchingWith:extendedWith:)`), and call it from the warnings tests. If the context shape differs too much for that, keep `respondWithoutGate` and note in its doc comment why the existing fixture does not fit.
