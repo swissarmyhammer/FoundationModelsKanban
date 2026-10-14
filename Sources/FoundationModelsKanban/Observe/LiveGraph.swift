@@ -29,6 +29,12 @@ struct LiveGraph: Sendable {
     /// entry.
     private(set) var signatures: [LocalRef: FileSignature]
 
+    /// The largest event id that the graph read or wrote, or `nil` for a board with no event. Each call starts its ids
+    /// after this id, so that the ids of the board increase from one call to the next (divergence.md S3). Each load,
+    /// each commit, and each apply of changed files updates it, also when the files come from a different process or
+    /// a merge. The value never goes down: an apply that removes events keeps it.
+    private(set) var largestEventID: ULID?
+
     /// The changes of the graph that added events, in the order that they happened, until
     /// ``takeChanges()`` takes them. The engine makes the `Change` values of the change feed from them (plan.md §6.7).
     private var pendingChanges: [LiveGraphChange] = []
@@ -85,7 +91,13 @@ struct LiveGraph: Sendable {
         /// - Returns: The live graph of the board.
         func merged() -> LiveGraph {
             let loaded = board.merged()
-            return LiveGraph(loader: loader, graph: loaded.graph, events: loaded.events, signatures: signatures)
+            return LiveGraph(
+                loader: loader,
+                graph: loaded.graph,
+                events: loaded.events,
+                signatures: signatures,
+                largestEventID: loaded.events.last?.id
+            )
         }
     }
 
@@ -118,9 +130,10 @@ struct LiveGraph: Sendable {
         }
         let (before, knownIDs) = (graph, Set(events.map(\.id)))
         if refs.count * Self.fullReloadDivisor > signatures.count {
-            let pending = pendingChanges
+            let (pending, largest) = (pendingChanges, largestEventID)
             self = try await Self.load(using: loader)
             pendingChanges = pending
+            raiseLargestEventID(to: largest)
         } else {
             try await reload(filesOf: refs)
         }
@@ -220,7 +233,18 @@ struct LiveGraph: Sendable {
         return Dictionary(uniqueKeysWithValues: pairs)
     }
 
-    /// Replaces the graph and the event list, and records the signatures of the changed files.
+    /// Raises ``largestEventID`` to an id when the id is larger. A smaller id changes nothing.
+    ///
+    /// - Parameter id: The id, or `nil` for no id.
+    private mutating func raiseLargestEventID(to id: ULID?) {
+        guard let id, largestEventID.map({ largest in id > largest }) ?? true else {
+            return
+        }
+        largestEventID = id
+    }
+
+    /// Replaces the graph and the event list, records the signatures of the changed files, and raises
+    /// ``largestEventID`` to the largest id of the new event list.
     ///
     /// - Parameters:
     ///   - newGraph: The new graph.
@@ -234,6 +258,7 @@ struct LiveGraph: Sendable {
     ) {
         graph = newGraph
         events = newEvents
+        raiseLargestEventID(to: newEvents.last?.id)
         for (ref, signature) in newSignatures {
             signatures[ref] = signature
         }

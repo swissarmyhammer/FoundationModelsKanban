@@ -111,14 +111,29 @@ extension Design {
         /// - Returns: The merged branch. Its calls make ids at ``mergedStep``.
         static func merge(_ incoming: Branch, into base: Branch) async throws -> Branch {
             let copy = try copyBoard(of: base)
-            for ref in try incoming.log.nodeFileSignatures().keys {
-                let known = Set(try copy.log.readLog(of: ref).events)
-                let missing = try incoming.log.readLog(of: ref).events.filter { event in !known.contains(event) }
-                if !missing.isEmpty {
-                    try copy.log.append(contentsOf: missing, toLogOf: ref)
-                }
-            }
+            try unionMerge(incoming.log, into: copy.log)
             return try await loadBranch(in: copy.directory, of: copy.log, mintingAtStep: mergedStep)
+        }
+
+        /// Merges the logs of one board into the logs of a different board with the `union` driver: each log file of
+        /// `log` gets each line of the same file of `incoming` that it does not hold.
+        ///
+        /// - Parameters:
+        ///   - incoming: The event log whose new lines the merge appends.
+        ///   - log: The event log that the merge changes.
+        /// - Returns: The local refs of the nodes whose log file changed, in the sort order of their refs.
+        @discardableResult
+        static func unionMerge(_ incoming: EventLog, into log: EventLog) throws -> [LocalRef] {
+            let refs = try incoming.nodeFileSignatures().keys.sorted { lhs, rhs in lhs.description < rhs.description }
+            return try refs.compactMap { ref in
+                let known = Set(try log.readLog(of: ref).events)
+                let missing = try incoming.readLog(of: ref).events.filter { event in !known.contains(event) }
+                guard !missing.isEmpty else {
+                    return nil
+                }
+                try log.append(contentsOf: missing, toLogOf: ref)
+                return ref
+            }
         }
 
         /// Runs the setup fields on the main branch, makes the other branch, and runs the fields of each branch. Each

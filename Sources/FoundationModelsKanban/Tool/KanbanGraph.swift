@@ -696,7 +696,11 @@ public actor KanbanGraph {
     private func eventBoard(of session: CommitSession, reading related: RelatedBoards) -> EventBoard {
         EventBoard(
             work: session.makeWorkingCopy(
-                stampedBy: EventStamp(actingAs: sessionActor.ref, mintingFrom: host.configuration.ids)
+                stampedBy: EventStamp(
+                    actingAs: sessionActor.ref,
+                    mintingFrom: host.configuration.ids,
+                    after: session.live.largestEventID
+                )
             ),
             key: session.key.description,
             source: session.source,

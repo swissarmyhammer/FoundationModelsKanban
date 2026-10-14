@@ -10,6 +10,11 @@ import ULID
 /// The event ids of one run increase. Replay sorts the events by id, and two patches of one body must apply in the
 /// order that the call made them. A ULID source can give an id that is not larger than the last one (a system clock
 /// that goes back, or two random ids in one millisecond). The stamp then gives the id after the last one.
+///
+/// The ids also increase from one call to the next (divergence.md S3). The transaction ULID is larger than the largest
+/// event id of the board, and ``advance(past:)`` makes each later event id larger than the largest event id of each
+/// other board that the run changes. Thus the replay order after a union merge of two copies of a board is the call
+/// order, and an undo comes after its target.
 struct EventStamp: Sendable {
     /// The transaction ULID of the run. All patches of the run have it (plan.md §6.5).
     let txn: ULID
@@ -28,12 +33,26 @@ struct EventStamp: Sendable {
     /// - Parameters:
     ///   - actor: The local ref of the actor of the call.
     ///   - ids: The source of the transaction ULID and the event ids.
-    init(actingAs actor: LocalRef, mintingFrom ids: any ULIDSource) {
+    ///   - largest: The largest event id of the board of the run, or `nil` for a board with no event. The
+    ///     transaction ULID and each event id of the run are larger.
+    init(actingAs actor: LocalRef, mintingFrom ids: any ULIDSource, after largest: ULID?) {
         var source = ids
-        txn = source.makeULID()
+        let minted = source.makeULID()
+        txn = largest.map { floor in Self.id(minted, after: floor) } ?? minted
         self.actor = actor
         self.ids = source
         lastID = txn
+    }
+
+    /// Makes each later event id of the run larger than an id: the largest event id of a different board that the
+    /// run changes. An id that is not larger than the last id changes nothing.
+    ///
+    /// - Parameter largest: The largest event id of the board, or `nil` for a board with no event.
+    mutating func advance(past largest: ULID?) {
+        guard let largest, largest > lastID else {
+            return
+        }
+        lastID = largest
     }
 
     /// Makes the event of one patch. The event has no `ops` yet: the commit writes the `ops` of the full call.
@@ -60,9 +79,18 @@ struct EventStamp: Sendable {
     ///
     /// - Returns: The id.
     private mutating func nextID() -> ULID {
-        let minted = ids.makeULID()
-        lastID = minted > lastID ? minted : lastID.successor
+        lastID = Self.id(ids.makeULID(), after: lastID)
         return lastID
+    }
+
+    /// Gives a minted id when it is larger than a floor, else the id after the floor.
+    ///
+    /// - Parameters:
+    ///   - minted: The id that the source gave.
+    ///   - floor: The id that the result must be larger than.
+    /// - Returns: The id.
+    private static func id(_ minted: ULID, after floor: ULID) -> ULID {
+        minted > floor ? minted : floor.successor
     }
 }
 
@@ -112,6 +140,10 @@ struct WorkingCopy: Sendable {
     /// The envelope values of the events of the run.
     private(set) var stamp: EventStamp
 
+    /// The largest event id of the board at the start of the run, or `nil` for a board with no event. Each event that
+    /// the run makes for the board has a larger id (divergence.md S3).
+    let largestLiveID: ULID?
+
     /// The local ref of the session actor when it is a live actor of the graph at the start of the run, else `nil`.
     /// An `addTask` with no assignee assigns this actor (plan.md §6, "Assignees"). An actor that the call itself makes
     /// is not known before the call, so it is not assigned.
@@ -132,10 +164,14 @@ struct WorkingCopy: Sendable {
     ///   - graph: The graph at the start of the run. Each node must be the fold of its events in `events`.
     ///   - events: The events of the graph, in the order of their ids.
     ///   - stamp: The envelope values of the events of the run. Its actor is the session actor.
-    init(graph: Graph, events: [Event], stamp: EventStamp) {
+    ///   - largest: The largest event id of the board, or `nil` for a board with no event. Each event that the run
+    ///     makes for the board gets a larger id.
+    init(graph: Graph, events: [Event], stamp: EventStamp, after largest: ULID?) {
         self.graph = graph
         liveEvents = events
         self.stamp = stamp
+        self.stamp.advance(past: largest)
+        largestLiveID = largest
         let isKnown = graph.node(for: stamp.actor)?.state.fields.isDeleted == false
         knownSessionActor = isKnown ? stamp.actor : nil
     }
@@ -171,8 +207,9 @@ struct WorkingCopy: Sendable {
     /// §6.6, one transaction, many boards).
     ///
     /// The field continues the stamp of this working copy, so all patches of the call have one `txn` and their
-    /// event ids increase over all boards. This working copy records the operation of the field, because it holds
-    /// the `ops` of the full call. When the body throws, neither working copy changes.
+    /// event ids increase over all boards. Each event id of the field is also larger than the largest event id of the
+    /// other board (divergence.md S3). This working copy records the operation of the field, because it holds the
+    /// `ops` of the full call. When the body throws, neither working copy changes.
     ///
     /// - Parameters:
     ///   - operation: The name of the public mutation of the field, for the `ops` of the events.
@@ -189,6 +226,7 @@ struct WorkingCopy: Sendable {
     ) throws(Failure) -> Value {
         var field = other
         field.stamp = stamp
+        field.stamp.advance(past: other.largestLiveID)
         field.otherBoards = boards
         let value = try body(&field)
         if field.kept.count > other.kept.count {
@@ -454,7 +492,7 @@ struct CommitSession: Sendable {
     ) async throws -> (response: Response, work: WorkingCopy, relatedWork: [RelatedWork]) {
         while true {
             let store = BoardStore(
-                working: makeWorkingCopy(stampedBy: EventStamp(actingAs: actor.ref, mintingFrom: ids)),
+                working: makeWorkingCopy(stampedBy: makeStamp(actingAs: actor)),
                 boardKey: key.description,
                 actingAs: actor,
                 from: source,
@@ -506,13 +544,23 @@ struct CommitSession: Sendable {
         }
     }
 
+    /// Makes the stamp of a new run of a call on this board: its transaction ULID and each event id are larger than
+    /// the largest event id of the board (divergence.md S3).
+    ///
+    /// - Parameter actor: The session actor: the actor of each event of the call.
+    /// - Returns: The stamp.
+    private func makeStamp(actingAs actor: SessionActor) -> EventStamp {
+        EventStamp(actingAs: actor.ref, mintingFrom: ids, after: live.largestEventID)
+    }
+
     /// Makes a working copy of the live graph, with an empty board in memory when the board has no board node.
     ///
     /// - Parameter stamp: The envelope values of the events of the run. A working copy of a related board gets the
-    ///   stamp of the run, so that its patches continue the transaction of the call.
+    ///   stamp of the run, so that its patches continue the transaction of the call. Each event that the run makes
+    ///   for this board gets an id larger than the largest event id of the board.
     /// - Returns: The working copy.
     func makeWorkingCopy(stampedBy stamp: EventStamp) -> WorkingCopy {
-        WorkingCopy(graph: displayGraph, events: live.events, stamp: stamp)
+        WorkingCopy(graph: displayGraph, events: live.events, stamp: stamp, after: live.largestEventID)
     }
 
     /// Writes the kept patches of a run under the locks of the boards that the run changed or read for a graph rule

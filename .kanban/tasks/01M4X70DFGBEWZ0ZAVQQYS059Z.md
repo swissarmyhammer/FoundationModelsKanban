@@ -28,8 +28,17 @@ comments:
     - evidence: 3 files — Sources/FoundationModelsKanban/Events/EventLog.swift, Sources/FoundationModelsKanban/Tool/Commit.swift, Tests/FoundationModelsKanbanTests/Observe/BoardWatcherTests.swift; `swift test` 1223 tests in 90 suites passed
     - next: /review
   timestamp: 2026-10-14T19:57:29.261282+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4y08ddsdrt828knafvk6yn5
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 3 files
+    - test: green — swift test, 1223 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: f2aaf43
+    - review: clean — none
+  timestamp: 2026-10-14T20:04:31.289168+00:00
+position_column: done
+position_ordinal: e680
 title: Start the full compare when the watcher reports a directory inside .kanban
 ---
 ## What

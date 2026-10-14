@@ -176,10 +176,11 @@ extension BoardStore {
     static func fixture(of graph: Graph, inBoard key: String) -> BoardStore {
         let stamp = EventStamp(
             actingAs: ReplayTests.actor,
-            mintingFrom: FixedULIDSource(at: ReplayTests.date(atStep: .zero))
+            mintingFrom: FixedULIDSource(at: ReplayTests.date(atStep: .zero)),
+            after: nil
         )
         return BoardStore(
-            working: WorkingCopy(graph: graph, events: [], stamp: stamp),
+            working: WorkingCopy(graph: graph, events: [], stamp: stamp, after: nil),
             boardKey: key,
             actingAs: KanbanGraphTests.sessionActor
         )
