@@ -54,8 +54,17 @@ comments:
     - evidence: 4 files — Sources/FoundationModelsKanban/Body/MarkdownCode.swift, Tests/FoundationModelsKanbanTests/Body/MarkdownCodeTests.swift, Tests/FoundationModelsKanbanTests/Derived/DependencyMarkersTests.swift, Tests/FoundationModelsKanbanTests/Tags/TagMarkersTests.swift; swift test: 1267 passed, 0 failed; 2 of 2 review findings checked
     - next: /review
   timestamp: 2026-10-14T23:19:00.455004+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4ybqtea4nh1t85jphabeby8
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 4 files (2 findings fixed)
+    - test: green — swift test, 1267 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: b72da65
+    - review: clean — none
+  timestamp: 2026-10-14T23:25:10.474552+00:00
+position_column: done
+position_ordinal: ed80
 title: Skip task URLs in code blocks, inline code, and headings for dependency markers
 ---
 ## What

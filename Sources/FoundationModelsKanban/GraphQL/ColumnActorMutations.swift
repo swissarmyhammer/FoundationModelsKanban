@@ -318,6 +318,7 @@ extension KanbanResolver {
     /// - Returns: The node after the change.
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no node of the type has the id.
     ///   ``KanbanError/columnNotEmpty(column:liveTaskCount:)`` when a deleted column shows live tasks.
+    ///   ``KanbanError/dependencyCycle(path:)`` when an undeleted task closes a `dependsOn` cycle.
     func changeDeleted<Object: SlotNodeObject>(
         to isDeleted: Bool,
         ofType type: PatchNodeType,
@@ -440,15 +441,18 @@ extension WorkingCopy {
         try apply(PatchInput(changing: ref, updating: values, body: body, from: graph.body(of: ref)), at: time)
     }
 
-    /// Writes a `delete` patch on a node. A delete of a column obeys the graph rule of plan.md §3.3, rule 5.
+    /// Writes a `delete` patch on a node. A delete of a column obeys the graph rule of plan.md §3.3, rule 5. An
+    /// undelete of a tombstoned task obeys the dependency rule of plan.md §3.3, rule 6: the edges of a tombstone do
+    /// not count, so the task can close a `dependsOn` cycle when it is live again (divergence.md X7).
     ///
     /// - Parameters:
     ///   - isDeleted: `true` for a delete, `false` for an undelete.
     ///   - ref: The local ref of the node.
     ///   - key: The current key of the board, for the read view of the rule.
     ///   - time: The time of the change.
-    /// - Throws: ``KanbanError/columnNotEmpty(column:liveTaskCount:)`` when a deleted column shows live tasks. An
-    ///   ``EventError`` when the patch breaks a rule of the log.
+    /// - Throws: ``KanbanError/columnNotEmpty(column:liveTaskCount:)`` when a deleted column shows live tasks.
+    ///   ``KanbanError/dependencyCycle(path:)`` when an undeleted task closes a cycle. An ``EventError`` when the
+    ///   patch breaks a rule of the log.
     fileprivate mutating func setDeleted(
         _ isDeleted: Bool,
         of ref: LocalRef,
@@ -458,7 +462,12 @@ extension WorkingCopy {
         if isDeleted, ref.nodeType == .column {
             try checkEmpty(column: ref, inBoard: key)
         }
+        let isTombstone = graph.node(for: ref)?.state.fields.isDeleted == true
+        let makesTaskLive = !isDeleted && ref.nodeType == .task && isTombstone
         try apply(PatchInput(node: ref, delete: isDeleted), at: time)
+        if makesTaskLive {
+            try checkNoCycle(throughTask: ref, inBoard: key)
+        }
     }
 
     /// Checks that a column shows no live task, so that a delete can make it a tombstone (plan.md §3.3, rule 5). The

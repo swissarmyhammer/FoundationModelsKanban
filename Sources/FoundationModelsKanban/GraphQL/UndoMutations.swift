@@ -282,6 +282,10 @@ extension WorkingCopy {
 
     /// Checks that the inverse patches make no `dependsOn` cycle and no rename cycle (plan.md §3.3, rule 6, §6.2).
     ///
+    /// A task gets the cycle check when its inverse changes the body, adds a `dependsOn` edge, or makes a tombstone
+    /// live again: the edges of a tombstone do not count, so a task that is live again can close a cycle
+    /// (divergence.md X7).
+    ///
     /// - Parameters:
     ///   - inverses: The inverse patches that the working copy applied.
     ///   - key: The current key of the board.
@@ -289,13 +293,22 @@ extension WorkingCopy {
     private mutating func checkCycles(after inverses: [NodeInverse], inBoard key: String) throws(KanbanError) {
         for inverse in inverses {
             let node = inverse.node
-            if node.nodeType == .task, inverse.bodyChange != nil || inverse.parts.add[PropertyName.dependsOn] != nil {
+            if node.nodeType == .task, inverse.canCloseCycle {
                 try checkNoCycle(throughTask: node, inBoard: key)
             }
             if node.nodeType == .tag, inverse.parts.set[PropertyName.renamedTo] != nil {
                 try checkNoRenameCycle(fromTagAt: graph.slot(for: node))
             }
         }
+    }
+}
+
+extension NodeInverse {
+    /// `true` when the inverse can close a `dependsOn` cycle through its task: it changes the body, which can hold
+    /// dependency markers, it adds a `dependsOn` edge, or it makes a tombstone live again (`delete: false`), so that
+    /// the edges of the task count again.
+    fileprivate var canCloseCycle: Bool {
+        bodyChange != nil || parts.add[PropertyName.dependsOn] != nil || parts.delete == false
     }
 }
 

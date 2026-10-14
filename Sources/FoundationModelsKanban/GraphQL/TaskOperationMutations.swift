@@ -330,13 +330,16 @@ extension KanbanResolver {
         try await changeDeleted(to: true, ofType: .task, as: MutationName.deleteTask, context: context, arguments)
     }
 
-    /// Resolves `Mutation.undeleteTask`: makes a tombstoned task live again. A live task does not change.
+    /// Resolves `Mutation.undeleteTask`: makes a tombstoned task live again. A live task does not change. The task
+    /// obeys the dependency rule of plan.md §3.3, rule 6, the same as a write of `dependsOn`.
     ///
     /// - Parameters:
     ///   - context: The context of the call.
     ///   - arguments: The task.
     /// - Returns: The live task.
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no task has the id.
+    ///   ``KanbanError/dependencyCycle(path:)`` when the live task closes a `dependsOn` cycle. The call then writes
+    ///   nothing, and the task stays a tombstone.
     fileprivate func undeleteTask(
         context: KanbanContext,
         arguments: InputArguments<NodeReferenceInput>
