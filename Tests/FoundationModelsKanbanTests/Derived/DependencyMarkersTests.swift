@@ -147,7 +147,7 @@ struct DependencyMarkersTests {
     @Test("A marker ends before Markdown punctuation and before the end of a sentence")
     func markerEndsBeforePunctuation() throws {
         let url = Self.url(ofTask: Self.targetULID)
-        let mentions = ["(\(url)),", "<\(url)>,", "[link](\(url)).", "See \(url).", "\"\(url)\";", "`\(url)`!"]
+        let mentions = ["(\(url)),", "<\(url)>,", "[link](\(url)).", "See \(url).", "\"\(url)\";", "\(url)!"]
         let body = mentions.joined(separator: " ")
         let markers = DependencyMarkers.all(in: body)
         let target = try Self.uri(ofTask: Self.targetULID)
@@ -168,6 +168,28 @@ struct DependencyMarkersTests {
         #expect(DependencyMarkers.all(in: body).isEmpty)
     }
 
+    @Test(
+        "A task URL in a fenced code block, in inline code, or in a heading is not a marker",
+        arguments: [
+            "Example:\n```\n\(url(ofTask: targetULID))\n```\n",
+            "Example:\n  ~~~swift\n  let link = \"\(url(ofTask: targetULID))\"\n  ~~~",
+            "Write `\(url(ofTask: targetULID))` to make a dependency.",
+            "## Blocked by \(url(ofTask: targetULID))",
+        ]
+    )
+    func urlInCodeOrHeadingIsNotMarker(body: String) {
+        #expect(DependencyMarkers.all(in: body).isEmpty)
+    }
+
+    @Test("A task URL in normal text after a closed fence and next to inline code is a marker")
+    func urlInNormalTextIsMarker() throws {
+        let url = Self.url(ofTask: Self.targetULID)
+        let body = "```\n`\(url)`\n```\n`code` \(url) `code`\n"
+        let markers = DependencyMarkers.all(in: body)
+        #expect(markers.map(\.uri) == [try Self.uri(ofTask: Self.targetULID)])
+        #expect(markers.map { marker in String(body[marker.range]) } == [url])
+    }
+
     // MARK: - Remove
 
     @Test("A remove takes each URL of one task out of the body, and keeps the other URLs and lines")
@@ -184,6 +206,15 @@ struct DependencyMarkersTests {
         let body = "Title line\r\n\(Self.url(ofTask: Self.targetULID))"
         let result = DependencyMarkers.removing(markersOf: try Self.uri(ofTask: Self.targetULID), from: body)
         #expect(result == "Title line")
+    }
+
+    @Test("A remove takes the URL out of normal text, and keeps the URL in code and in a heading")
+    func removeKeepsURLInCodeAndHeading() throws {
+        let url = Self.url(ofTask: Self.targetULID)
+        let kept = "```\n\(url)\n```\n# \(url)\n"
+        let body = "Needs \(url) and `\(url)`\n" + kept
+        let result = DependencyMarkers.removing(markersOf: try Self.uri(ofTask: Self.targetULID), from: body)
+        #expect(result == "Needs  and `\(url)`\n" + kept)
     }
 
     @Test("A remove of a task that the body does not name gives the same body")

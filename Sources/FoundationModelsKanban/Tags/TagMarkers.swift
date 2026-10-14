@@ -19,13 +19,11 @@ private struct TagMarker {
 /// at `_`. This parse does not, because the tag name rule writes `_` for each run of spaces (plan.md §6): the marker
 /// `#needs_review` names the tag `needs review`, with the slug `needs-review`.
 ///
-/// A marker in a fence line, in a fenced code block, in a heading line, or in inline code is not a tag.
+/// A marker in a fence line, in a fenced code block, in a heading line, or in inline code is not a tag
+/// (``MarkdownCode``).
 enum TagMarkers {
     /// The scalar that starts a marker.
     static let markerPrefix: Unicode.Scalar = "#"
-
-    /// The scalar that opens and closes an inline code span.
-    static let inlineCodeDelimiter: Unicode.Scalar = "`"
 
     /// The scalar, other than an ASCII letter or digit, that glues a `#` to the word before it.
     static let wordJoiner: Unicode.Scalar = "_"
@@ -38,23 +36,13 @@ enum TagMarkers {
     /// The space that a remove takes away together with the marker, so that the text keeps no double space.
     static let adjacentSpace: Unicode.Scalar = " "
 
-    /// The texts that start a fence line, after the leading whitespace.
-    static let fencePrefixes = ["```", "~~~"]
-
-    /// The character that starts a heading line, after the leading whitespace.
-    static let headingPrefix: Character = "#"
-
-    /// The character after the heading prefix that makes a heading line, for example `# Title`.
-    static let headingSeparator: Character = " "
-
     /// Finds the slug of each marker in a body.
     ///
     /// - Parameter body: The Markdown body of a task.
     /// - Returns: The slugs, in text order. Each slug is in the result one time.
     static func slugs(in body: String) -> [Slug] {
-        let lines = BodyLines.lines(of: body)
-        let found = zip(lines, tagBearingFlags(of: lines)).flatMap { line, isTagBearing in
-            isTagBearing ? markers(inLine: BodyLines.content(of: line)).map(\.slug) : []
+        let found = MarkdownCode.markerBearingLines(of: body).flatMap { text in
+            markers(inLine: text).map(\.slug)
         }
         return Array(OrderedSet(found))
     }
@@ -71,29 +59,8 @@ enum TagMarkers {
     ///   - body: The Markdown body of a task.
     /// - Returns: The body without the markers of the tag.
     static func removing(markersOf slug: Slug, from body: String) -> String {
-        let lines = BodyLines.lines(of: body)
-        let edits = zip(lines, tagBearingFlags(of: lines)).map { line, isTagBearing in
-            isTagBearing ? editedLine(from: line, removingMarkersOf: slug) : nil
-        }
-        return BodyLines.body(joining: lines, with: edits)
-    }
-
-    /// Tells, for each line of a body, if a marker on the line counts as a tag.
-    ///
-    /// A fence line, a line in a fenced code block, and a heading line do not count. The walk keeps the fence state
-    /// from line to line, so it reads all the lines in order.
-    ///
-    /// - Parameter lines: The lines of the body, from ``BodyLines/lines(of:)``.
-    /// - Returns: For each line, `true` when a marker on the line counts as a tag.
-    static func tagBearingFlags(of lines: [Substring]) -> [Bool] {
-        var isInFence = false
-        return lines.map { line in
-            let text = BodyLines.content(of: line).drop(while: \.isWhitespace)
-            guard !text.isFenceLine else {
-                isInFence.toggle()
-                return false
-            }
-            return !isInFence && !text.isHeadingLine
+        MarkdownCode.editingMarkerBearingLines(of: body) { line in
+            editedLine(from: line, removingMarkersOf: slug)
         }
     }
 }
@@ -106,8 +73,17 @@ extension TagMarkers {
     /// - Parameter text: The text of the line, without its line break.
     /// - Returns: The markers, in text order. A marker in inline code is not in the result.
     private static func markers(inLine text: Substring) -> [TagMarker] {
-        let scalars = text.unicodeScalars
-        return Array(
+        MarkdownCode.proseRanges(inLine: text).flatMap { range in
+            markers(inProse: text.unicodeScalars[range])
+        }
+    }
+
+    /// Finds each marker in one part of a line that is not in inline code.
+    ///
+    /// - Parameter scalars: The scalars of the part. Its indices are the indices of the line.
+    /// - Returns: The markers, in text order.
+    private static func markers(inProse scalars: Substring.UnicodeScalarView) -> [TagMarker] {
+        Array(
             sequence(state: scalars.startIndex) { start -> TagMarker? in
                 guard let marker = nextMarker(in: scalars, from: start) else {
                     return nil
@@ -118,47 +94,20 @@ extension TagMarkers {
         )
     }
 
-    /// Finds the first marker at or after an index, and skips each inline code span on the way.
+    /// Finds the first marker at or after an index.
     ///
     /// - Parameters:
-    ///   - scalars: The scalars of the line.
+    ///   - scalars: The scalars of one part of a line that is not in inline code.
     ///   - start: The index where the search starts.
-    /// - Returns: The marker, or `nil` when the rest of the line has no marker.
+    /// - Returns: The marker, or `nil` when the rest of the part has no marker.
     private static func nextMarker(in scalars: Substring.UnicodeScalarView, from start: String.Index) -> TagMarker? {
-        var index = start
-        while index < scalars.endIndex {
-            if scalars[index] == inlineCodeDelimiter {
-                index = inlineCodeEnd(in: scalars, from: index)
-            } else if let marker = marker(in: scalars, at: index) {
-                return marker
-            } else {
-                index = scalars.index(after: index)
-            }
-        }
-        return nil
-    }
-
-    /// Finds the end of the inline code span that opens at an index.
-    ///
-    /// - Parameters:
-    ///   - scalars: The scalars of the line.
-    ///   - start: The index of the opening delimiter.
-    /// - Returns: The index after the closing delimiter, or the end of the line when the span does not close.
-    private static func inlineCodeEnd(
-        in scalars: Substring.UnicodeScalarView,
-        from start: String.Index
-    ) -> String.Index {
-        let contentStart = scalars.index(after: start)
-        guard let close = scalars[contentStart...].firstIndex(of: inlineCodeDelimiter) else {
-            return scalars.endIndex
-        }
-        return scalars.index(after: close)
+        scalars[start...].indices.lazy.compactMap { index in marker(in: scalars, at: index) }.first
     }
 
     /// Makes the marker that starts at an index, when one starts there.
     ///
     /// - Parameters:
-    ///   - scalars: The scalars of the line.
+    ///   - scalars: The scalars of one part of a line that is not in inline code.
     ///   - index: The index of a possible `#`.
     /// - Returns: The marker, or `nil` when the scalar is not a `#`, the `#` follows a word, or the scalar after the
     ///   `#` is not an ASCII letter or digit.
@@ -180,7 +129,8 @@ extension TagMarkers {
     /// Tells if the scalar before an index glues a `#` at that index to a word.
     ///
     /// - Parameters:
-    ///   - scalars: The scalars of the line.
+    ///   - scalars: The scalars of one part of a line that is not in inline code. A `#` at the start of the part
+    ///     follows no word.
     ///   - index: The index of the `#`.
     /// - Returns: `true` when the scalar before is an ASCII letter, an ASCII digit, or the ``wordJoiner``.
     private static func isGluedToWord(in scalars: Substring.UnicodeScalarView, at index: String.Index) -> Bool {
@@ -243,27 +193,6 @@ extension TagMarkers {
         }
         kept.append(contentsOf: scalars[index...])
         return kept
-    }
-}
-
-// MARK: - Line kinds
-
-extension Substring {
-    /// `true` when the text, after its leading whitespace, opens or closes a fenced code block.
-    fileprivate var isFenceLine: Bool {
-        TagMarkers.fencePrefixes.contains { prefix in hasPrefix(prefix) }
-    }
-
-    /// `true` when the text, after its leading whitespace, is a Markdown heading, for example `# Title` or `##`. A
-    /// `#` followed by a letter, for example `#bug`, is a marker, not a heading.
-    fileprivate var isHeadingLine: Bool {
-        guard first == TagMarkers.headingPrefix else {
-            return false
-        }
-        guard let next = dropFirst().first else {
-            return true
-        }
-        return next == TagMarkers.headingPrefix || next == TagMarkers.headingSeparator
     }
 }
 

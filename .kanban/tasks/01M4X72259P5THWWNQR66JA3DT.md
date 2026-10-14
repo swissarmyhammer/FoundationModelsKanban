@@ -57,11 +57,20 @@ comments:
     - evidence: 4 files — Sources/FoundationModelsKanban/GraphQL/ColumnActorMutations.swift, Sources/FoundationModelsKanban/GraphQL/TaskMutations.swift, Tests/FoundationModelsKanbanTests/CrossRepo/DependencyTargetWarningTests.swift, Tests/FoundationModelsKanbanTests/Mutations/AddUpdateTaskTests.swift; swift test 1260 passed, 0 failed; 3 of 3 findings checked
     - next: /review
   timestamp: 2026-10-14T22:49:39.712618+00:00
+- actor: claude-code
+  id: 01m4ya2c8b04afcdqn5mfzrv2b
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 4 files (3 findings fixed)
+    - test: green — swift test, 1260 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: c3d16ac
+    - review: clean — none
+  timestamp: 2026-10-14T22:55:59.243375+00:00
 depends_on:
 - 01M4X6X6PS5P524DW45RBSSWN2
 - 01M4X71QQPKCEJ5490KD8R4C92
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ec80
 title: Check cross-board dependsOn URIs and body task URLs on write, and warn for a missing task
 ---
 ## What

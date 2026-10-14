@@ -822,6 +822,45 @@ struct AddUpdateTaskTests {
         #expect(try Self.lastPatch(of: fixture.task, in: directory) == expected)
     }
 
+    @Test("updateTask with dependsOn: [] removes the URL in normal text, and keeps the same URL in a code block")
+    func updateTaskKeepsDependencyURLInCode() async throws {
+        let directory = try TemporaryDirectory()
+        let fixture = try ColumnActorTests.makeFixtureGraph(in: directory)
+        let added = try await Self.addedTasks(by: Self.mutation(of: Self.addTask(with: "")), on: fixture.graph)
+        let target = try #require(added.first)
+        let codeBlock = "```\n\(Self.id(of: target))\n```\n"
+        let markedBody = "Needs \(Self.id(of: target))\n" + codeBlock
+        let mark = Self.updateTask(fixture.task, with: "body: $body")
+        _ = try await KanbanGraphTests.execute(
+            Self.bodyMutation(of: mark),
+            variables: ["body": .string(markedBody)],
+            on: fixture.graph
+        )
+        let clear = Self.updateTask(fixture.task, with: "dependsOn: []", selecting: "{ dependsOn { id } }")
+        let response = try await KanbanGraphTests.execute(Self.mutation(of: clear), on: fixture.graph)
+        #expect(response == #"{"data":{"updateTask":{"dependsOn":[]}}}"#)
+        let expected = try PatchInput(
+            node: .task(fixture.task),
+            edit: PatchEdit(body: ReplayTests.diff(from: markedBody, to: "Needs\n" + codeBlock))
+        )
+        #expect(try Self.lastPatch(of: fixture.task, in: directory) == expected)
+    }
+
+    @Test("A task URL in a code block that would close a cycle does not give DEPENDENCY_CYCLE")
+    func dependencyURLInCodeMakesNoCycle() async throws {
+        let directory = try TemporaryDirectory()
+        let fixture = try ColumnActorTests.makeFixtureGraph(in: directory)
+        let setup = Self.mutation(of: Self.addTask(with: Self.dependsOn(fixture.task)))
+        let dependent = try #require(try await Self.addedTasks(by: setup, on: fixture.graph).first)
+        let update = Self.updateTask(fixture.task, with: "body: $body", selecting: "{ dependsOn { id } }")
+        let response = try await KanbanGraphTests.execute(
+            Self.bodyMutation(of: update),
+            variables: ["body": .string("Example:\n```\n\(Self.id(of: dependent))\n```\n")],
+            on: fixture.graph
+        )
+        #expect(response == #"{"data":{"updateTask":{"dependsOn":[]}}}"#)
+    }
+
     @Test("A dependsOn edge that makes a cycle gives DEPENDENCY_CYCLE, and nothing of the field is written")
     func dependencyEdgeCycleIsRefused() async throws {
         let directory = try TemporaryDirectory()

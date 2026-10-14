@@ -15,6 +15,9 @@ struct DependencyMarker: Hashable, Sendable {
 ///
 /// Only a full task URL is a marker. A short id, `^short`, a bare ULID, or a URL to a node that is not a task is
 /// plain text. The text keeps the URL as the agent wrote it: the tool does not rewrite it.
+///
+/// A URL in a fence line, in a fenced code block, in a heading line, or in inline code is not a marker
+/// (``MarkdownCode``). Thus an example URL in a code block does not block a task, and does not make a cycle.
 enum DependencyMarkers {
     /// The characters that end the URL text of a marker: Markdown and quote delimiters around a link.
     static let delimiters: Set<Character> = ["<", ">", "(", ")", "[", "]", "{", "}", "\"", "'", "`", "|", "\\"]
@@ -30,39 +33,49 @@ enum DependencyMarkers {
     /// - Parameter body: The Markdown body of a task.
     /// - Returns: The markers. The same task can have more than one marker.
     static func all(in body: String) -> [DependencyMarker] {
-        urlRanges(in: body).compactMap { range in
-            marker(in: body, at: range)
-        }
+        MarkdownCode.markerBearingLines(of: body).flatMap(markers(inLine:))
     }
 
     /// Removes each marker of one task from a body.
     ///
-    /// The `updateTask(dependsOn:)` mutation uses it when it removes a dependency whose URL is also in the text. A
-    /// line with no marker of the task stays the same, byte for byte. A line that loses a marker loses its trailing
-    /// whitespace. When the last line has no line break and the remove makes it empty, the line break before it also
-    /// goes away. These are the ``BodyLines`` rules.
+    /// The `updateTask(dependsOn:)` mutation uses it when it removes a dependency whose URL is also in the text. A URL
+    /// that is not a marker, for example a URL in a code block, stays. A line with no marker of the task stays the
+    /// same, byte for byte. A line that loses a marker loses its trailing whitespace. When the last line has no line
+    /// break and the remove makes it empty, the line break before it also goes away. These are the ``BodyLines``
+    /// rules.
     ///
     /// - Parameters:
     ///   - uri: The URI of the task whose markers to remove.
     ///   - body: The Markdown body of a task.
     /// - Returns: The body without the markers of the task.
     static func removing(markersOf uri: NodeURI, from body: String) -> String {
-        let lines = BodyLines.lines(of: body)
-        let edits = lines.map { line in
+        MarkdownCode.editingMarkerBearingLines(of: body) { line in
             editedLine(line, removingMarkersOf: uri)
         }
-        return BodyLines.body(joining: lines, with: edits)
     }
 }
 
 // MARK: - Find
 
 extension DependencyMarkers {
+    /// Finds each marker in the text of one line where a marker can count.
+    ///
+    /// - Parameter text: The text of the line, without its line break.
+    /// - Returns: The markers, in text order. A URL in inline code is not in the result.
+    private static func markers(inLine text: Substring) -> [DependencyMarker] {
+        MarkdownCode.proseRanges(inLine: text).flatMap { range in
+            let prose = Substring(text.unicodeScalars[range])
+            return urlRanges(in: prose).compactMap { urlRange in
+                marker(in: prose, at: urlRange)
+            }
+        }
+    }
+
     /// Finds the range of each URL text that starts with the scheme.
     ///
-    /// - Parameter body: The body to search.
+    /// - Parameter body: The text to search. Its indices are the indices of the body.
     /// - Returns: The ranges, in text order. A range can hold a URL that is not a valid task URL.
-    private static func urlRanges(in body: String) -> some Sequence<Range<String.Index>> {
+    private static func urlRanges(in body: Substring) -> some Sequence<Range<String.Index>> {
         sequence(state: body.startIndex) { start -> Range<String.Index>? in
             guard
                 let scheme = body.range(of: NodeURI.scheme, options: .caseInsensitive, range: start..<body.endIndex)
@@ -81,7 +94,7 @@ extension DependencyMarkers {
     ///   - body: The body that holds the URL.
     ///   - start: The index after the scheme of the URL.
     /// - Returns: The index after the last character of the URL.
-    private static func urlEnd(in body: String, from start: String.Index) -> String.Index {
+    private static func urlEnd(in body: Substring, from start: String.Index) -> String.Index {
         let tail = body[start...]
         let token = tail.prefix { character in
             !character.isWhitespace && !delimiters.contains(character)
@@ -98,7 +111,7 @@ extension DependencyMarkers {
     ///   - body: The body that holds the URL.
     ///   - range: The range of the URL text.
     /// - Returns: The marker, or `nil` when the text is not a valid URI or names a node that is not a task.
-    private static func marker(in body: String, at range: Range<String.Index>) -> DependencyMarker? {
+    private static func marker(in body: Substring, at range: Range<String.Index>) -> DependencyMarker? {
         guard let uri = try? NodeURI(parsing: String(body[range])), case .task = uri.ref else {
             return nil
         }
@@ -116,8 +129,8 @@ extension DependencyMarkers {
     ///   - uri: The URI of the task whose markers to remove.
     /// - Returns: The changed line with its line break, or `nil` when the line has no marker of the task.
     private static func editedLine(_ line: Substring, removingMarkersOf uri: NodeURI) -> String? {
-        let text = String(BodyLines.content(of: line))
-        let ranges = all(in: text).filter { marker in marker.uri == uri }.map(\.range)
+        let text = BodyLines.content(of: line)
+        let ranges = markers(inLine: text).filter { marker in marker.uri == uri }.map(\.range)
         guard !ranges.isEmpty else {
             return nil
         }

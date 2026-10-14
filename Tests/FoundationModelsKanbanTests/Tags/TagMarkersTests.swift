@@ -147,7 +147,7 @@ struct TagMarkersTests {
     /// - Returns: The position and the content of each skipped line.
     static func skippedLines(of body: String) -> [(position: Int, content: Substring)] {
         let lines = BodyLines.lines(of: body)
-        return zip(lines.indices, TagMarkers.tagBearingFlags(of: lines))
+        return zip(lines.indices, MarkdownCode.markerBearingFlags(of: lines))
             .filter { _, isTagBearing in !isTagBearing }
             .map { position, _ in (position, BodyLines.content(of: lines[position])) }
     }
