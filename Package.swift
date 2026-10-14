@@ -111,6 +111,9 @@ let package = Package(
                 // The tests give variables to the engine as GraphQL `Map`
                 // values, and they call the scalar types of the schema.
                 .product(name: graphQLPackage, package: graphQLPackage),
+                // The warnings tests add a test field to the Graphiti builder
+                // of the public schema.
+                .product(name: graphitiPackage, package: graphitiPackage),
                 // The identity tests make and read `ULID` values.
                 .product(name: "ULID", package: ulidPackage),
                 // The search tests give a fake `PooledEmbedding` to the engine.

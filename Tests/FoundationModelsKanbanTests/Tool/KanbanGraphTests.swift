@@ -100,6 +100,7 @@ struct KanbanGraphTests {
     ///   - observer: Gets a call when each call starts and ends, or `nil` for no calls.
     ///   - batchObserver: Gets a call when the file watcher applies a batch, or `nil` for no calls.
     ///   - writer: The writer of the appends of each commit. The default writes the log files.
+    ///   - extend: Adds test fields to the public schema. The default adds no field.
     /// - Returns: The engine.
     static func makeGraph(
         at root: URL,
@@ -110,7 +111,8 @@ struct KanbanGraphTests {
         locatedBy locator: BoardLocator = .default,
         reportingTo observer: (any KanbanCallObserver)? = nil,
         observingBatchesWith batchObserver: (any LiveGraphObserver)? = nil,
-        writingLogsWith writer: any EventLogWriter = FileEventLogWriter()
+        writingLogsWith writer: any EventLogWriter = FileEventLogWriter(),
+        extendingSchemaWith extend: SchemaExtension = PublicSchema.noExtension
     ) throws -> KanbanGraph {
         try KanbanGraph(
             root: root,
@@ -121,7 +123,8 @@ struct KanbanGraphTests {
             locatedBy: locator,
             reportingTo: observer,
             observingBatchesWith: batchObserver,
-            writingLogsWith: writer
+            writingLogsWith: writer,
+            extendingSchemaWith: extend
         )
     }
 

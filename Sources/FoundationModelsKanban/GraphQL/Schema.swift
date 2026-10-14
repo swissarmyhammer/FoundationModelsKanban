@@ -421,6 +421,10 @@ struct KanbanContext: Sendable {
 
     /// The change feed of the engine. `Subscription.changes` adds a subscriber to it (plan.md §6.7).
     let feed: ChangeFeed
+
+    /// The warnings of the run: `extensions.warnings` of its response (plan.md §4.4). Each context has a new
+    /// collector, so each run has its own list.
+    let warnings = ResponseWarnings()
 }
 
 // MARK: - Arguments
@@ -1022,6 +1026,11 @@ extension CanonicalName {
     }
 }
 
+/// A step that adds fields to the builder of the public schema before the build, and gives the builder back. A test
+/// gives a step that adds a test field, for example a field that adds a warning (plan.md §4.4).
+typealias SchemaExtension =
+    @Sendable (SchemaBuilder<KanbanResolver, KanbanContext>) -> SchemaBuilder<KanbanResolver, KanbanContext>
+
 /// The public GraphQL schema: the schema that the agent sees.
 ///
 /// The schema does not have the internal `patch` mutation (plan.md §12,
@@ -1033,11 +1042,16 @@ struct PublicSchema: API {
     /// The schema that Graphiti makes from the Swift types.
     let schema: Schema<KanbanResolver, KanbanContext>
 
+    /// The extension that adds no field: the schema that the agent sees.
+    static let noExtension: SchemaExtension = { builder in builder }
+
     /// Makes the schema.
     ///
+    /// - Parameter extend: Adds more fields to the builder after the fields of the public schema. The default adds no
+    ///   field.
     /// - Throws: An error from Graphiti when a type of the schema is not valid.
-    init() throws {
-        schema = try SchemaBuilder.makeKanbanBuilder()
+    init(extendedWith extend: SchemaExtension = noExtension) throws {
+        let builder = SchemaBuilder.makeKanbanBuilder()
             .addBoardMutations()
             .addColumnActorMutations()
             .addTaskMutations()
@@ -1046,11 +1060,11 @@ struct PublicSchema: API {
             .addTagMutations()
             .addUndoMutations()
             .addChangesSubscription()
-            .build()
+        schema = try extend(builder).build()
     }
 }
 
-extension API {
+extension API where ContextType == KanbanContext {
     /// The schema in the GraphQL schema definition language (SDL).
     var sdl: String {
         printSchema(schema: schema.schema)
@@ -1071,6 +1085,10 @@ extension API {
     /// validation, and the response has each change in
     /// `extensions.rewrites`. A name that matches two or more names gives an
     /// error, and the document does not run.
+    ///
+    /// The response has the warnings that the run added to the collector of
+    /// the context in `extensions.warnings` (plan.md §4.4). A run with no
+    /// warning has no `extensions.warnings` key.
     ///
     /// - Parameters:
     ///   - document: The GraphQL document.
@@ -1102,7 +1120,9 @@ extension API {
             } catch let error as GraphQLError {
                 return try Self.errorResponse(error, formattedWith: formatting)
             }
-            return try RewriteResponse(result: result, rewrites: rewritten.rewrites).encoded(formattedWith: formatting)
+            let warnings = await context.warnings.take()
+            return try RewriteResponse(result: result, rewrites: rewritten.rewrites, warnings: warnings)
+                .encoded(formattedWith: formatting)
         }
     }
 
@@ -1111,6 +1131,8 @@ extension API {
     /// The name rewrite of plan.md §4.5 changes the document first, the same as for a call. A document that does not
     /// parse or validate, and a subscription that cannot start, give a stream with one response with the errors and
     /// no `data`, and the stream then ends.
+    ///
+    /// The warnings list of plan.md §4.4 is for a call: a response of a subscription has no `extensions.warnings`.
     ///
     /// - Parameters:
     ///   - document: The subscription document.
@@ -1130,8 +1152,12 @@ extension API {
         let single: (String) -> AsyncThrowingStream<String, Error> = AsyncThrowingStream.single
         return try await rewriting(document, formattedWith: formatting, answeringFailureWith: single) { rewritten in
             let encode: @Sendable (GraphQLResult) throws -> String = { result in
-                try RewriteResponse(result: rewritten.codedCallerResult(from: result), rewrites: rewritten.rewrites)
-                    .encoded(formattedWith: formatting)
+                try RewriteResponse(
+                    result: rewritten.codedCallerResult(from: result),
+                    rewrites: rewritten.rewrites,
+                    warnings: []
+                )
+                .encoded(formattedWith: formatting)
             }
             guard rewritten.ties.isEmpty else {
                 return .single(try encode(GraphQLResult(errors: rewritten.ties)))
@@ -1176,8 +1202,8 @@ extension API {
         return try await run(rewritten)
     }
 
-    /// Gives the response of the error of a document that does not parse, with no `data` and no rewrites. The error
-    /// has the code `GRAPHQL_PARSE_FAILED` (plan.md §4.4).
+    /// Gives the response of the error of a document that does not parse, with no `data`, no rewrites, and no
+    /// warnings. The error has the code `GRAPHQL_PARSE_FAILED` (plan.md §4.4).
     ///
     /// - Parameters:
     ///   - error: The parse error.
@@ -1189,7 +1215,7 @@ extension API {
         formattedWith formatting: GraphQLJSONEncoder.OutputFormatting
     ) throws -> String {
         let result = GraphQLResult(errors: [error.codedAsParseFailure()])
-        return try RewriteResponse(result: result, rewrites: []).encoded(formattedWith: formatting)
+        return try RewriteResponse(result: result, rewrites: [], warnings: []).encoded(formattedWith: formatting)
     }
 
     /// Runs a rewritten document, and gives the result in the form of the
@@ -1239,11 +1265,12 @@ extension RewrittenDocument {
 }
 
 /// A GraphQL response, with the changes of the name rewrite in
-/// `extensions.rewrites` (plan.md §4.5).
+/// `extensions.rewrites` (plan.md §4.5) and the warnings of the run in
+/// `extensions.warnings` (plan.md §4.4).
 ///
 /// `GraphQLResult` encodes only `data` and `errors`, so this type encodes the
 /// same two keys in the same way, and adds `extensions` when the rewrite
-/// changed a name.
+/// changed a name or the run gave a warning.
 private struct RewriteResponse: Encodable {
     /// The keys of the response object.
     private enum CodingKeys: String, CodingKey {
@@ -1257,12 +1284,17 @@ private struct RewriteResponse: Encodable {
         case extensions
     }
 
-    /// The `extensions` object of the response.
+    /// The `extensions` object of the response. The encoder leaves out a key whose value is `nil`.
     private struct Extensions: Encodable {
-        /// The changes of the name rewrite.
+        /// The changes of the name rewrite, or `nil` when the rewrite changed no name.
         // The synthesized `Encodable` conformance reads this property; periphery sees no reader.
         // periphery:ignore
-        let rewrites: [NameRewrite]
+        let rewrites: [NameRewrite]?
+
+        /// The warnings of the run, or `nil` when the run gave no warning.
+        // The synthesized `Encodable` conformance reads this property; periphery sees no reader.
+        // periphery:ignore
+        let warnings: [ResponseWarning]?
     }
 
     /// The result of the document.
@@ -1271,8 +1303,12 @@ private struct RewriteResponse: Encodable {
     /// The changes of the name rewrite.
     let rewrites: [NameRewrite]
 
+    /// The warnings of the run, in the order that the run added them.
+    let warnings: [ResponseWarning]
+
     /// Writes `data` when the result has it, `errors` when there is an error,
-    /// and `extensions` when the rewrite changed a name.
+    /// and `extensions` when the rewrite changed a name or the run gave a
+    /// warning. `extensions` has only the lists that are not empty.
     ///
     /// - Parameter encoder: The encoder.
     /// - Throws: An error from the encoder.
@@ -1282,9 +1318,14 @@ private struct RewriteResponse: Encodable {
         if !result.errors.isEmpty {
             try container.encode(result.errors, forKey: .errors)
         }
-        if !rewrites.isEmpty {
-            try container.encode(Extensions(rewrites: rewrites), forKey: .extensions)
+        guard !rewrites.isEmpty || !warnings.isEmpty else {
+            return
         }
+        let extensions = Extensions(
+            rewrites: rewrites.isEmpty ? nil : rewrites,
+            warnings: warnings.isEmpty ? nil : warnings
+        )
+        try container.encode(extensions, forKey: .extensions)
     }
 
     /// Encodes the response as JSON text.

@@ -152,6 +152,8 @@ public actor KanbanGraph {
     ///   - observer: Gets a call when each call starts and ends, or `nil` for no calls.
     ///   - batchObserver: Gets a call when a file watcher applies a batch, or `nil` for no calls.
     ///   - logWriter: The writer of the appends of each commit. The default writes the log files.
+    ///   - extend: Adds test fields to the public schema, for example a field that adds a warning. The default adds no
+    ///     field.
     /// - Throws: An error from Graphiti when a type of the public schema is not valid.
     init(
         root: URL,
@@ -163,7 +165,8 @@ public actor KanbanGraph {
         embeddingWith embedder: (any PooledEmbedding)? = nil,
         reportingTo observer: (any KanbanCallObserver)? = nil,
         observingBatchesWith batchObserver: (any LiveGraphObserver)? = nil,
-        writingLogsWith logWriter: any EventLogWriter = FileEventLogWriter()
+        writingLogsWith logWriter: any EventLogWriter = FileEventLogWriter(),
+        extendingSchemaWith extend: SchemaExtension = PublicSchema.noExtension
     ) throws {
         self.root = root
         self.keyReader = keyReader
@@ -176,7 +179,7 @@ public actor KanbanGraph {
         self.observer = observer
         self.batchObserver = batchObserver
         self.logWriter = logWriter
-        schema = try PublicSchema()
+        schema = try PublicSchema(extendedWith: extend)
     }
 
     /// Gives the session actor of a name: the actor whose slug is the slug of the name, with the name (plan.md §6).

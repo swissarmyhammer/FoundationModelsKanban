@@ -62,6 +62,9 @@ public struct KanbanTool: Tool {
     /// When a host runs the call with a ``ToolContext``, the engine posts the ACP agent plan of each board whose
     /// tasks the call changed to that context (plan.md §7.3). The model does not get the plan.
     ///
+    /// The output is the response of the engine as it is, so the agent sees each warning of the call in
+    /// `extensions.warnings` (plan.md §4.4).
+    ///
     /// - Parameter arguments: The decoded arguments of the call.
     /// - Returns: The GraphQL response (`{data, errors}`) as JSON text with sorted keys.
     /// - Throws: An I/O fault of the engine, as ``KanbanGraph/execute(query:variables:operationName:)`` tells.

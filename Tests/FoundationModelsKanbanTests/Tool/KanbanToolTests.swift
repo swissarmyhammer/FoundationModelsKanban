@@ -88,7 +88,28 @@ struct KanbanToolTests {
     ) async throws -> String {
         let directory = try TemporaryDirectory()
         _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
-        let tool = try makeTool(inRepoAt: directory.url)
+        return try await call(
+            try makeTool(inRepoAt: directory.url),
+            query: document,
+            variables: variables,
+            operationName: operationName
+        )
+    }
+
+    /// Calls a tool with arguments as JSON text.
+    ///
+    /// - Parameters:
+    ///   - tool: The tool.
+    ///   - document: The GraphQL document.
+    ///   - variables: The JSON value of `variables`, or `nil` to leave out the key.
+    ///   - operationName: The text of `operationName`, or `nil` to leave out the key.
+    /// - Returns: The output of the tool: the GraphQL response JSON.
+    static func call(
+        _ tool: KanbanTool,
+        query document: String,
+        variables: String?,
+        operationName: String? = nil
+    ) async throws -> String {
         let json = try KanbanArgumentsTests.argumentsJSON(
             query: document,
             variables: variables,
