@@ -1,0 +1,44 @@
+---
+assignees:
+- claude-code
+depends_on:
+- 01M4X6XKP0Y832GDRHQ1MG22VF
+position_column: todo
+position_ordinal: '8280'
+title: Key a repo with no remote by its root commit, and make a first commit when the repo has none
+---
+## What
+divergence.md §16, M7 and M8 (DECIDED). The user: "we will need to be able to provide an identifier for a kanban in a repo with no remote" and "just make a first commit." This is work on the Swift package (S/ = Sources/FoundationModelsKanban/). The key code is in S/Identity/BoardKey.swift.
+
+M7, the key of a git repo with no usable `origin` remote:
+- The key is `local/<root commit>`, with the first 12 hex digits of the root commit of `HEAD` (`git rev-list --max-parents=0 HEAD`).
+- When the history has more than one root commit, use the lowest SHA, so that the key is the same each time.
+- The key is unique. It does not change when the folder moves or gets a new name. All clones and worktrees of the repo have the same key, as for a repo with a remote.
+- Known results (no work): when the repo later gets an `origin` remote, the key changes to the remote key. An orphan branch with a different history gives a different key.
+- There is no key that the user sets (no `kanban.key` in git config, and no key file).
+
+M8, a repo with no commit:
+- Before Swift reads the key, it makes one empty first commit when the repo has no commit. Then the key is `local/<root commit>` from the start.
+- Do NOT use `git commit`. The commit must not take the files that the user staged. Make the commit from the empty tree: `git commit-tree <empty tree> -m "Initial commit"` (the empty tree is `git hash-object -t tree /dev/null`, or `4b825dc642cb6eb9a060e54bf8d69288fbee4904`). Then set the current branch to it with `git update-ref HEAD <commit>`. The index and the working files do not change.
+- When git cannot make the commit (for example, no `user.name` or `user.email` is set), the call gives an error that tells why (include the git message).
+- A repo that has commits gets no new commit.
+
+## Acceptance Criteria
+- [ ] A repo with no `origin` remote has the key `local/<first 12 hex of the root commit>`.
+- [ ] A repo with two root commits uses the lowest SHA.
+- [ ] Two clones (or a clone and a worktree) of a repo with no remote have the same key.
+- [ ] A new repo with no commit gets one empty commit on its current branch, and the key comes from that commit.
+- [ ] Staged files stay staged and are not in the new commit. The working files do not change.
+- [ ] When git cannot commit, the error tells the reason.
+
+## Tests
+- [ ] A new repo with no commit gets one empty commit and a `local/<root commit>` key.
+- [ ] Staged files stay staged and are not in the commit.
+- [ ] A repo with commits gets no new commit.
+- [ ] A repo with two root commits (merge of an orphan branch) uses the lowest SHA.
+- [ ] A repo with no `user.name`/`user.email` (set `GIT_CONFIG_GLOBAL` and `HOME` to a temp folder) gives a clear error.
+- [ ] Tests use temporary fixture folders. Never use the `.kanban/` of this repo (it is a Rust board).
+- [ ] `swift test` passes.
+
+## Workflow
+- Use `/tdd` — write failing tests first, then implement to make them pass.
