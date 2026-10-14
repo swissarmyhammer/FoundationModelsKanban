@@ -7,13 +7,14 @@ typealias ChangePublisher = @Sendable ([String: BoardChanges]) async -> Void
 
 /// Gets a call when the file load of a board starts and when it ends.
 ///
-/// A test uses it to count the loads of a board, and to prove that the key read and the file load run at the same
-/// time (divergence.md §16, L1).
+/// A test uses it to count the loads of a board, to prove that the key read and the file load run at the same time
+/// (divergence.md §16, L1), and to make a load slow, so that it can prove that two related boards load at the same
+/// time (divergence.md §16, L5).
 protocol BoardLoadObserver: Sendable {
-    /// Tells that the file load of a board started.
+    /// Tells that the file load of a board started. The load waits until this method returns.
     ///
     /// - Parameter root: The root directory of the repo of the board.
-    func boardLoadDidStart(at root: URL)
+    func boardLoadDidStart(at root: URL) async
 
     /// Tells that the file load of a board ended.
     ///
@@ -361,7 +362,7 @@ struct EngineLoad: Sendable {
     func liveGraph() async throws(EventLogError) -> LiveGraph {
         let log = EventLog(repositoryAt: root)
         try log.checkCompatibility()
-        configuration.loadObserver?.boardLoadDidStart(at: root)
+        await configuration.loadObserver?.boardLoadDidStart(at: root)
         defer { configuration.loadObserver?.boardLoadDidFinish(at: root) }
         return try await LiveGraph.load(using: BoardLoader(reading: log, reportingTo: configuration.workerObserver))
     }

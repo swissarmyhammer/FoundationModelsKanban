@@ -418,6 +418,17 @@ final class LoadRecorder: BoardLoadObserver {
     /// The recorded events, behind a lock, because the loads run on different threads.
     private let recorded = Mutex<[LoadEvent]>([])
 
+    /// The time that each file load waits after its start is recorded: a slow load, so that a test can tell two
+    /// loads in sequence from two loads at the same time.
+    private let loadDelay: Duration
+
+    /// Makes a recorder.
+    ///
+    /// - Parameter loadDelay: The time that each file load waits after its start is recorded. The default is no wait.
+    init(waitingInEachLoad loadDelay: Duration = .zero) {
+        self.loadDelay = loadDelay
+    }
+
     /// The recorded events, in the order that they happened.
     var events: [LoadEvent] {
         recorded.withLock { events in events }
@@ -433,11 +444,12 @@ final class LoadRecorder: BoardLoadObserver {
         roots(of: .loadDidFinish)
     }
 
-    /// Records the start of a file load.
+    /// Records the start of a file load, and then waits for the load delay of the recorder.
     ///
     /// - Parameter root: The root folder of the board.
-    func boardLoadDidStart(at root: URL) {
+    func boardLoadDidStart(at root: URL) async {
         record(LoadEvent(kind: .loadDidStart, root: root))
+        try? await Task.sleep(for: loadDelay)
     }
 
     /// Records the end of a file load.

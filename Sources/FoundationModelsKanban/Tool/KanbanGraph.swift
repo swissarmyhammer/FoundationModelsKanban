@@ -712,6 +712,9 @@ public actor KanbanGraph {
     /// the view loaded, also when the run asks for no board, because `undo` and `redo` with no `txn` search the loaded
     /// boards (plan.md §6.5, scope).
     ///
+    /// Each round of the loop answers its open requests at the same time (divergence.md §16, L5). Each load goes
+    /// through the table of the host, so two requests for the same board wait for one load.
+    ///
     /// - Parameters:
     ///   - related: The related boards of the run.
     ///   - requests: The requests of the run.
@@ -728,8 +731,12 @@ public actor KanbanGraph {
         var updated = await withLoadedBoards(related, around: current.directory)
         var pending = requests.union(updated.loadedDependencyRequests)
         while !pending.isEmpty {
-            for request in pending where !updated.satisfies([request]) {
-                try await answer(request, in: &updated, current: current)
+            let open = pending.filter { request in !updated.satisfies([request]) }
+            let answers = try await Array(open).concurrentMap { request in
+                try await self.answer(request, current: current)
+            }
+            for answer in answers {
+                answer.record(in: &updated)
             }
             updated = await withLoadedBoards(updated, around: current.directory)
             pending = updated.loadedDependencyRequests.filter { request in !updated.satisfies([request]) }
@@ -787,20 +794,16 @@ public actor KanbanGraph {
     ///
     /// - Parameters:
     ///   - request: The request.
-    ///   - related: The related boards that get the answer.
     ///   - current: The copy of the current board: the top folder of its worktree and its current key.
+    /// - Returns: The answer, for the related boards of the next run.
     /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the scan. A
     ///   ``BoardWatcherError`` or an ``EventLogError`` when a board cannot load.
-    private func answer(
-        _ request: BoardRequest,
-        in related: inout RelatedBoards,
-        current: BoardCopy
-    ) async throws {
+    private func answer(_ request: BoardRequest, current: BoardCopy) async throws -> BoardAnswer {
         switch request {
         case .board(let reference):
-            related.record(try await loadBoard(named: reference, current: current), forBoard: reference)
+            .board(reference, try await loadBoard(named: reference, current: current))
         case .allCopies:
-            related.record(listing: try await loadEachCopy(around: current.directory))
+            .listing(try await loadEachCopy(around: current.directory))
         }
     }
 
@@ -854,24 +857,33 @@ public actor KanbanGraph {
         return resolve(try await host.rescan(around: current.directory))
     }
 
-    /// Scans for the copies of `Query.boards`, and loads each copy that is not the current repo.
+    /// Scans for the copies of `Query.boards`, and loads each copy that is not the current repo. The copies load at
+    /// the same time (divergence.md §16, L5).
     ///
     /// - Parameter root: The top folder of the worktree of the current board.
     /// - Returns: The copies, in scan order.
     /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the scan. A
-    ///   ``BoardWatcherError`` or an ``EventLogError`` when a board cannot load.
+    ///   ``BoardWatcherError`` or an ``EventLogError`` when a board cannot load: of the first such copy in scan order.
     private func loadEachCopy(around root: URL) async throws -> [ListedCopy] {
         let index = try await host.rescan(around: root)
-        var listed: [ListedCopy] = []
-        for copy in index.copies {
-            let resolution = BoardResolution(of: copy, currentRoot: root)
-            guard case .copy(let related) = resolution else {
-                listed.append(ListedCopy(board: resolution, isEnabled: copy.isEnabled))
-                continue
-            }
-            listed.append(ListedCopy(board: try await loadRelatedBoard(related), isEnabled: copy.isEnabled))
+        return try await index.copies.concurrentMap { copy in
+            try await self.listedCopy(of: copy, currentRoot: root)
         }
-        return listed
+    }
+
+    /// Gives one copy of the list of `Query.boards`, and loads the copy when it is not the current repo.
+    ///
+    /// - Parameters:
+    ///   - copy: The copy that the scan found.
+    ///   - root: The top folder of the worktree of the current board.
+    /// - Returns: The copy in the list.
+    /// - Throws: A ``BoardWatcherError`` or an ``EventLogError`` when the board cannot load.
+    private func listedCopy(of copy: BoardCopy, currentRoot root: URL) async throws -> ListedCopy {
+        let resolution = BoardResolution(of: copy, currentRoot: root)
+        guard case .copy(let related) = resolution else {
+            return ListedCopy(board: resolution, isEnabled: copy.isEnabled)
+        }
+        return ListedCopy(board: try await loadRelatedBoard(related), isEnabled: copy.isEnabled)
     }
 
     /// Gets the engine of a related board from the host, which loads the board when no session loaded it yet, and
@@ -917,6 +929,56 @@ private enum ResolvedBoard {
 
     /// The working directory is not in a git repo, so it has no board. Each call gives `NOT_A_REPO`.
     case notARepo(path: String)
+}
+
+// MARK: - Related board answers
+
+/// The answer to one ``BoardRequest`` of a run. The view answers the requests of a round at the same time, and then
+/// records each answer in the related boards of the next run.
+private enum BoardAnswer: Sendable {
+    /// The board that a board ref names, by the ref as the call wrote it.
+    case board(String, BoardResolution)
+
+    /// The list of `Query.boards`, in scan order.
+    case listing([ListedCopy])
+
+    /// Records the answer in the related boards of a run.
+    ///
+    /// - Parameter related: The related boards that get the answer.
+    func record(in related: inout RelatedBoards) {
+        switch self {
+        case .board(let reference, let resolution):
+            related.record(resolution, forBoard: reference)
+        case .listing(let copies):
+            related.record(listing: copies)
+        }
+    }
+}
+
+extension Array where Element: Sendable {
+    /// Runs an operation on each element at the same time, and gives the results in the order of the elements.
+    /// Each operation runs to its end, also when the operation of a different element throws.
+    ///
+    /// - Parameter transform: The operation.
+    /// - Returns: The result of the operation for each element, in the order of the elements.
+    /// - Throws: The error of the first element, in the order of the elements, whose operation throws.
+    fileprivate func concurrentMap<Value: Sendable>(
+        _ transform: @escaping @Sendable (Element) async throws -> Value
+    ) async throws -> [Value] {
+        let results = await withTaskGroup(of: (position: Int, result: Result<Value, any Error>).self) { group in
+            for (position, element) in enumerated() {
+                group.addTask {
+                    do {
+                        return (position, .success(try await transform(element)))
+                    } catch {
+                        return (position, .failure(error))
+                    }
+                }
+            }
+            return await group.reduce(into: []) { results, entry in results.append(entry) }
+        }
+        return try results.sorted { lhs, rhs in lhs.position < rhs.position }.map { entry in try entry.result.get() }
+    }
 }
 
 // MARK: - Call result

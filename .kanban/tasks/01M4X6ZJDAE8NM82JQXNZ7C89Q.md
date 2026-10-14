@@ -31,8 +31,17 @@ comments:
     - evidence: 3 files — Sources/FoundationModelsKanban/Events/Loader.swift, Sources/FoundationModelsKanban/Observe/LiveGraph.swift (doc comments only), Tests/FoundationModelsKanbanTests/Events/LoaderTests.swift. `swift test`: 1188 tests in 86 suites passed; the only warning is the accepted SwiftPM "missing creator" warning.
     - next: /review
   timestamp: 2026-10-14T17:33:02.995231+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4xqxhmbt09v5tkeyfzdk1s9
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 3 files
+    - test: green — swift test, 1188 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 13dad3d
+    - review: clean — none
+  timestamp: 2026-10-14T17:38:46.539168+00:00
+position_column: done
+position_ordinal: e280
 title: Load all board files in one worker pool and list the node folders at the same time
 ---
 ## What
