@@ -12,9 +12,11 @@ import Foundation
 /// - A dependency **blocks** a task when it is not done. A dependency on a task of a related board reads that board
 ///   in ``RelatedBoards`` (plan.md §6.6). A target that no loaded board has, for example a task of a board that the
 ///   scan cannot find, is not done (plan.md §3.3, rule 4).
-/// - A `dependsOn` cycle from a merge (plan.md §5.3 step 5): each task in the cycle is blocked. A dependency also
-///   blocks a task when a walk from the dependency over the `dependsOn` edges comes back to the task, also when the
-///   dependency is done. The walk stops at each task that it already visited, so it always ends.
+/// - A `dependsOn` cycle from a merge (plan.md §5.3 step 5): each task in the cycle is blocked, also when the cycle
+///   goes across boards (divergence.md X8). A dependency also blocks a task when a walk from the dependency over the
+///   dependencies comes back to the task, also when the dependency is done. The walk follows the dependencies into
+///   the loaded related boards with the same rules: it skips a tombstone, and a target that no loaded board has ends
+///   its path. The walk reads only memory, and it stops at each task that it already visited, so it always ends.
 /// - A task is **ready** when no dependency blocks it.
 ///
 /// The value calculates the dependencies of all tasks one time, so that one read can ask about many tasks.
@@ -27,6 +29,9 @@ struct Readiness {
 
     /// The related boards that the cross-board dependencies read.
     let related: RelatedBoards
+
+    /// The current key of the board. A walk across boards reads a task with this key in ``graph``.
+    private let boardKey: String
 
     /// The dependencies of each task, live or tombstoned, by the slot of the task. A dependency on a tombstoned node
     /// is not in the list.
@@ -50,6 +55,7 @@ struct Readiness {
     init(of graph: Graph, inBoard currentBoardKey: String, reading related: RelatedBoards = .unavailable) {
         self.graph = graph
         self.related = related
+        boardKey = currentBoardKey
         columnOrder = ColumnOrder(of: graph)
         let dependencies = Dictionary(
             uniqueKeysWithValues: graph.allSlots.compactMap { slot in
@@ -141,14 +147,22 @@ extension Readiness {
     /// - Parameters:
     ///   - target: The dependency.
     ///   - slot: The slot of the task that has the dependency.
-    /// - Returns: `true` when the target is not done, or when a walk from the target comes back to the task. A
-    ///   target of a related board is done when the task shows in the terminal column of that board.
+    /// - Returns: `true` when the target is not done, or when a walk from the target comes back to the task, also
+    ///   through related boards. A target of a related board is done when the task shows in the terminal column of
+    ///   that board.
     private func isBlocking(_ target: EdgeTarget, forTaskAt slot: Int) -> Bool {
+        !isDone(target) || hasDependencyPath(from: target, to: slot)
+    }
+
+    /// Tells if one dependency is done.
+    ///
+    /// - Parameter target: The dependency.
+    /// - Returns: `true` when the task of the target shows in the terminal column of its board. A target that no
+    ///   loaded board has is not done.
+    private func isDone(_ target: EdgeTarget) -> Bool {
         switch target {
-        case .slot(let targetSlot):
-            !isDone(taskAt: targetSlot) || hasDependencyPath(from: targetSlot, to: slot)
-        case .unresolved(let ref):
-            !related.isDone(ref)
+        case .slot(let targetSlot): isDone(taskAt: targetSlot)
+        case .unresolved(let ref): related.isDone(ref)
         }
     }
 
@@ -168,35 +182,122 @@ extension Readiness {
         }
     }
 
-    /// Walks the `dependsOn` edges from a task, and tells if the walk reaches a second task.
+    /// Walks the dependencies from a dependency of a task, and tells if the walk comes back to the task.
     ///
-    /// The walk stops at each task that it already visited, so it ends also when the edges have a cycle.
+    /// The walk follows the dependencies into the loaded related boards (divergence.md X8). It reads only memory. A
+    /// dependency on a tombstone is not in the walk, a target that no loaded board has ends its path, and the walk
+    /// stops at each task that it already visited, so it ends also when the dependencies have a cycle.
     ///
     /// - Parameters:
-    ///   - start: The slot of the task where the walk starts.
-    ///   - goal: The slot of the task to find.
+    ///   - start: The dependency where the walk starts.
+    ///   - goal: The slot of the task to find, in this board.
     /// - Returns: `true` when the goal is the start, or when a chain of dependencies leads from the start to the goal.
-    private func hasDependencyPath(from start: Int, to goal: Int) -> Bool {
-        var visited: Set<Int> = []
-        var pending = [start]
+    private func hasDependencyPath(from start: EdgeTarget, to goal: Int) -> Bool {
+        let goalPosition = TaskPosition(boardKey: boardKey, slot: goal)
+        var visited: Set<TaskPosition> = []
+        var pending = step(to: start, from: currentBoard).map { first in [first] } ?? []
         while let current = pending.popLast() {
-            if current == goal {
+            if current.position == goalPosition {
                 return true
             }
-            if visited.insert(current).inserted {
-                pending += dependencySlots(ofTaskAt: current)
+            if visited.insert(current.position).inserted {
+                pending += nextSteps(after: current)
             }
         }
         return false
     }
 
-    /// Gives the slots of the dependencies of a task that the graph has.
-    ///
-    /// - Parameter slot: The slot of the task.
-    /// - Returns: The slots. An unresolved dependency has no slot, so it is not in the result.
-    private func dependencySlots(ofTaskAt slot: Int) -> [Int] {
-        dependencies(ofTaskAt: slot).compactMap(\.resolvedSlot)
+    /// This board, as a walk across boards reads it.
+    private var currentBoard: WalkBoard {
+        WalkBoard(key: boardKey, graph: graph)
     }
+
+    /// Gives the steps of a walk across boards from one task: one step to each dependency of the task that a loaded
+    /// board has.
+    ///
+    /// - Parameter step: The task.
+    /// - Returns: The steps, in the order of the dependencies.
+    private func nextSteps(after step: WalkStep) -> [WalkStep] {
+        dependencies(ofTaskAt: step.slot, in: step.board).compactMap { target in
+            self.step(to: target, from: step.board)
+        }
+    }
+
+    /// Gives the dependencies of a task of a board that a walk reads, without the dependencies on tombstoned nodes.
+    ///
+    /// - Parameters:
+    ///   - slot: The slot of the task in the graph of the board.
+    ///   - board: The board of the task.
+    /// - Returns: The dependencies. A slot that holds no task gives no dependencies.
+    private func dependencies(ofTaskAt slot: Int, in board: WalkBoard) -> [EdgeTarget] {
+        guard board.key != boardKey else {
+            return dependencies(ofTaskAt: slot)
+        }
+        return board.graph.liveDependencies(ofTaskAt: slot, inBoard: board.key, reading: related) ?? []
+    }
+
+    /// Gives the step of a walk across boards to one dependency.
+    ///
+    /// - Parameters:
+    ///   - target: The dependency.
+    ///   - board: The board of the task that has the dependency.
+    /// - Returns: The step, or `nil` when no loaded board has the target.
+    private func step(to target: EdgeTarget, from board: WalkBoard) -> WalkStep? {
+        switch target {
+        case .slot(let slot): WalkStep(board: board, slot: slot)
+        case .unresolved(let ref): step(toTaskOf: ref)
+        }
+    }
+
+    /// Gives the step of a walk across boards to the task of a cross-board ref. A task with the key of this board is
+    /// read in ``graph``, so that the walk can come back to a task of this board.
+    ///
+    /// - Parameter ref: The stored ref of the task.
+    /// - Returns: The step, or `nil` for a local ref, for a task that no loaded board has, and for a task of this
+    ///   board that is not a live task.
+    private func step(toTaskOf ref: StoredRef) -> WalkStep? {
+        guard case .remote(let uri) = ref, let found = related.task(for: ref) else {
+            return nil
+        }
+        guard found.board.key == boardKey else {
+            return WalkStep(board: WalkBoard(key: found.board.key, graph: found.board.graph), slot: found.slot)
+        }
+        return graph.slot(for: uri.ref).flatMap { slot in
+            graph.isLiveTask(at: slot) ? WalkStep(board: currentBoard, slot: slot) : nil
+        }
+    }
+}
+
+/// A board that a walk across boards reads: its current key and its graph.
+private struct WalkBoard {
+    /// The current key of the board.
+    let key: String
+
+    /// The graph of the board.
+    let graph: Graph
+}
+
+/// One task that a walk across boards reached.
+private struct WalkStep {
+    /// The board of the task.
+    let board: WalkBoard
+
+    /// The slot of the task in the graph of its board.
+    let slot: Int
+
+    /// The place of the task on the walk.
+    var position: TaskPosition {
+        TaskPosition(boardKey: board.key, slot: slot)
+    }
+}
+
+/// The place of a task on a walk across boards: the current key of its board and its slot in that board.
+private struct TaskPosition: Hashable {
+    /// The current key of the board of the task.
+    let boardKey: String
+
+    /// The slot of the task in the graph of its board.
+    let slot: Int
 }
 
 // MARK: - Graph
