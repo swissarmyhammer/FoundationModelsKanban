@@ -33,8 +33,17 @@ comments:
     - evidence: 14 files — Sources/FoundationModelsKanban/Derived/Readiness.swift, Sources/FoundationModelsKanban/Derived/VirtualTags.swift, Sources/FoundationModelsKanban/GraphQL/QueryResolvers.swift, Sources/FoundationModelsKanban/GraphQL/Schema.swift, Sources/FoundationModelsKanban/Observe/ChangeBuilder.swift, Tests/FoundationModelsKanbanTests/Derived/ReadinessTests.swift, Tests/FoundationModelsKanbanTests/Derived/VirtualTagsTests.swift, Tests/FoundationModelsKanbanTests/Filter/FilterEvaluatorTests.swift, Tests/FoundationModelsKanbanTests/GraphQL/NameMatcherTests.swift, Tests/FoundationModelsKanbanTests/GraphQL/NameRewriteTests.swift, Tests/FoundationModelsKanbanTests/GraphQL/NodeQueryTests.swift, Tests/FoundationModelsKanbanTests/GraphQL/QueryResolverTests.swift, Tests/FoundationModelsKanbanTests/Mutations/TagMutationTests.swift, Tests/FoundationModelsKanbanTests/Observe/ChangeBuilderTests.swift; swift test: 1246 tests in 93 suites pass, only the accepted SwiftPM warning
     - next: /review
   timestamp: 2026-10-14T21:58:47.730349+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4y79469fe6n0ggt8ppmd9rk
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 14 files
+    - test: green — swift test, 1246 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: a6b5b31
+    - review: clean — none
+  timestamp: 2026-10-14T22:07:14.633728+00:00
+position_column: done
+position_ordinal: ea80
 title: Remove the blocks field and the BLOCKING virtual tag
 ---
 ## What

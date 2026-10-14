@@ -518,6 +518,15 @@ extension TaskObject {
         view.readiness.blockers(ofTaskAt: slot).compactMap(liveTask(at:))
     }
 
+    /// The full URI of each dependency that no loaded board has as a task (divergence.md Q2): for example a URI with
+    /// a typo, a task of a repo that the scan cannot find, or a task of a related board that cannot be read. Each one
+    /// blocks the task, and ``blockedBy`` does not list it. A dependency on a tombstone is not in the list.
+    var unresolvedDependsOn: [NodeID] {
+        view.readiness.unresolvedDependencies(ofTaskAt: slot).map { ref in
+            NodeID(text: ref.uri(inBoard: view.boardKey).description)
+        }
+    }
+
     /// Gives the live task at the target of a dependency.
     ///
     /// - Parameter target: The target: a slot of this board, or a ref to a task of a related board.

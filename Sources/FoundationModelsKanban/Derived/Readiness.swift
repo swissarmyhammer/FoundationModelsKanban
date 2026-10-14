@@ -110,6 +110,20 @@ struct Readiness {
         }
     }
 
+    /// Gives the dependencies of a task that no loaded board has as a task: the `unresolvedDependsOn` field
+    /// (divergence.md Q2). Each one blocks the task (plan.md §3.3, rule 4), and `blockedBy` does not list it.
+    ///
+    /// A target is unresolved when this graph has no node for its local ref, when no loaded board has the task of a
+    /// cross-board ref (the board is not found, cannot be read, or has no task for the ref), or when its node is not
+    /// a task. A dependency on a tombstone is ignored, so it is not in the result.
+    ///
+    /// - Parameter slot: The slot of the task.
+    /// - Returns: The stored ref of each unresolved target, in the order of the dependencies. A slot that holds no
+    ///   task gives no refs.
+    func unresolvedDependencies(ofTaskAt slot: Int) -> [StoredRef] {
+        dependencies(ofTaskAt: slot).compactMap(unresolvedRef(of:))
+    }
+
     /// Tells if a task is ready: no dependency blocks it. A done task can also be ready.
     ///
     /// - Parameter slot: The slot of the task.
@@ -135,6 +149,22 @@ extension Readiness {
             !isDone(taskAt: targetSlot) || hasDependencyPath(from: targetSlot, to: slot)
         case .unresolved(let ref):
             !related.isDone(ref)
+        }
+    }
+
+    /// Gives the stored ref of a dependency that no loaded board has as a task.
+    ///
+    /// - Parameter target: The dependency.
+    /// - Returns: The ref of the target, or `nil` when a loaded board has a task for it, live or tombstoned.
+    private func unresolvedRef(of target: EdgeTarget) -> StoredRef? {
+        switch target {
+        case .slot(let targetSlot):
+            guard graph.node(at: targetSlot, as: TaskNode.self) == nil else {
+                return nil
+            }
+            return graph.node(at: targetSlot).map { node in .local(node.ref) }
+        case .unresolved(let ref):
+            return related.task(for: ref) == nil ? ref : nil
         }
     }
 

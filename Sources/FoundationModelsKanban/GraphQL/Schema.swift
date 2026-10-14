@@ -891,6 +891,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Field("tags", at: \.tags)
                 Field("dependsOn", at: \.dependsOn)
                 Field("blockedBy", at: \.blockedBy)
+                Field("unresolvedDependsOn", at: \.unresolvedDependsOn)
                 Field("ready", at: \.ready)
                 Field("virtualTags", at: \.virtualTags)
                 Field("progress", at: \.progress)
