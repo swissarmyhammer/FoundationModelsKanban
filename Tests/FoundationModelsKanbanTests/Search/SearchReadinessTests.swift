@@ -14,10 +14,16 @@ import Testing
 struct SearchReadinessTests {
     /// The longest time that the gated embedder holds one embed when the test does not release it. The old load
     /// waited for the embed, so this limit ends that wait and the test fails instead of a hang.
-    static let holdLimit = Duration.seconds(2)
+    static let holdLimit = Duration.seconds(holdLimitSeconds)
+
+    /// The number of seconds in ``holdLimit``.
+    private static let holdLimitSeconds = 2
 
     /// The longest time that the merge probe holds the merge of the event lists while it waits for the first embed.
-    static let mergeWaitLimit = Duration.seconds(2)
+    static let mergeWaitLimit = Duration.seconds(mergeWaitLimitSeconds)
+
+    /// The number of seconds in ``mergeWaitLimit``.
+    private static let mergeWaitLimitSeconds = 2
 
     /// Gives the `query` argument of a word of the title of the fixture task.
     ///
@@ -69,6 +75,7 @@ struct SearchReadinessTests {
         let engine = try await host.engine(ofBoardAt: directory.url)
         await engine.session.source.search.waitForEmbeddings()
         let hits = try await TaskSearchTests.hits(searchingWith: Self.titleQuery(), on: session)
+        #expect(!keywordHits.isEmpty)
         #expect(keywordHits.allSatisfy { hit in hit.signals.cosine == nil })
         #expect(hits.first?.task.id == ColumnActorTests.id(of: .task(task)))
         #expect(!hits.isEmpty && hits.allSatisfy { hit in hit.signals.cosine != nil })
@@ -93,9 +100,6 @@ final class GatedEmbedder: PooledEmbedding {
         /// The number of embeds that finished.
         var finishCount = 0
     }
-
-    /// The time between two checks of a held embed or of a wait.
-    static let checkInterval = Duration.milliseconds(5)
 
     /// The state, behind a lock, because the embeds run on different threads.
     private let state = Mutex(State())
@@ -132,7 +136,9 @@ final class GatedEmbedder: PooledEmbedding {
     /// - Throws: `CancellationError` when the task of the embed is cancelled.
     func embed(texts: [String]) async throws -> [[Float]] {
         state.withLock { state in state.startCount += 1 }
-        try await Self.wait(atMost: holdLimit) { self.state.withLock { state in state.isReleased } }
+        _ = try await EventLogTests.becomesTrue(within: holdLimit) {
+            self.state.withLock { state in state.isReleased }
+        }
         state.withLock { state in state.finishCount += 1 }
         return try await TaskSearchTests.FakeEmbedder().embed(texts: texts)
     }
@@ -142,21 +148,8 @@ final class GatedEmbedder: PooledEmbedding {
     /// - Parameter limit: The longest time to wait.
     /// - Returns: `true` when an embed started.
     func waitForStart(atMost limit: Duration) async -> Bool {
-        try? await Self.wait(atMost: limit) { self.startCount > 0 }
+        _ = try? await EventLogTests.becomesTrue(within: limit) { self.startCount > 0 }
         return startCount > 0
-    }
-
-    /// Waits until a condition is true, or until a time limit passes.
-    ///
-    /// - Parameters:
-    ///   - limit: The longest time to wait.
-    ///   - condition: The condition.
-    /// - Throws: `CancellationError` when the task is cancelled.
-    private static func wait(atMost limit: Duration, until condition: () -> Bool) async throws {
-        let deadline = ContinuousClock.now + limit
-        while !condition(), ContinuousClock.now < deadline {
-            try await Task.sleep(for: checkInterval)
-        }
     }
 }
 

@@ -32,6 +32,30 @@ comments:
     - evidence: 9 files. New: Sources/FoundationModelsKanban/Search/EmbeddedTaskCatalog.swift, Tests/FoundationModelsKanbanTests/Search/SearchReadinessTests.swift. Changed: Sources/FoundationModelsKanban/Events/Loader.swift, Sources/FoundationModelsKanban/Observe/LiveGraph.swift, Sources/FoundationModelsKanban/Search/TaskSearch.swift, Sources/FoundationModelsKanban/Tool/BoardEngine.swift, Tests/FoundationModelsKanbanTests/GraphQL/QueryFixture.swift, Tests/FoundationModelsKanbanTests/Tool/KanbanHostTests.swift, README.md. `swift build --build-tests`: only the accepted SwiftPM "missing creator" warning. `swift test`: 1194 tests in 88 suites passed. FoundationModelsMetadataRegistry: no change, no new API needed.
     - next: /review
   timestamp: 2026-10-14T18:37:11.400108+00:00
+- actor: claude-code
+  id: 01m4xvn39v5ztekv9vfjzz41bs
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 9 files (no change in FoundationModelsMetadataRegistry)
+    - test: green — swift test, 1194 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 3059b9f
+    - review: findings — Tests/FoundationModelsKanbanTests/Search/SearchReadinessTests.swift:72, Tests/FoundationModelsKanbanTests/Search/SearchReadinessTests.swift:98, Tests/FoundationModelsKanbanTests/Search/SearchReadinessTests.swift:155
+  timestamp: 2026-10-14T18:44:04.027123+00:00
+- actor: claude-code
+  id: 01m4xvvp1cy2svv8r59baxyj9q
+  text: |-
+    Review findings fixed in Tests/FoundationModelsKanbanTests/Search/SearchReadinessTests.swift (test code only, no production change):
+    - no-test-cheating: added `#expect(!keywordHits.isEmpty)` before the cosine check in searchUsesEmbeddingsWhenTheyFinish. The other `allSatisfy` checks in the file already have a non-empty guard (an exact id list, or `!hits.isEmpty &&`).
+    - magic-numbers-swift: removed `checkInterval` (the cause at the cited line). Also gave each numeric literal in the file a name, with the EventLogTests pattern: `holdLimitSeconds`, `mergeWaitLimitSeconds`.
+    - reuse: removed the private `GatedEmbedder.wait`. The embed hold and `waitForStart` now call `EventLogTests.becomesTrue(within:_:)`. The callers still read the state after the call. The poll pause is now `EventLogTests.retryPause` (10 ms, was 5 ms).
+  timestamp: 2026-10-14T18:47:39.820638+00:00
+- actor: claude-code
+  id: 01m4xvvr3znvsck8vhc5x3b088
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsKanbanTests/Search/SearchReadinessTests.swift. `swift build --build-tests`: only the accepted SwiftPM "missing creator" warning. `swift test --filter SearchReadinessTests`: 3 passed. `swift test`: 1194 tests in 88 suites passed. 3 of 3 review findings checked.
+    - next: /review
+  timestamp: 2026-10-14T18:47:41.951312+00:00
 depends_on:
 - 01M4X6ZBTA66TCPVYM41QR0ACD
 position_column: doing
@@ -64,3 +88,17 @@ Result: no new API was necessary. The current `MetadataSearcher` API is sufficie
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-14 13:39)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 8 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsKanbanTests/Search/SearchReadinessTests.swift:72` `test-integrity/no-test-cheating` — The assertion that keyword hits have no cosine score passes when the keyword search returns no hits. The test never checks that keywordHits is non-empty, so the check is vacuously true and cannot fail for an empty result. Add `#expect(!keywordHits.isEmpty)` before line 72, as sessionIsReadyBeforeEmbeddings does at line 54, so the cosine check proves something about the keyword hits.
+- [x] `Tests/FoundationModelsKanbanTests/Search/SearchReadinessTests.swift:98` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.
+- [x] `Tests/FoundationModelsKanbanTests/Search/SearchReadinessTests.swift:155` `reuse/reuse` — GatedEmbedder.wait reimplements the polling wait that already exists as EventLogTests.becomesTrue. Both poll a condition with a short sleep until a deadline. The new copy duplicates the deadline and sleep loop, so a fix to one (for example, a change to the pause or the deadline handling) will not reach the other. Replace the body of GatedEmbedder.wait with a call to EventLogTests.becomesTrue(within: limit, condition), or move becomesTrue to a shared test helper and call it from both suites. Note that becomesTrue returns a Bool and does not throw on timeout, so the callers that need the outcome (waitForStart, the embed hold) must still read the state after the call, as they already do.
