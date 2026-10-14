@@ -232,25 +232,40 @@ struct BoardKeyTests {
         #expect(try await BoardKey.read(fromRepoAt: repo).description == "gitlab.com/new-owner/moved-repo")
     }
 
-    @Test("An engine in a repo whose origin is a local path gives local/<main-clone-name>")
-    func engineWithLocalOriginGivesLocalKey() async throws {
+    // MARK: - Engine
+
+    @Test("An engine in a repo whose origin has no host gives local/<main-clone-name>", arguments: localOrigins)
+    func engineWithLocalOriginGivesLocalKey(origin: String) async throws {
         let sandbox = try GitSandbox()
-        let origin = try #require(Self.localOrigins.first)
         let repo = try await sandbox.makeRepo(named: "main-clone", origin: origin)
         let response = try await Self.keyResponse(ofEngineAt: repo)
         #expect(response == KanbanGraphTests.keyResponse(of: BoardKey(mainCloneName: "main-clone")))
     }
 
+    @Test("An engine in a subfolder of a repo gives the key of the repo", arguments: subfolderOrigins)
+    func engineInSubfolderGivesKeyOfRepo(origin: String?) async throws {
+        let sandbox = try GitSandbox()
+        let repo = try await sandbox.makeRepo(named: "my-repo", origin: origin)
+        let subfolder = try GitSandbox.makeFolder(named: Self.subfolderName, in: repo)
+        let response = try await Self.keyResponse(ofEngineAt: subfolder)
+        #expect(try await response == KanbanGraphTests.keyResponse(of: BoardKey.read(fromRepoAt: repo)))
+    }
+
+    @Test("An engine in a folder that is not in a git repo gives NOT_A_REPO for the key")
+    func engineOutsideRepoGivesNotARepo() async throws {
+        let sandbox = try GitSandbox()
+        let folder = try GitSandbox.makeFolder(named: Self.plainFolderName, in: sandbox.root)
+        let response = try await Self.keyResponse(ofEngineAt: folder)
+        #expect(try response == KanbanError.notARepo(path: folder.path).responseJSON())
+    }
+
     /// Runs ``KanbanGraphTests/keyQuery`` on an engine that reads the key from git, and closes the engine.
     ///
-    /// - Parameter root: The folder of the board of the engine.
+    /// - Parameter directory: The working directory of the engine.
     /// - Returns: The response JSON text.
     /// - Throws: An error when the engine cannot start or the query throws.
-    private static func keyResponse(ofEngineAt root: URL) async throws -> String {
-        let graph = try GitGraphFixture.makeGraph(at: root)
-        let response = try await KanbanGraphTests.execute(KanbanGraphTests.keyQuery, on: graph)
-        await graph.close()
-        return response
+    private static func keyResponse(ofEngineAt directory: URL) async throws -> String {
+        try await RepoBoardTests.respond(to: KanbanGraphTests.keyQuery, inWorkingDirectory: directory)
     }
 
     // MARK: - Git process

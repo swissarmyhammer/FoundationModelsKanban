@@ -1139,41 +1139,54 @@ protocol LiveGraphObserver: Sendable {
     func didApply(changedPaths paths: [URL])
 }
 
-/// An async queue that runs one operation at a time, in the order that the operations arrive (plan.md §7.2).
+/// An async queue that runs a fixed number of operations at a time, in the order that the operations arrive.
 ///
-/// An actor alone does not do this: it can start a second call at each `await` of the first call. The gate keeps
-/// the operations that wait in a queue, and starts the next one only when the current one ends.
+/// The gate of an engine has one slot, so it runs one operation at a time (plan.md §7.2). An actor alone does not do
+/// this: it can start a second call at each `await` of the first call. The gate keeps the operations that wait in a
+/// queue, and starts the next one only when a running one ends.
 actor SerialGate {
-    /// `true` while an operation runs.
-    private var isBusy = false
+    /// The number of slots of the gate of an engine: one operation at a time.
+    static let serialSlots = 1
+
+    /// The number of slots that no operation holds.
+    private var freeSlots: Int
 
     /// The operations that wait, in the order that they arrived.
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
-    /// Runs an operation after each earlier operation of the gate ends.
+    /// Makes a gate.
+    ///
+    /// - Parameter slots: The number of operations that can run at the same time. It must be one or more.
+    init(slots: Int = serialSlots) {
+        precondition(slots > 0, "A gate needs one slot or more, not \(slots)")
+        freeSlots = slots
+    }
+
+    /// Runs an operation while it holds one slot of the gate. The operation starts after each earlier operation got
+    /// a slot.
     ///
     /// - Parameter operation: The operation.
     /// - Returns: The result of the operation.
-    /// - Throws: The error of the operation. The gate then lets the next operation run.
-    func run<Value: Sendable>(serially operation: @Sendable () async throws -> Value) async rethrows -> Value {
+    /// - Throws: The error of the operation. The gate then gives the slot to the next operation.
+    func run<Value: Sendable>(inSlot operation: @Sendable () async throws -> Value) async rethrows -> Value {
         await enter()
         defer { leave() }
         return try await operation()
     }
 
-    /// Waits until no operation runs, then marks the gate busy.
+    /// Takes one free slot, or waits until a running operation gives its slot.
     private func enter() async {
-        guard isBusy else {
-            isBusy = true
+        guard freeSlots == 0 else {
+            freeSlots -= 1
             return
         }
         await withCheckedContinuation { waiter in waiters.append(waiter) }
     }
 
-    /// Gives the gate to the next operation that waits, or marks the gate free.
+    /// Gives the slot to the next operation that waits, or marks the slot free.
     private func leave() {
         guard !waiters.isEmpty else {
-            isBusy = false
+            freeSlots += 1
             return
         }
         waiters.removeFirst().resume()

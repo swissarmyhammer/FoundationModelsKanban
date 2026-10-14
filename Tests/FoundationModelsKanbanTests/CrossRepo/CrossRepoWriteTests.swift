@@ -219,6 +219,50 @@ struct CrossRepoWriteTests {
         #expect(patch.set[PropertyName.title] == .string(AddUpdateTaskTests.title))
     }
 
+    /// Runs one mutation field on an engine of the current repo, and checks that the field fails with one error.
+    ///
+    /// - Parameters:
+    ///   - field: The mutation field, with its selection.
+    ///   - name: The name of the mutation of the field.
+    ///   - repos: The repos of the sandbox.
+    ///   - expected: The error that the field must give.
+    ///   - code: The `extensions.code` of the error.
+    /// - Throws: An error when the engine cannot start, the call throws, or the response is not a JSON object.
+    static func expectFailure(
+        of field: String,
+        named name: String,
+        in repos: CrossRepoFixture.SideBySide,
+        giving expected: KanbanError,
+        coded code: String
+    ) async throws {
+        let response = try await CommentTests.run(field, on: GitGraphFixture.makeGraph(at: repos.app))
+        try ErrorCoverageTests.expectFailure(of: name, in: response, giving: expected, coded: code)
+    }
+
+    /// Runs an `addTask` field whose board field is a board ref on an engine of the current repo, and checks that
+    /// the field fails with one error.
+    ///
+    /// - Parameters:
+    ///   - reference: The board ref of the `board` field.
+    ///   - repos: The repos of the sandbox.
+    ///   - expected: The error that the field must give.
+    ///   - code: The `extensions.code` of the error.
+    /// - Throws: An error when the engine cannot start, the call throws, or the response is not a JSON object.
+    static func expectAddTaskFailure(
+        naming reference: String,
+        in repos: CrossRepoFixture.SideBySide,
+        giving expected: KanbanError,
+        coded code: String
+    ) async throws {
+        try await expectFailure(
+            of: AddUpdateTaskTests.addTask(with: boardField(reference)),
+            named: MutationName.addTask,
+            in: repos,
+            giving: expected,
+            coded: code
+        )
+    }
+
     /// Reads each file of a folder and of its subfolders.
     ///
     /// - Parameter folder: The folder.
@@ -307,13 +351,12 @@ struct CrossRepoWriteTests {
     )
     func missingBoardGivesNotFound(field: String) async throws {
         let repos = try await CrossRepoFixture.SideBySide.make()
-        let response = try await CommentTests.run(field, on: GitGraphFixture.makeGraph(at: repos.app))
         let name = try #require(field.split(separator: "(").first).description
         let expected = KanbanError.boardNotFound(
             reference: CrossRepoReadTests.missingKey,
             searchRoots: [repos.sandbox.root.path]
         )
-        try ErrorCoverageTests.expectFailure(of: name, in: response, giving: expected, coded: "NOT_FOUND")
+        try await Self.expectFailure(of: field, named: name, in: repos, giving: expected, coded: "NOT_FOUND")
     }
 
     // MARK: - Path refs
@@ -336,11 +379,8 @@ struct CrossRepoWriteTests {
         let repos = try await CrossRepoFixture.SideBySide.make()
         let other = try await Self.makeOutsideFolder(as: .plainFolder, in: repos)
         let reference = isRelative ? BoardLocatorTests.outsideReferenceFromRoot : other.path
-        let field = AddUpdateTaskTests.addTask(with: Self.boardField(reference))
-        let response = try await CommentTests.run(field, on: GitGraphFixture.makeGraph(at: repos.app))
         let expected = KanbanError.notARepo(path: other.standardizedFileURL.path)
-        let code = "NOT_A_REPO"
-        try ErrorCoverageTests.expectFailure(of: MutationName.addTask, in: response, giving: expected, coded: code)
+        try await Self.expectAddTaskFailure(naming: reference, in: repos, giving: expected, coded: "NOT_A_REPO")
         #expect(!Self.hasBoardDirectory(inRepoAt: other))
     }
 
@@ -367,10 +407,8 @@ struct CrossRepoWriteTests {
     func missingFolderPathGivesNotFound() async throws {
         let repos = try await CrossRepoFixture.SideBySide.make()
         let missing = repos.sandbox.root.appending(path: BoardLocatorTests.missingName, directoryHint: .isDirectory)
-        let field = AddUpdateTaskTests.addTask(with: Self.boardField(missing.path))
-        let response = try await CommentTests.run(field, on: GitGraphFixture.makeGraph(at: repos.app))
         let expected = KanbanError.boardNotFound(reference: missing.path, searchRoots: [repos.sandbox.root.path])
-        try ErrorCoverageTests.expectFailure(of: MutationName.addTask, in: response, giving: expected, coded: "NOT_FOUND")
+        try await Self.expectAddTaskFailure(naming: missing.path, in: repos, giving: expected, coded: "NOT_FOUND")
         #expect(!FileManager.default.fileExists(atPath: missing.path))
     }
 

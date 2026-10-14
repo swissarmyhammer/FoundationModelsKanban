@@ -1,6 +1,9 @@
 import Testing
 
-/// Tests the ``WatcherBudget`` that limits the number of tests that hold a file watcher.
+@testable import FoundationModelsKanban
+
+/// Tests the ``SerialGate`` with more than one slot, as the ``WatcherBudget`` uses it to limit the number of tests
+/// that hold a file watcher.
 @Suite("Watcher budget")
 struct WatcherBudgetTests {
     /// Counts the operations that run at the same time, and the most that ran at the same time.
@@ -26,17 +29,28 @@ struct WatcherBudgetTests {
     /// An error that an operation throws.
     private struct OperationFailure: Error {}
 
+    /// The number of slots of the gate in the limit test.
+    static let limitSlots = 2
+
+    /// The number of operations in the limit test. This is much more than ``limitSlots``.
+    static let limitOperations = 12
+
+    /// The number of times that each operation of the limit test yields, so that the operations overlap.
+    static let yieldsPerOperation = 20
+
+    /// The value that the operation after a thrown error gives.
+    static let valueAfterError = 7
+
     @Test("No more operations than the slots run at the same time, and each operation runs")
-    func slotsLimitTheOperations() async throws {
-        let budget = WatcherBudget(slots: 2)
+    func slotsLimitTheOperations() async {
+        let budget = SerialGate(slots: Self.limitSlots)
         let meter = Meter()
-        let operations = 12
-        let finished = try await withThrowingTaskGroup(of: Int.self) { group in
-            for index in 0..<operations {
+        let finished = await withTaskGroup(of: Int.self) { group in
+            for index in 0..<Self.limitOperations {
                 group.addTask {
-                    try await budget.withSlot {
+                    await budget.run {
                         await meter.begin()
-                        for _ in 0..<20 {
+                        for _ in 0..<Self.yieldsPerOperation {
                             await Task.yield()
                         }
                         await meter.end()
@@ -44,19 +58,19 @@ struct WatcherBudgetTests {
                     }
                 }
             }
-            return try await group.reduce(into: Set<Int>()) { $0.insert($1) }
+            return await group.reduce(into: Set<Int>()) { $0.insert($1) }
         }
-        #expect(finished == Set(0..<operations))
-        #expect(await meter.peak <= 2)
+        #expect(finished == Set(0..<Self.limitOperations))
+        #expect(await meter.peak <= Self.limitSlots)
     }
 
     @Test("A slot is free again after an operation throws")
-    func throwFreesTheSlot() async throws {
-        let budget = WatcherBudget(slots: 1)
+    func throwFreesTheSlot() async {
+        let budget = SerialGate(slots: 1)
         await #expect(throws: OperationFailure.self) {
-            try await budget.withSlot { () async throws -> Int in throw OperationFailure() }
+            try await budget.run { () async throws -> Int in throw OperationFailure() }
         }
-        let value = try await budget.withSlot { 7 }
-        #expect(value == 7)
+        let value = await budget.run { Self.valueAfterError }
+        #expect(value == Self.valueAfterError)
     }
 }
