@@ -100,13 +100,23 @@ extension Event {
 
     /// Reads an event from one line of a log.
     ///
-    /// - Parameter line: The text of the line, with no line break.
+    /// The envelope, the `node`, and the `type` of the patch must decode. The other values of the patch decode one at
+    /// a time, with the policy.
+    ///
+    /// - Parameters:
+    ///   - line: The text of the line, with no line break.
+    ///   - policy: What the read does with a value of the patch that does not decode. With
+    ///     ``PatchValuePolicy/refuse`` (the default), the read throws. With ``PatchValuePolicy/skip``, the patch of
+    ///     the event has no such value.
     /// - Throws: ``EventError/invalidRef(_:)`` when a ref is not valid. ``EventError/malformed(detail:)`` when the
     ///   line is not JSON or a field is missing or has the wrong shape. Another ``EventError`` when the patch breaks
-    ///   a rule of ``PatchInput``.
-    init(parsing line: String) throws(EventError) {
+    ///   a rule of ``PatchInput``. With ``PatchValuePolicy/skip``, only an envelope, a `node`, or a `type` that does
+    ///   not decode gives an error.
+    init(parsing line: String, policy: PatchValuePolicy = .refuse) throws(EventError) {
         do {
-            self = try JSONDecoder().decode(Self.self, from: Data(line.utf8))
+            self = try PatchValuePolicy.$current.withValue(policy) {
+                try JSONDecoder().decode(Self.self, from: Data(line.utf8))
+            }
         } catch let error as EventError {
             throw error
         } catch let error as NodeRefError {

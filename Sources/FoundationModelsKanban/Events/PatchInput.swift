@@ -41,15 +41,45 @@ enum PatchValue: Hashable, Sendable {
             self = .json(map)
             return
         }
+        self = .ref(try StoredRef(ofProperty: name, from: map))
+    }
+}
+
+extension StoredRef {
+    /// Reads one ref of a property from its JSON form: the stored text of the ref.
+    ///
+    /// - Parameters:
+    ///   - name: The name of the property.
+    ///   - map: The JSON value.
+    /// - Throws: ``EventError/refMismatch(property:)`` when the value is not text. ``EventError/invalidRef(_:)`` when
+    ///   the text is not a stored ref.
+    init(ofProperty name: String, from map: Map) throws(EventError) {
         guard case .string(let text) = map else {
             throw .refMismatch(property: name)
         }
         do throws(NodeRefError) {
-            self = .ref(try StoredRef(parsing: text))
+            self = try StoredRef(parsing: text)
         } catch {
             throw .invalidRef(error)
         }
     }
+}
+
+/// What the decode of a patch does with one value that does not decode: a `set` value, a member of an `add` or a
+/// `remove` list, a name of the `unset` list, the `delete` flag, or the `edit`.
+///
+/// The `node` and the `type` of a patch are not values. When one of them does not decode, the decode always throws.
+enum PatchValuePolicy: Sendable {
+    /// The decode throws, so the whole patch is refused. The internal `patch` mutation uses it.
+    case refuse
+
+    /// The decode records the value with swift-log, and leaves it out of the patch. Replay uses it, because replay
+    /// never refuses a log, and a schema change needs no upgrade step (plan.md §3.3, rule 7).
+    case skip
+
+    /// The policy of the patch decodes that run now. ``Event/init(parsing:policy:)`` sets it for the decode of one
+    /// line. The default is ``refuse``.
+    @TaskLocal static var current: PatchValuePolicy = .refuse
 }
 
 /// The `edit` part of a patch: a unified diff for the Markdown body of the node (plan.md §5.5).
@@ -236,10 +266,16 @@ extension PatchInput: Codable {
 
     /// Reads a patch from its JSON form: a log line, or the GraphQL arguments of the `patch` mutation.
     ///
+    /// The `node` and the `type` always decode first. Then each value of the patch decodes by itself, with the
+    /// ``PatchValuePolicy/current`` policy: with ``PatchValuePolicy/skip``, a value that does not decode is left out,
+    /// and the other values stay in the patch.
+    ///
     /// - Parameter decoder: The decoder that holds the patch.
-    /// - Throws: A `DecodingError` when a part has the wrong shape. A ``NodeRefError`` when a ref is not valid.
-    ///   ``EventError/typeMismatch(node:type:)`` when `type` is not the type of `node`. An ``EventError`` from
-    ///   ``init(node:set:unset:add:remove:delete:edit:)`` or ``PatchValue/init(ofProperty:from:)``.
+    /// - Throws: A `DecodingError` when the patch, its `node`, or its `type` has the wrong shape, and with
+    ///   ``PatchValuePolicy/refuse`` also when a value has the wrong shape. A ``NodeRefError`` when the node ref is
+    ///   not valid. ``EventError/typeMismatch(node:type:)`` when `type` is not the type of `node`. With
+    ///   ``PatchValuePolicy/refuse``, an ``EventError`` from ``PatchValue/init(ofProperty:from:)``,
+    ///   ``StoredRef/init(ofProperty:from:)``, or ``init(node:set:unset:add:remove:delete:edit:)``.
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let node = try container.decode(LocalRef.self, forKey: .node)
@@ -247,19 +283,158 @@ extension PatchInput: Codable {
         guard type == node.nodeType else {
             throw EventError.typeMismatch(node: node, type: type)
         }
-        let setMaps = try container.decodeIfPresent([String: Map].self, forKey: .set) ?? [:]
-        let set = try Dictionary(
-            uniqueKeysWithValues: setMaps.map { name, value in (name, try PatchValue(ofProperty: name, from: value)) }
-        )
+        let reader = PartReader(container: container, node: node, policy: PatchValuePolicy.current)
         try self.init(
             node: node,
-            set: set,
-            unset: container.decodeIfPresent([String].self, forKey: .unset) ?? [],
-            add: container.decodeIfPresent([String: [StoredRef]].self, forKey: .add) ?? [:],
-            remove: container.decodeIfPresent([String: [StoredRef]].self, forKey: .remove) ?? [:],
-            delete: container.decodeIfPresent(Bool.self, forKey: .delete),
-            edit: container.decodeIfPresent(PatchEdit.self, forKey: .edit)
+            set: reader.readSet(),
+            unset: reader.readUnset(),
+            add: reader.readMembers(forKey: .add),
+            remove: reader.readMembers(forKey: .remove),
+            delete: reader.readPart(Bool.self, forKey: .delete),
+            edit: reader.readPart(PatchEdit.self, forKey: .edit)
         )
+    }
+
+    /// Reads the value of one property of the `set` part, and checks that a patch can set the property.
+    ///
+    /// - Parameters:
+    ///   - name: The name of the property.
+    ///   - map: The JSON value.
+    /// - Returns: The value.
+    /// - Throws: An ``EventError`` from ``PatchValue/init(ofProperty:from:)`` or from the check of a `set` value.
+    private static func setValue(ofProperty name: String, from map: Map) throws(EventError) -> PatchValue {
+        let value = try PatchValue(ofProperty: name, from: map)
+        try check(value, ofProperty: name)
+        return value
+    }
+
+    /// Reads the parts of a patch from its JSON form, one value at a time, with one ``PatchValuePolicy``.
+    private struct PartReader {
+        /// The container of the patch.
+        let container: KeyedDecodingContainer<CodingKeys>
+
+        /// The node of the patch. The record of a skipped value names it.
+        let node: LocalRef
+
+        /// What the reader does with a value that does not decode.
+        let policy: PatchValuePolicy
+
+        /// Reads one value of the patch.
+        ///
+        /// - Parameters:
+        ///   - place: The place of the value in the patch, for example `set.column` or `add.tags[1]`. The record of
+        ///     a skipped value names it.
+        ///   - decode: Reads the value.
+        /// - Returns: The value, or `nil` when the patch has no value. With ``PatchValuePolicy/skip``, also `nil`
+        ///   when the value does not decode: the reader records it with swift-log.
+        /// - Throws: With ``PatchValuePolicy/refuse``, the error of `decode`.
+        func read<Value>(_ place: String, _ decode: () throws -> Value?) throws -> Value? {
+            do {
+                return try decode()
+            } catch {
+                guard policy == .skip else {
+                    throw error
+                }
+                Log.kanban.warning(
+                    "Replay skips a patch value that does not decode",
+                    metadata: ["node": "\(node)", "value": "\(place)", "error": "\(error)"]
+                )
+                return nil
+            }
+        }
+
+        /// Reads one part of the patch as a whole.
+        ///
+        /// - Parameters:
+        ///   - type: The type of the part.
+        ///   - key: The key of the part.
+        /// - Returns: The part, or `nil` when the patch has no part. With ``PatchValuePolicy/skip``, also `nil` when
+        ///   the part does not decode.
+        /// - Throws: With ``PatchValuePolicy/refuse``, the `DecodingError` of a part that does not decode.
+        func readPart<Value: Decodable>(_ type: Value.Type, forKey key: CodingKeys) throws -> Value? {
+            try read(key.stringValue) { try container.decodeIfPresent(type, forKey: key) }
+        }
+
+        /// Reads the `set` part: each property by itself.
+        ///
+        /// - Returns: The value of each property that decodes.
+        /// - Throws: With ``PatchValuePolicy/refuse``, the error of the first value that does not decode, in name
+        ///   order.
+        func readSet() throws -> [String: PatchValue] {
+            try readProperties(forKey: .set) { name, map, place in
+                try read(place) { try setValue(ofProperty: name, from: map) }
+            }
+        }
+
+        /// Reads the `unset` part: each name by itself.
+        ///
+        /// - Returns: The names that decode, in list order.
+        /// - Throws: With ``PatchValuePolicy/refuse``, the error of the first name that does not decode.
+        func readUnset() throws -> [String] {
+            let part = CodingKeys.unset.stringValue
+            return try (readPart([Map].self, forKey: .unset) ?? []).enumerated().compactMap { index, name in
+                try read("\(part)[\(index)]") {
+                    guard case .string(let text) = name else {
+                        throw EventError.malformed(detail: "The name at \(part)[\(index)] is not text")
+                    }
+                    return text
+                }
+            }
+        }
+
+        /// Reads the `add` or the `remove` part: each member of each property by itself.
+        ///
+        /// - Parameter key: The key of the part.
+        /// - Returns: The members that decode, for each property whose list decodes.
+        /// - Throws: With ``PatchValuePolicy/refuse``, the error of the first value that does not decode, in name
+        ///   order.
+        func readMembers(forKey key: CodingKeys) throws -> [String: [StoredRef]] {
+            try readProperties(forKey: key) { name, list, place in
+                try readMembers(ofProperty: name, from: list, at: place)
+            }
+        }
+
+        /// Reads a part that holds one JSON value for each property: each property by itself, in name order.
+        ///
+        /// - Parameters:
+        ///   - key: The key of the part.
+        ///   - readValue: Reads the value of one property from its name, its JSON value, and its place in the patch.
+        ///     It gives `nil` for a value that it skips.
+        /// - Returns: The value of each property that `readValue` reads.
+        /// - Throws: With ``PatchValuePolicy/refuse``, the `DecodingError` of a part that is not a JSON object, or
+        ///   the first error of `readValue`.
+        private func readProperties<Value>(
+            forKey key: CodingKeys,
+            _ readValue: (String, Map, String) throws -> Value?
+        ) throws -> [String: Value] {
+            let maps = try readPart([String: Map].self, forKey: key) ?? [:]
+            let values = try maps.sorted { lhs, rhs in lhs.key < rhs.key }.compactMap { name, map in
+                try readValue(name, map, "\(key.stringValue).\(name)").map { value in (name, value) }
+            }
+            return Dictionary(uniqueKeysWithValues: values)
+        }
+
+        /// Reads the list of members of one property.
+        ///
+        /// - Parameters:
+        ///   - name: The name of the property.
+        ///   - list: The JSON value of the list.
+        ///   - place: The place of the list in the patch.
+        /// - Returns: The members that decode, in list order, or `nil` when the value is not a list and the policy
+        ///   is ``PatchValuePolicy/skip``.
+        /// - Throws: With ``PatchValuePolicy/refuse``, ``EventError/refMismatch(property:)`` when the value is not a
+        ///   list, or the error of the first member that does not decode.
+        private func readMembers(ofProperty name: String, from list: Map, at place: String) throws -> [StoredRef]? {
+            let items = try read(place) {
+                guard case .array(let items) = list else {
+                    throw EventError.refMismatch(property: name)
+                }
+                return items
+            }
+            return try items?.enumerated().compactMap { index, item in
+                try read("\(place)[\(index)]") { try StoredRef(ofProperty: name, from: item) }
+            }
+        }
     }
 
     /// Writes the JSON form of the patch, ``map``.

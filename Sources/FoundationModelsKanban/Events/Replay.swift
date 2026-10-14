@@ -9,9 +9,10 @@ import ULID
 /// depends only on the lines of its own file. The fold sorts the events by event id, so the order of the lines in the
 /// file is not important: a `union` merge can put the lines in any order, and the result is the same.
 ///
-/// Replay never refuses a log (plan.md §3.3, rule 7). A line that does not decode, a line whose patch changes a
-/// different node, an `edit` whose diff does not parse, and a property value of the wrong kind are skipped. Each skip
-/// is recorded with swift-log.
+/// Replay never refuses a log (plan.md §3.3, rule 7). A value of a patch that does not decode is skipped alone, and
+/// the other values of its line apply. A line whose envelope does not decode, a line whose patch changes a different
+/// node, an `edit` whose diff does not parse, and a property value of the wrong kind are skipped. Each skip is
+/// recorded with swift-log.
 struct NodeLog: Hashable, Sendable {
     /// The events of the log, in the order of their event ids. The loader merges these lists into the global event
     /// list (plan.md §5.3, global order).
@@ -128,19 +129,21 @@ private struct ParsedLine {
         (lhs.event.id, lhs.text) < (rhs.event.id, rhs.text)
     }
 
-    /// Reads one line of the log of a node.
+    /// Reads one line of the log of a node. A value of the patch that does not decode is left out of the event
+    /// (``PatchValuePolicy/skip``), so the other values of the line still apply.
     ///
     /// - Parameters:
     ///   - text: The text of the line.
     ///   - ref: The local ref of the node of the log.
-    /// - Returns: The line, or `nil` when the line is blank, does not decode, or changes a different node.
+    /// - Returns: The line, or `nil` when the line is blank, its envelope does not decode, or it changes a different
+    ///   node.
     init?(parsing text: String, for ref: LocalRef) {
         guard !text.allSatisfy(\.isWhitespace) else {
             return nil
         }
         let event: Event
         do {
-            event = try Event(parsing: text)
+            event = try Event(parsing: text, policy: .skip)
         } catch {
             Log.kanban.warning(
                 "Replay skips a log line that does not decode",

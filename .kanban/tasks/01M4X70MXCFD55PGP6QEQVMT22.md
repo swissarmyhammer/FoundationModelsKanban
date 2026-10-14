@@ -56,8 +56,17 @@ comments:
     - evidence: 3 files — Sources/FoundationModelsKanban/Identity/ULIDSource.swift, Tests/FoundationModelsKanbanTests/Tool/EventIDOrderTests.swift, Tests/FoundationModelsKanbanTests/Identity/ShortIDTests.swift; swift test 1230/1230 pass
     - next: /review
   timestamp: 2026-10-14T20:36:41.266095+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4y2errpy78159yc9d3cff21
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 3 files (1 finding fixed, 2 new tests)
+    - test: green — swift test, 1230 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 1bb8632
+    - review: clean — none
+  timestamp: 2026-10-14T20:42:56.662766+00:00
+position_column: done
+position_ordinal: e780
 title: Make event ids increase from one call to the next
 ---
 ## What
