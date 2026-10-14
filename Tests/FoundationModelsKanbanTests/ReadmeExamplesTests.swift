@@ -13,9 +13,10 @@ private let readmeSuiteMinutes = 1
 /// Tests the "Get started" examples of `README.md` (^n1yhb0x).
 ///
 /// Each test runs an example with the same code and the same GraphQL documents as the README, on a board in a
-/// temporary git repo with no remote. The folder of the repo has the name ``folderName``, so the board key is
-/// `local/my-project`. Each response must have no `errors`. A response with no minted id and no transaction ULID must
-/// be the same text as a ```` ```json ```` block of the README.
+/// temporary git repo with no remote and no commit. The folder of the repo has the name ``folderName``. The engine
+/// makes the first commit of the repo, so the board key is `local/<root commit>` of that commit. Each response must
+/// have no `errors`. A response with no minted id and no transaction ULID must be the same text as a
+/// ```` ```json ```` block of the README.
 @Suite("README: the Get started examples", .watcherBudget, .timeLimit(.minutes(readmeSuiteMinutes)))
 struct ReadmeExamplesTests {
     /// The README, relative to the repository root.
@@ -23,9 +24,6 @@ struct ReadmeExamplesTests {
 
     /// The name of the folder of the board of each test.
     private static let folderName = "my-project"
-
-    /// The prefix of the id of each task of the board in ``folderName``.
-    private static let taskIDPrefix = "kanban://local/\(folderName)/task/"
 
     /// The title of the task that example 2 adds.
     private static let taskTitle = "Fix the login bug"
@@ -106,15 +104,22 @@ struct ReadmeExamplesTests {
         /// The engine, as example 1 makes it.
         let graph: KanbanGraph
 
-        /// Makes the folder, runs `git init` in it, and makes the engine of example 1.
+        /// Makes the folder, runs `git init` in it, and makes the engine of example 1. The repo gets the local config
+        /// ``GitSandbox/identityConfig``: a name and an email of the author, and no commit signatures. Thus the engine
+        /// can make the first commit of the repo also on a machine with no global git identity.
         ///
-        /// - Throws: An error when the folder cannot be made, when `git init` fails, or when the engine cannot be made.
+        /// - Throws: An error when the folder cannot be made, when `git init` or `git config` fails, or when the engine
+        ///   cannot be made.
         init() async throws {
             directory = try TemporaryDirectory()
             root = directory.url.appending(path: ReadmeExamplesTests.folderName, directoryHint: .isDirectory)
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             let result = try await Git.run(withArguments: ["init", "--quiet"], inDirectory: root)
             try #require(result.status == Git.successStatus, "git init failed: \(result.errorOutput)")
+            for (key, value) in GitSandbox.identityConfig {
+                let config = try await Git.run(withArguments: ["config", key, value], inDirectory: root)
+                try #require(config.status == Git.successStatus, "git config \(key) failed: \(config.errorOutput)")
+            }
             graph = try KanbanGraph(root: root, actor: nil)
         }
 
@@ -177,15 +182,28 @@ struct ReadmeExamplesTests {
     /// Runs one query of the README on a board that has the task of example 2.
     ///
     /// - Parameter query: The query.
-    /// - Returns: The `board` object of the response.
+    /// - Returns: The example board, which keeps its folder until the value ends, and the `board` object of the
+    ///   response.
     /// - Throws: An error when a response has `errors`, or no `board` object.
-    private static func boardAfterFirstTask(answering query: String) async throws -> [String: Any] {
-        let board = try await ExampleBoard()
-        try expectNoErrors(try await addFirstTask(on: board.graph))
-        let response = try await KanbanGraphTests.execute(query, on: board.graph)
-        await board.graph.close()
+    private static func boardAfterFirstTask(
+        answering query: String
+    ) async throws -> (example: ExampleBoard, board: [String: Any]) {
+        let example = try await ExampleBoard()
+        try expectNoErrors(try await addFirstTask(on: example.graph))
+        let response = try await KanbanGraphTests.execute(query, on: example.graph)
+        await example.graph.close()
         try expectNoErrors(response)
-        return try #require(NameRewriteTests.data(of: response)["board"] as? [String: Any], "\(response)")
+        let board = try #require(NameRewriteTests.data(of: response)["board"] as? [String: Any], "\(response)")
+        return (example, board)
+    }
+
+    /// Gives the prefix of the id of each task of a board: the scheme, the board key, and the `task` type.
+    ///
+    /// - Parameter root: The folder of the board. The repo of the folder must have its first commit.
+    /// - Returns: The prefix, for example `kanban://local/c83fae4e58ce/task/`.
+    /// - Throws: A ``BoardKeyError`` when the key of the board cannot be read.
+    private static func taskIDPrefix(inBoardAt root: URL) async throws -> String {
+        "kanban://\(try await BoardKey.read(fromRepoAt: root))/task/"
     }
 
     /// Reads the `updates` of one change as their `id` and `kind`.
@@ -258,19 +276,21 @@ struct ReadmeExamplesTests {
 
     @Test("The tasks filter #bug && @alice lists the task of example 2")
     func bugsOfAliceListTask() async throws {
-        let board = try await Self.boardAfterFirstTask(answering: DocumentationTests.bugsOfAliceQuery)
+        let (example, board) = try await Self.boardAfterFirstTask(answering: DocumentationTests.bugsOfAliceQuery)
+        let prefix = try await Self.taskIDPrefix(inBoardAt: example.root)
         let edges = (board["tasks"] as? [String: Any])?["edges"] as? [[String: Any]] ?? []
         let nodes = edges.compactMap { edge in edge["node"] as? [String: Any] }
         #expect(nodes.map { node in node["title"] as? String } == [Self.taskTitle])
-        #expect(nodes.allSatisfy { node in (node["id"] as? String)?.hasPrefix(Self.taskIDPrefix) == true })
+        #expect(nodes.allSatisfy { node in (node["id"] as? String)?.hasPrefix(prefix) == true })
     }
 
     @Test("The history filter ~column gives the column updates of the first mutation")
     func columnHistoryHasDefaultColumns() async throws {
-        let board = try await Self.boardAfterFirstTask(answering: DocumentationTests.columnHistoryQuery)
+        let (example, board) = try await Self.boardAfterFirstTask(answering: DocumentationTests.columnHistoryQuery)
+        let key = try await BoardKey.read(fromRepoAt: example.root)
         let changes = board["history"] as? [[String: Any]] ?? []
         let columns = DefaultColumn.all.map { column in
-            ["kanban://local/\(Self.folderName)/column/\(column.slug)", Self.createdKind]
+            ["kanban://\(key)/column/\(column.slug)", Self.createdKind]
         }
         #expect(changes.map { change in change["ops"] as? [String] } == [Self.firstOperations])
         #expect(changes.map(Self.idsAndKinds(of:)) == [columns])
@@ -321,13 +341,14 @@ struct ReadmeExamplesTests {
         let events = try await SubscriptionTests.events(SubscriptionTests.oneEvent, of: stream)
         await board.graph.close()
         let rest = try await SubscriptionTests.allEvents(of: stream)
+        let prefix = try await Self.taskIDPrefix(inBoardAt: board.root)
         let event = try #require(events.first, "the subscription must send one event")
         try Self.expectNoErrors(event)
         let change = try #require(NameRewriteTests.data(of: event)["changes"] as? [String: Any], "\(event)")
         let updates = change["updates"] as? [[String: Any]] ?? []
         #expect(change["ops"] as? [String] == Self.secondBugOperations)
         #expect(updates.map { update in update["kind"] as? String } == [Self.createdKind])
-        #expect(updates.allSatisfy { update in (update["id"] as? String)?.hasPrefix(Self.taskIDPrefix) == true })
+        #expect(updates.allSatisfy { update in (update["id"] as? String)?.hasPrefix(prefix) == true })
         #expect(rest == [])
     }
 

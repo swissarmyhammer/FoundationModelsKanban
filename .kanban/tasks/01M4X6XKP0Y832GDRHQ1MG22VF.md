@@ -66,8 +66,24 @@ comments:
     - evidence: `swift test` 1150 tests in 84 suites passed, no compiler warnings (only the accepted "missing creator" line). 5 files: Sources/FoundationModelsKanban/Tool/KanbanGraph.swift (SerialGate slots), Tests/FoundationModelsKanbanTests/WatcherBudget.swift, Tests/FoundationModelsKanbanTests/WatcherBudgetTests.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoWriteTests.swift, Tests/FoundationModelsKanbanTests/Identity/BoardKeyTests.swift. All 4 findings checked.
     - next: /review
   timestamp: 2026-10-14T14:38:30.317684+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4xdxx8qsph96qapgy0p2759
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (8cfa570). 0 findings, 0 confirmed, 1 refuted, 7 attempted. 5 files reviewed. 2 .kanban/ files are ignored by .reviewignore. All 4 prior findings are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-14T14:44:12.695987+00:00
+- actor: claude-code
+  id: 01m4xdy69051kzw36wb6pj69zs
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 5 files (4 findings fixed)
+    - test: green — swift test, 1150 passed, 0 failed, 0 skipped
+    - commit: 8cfa570
+    - review: clean — task moved to done
+  timestamp: 2026-10-14T14:44:21.920276+00:00
+position_column: done
+position_ordinal: de80
 title: Put the board only in a git repo, at the worktree top
 ---
 ## What

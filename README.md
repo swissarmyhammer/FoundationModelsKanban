@@ -46,7 +46,12 @@ let graph = try KanbanGraph(root: URL(filePath: "/path/to/my-project"), actor: n
   error `NOT_A_REPO`.
 - In a git repo with an `origin` remote, the key comes from the remote, for
   example `github.com/owner/repo`. In a repo with no remote, the key is
-  `local/<main-clone-name>`, for example `local/my-project`.
+  `local/<root commit>`: the first 12 hex digits of the root commit of the
+  repo, for example `local/c83fae4e58ce`. The key does not change when you move
+  the folder or give it a new name. A repo with no commit gets one empty first
+  commit on its current branch when the engine reads the key. This commit does
+  not take your staged files. Git must have a `user.name` and a `user.email`
+  for this commit.
 - `actor` is the name of the actor of your changes. `nil` uses the name of the
   user of the operating system.
 - The engine reads nothing until the first call. A query on a folder with no
@@ -121,7 +126,7 @@ let nodeChanges = try await graph.execute(query: """
 ```
 
 - The first response has the task `Fix the login bug`. Its `id` is a URI, for
-  example `kanban://local/my-project/task/<ULID>`.
+  example `kanban://local/c83fae4e58ce/task/<ULID>`.
 - The second response has the first transaction. Its `ops` are `addActor` and
   `addTask`. Its updates are the four new columns, with the kind `CREATED`.
 - `01jabcd` is a short id. Put the short id of a node of your board there. When

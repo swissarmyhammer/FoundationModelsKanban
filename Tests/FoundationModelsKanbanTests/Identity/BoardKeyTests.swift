@@ -60,6 +60,29 @@ struct BoardKeyTests {
     /// The exit status of git after a fatal error.
     static let gitFatalStatus: Int32 = 128
 
+    /// The SHA of a commit, for the test of the text of a root commit key.
+    static let sampleCommit = "c83fae4e58ced3b4cddb5c4bf9f151b0df1d379b"
+
+    /// The name of the file that a test stages in a repo with no commit.
+    static let stagedFileName = "notes.txt"
+
+    /// The text of the file that a test stages in a repo with no commit.
+    static let stagedText = "staged, not committed\n"
+
+    /// The text in the standard error of git when git has no identity for a commit.
+    static let unknownIdentityMessage = "Author identity unknown"
+
+    /// The command of git that makes the first commit of a repo with no commit.
+    static let firstCommitCommand = "commit-tree"
+
+    /// The branch that a root-commit test makes with `git checkout --orphan`.
+    static let orphanBranch = "other-history"
+
+    /// The places of a merge in the test of two root commits: `true` merges the orphan branch into the first
+    /// branch, and `false` merges the first branch into the orphan branch. The two merges list the two root commits
+    /// in opposite orders, so a key that takes the first root commit of the list fails one of them.
+    static let mergeIntoFirstBranch = [true, false]
+
     // MARK: - Normalization
 
     @Test("SSH, HTTPS, and ssh:// forms of one remote give the same key", arguments: remoteForms)
@@ -99,9 +122,9 @@ struct BoardKeyTests {
         }
     }
 
-    @Test("A repo with no remote has the key local/<main-clone-name>")
-    func localKeyHasMainCloneName() {
-        #expect(BoardKey(mainCloneName: "my-repo").description == "local/my-repo")
+    @Test("A repo with no remote has the key local/<first 12 hex digits of the root commit>")
+    func localKeyHasTwelveDigitsOfRootCommit() {
+        #expect(BoardKey(rootCommit: Self.sampleCommit).description == "local/c83fae4e58ce")
     }
 
     @Test("A key from a remote is a valid board key of a node URI")
@@ -113,11 +136,102 @@ struct BoardKeyTests {
 
     // MARK: - Read from a repo
 
-    @Test("A repo with no remote gives local/<directory-name>")
-    func repoWithoutRemoteGivesLocalKey() async throws {
+    @Test("A repo with no remote gives local/<root commit>")
+    func repoWithoutRemoteGivesRootCommitKey() async throws {
         let sandbox = try GitSandbox()
         let repo = try await sandbox.makeRepo(named: "my-repo")
-        #expect(try await BoardKey.read(fromRepoAt: repo) == BoardKey(mainCloneName: "my-repo"))
+        #expect(try await BoardKey.read(fromRepoAt: repo) == sandbox.headKey(of: repo))
+    }
+
+    @Test("Two clones and a worktree of a repo with no remote have the same key")
+    func clonesWithoutRemoteGiveSameKey() async throws {
+        let sandbox = try GitSandbox()
+        let repo = try await sandbox.makeRepo(named: "first-clone")
+        let clone = try await sandbox.cloneRepo(repo, named: "second-clone")
+        let worktree = try await sandbox.addWorktree(named: "feature-worktree", to: clone)
+        let key = try await sandbox.headKey(of: repo)
+        #expect(try await BoardKey.read(fromRepoAt: repo) == key)
+        #expect(try await BoardKey.read(fromRepoAt: clone) == key)
+        #expect(try await BoardKey.read(fromRepoAt: worktree) == key)
+    }
+
+    @Test("A repo with two root commits uses the lowest SHA", arguments: mergeIntoFirstBranch)
+    func twoRootCommitsGiveLowestSHA(intoFirstBranch: Bool) async throws {
+        let sandbox = try GitSandbox()
+        let repo = try await sandbox.makeEmptyRepo(named: "merged-repo")
+        try await sandbox.commit(message: "First history", in: repo)
+        let firstBranch = try await sandbox.output(ofGit: ["symbolic-ref", "--short", "HEAD"], in: repo)
+        let firstRoot = try await sandbox.output(ofGit: ["rev-parse", "HEAD"], in: repo)
+        try await sandbox.runGit(withArguments: ["checkout", "--quiet", "--orphan", Self.orphanBranch], in: repo)
+        try await sandbox.commit(message: "Second history", in: repo)
+        let secondRoot = try await sandbox.output(ofGit: ["rev-parse", "HEAD"], in: repo)
+        let (target, source) = intoFirstBranch ? (firstBranch, Self.orphanBranch) : (Self.orphanBranch, firstBranch)
+        try await sandbox.runGit(withArguments: ["checkout", "--quiet", target], in: repo)
+        try await sandbox.merge(source, in: repo)
+        #expect(try await BoardKey.read(fromRepoAt: repo) == BoardKey(rootCommit: min(firstRoot, secondRoot)))
+    }
+
+    // MARK: - First commit
+
+    @Test("A new repo with no commit gets one empty first commit on its branch, and the key comes from that commit")
+    func repoWithoutCommitGetsEmptyFirstCommit() async throws {
+        let sandbox = try GitSandbox()
+        let repo = try await sandbox.makeEmptyRepo(named: "new-repo")
+        let branch = try await sandbox.output(ofGit: ["symbolic-ref", "HEAD"], in: repo)
+        let key = try await BoardKey.read(fromRepoAt: repo)
+        #expect(try await sandbox.output(ofGit: ["rev-list", "--count", branch], in: repo) == "1")
+        #expect(try await sandbox.output(ofGit: ["ls-tree", "HEAD"], in: repo) == "")
+        #expect(try await sandbox.output(ofGit: ["log", "-1", "--format=%s"], in: repo) == BoardKey.firstCommitMessage)
+        #expect(try await key == sandbox.headKey(of: repo))
+    }
+
+    @Test("The first commit does not take the staged files, and the working files do not change")
+    func firstCommitKeepsStagedFiles() async throws {
+        let sandbox = try GitSandbox()
+        let repo = try await sandbox.makeEmptyRepo(named: "staged-repo")
+        let file = repo.appending(path: Self.stagedFileName)
+        try Self.stagedText.write(to: file, atomically: true, encoding: .utf8)
+        try await sandbox.runGit(withArguments: ["add", Self.stagedFileName], in: repo)
+        _ = try await BoardKey.read(fromRepoAt: repo)
+        #expect(try await sandbox.output(ofGit: ["ls-tree", "-r", "--name-only", "HEAD"], in: repo) == "")
+        let staged = try await sandbox.output(ofGit: ["diff", "--cached", "--name-only"], in: repo)
+        #expect(staged == Self.stagedFileName)
+        #expect(try String(contentsOf: file, encoding: .utf8) == Self.stagedText)
+    }
+
+    @Test("A repo with commits gets no new commit")
+    func repoWithCommitsGetsNoNewCommit() async throws {
+        let sandbox = try GitSandbox()
+        let repo = try await sandbox.makeRepo(named: "old-repo")
+        let head = try await sandbox.output(ofGit: ["rev-parse", "HEAD"], in: repo)
+        _ = try await BoardKey.read(fromRepoAt: repo)
+        #expect(try await sandbox.output(ofGit: ["rev-parse", "HEAD"], in: repo) == head)
+        #expect(try await sandbox.output(ofGit: ["rev-list", "--count", "--all"], in: repo) == "1")
+    }
+
+    @Test("A repo with no commit and no git identity gives an error with the reason from git, and gets no commit")
+    func firstCommitWithoutIdentityThrows() async throws {
+        let sandbox = try GitSandbox()
+        let repo = try await sandbox.makeEmptyRepo(named: "anonymous-repo", withIdentity: false)
+        let environment = try sandbox.environmentWithoutIdentity()
+        let error = try await #require(throws: BoardKeyError.self) {
+            try await BoardKey.read(fromRepoAt: repo, gitEnvironment: environment)
+        }
+        let failure = try #require(Self.gitFailure(of: error))
+        #expect(failure.command == Self.firstCommitCommand)
+        #expect(failure.message.contains(Self.unknownIdentityMessage))
+        #expect(try await sandbox.output(ofGit: ["rev-list", "--all"], in: repo) == "")
+    }
+
+    /// Gives the command and the message of a ``BoardKeyError/gitFailed(arguments:status:message:)`` error.
+    ///
+    /// - Parameter error: The error.
+    /// - Returns: The first argument of git and the standard error of git, or `nil` for each other error.
+    static func gitFailure(of error: BoardKeyError) -> (command: String?, message: String)? {
+        switch error {
+        case .gitFailed(let arguments, _, let message): (arguments.first, message)
+        case .invalidRemoteURL, .notARepo, .gitUnavailable, .gitTimedOut, .gitCancelled: nil
+        }
     }
 
     @Test("A repo with an SSH origin and a repo with an HTTPS origin give the same key")
@@ -188,20 +302,21 @@ struct BoardKeyTests {
         await #expect(throws: expected) { try await BoardKey.read(fromRepoAt: repo) }
     }
 
-    @Test("An origin with a host but no path gives local/<main-clone-name>")
+    @Test("An origin with a host but no path gives local/<root commit>")
     func originWithoutPathGivesLocalKey() async throws {
         let sandbox = try GitSandbox()
         let repo = try await sandbox.makeRepo(named: "main-clone", origin: Self.pathlessOrigin)
-        #expect(try await BoardKey.read(fromRepoAt: repo) == BoardKey(mainCloneName: "main-clone"))
+        #expect(try await BoardKey.read(fromRepoAt: repo) == sandbox.headKey(of: repo))
     }
 
-    @Test("An origin with no host gives local/<main-clone-name>, also in a worktree", arguments: localOrigins)
+    @Test("An origin with no host gives local/<root commit>, also in a worktree", arguments: localOrigins)
     func originWithoutHostGivesLocalKey(origin: String) async throws {
         let sandbox = try GitSandbox()
         let repo = try await sandbox.makeRepo(named: "main-clone", origin: origin)
         let worktree = try await sandbox.addWorktree(named: "feature-worktree", to: repo)
-        #expect(try await BoardKey.read(fromRepoAt: repo) == BoardKey(mainCloneName: "main-clone"))
-        #expect(try await BoardKey.read(fromRepoAt: worktree) == BoardKey(mainCloneName: "main-clone"))
+        let key = try await sandbox.headKey(of: repo)
+        #expect(try await BoardKey.read(fromRepoAt: repo) == key)
+        #expect(try await BoardKey.read(fromRepoAt: worktree) == key)
     }
 
     @Test("A worktree gives the same key as its main clone, with an origin")
@@ -220,7 +335,7 @@ struct BoardKeyTests {
         let sandbox = try GitSandbox()
         let repo = try await sandbox.makeRepo(named: "main-clone")
         let worktree = try await sandbox.addWorktree(named: "feature-worktree", to: repo)
-        #expect(try await BoardKey.read(fromRepoAt: worktree) == BoardKey(mainCloneName: "main-clone"))
+        #expect(try await BoardKey.read(fromRepoAt: worktree) == sandbox.headKey(of: repo))
     }
 
     @Test("Each read gets the current origin, so a new remote gives a new key")
@@ -234,12 +349,20 @@ struct BoardKeyTests {
 
     // MARK: - Engine
 
-    @Test("An engine in a repo whose origin has no host gives local/<main-clone-name>", arguments: localOrigins)
+    @Test("An engine in a repo whose origin has no host gives local/<root commit>", arguments: localOrigins)
     func engineWithLocalOriginGivesLocalKey(origin: String) async throws {
         let sandbox = try GitSandbox()
         let repo = try await sandbox.makeRepo(named: "main-clone", origin: origin)
         let response = try await Self.keyResponse(ofEngineAt: repo)
-        #expect(response == KanbanGraphTests.keyResponse(of: BoardKey(mainCloneName: "main-clone")))
+        #expect(try await response == KanbanGraphTests.keyResponse(of: sandbox.headKey(of: repo)))
+    }
+
+    @Test("An engine in a new repo with no commit makes the first commit, and gives local/<root commit>")
+    func engineInRepoWithoutCommitGivesRootCommitKey() async throws {
+        let sandbox = try GitSandbox()
+        let repo = try await sandbox.makeEmptyRepo(named: "new-repo")
+        let response = try await Self.keyResponse(ofEngineAt: repo)
+        #expect(try await response == KanbanGraphTests.keyResponse(of: sandbox.headKey(of: repo)))
     }
 
     @Test("An engine in a subfolder of a repo gives the key of the repo", arguments: subfolderOrigins)
@@ -480,11 +603,49 @@ struct BoardKeyTests {
 ///
 /// The sandbox is a class, because its `deinit` removes the directory.
 final class GitSandbox {
+    /// The name of the author of each commit that the sandbox makes.
+    static let userName = "Board Key Tests"
+
+    /// The email of the author of each commit that the sandbox makes.
+    static let userEmail = "tests@example.invalid"
+
     /// The name and the email of the author of the first commit of each repo.
-    static let identityArguments = ["-c", "user.name=Board Key Tests", "-c", "user.email=tests@example.invalid"]
+    static let identityArguments = ["-c", "user.name=\(userName)", "-c", "user.email=\(userEmail)"]
 
     /// Turns off commit signatures, because the setup has no signing key.
     static let unsignedArguments = ["-c", "commit.gpgsign=false"]
+
+    /// The local config of a repo that ``makeEmptyRepo(named:withIdentity:)`` makes with an identity: the name and
+    /// the email of the author, and no commit signatures.
+    static let identityConfig = [
+        ("user.name", userName),
+        ("user.email", userEmail),
+        ("commit.gpgsign", "false"),
+    ]
+
+    /// The time of each commit of ``commit(message:in:)`` and ``merge(_:in:)``. All commits have the same time, so
+    /// `git rev-list` lists the parents of a merge in the order of the merge.
+    static let fixedCommitDate = "2026-01-01T00:00:00Z"
+
+    /// The variables that give each commit the time ``fixedCommitDate``.
+    static let fixedDateVariables = ["GIT_AUTHOR_DATE": fixedCommitDate, "GIT_COMMITTER_DATE": fixedCommitDate]
+
+    /// The name of the home folder of git in the environment of ``environmentWithoutIdentity()``.
+    static let homeFolderName = "home"
+
+    /// The name of the global git config file in the home folder of ``environmentWithoutIdentity()``.
+    static let globalConfigFileName = ".gitconfig"
+
+    /// The global git config of ``environmentWithoutIdentity()``. Git uses only the identity of its config, and does
+    /// not make an identity from the name of the user and of the host.
+    static let configOnlyIdentityText = "[user]\n\tuseConfigOnly = true\n"
+
+    /// The prefix of the names of the environment variables of git. ``environmentWithoutIdentity()`` removes each
+    /// one, for example `GIT_AUTHOR_NAME`.
+    static let gitVariablePrefix = "GIT_"
+
+    /// The environment variable that git reads as the email of a commit when the config has none.
+    static let emailVariable = "EMAIL"
 
     /// The temporary directory of the sandbox.
     let root: URL
@@ -554,7 +715,107 @@ final class GitSandbox {
     /// - Throws: A ``BoardKeyError`` when git cannot start. An `ExpectationFailedError` when git exits with a failure
     ///   status.
     func runGit(withArguments arguments: [String], in directory: URL) async throws {
-        let result = try await Git.run(withArguments: arguments, inDirectory: directory)
+        _ = try await output(ofGit: arguments, in: directory)
+    }
+
+    /// Runs a git command in a directory of the sandbox, requires that it succeeds, and gives its output.
+    ///
+    /// - Parameters:
+    ///   - arguments: The arguments after `git`.
+    ///   - directory: The directory where git runs.
+    ///   - environment: The environment of git, or `nil` for the environment of the test process.
+    /// - Returns: The standard output of git, with no white space at the start and at the end.
+    /// - Throws: A ``BoardKeyError`` when git cannot start. An `ExpectationFailedError` when git exits with a failure
+    ///   status.
+    func output(
+        ofGit arguments: [String],
+        in directory: URL,
+        environment: [String: String]? = nil
+    ) async throws -> String {
+        let result = try await Git.run(withArguments: arguments, inDirectory: directory, environment: environment)
         try #require(result.status == Git.successStatus, "git \(arguments) failed: \(result.errorOutput)")
+        return result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Makes a git repo with no commit in the sandbox.
+    ///
+    /// - Parameters:
+    ///   - name: The name of the repo directory.
+    ///   - hasIdentity: `true` puts ``identityConfig`` in the config of the repo, so git can make a commit with no
+    ///     global config. `false` gives a repo with no config of its own.
+    /// - Returns: The repo directory.
+    /// - Throws: An error when the directory cannot be made, or when a git command cannot start or fails.
+    func makeEmptyRepo(named name: String, withIdentity hasIdentity: Bool = true) async throws -> URL {
+        let repo = try Self.makeFolder(named: name, in: root)
+        try await runGit(withArguments: ["init", "--quiet"], in: repo)
+        for (key, value) in Self.identityConfig where hasIdentity {
+            try await runGit(withArguments: ["config", key, value], in: repo)
+        }
+        return repo
+    }
+
+    /// Makes an empty commit on the current branch of a repo, at ``fixedCommitDate``.
+    ///
+    /// - Parameters:
+    ///   - message: The message of the commit.
+    ///   - repo: The repo directory. Its config has ``identityConfig``.
+    /// - Throws: A ``BoardKeyError`` when git cannot start, or an `ExpectationFailedError` when git fails.
+    func commit(message: String, in repo: URL) async throws {
+        let arguments = ["commit", "--quiet", "--allow-empty", "-m", message]
+        _ = try await output(ofGit: arguments, in: repo, environment: Self.fixedDateEnvironment)
+    }
+
+    /// Merges a branch with an unrelated history into the current branch of a repo, at ``fixedCommitDate``.
+    ///
+    /// - Parameters:
+    ///   - branch: The branch to merge.
+    ///   - repo: The repo directory. Its config has ``identityConfig``.
+    /// - Throws: A ``BoardKeyError`` when git cannot start, or an `ExpectationFailedError` when git fails.
+    func merge(_ branch: String, in repo: URL) async throws {
+        let arguments = ["merge", "--quiet", "--no-edit", "--allow-unrelated-histories", branch]
+        _ = try await output(ofGit: arguments, in: repo, environment: Self.fixedDateEnvironment)
+    }
+
+    /// The environment of the test process, with the commit time ``fixedCommitDate``.
+    static var fixedDateEnvironment: [String: String] {
+        ProcessInfo.processInfo.environment.merging(fixedDateVariables) { _, fixed in fixed }
+    }
+
+    /// Clones a repo into the sandbox. The `origin` of the clone is the path of the repo, which has no host.
+    ///
+    /// - Parameters:
+    ///   - repo: The repo to clone.
+    ///   - name: The name of the directory of the clone.
+    /// - Returns: The directory of the clone.
+    /// - Throws: A ``BoardKeyError`` when git cannot start, or an `ExpectationFailedError` when git fails.
+    func cloneRepo(_ repo: URL, named name: String) async throws -> URL {
+        let clone = root.appending(path: name, directoryHint: .isDirectory)
+        try await runGit(withArguments: ["clone", "--quiet", repo.path, clone.path], in: root)
+        return clone
+    }
+
+    /// Gives the root commit key of a repo whose `HEAD` commit is its one root commit.
+    ///
+    /// - Parameter repo: The repo directory.
+    /// - Returns: The key `local/<first 12 hex digits of HEAD>`.
+    /// - Throws: A ``BoardKeyError`` when git cannot start, or an `ExpectationFailedError` when git fails.
+    func headKey(of repo: URL) async throws -> BoardKey {
+        BoardKey(rootCommit: try await output(ofGit: ["rev-parse", "HEAD"], in: repo))
+    }
+
+    /// Makes an environment where git has no identity: the home folder and the global config are in the sandbox,
+    /// git reads no system config, and no environment variable gives a name or an email.
+    ///
+    /// - Returns: The environment of git.
+    /// - Throws: An error from `FileManager` when the home folder or the config file cannot be made.
+    func environmentWithoutIdentity() throws -> [String: String] {
+        let home = try Self.makeFolder(named: Self.homeFolderName, in: root)
+        let config = home.appending(path: Self.globalConfigFileName)
+        try Self.configOnlyIdentityText.write(to: config, atomically: true, encoding: .utf8)
+        let inherited = ProcessInfo.processInfo.environment.filter { name, _ in
+            !name.hasPrefix(Self.gitVariablePrefix) && name != Self.emailVariable
+        }
+        let isolated = ["HOME": home.path, "GIT_CONFIG_GLOBAL": config.path, "GIT_CONFIG_NOSYSTEM": "1"]
+        return inherited.merging(isolated) { _, isolatedValue in isolatedValue }
     }
 }

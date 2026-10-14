@@ -102,13 +102,14 @@ struct CommitRollbackTests {
         }
     }
 
-    /// Reads the key of a repo from the name of its directory, and does not run git.
+    /// Gives a fake key from the name of the repo directory, and does not run git. The directory name stands in for
+    /// the root commit.
     ///
     /// - Parameter root: The root directory of the repo.
-    /// - Returns: The local key of the directory name.
+    /// - Returns: The fake local key of the directory name.
     @Sendable
     static func directoryKey(ofRepoAt root: URL) -> BoardKey {
-        BoardKey(mainCloneName: root.lastPathComponent)
+        BoardKey(rootCommit: root.lastPathComponent)
     }
 
     /// Makes a repo with a `.git` directory and the fixture logs of ``KanbanGraphTests``.

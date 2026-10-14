@@ -13,7 +13,7 @@ typealias WorktreeTopReader = @Sendable (URL) async throws(BoardKeyError) -> URL
 /// search root of the config, in config order. In each place, it reads the directory names in sort order. A
 /// directory with a `.git` entry (the directory of a clone, or the file of a worktree) is a repo. A folder that is not
 /// a git repo has no board, so the scan does not find it (divergence.md §16). The key of a repo comes from
-/// ``BoardKey/read(fromRepoAt:)``: from its current `origin`, or `local/<main-clone-name>` for a repo with no remote.
+/// ``BoardKey/read(fromRepoAt:)``: from its current `origin`, or `local/<root commit>` for a repo with no remote.
 /// The board of the repo is enabled when `.kanban/board.jsonl` exists.
 public struct BoardLocator: Sendable {
     /// The locator with no search root: it looks only in the parent directory of the current repo.
@@ -226,7 +226,7 @@ struct BoardCopy: Hashable, Sendable {
     /// The root directory of the copy.
     let directory: URL
 
-    /// The key of the board of the copy, from its current `origin`, or `local/<main-clone-name>` for a repo with no
+    /// The key of the board of the copy, from its current `origin`, or `local/<root commit>` for a repo with no
     /// remote.
     let key: BoardKey
 

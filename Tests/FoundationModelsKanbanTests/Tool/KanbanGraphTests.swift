@@ -12,8 +12,9 @@ import ULID
 /// response is deterministic (plan.md §11).
 @Suite("KanbanGraph: execute, serial gate, and board load", .watcherBudget)
 struct KanbanGraphTests {
-    /// The fake key of the board. Only the test of a folder that is not a git repo runs git.
-    static let boardKey = BoardKey(mainCloneName: "kanban")
+    /// The fake key of the board. The text `kanban` stands in for the root commit. Only the test of a folder that is
+    /// not a git repo runs git.
+    static let boardKey = BoardKey(rootCommit: "kanban")
 
     /// The time of the fixed clock and of each fixture event.
     static let time = ReplayTests.time(atStep: .zero)

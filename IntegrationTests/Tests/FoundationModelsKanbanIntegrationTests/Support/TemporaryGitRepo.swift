@@ -3,8 +3,10 @@ import Testing
 
 /// Makes a new git repo in a temporary directory for one test, and removes it after the test.
 ///
-/// The repo has no commit and no `origin` remote. Thus the key of its board comes from the name of the repo
-/// directory, and a `KanbanGraph` on the repo gives an empty board with that name.
+/// The repo has no commit and no `origin` remote when `body` starts. The repo has a local identity of the author, and
+/// no commit signatures. The engine makes an empty first commit when it reads the key of the board. Thus the key of
+/// the board is `local/<root commit>`, and a `KanbanGraph` on the repo gives an empty board with the name of the repo
+/// directory.
 enum TemporaryGitRepo {
     /// The shared folder of the temporary repos of the integration tests.
     private static let parent = FileManager.default.temporaryDirectory.appending(
@@ -15,17 +17,38 @@ enum TemporaryGitRepo {
     /// The program that finds `git` on the `PATH`.
     private static let launcherPath = "/usr/bin/env"
 
-    /// The arguments that make a new repo with no output.
-    private static let initArguments = ["git", "init", "--quiet"]
+    /// The name of the git program that the launcher finds.
+    private static let gitProgram = "git"
+
+    /// The git arguments that make a new repo with no output.
+    private static let initArguments = ["init", "--quiet"]
+
+    /// The git command that sets one value of the local config of the repo.
+    private static let configCommand = "config"
+
+    /// The name of the author of the first commit that the engine makes.
+    private static let userName = "Integration Tests"
+
+    /// The email of the author of the first commit that the engine makes.
+    private static let userEmail = "integration-tests@example.invalid"
+
+    /// The local config of each new repo: the name and the email of the author, and no commit signatures. Thus the
+    /// engine can make the first commit also on a machine with no global git identity and no signing key.
+    private static let identityConfig = [
+        ("user.name", userName),
+        ("user.email", userEmail),
+        ("commit.gpgsign", "false"),
+    ]
 
     /// The exit status of a git command that succeeds.
     private static let successStatus: Int32 = 0
 
-    /// The longest time that `git init` can run before the test stops it. A local `git init` ends in much less time.
-    private static let initTimeLimit = Duration.seconds(initTimeLimitSeconds)
+    /// The longest time that one git command can run before the test stops it. A local git command ends in much less
+    /// time.
+    private static let gitTimeLimit = Duration.seconds(gitTimeLimitSeconds)
 
-    /// The number of seconds in ``initTimeLimit``.
-    private static let initTimeLimitSeconds = 30
+    /// The number of seconds in ``gitTimeLimit``.
+    private static let gitTimeLimitSeconds = 30
 
     /// Makes a new git repo, gives its root directory to `body`, and then removes the repo.
     ///
@@ -36,7 +59,7 @@ enum TemporaryGitRepo {
     ///   - body: The test code. It gets the root directory of the repo.
     /// - Returns: The value that `body` returns.
     /// - Throws: An error from `FileManager` when a directory cannot be made, an error from `Process` when git cannot
-    ///   start, an `ExpectationFailedError` when `git init` fails, or the error that `body` throws.
+    ///   start, an `ExpectationFailedError` when `git init` or `git config` fails, or the error that `body` throws.
     static func withRepo<Value>(
         named name: String,
         _ body: (URL) async throws -> Value
@@ -47,22 +70,27 @@ enum TemporaryGitRepo {
         }
         let root = container.appending(path: name, directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        try await runGitInit(in: root)
+        try await runGit(initArguments, in: root)
+        for (key, value) in identityConfig {
+            try await runGit([configCommand, key, value], in: root)
+        }
         return try await body(root)
     }
 
-    /// Runs `git init` in a directory, and requires that it succeeds.
+    /// Runs one git command in a directory, and requires that it succeeds.
     ///
     /// The wait for the end of git blocks no thread: the termination handler of the process gives the exit status to
-    /// an async stream. When git does not end in ``initTimeLimit``, the test stops git and fails.
+    /// an async stream. When git does not end in ``gitTimeLimit``, the test stops git and fails.
     ///
-    /// - Parameter directory: The directory of the new repo.
+    /// - Parameters:
+    ///   - arguments: The arguments after `git`.
+    ///   - directory: The directory where git runs.
     /// - Throws: An error from `Process` when git cannot start, or an `ExpectationFailedError` when git fails or does
     ///   not end in the time limit.
-    private static func runGitInit(in directory: URL) async throws {
+    private static func runGit(_ arguments: [String], in directory: URL) async throws {
         let process = Process()
         process.executableURL = URL(filePath: launcherPath)
-        process.arguments = initArguments
+        process.arguments = [gitProgram] + arguments
         process.currentDirectoryURL = directory
         process.standardInput = FileHandle.nullDevice
         let (exits, exitContinuation) = AsyncStream.makeStream(of: Int32.self)
@@ -71,12 +99,13 @@ enum TemporaryGitRepo {
             exitContinuation.finish()
         }
         try process.run()
-        let status = try await firstValue(of: exits, within: initTimeLimit)
+        let status = try await firstValue(of: exits, within: gitTimeLimit)
         if status == nil {
             process.terminate()
         }
-        let exitStatus = try #require(status, "git init did not end in \(initTimeLimit) in \(directory.path)")
-        try #require(exitStatus == successStatus, "git init failed in \(directory.path)")
+        let command = "git \(arguments.joined(separator: " "))"
+        let exitStatus = try #require(status, "\(command) did not end in \(gitTimeLimit) in \(directory.path)")
+        try #require(exitStatus == successStatus, "\(command) failed in \(directory.path)")
     }
 
     /// Waits for the first value of a stream, but not longer than a time limit.

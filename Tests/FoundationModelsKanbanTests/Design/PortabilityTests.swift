@@ -14,12 +14,14 @@ extension Design {
     /// board with the new key.
     @Suite("Design: portability of the local data", .watcherBudget)
     struct PortabilityTests {
-        /// A move of a repo that changes the board key.
+        /// A move of a repo. A new `origin` changes the board key. A new directory name does not change the key
+        /// (divergence.md §16, M7).
         enum RepoMove: CaseIterable, Sendable, CustomTestStringConvertible {
             /// The repo gets a new `origin` remote.
             case newOrigin
 
-            /// The repo has no remote, and its directory gets a new name.
+            /// The repo has no remote, and its directory gets a new name. The key stays the same, because it comes
+            /// from the root commit.
             case newDirectoryName
 
             /// The name of the repo directory before the move.
@@ -72,11 +74,12 @@ extension Design {
 
             /// The board key after the move.
             ///
+            /// - Parameter oldKey: The board key before the move.
             /// - Returns: The key.
-            func movedKey() throws -> BoardKey {
+            func movedKey(from oldKey: BoardKey) throws -> BoardKey {
                 switch self {
                 case .newOrigin: try BoardKey(remoteURL: Self.newOriginURL)
-                case .newDirectoryName: BoardKey(mainCloneName: Self.movedName)
+                case .newDirectoryName: oldKey
                 }
             }
         }
@@ -209,7 +212,7 @@ extension Design {
             let before = try await KanbanGraphTests.execute(Self.boardQuery, on: graph)
             await graph.close()
             let moved = try await move.move(repo, in: sandbox)
-            let newKey = try move.movedKey()
+            let newKey = try move.movedKey(from: oldKey)
             #expect(try await BoardKey.read(fromRepoAt: moved) == newKey)
             let movedGraph = try GitGraphFixture.makeGraph(at: moved)
             let after = try await KanbanGraphTests.execute(Self.boardQuery, on: movedGraph)
