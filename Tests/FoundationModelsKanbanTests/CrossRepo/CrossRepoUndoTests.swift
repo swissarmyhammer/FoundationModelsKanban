@@ -9,7 +9,7 @@ import ULID
 /// `txn` searches only the current board and the loaded boards.
 ///
 /// Each test makes two real git repos side by side in a ``GitSandbox``. The engines read the board keys from git.
-@Suite("Cross-repo: undo and redo across boards", .timeLimit(.minutes(1)))
+@Suite("Cross-repo: undo and redo across boards", .watcherBudget, .timeLimit(.minutes(1)))
 struct CrossRepoUndoTests {
     /// The response key of the field that adds a task to the current board.
     static let appField = "app"

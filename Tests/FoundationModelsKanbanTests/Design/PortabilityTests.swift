@@ -12,7 +12,7 @@ extension Design {
     /// writes a board through full URIs with the current key: a tag, a task that is done, and a second task with the
     /// tag, a dependency on the first task, and a comment. A move test then moves the repo, and a new engine reads the
     /// board with the new key.
-    @Suite("Design: portability of the local data")
+    @Suite("Design: portability of the local data", .watcherBudget)
     struct PortabilityTests {
         /// A move of a repo that changes the board key.
         enum RepoMove: CaseIterable, Sendable, CustomTestStringConvertible {
@@ -76,7 +76,7 @@ extension Design {
             func movedKey() throws -> BoardKey {
                 switch self {
                 case .newOrigin: try BoardKey(remoteURL: Self.newOriginURL)
-                case .newDirectoryName: BoardKey(localDirectoryName: Self.movedName)
+                case .newDirectoryName: BoardKey(mainCloneName: Self.movedName)
                 }
             }
         }

@@ -9,7 +9,7 @@ import Testing
 ///
 /// Each test uses the empty repo of ``KanbanGraphTests``. The first mutation of the script makes the board with its
 /// default columns.
-@Suite("Code mode: the kanban tool in a Multitool runCode script")
+@Suite("Code mode: the kanban tool in a Multitool runCode script", .watcherBudget)
 struct CodeModeTests {
     /// The title of the task that the script adds.
     private static let taskTitle = KanbanGraphTests.taskTitle

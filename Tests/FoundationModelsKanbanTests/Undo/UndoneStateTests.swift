@@ -7,7 +7,7 @@ import ULID
 /// Tests the undone state of the transactions of a board (plan.md §6.5): a transaction is undone when a later
 /// transaction has `undoes` = its `txn`, and that later transaction is not itself undone. The state comes from the
 /// global event list only, so it survives a git merge.
-@Suite("Undone state")
+@Suite("Undone state", .watcherBudget)
 struct UndoneStateTests {
     /// The steps of the transactions of the tests in one board, in time order.
     enum Step: Int {

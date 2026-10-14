@@ -462,7 +462,7 @@ struct EventLogTests {
         let names = ["zeta", "alpha", "mid"]
         let logs = Dictionary(
             uniqueKeysWithValues: names.map { name in
-                (BoardKey(localDirectoryName: name), EventLog(repositoryAt: directory.url.appending(path: name)))
+                (BoardKey(mainCloneName: name), EventLog(repositoryAt: directory.url.appending(path: name)))
             }
         )
         let ordered = EventLog.lockOrder(of: logs)
@@ -473,7 +473,7 @@ struct EventLogTests {
     @Test("The lock of many boards holds two copies of one repo, which have the same key", .timeLimit(.minutes(1)))
     func twoCopiesWithOneKeyLockBoth() async throws {
         let directory = try TemporaryDirectory()
-        let key = BoardKey(localDirectoryName: "app")
+        let key = BoardKey(mainCloneName: "app")
         let logs = ["second", "first"].map { name in
             (key: key, value: EventLog(repositoryAt: directory.url.appending(path: name)))
         }

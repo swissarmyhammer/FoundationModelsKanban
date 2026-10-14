@@ -15,7 +15,7 @@ import ULID
 ///
 /// The Rust tests of the scalar-or-array list input and of the `project` field are not ported: GraphQL types replace
 /// the list forms, and tags replace projects (plan.md §11, §12 item 1).
-@Suite("addTask and updateTask")
+@Suite("addTask and updateTask", .watcherBudget)
 struct AddUpdateTaskTests {
     /// The title of a task that a test adds.
     static let title = "Write the guide"

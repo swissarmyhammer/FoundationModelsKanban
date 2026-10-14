@@ -10,7 +10,7 @@ import ULID
 ///
 /// Each test gives the commit a ``FaultingLogWriter``. The writer appends the lines of each append, and then it makes
 /// one append fail. Thus the rollback must also remove the lines of the append that failed.
-@Suite("Commit rollback: no part of a failed transaction stays on disk")
+@Suite("Commit rollback: no part of a failed transaction stays on disk", .watcherBudget)
 struct CommitRollbackTests {
     /// The number of the append that fails in a call that writes two node files of one board: the second append.
     static let secondAppend = 2
@@ -108,7 +108,7 @@ struct CommitRollbackTests {
     /// - Returns: The local key of the directory name.
     @Sendable
     static func directoryKey(ofRepoAt root: URL) -> BoardKey {
-        BoardKey(localDirectoryName: root.lastPathComponent)
+        BoardKey(mainCloneName: root.lastPathComponent)
     }
 
     /// Makes a repo with a `.git` directory and the fixture logs of ``KanbanGraphTests``.

@@ -7,11 +7,11 @@ import Testing
 /// folders) and the fields that add tasks. ``GitGraphFixture`` makes the engines that read the board keys from git.
 enum CrossRepoFixture {
     /// The kind of the two folders of a ``SideBySide`` sandbox.
-    enum FolderKind: CaseIterable, Sendable {
+    enum FolderKind: Sendable {
         /// Each folder is a git repo with an `origin` remote.
         case gitRepo
 
-        /// Each folder is a plain folder with no `.git`. Its key is `local/<folder-name>`.
+        /// Each folder is a plain folder with no `.git`. It has no board (divergence.md §16).
         case plainFolder
 
         /// Makes one folder of this kind in a sandbox.
@@ -26,20 +26,6 @@ enum CrossRepoFixture {
             switch self {
             case .gitRepo: try await sandbox.makeRepo(named: name, origin: origin)
             case .plainFolder: try GitSandbox.makeFolder(named: name, in: sandbox.root)
-            }
-        }
-
-        /// Gives the key of a folder of this kind (plan.md §6.6, scan).
-        ///
-        /// - Parameters:
-        ///   - name: The name of the folder, without the names of its parent folders.
-        ///   - origin: The `origin` remote of a git repo. A plain folder does not use it.
-        /// - Returns: The key of the `origin` for a git repo, or `local/<name>` for a plain folder.
-        /// - Throws: An error when the remote URL of a git repo is not valid.
-        func key(ofFolderNamed name: String, origin: String) throws -> BoardKey {
-            switch self {
-            case .gitRepo: try BoardKey(remoteURL: origin)
-            case .plainFolder: BoardKey(localDirectoryName: name)
             }
         }
     }

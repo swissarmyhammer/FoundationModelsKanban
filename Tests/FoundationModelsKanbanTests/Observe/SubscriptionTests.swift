@@ -14,7 +14,7 @@ private let subscriptionSuiteMinutes = 1
 /// Each test reads the events of a subscription with ``StreamWait``, so a test that waits for an event that does not
 /// come stops at the time limit. A test that must show that a change sends only one event makes a second change, and
 /// expects the event of the second change next. Each test closes each engine that it makes.
-@Suite("Subscriptions: the change feed", .timeLimit(.minutes(subscriptionSuiteMinutes)))
+@Suite("Subscriptions: the change feed", .watcherBudget, .timeLimit(.minutes(subscriptionSuiteMinutes)))
 struct SubscriptionTests {
     /// The number of events that a test reads when it expects the event of one change.
     static let oneEvent = 1

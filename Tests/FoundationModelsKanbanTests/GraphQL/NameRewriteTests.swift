@@ -9,7 +9,7 @@ import Testing
 ///
 /// The position tests run the rewriter on the public schema and read the text that it gives. The other tests run the
 /// document through the public schema or an engine.
-@Suite("Name rewrite of a document")
+@Suite("Name rewrite of a document", .watcherBudget)
 struct NameRewriteTests {
     /// A forgiving ref of a task. The position tests do not run the document, so the ref names no task.
     private static let taskRef = "^aaaaaaa"

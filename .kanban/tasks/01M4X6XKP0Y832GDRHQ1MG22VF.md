@@ -1,8 +1,41 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8180'
+comments:
+- actor: claude-code
+  id: 01m4x9t07zcjyzshmpnbyjpbbn
+  text: |-
+    Research done. Findings:
+    - KanbanGraph keeps `root` (the working directory given to init) and uses it in about 15 places: the key read, the watcher, the session path key, the scan places, and the path refs. Each use runs after the first load. The plan: resolve the worktree top in `loadedSession()`, keep it in `LoadState.loaded`, and pass the current board as a `BoardCopy` (top + key) where the code passed only `currentKey`.
+    - The tests use a fake key reader in temp folders that are not git repos (KanbanGraphTests.makeGraph). Thus the top read needs its own seam: a `WorktreeTopReader` beside `BoardKeyReader`. The test fixture gives an identity fake; GitGraphFixture gives the real `BoardKey.worktreeTop(of:)`.
+    - `git rev-parse --show-toplevel` gives the real path (`/private/var/...`), but GitSandbox paths are `/var/...`. To keep `board { path }` the same, the top keeps the spelling of the working directory: walk up the working directory to the ancestor whose canonical path is the top.
+    - NOT_A_REPO must come out as a response error, so `BoardKeyError.notARepo(path:)` maps to a new `KanbanError.notARepo(path:)` (code `NOT_A_REPO`). A path ref outside git gets a new `BoardResolution.notARepo(path:)`, so the field gets the error, the same as NOT_FOUND.
+    - Files that need a change beyond the card list: README.md (example 1 says a folder does not have to be a git repo), ReadmeExamplesTests (runs the README in a plain folder), KanbanGraphTests.boardInPlainFolder, CrossRepoReadTests.pathOutsidePlacesReadsFolder.
+    - Keep `local/<main-clone-name>` for a repo with no remote (the card note: M7 + M8 is a separate task). Rename `BoardKey.init(localDirectoryName:)` to `init(mainCloneName:)` so that no code makes a key from any folder name.
+  timestamp: 2026-10-14T13:32:10.367842+00:00
+- actor: claude-code
+  id: 01m4xaxxjqf9ba1ks81pd9h26s
+  text: |-
+    Implementation landed. Decisions and facts for the next agent:
+    - New `BoardKeyError.notARepo(path:)` and `KanbanError.notARepo(path:)` (code `NOT_A_REPO`, message "The kanban needs a git repo. `<path>` is not in a git repo."). The engine maps the first to the second in `KanbanGraph.worktreeTop()`, so each call gives an error response, not a thrown fault.
+    - New `BoardKey.worktreeTop(of:)` and seam `WorktreeTopReader`. The top keeps the path spelling of the working directory (walk up to the ancestor whose canonical path equals the git path), so `board { path }` does not change to `/private/var/...`.
+    - `KanbanGraph` keeps `workingDirectory`; `LoadState.loaded(CurrentBoard)` holds the session and the top folder. Functions that took `currentKey:` now take `current: BoardCopy`.
+    - Path refs: `BoardLocator.resolution(ofFolderAt:...findingTopsWith:)` gives the board at the worktree top; a folder outside git gives the new `BoardResolution.notARepo(path:)`, and the field fails with NOT_A_REPO (same shape as NOT_FOUND).
+    - Scan candidates need a `.git` entry. `Git.programNotFoundStatus` was removed: git not installed is now a git failure (G4), not "no repo".
+    - `BoardKey.init(localDirectoryName:)` renamed to `init(mainCloneName:)`; the `local/<main-clone-name>` key for a repo with no remote stays until M7/M8 (^yd33ytsb task).
+    - README example 1 text and ReadmeExamplesTests now use a git repo (`git init` in `ExampleBoard`, init is async).
+    - Process note: test edits and production edits were applied by two helpers at the same time, so no separate RED build run was recorded; the new tests named APIs that did not exist before (`worktreeTop`, `notARepo`, `mainCloneName`, `findingTopWith`).
+    - No ARCHITECTURE.md in the repo.
+  timestamp: 2026-10-14T13:51:47.287994+00:00
+- actor: claude-code
+  id: 01m4xaxzaggwyhrq29d78ce3aw
+  text: |-
+    ### implement — changed
+    - evidence: `swift build --build-tests` clean (no new warnings); `swift test` 1146 tests in 83 suites passed. 6 source files (BoardKey, BoardLocator, RelatedBoards, Errors, Schema, KanbanGraph), README.md, 12 test files changed, 1 new test file Tests/FoundationModelsKanbanTests/Tool/RepoBoardTests.swift.
+    - next: /review
+  timestamp: 2026-10-14T13:51:49.072907+00:00
+position_column: doing
+position_ordinal: '80'
 title: Put the board only in a git repo, at the worktree top
 ---
 ## What

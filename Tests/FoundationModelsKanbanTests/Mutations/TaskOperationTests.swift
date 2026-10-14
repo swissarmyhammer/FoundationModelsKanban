@@ -20,7 +20,7 @@ import ULID
 /// code used the first field. `tagTask` and `untagTask` with an empty list write nothing; the Rust code gave an error,
 /// but the error catalog has no code for it, and the field returns the task. `tagTask` adds an edge and does not
 /// change the body; the Rust code wrote a `#tag` marker (plan.md §6.1).
-@Suite("Task operation mutations")
+@Suite("Task operation mutations", .watcherBudget)
 struct TaskOperationTests {
     /// The slug of the fixture column.
     static let todoSlug = "todo"

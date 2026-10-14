@@ -13,19 +13,16 @@ private let readmeSuiteMinutes = 1
 /// Tests the "Get started" examples of `README.md` (^n1yhb0x).
 ///
 /// Each test runs an example with the same code and the same GraphQL documents as the README, on a board in a
-/// temporary folder that is not a git repo. The folder has the name ``folderName``, so the board key is
+/// temporary git repo with no remote. The folder of the repo has the name ``folderName``, so the board key is
 /// `local/my-project`. Each response must have no `errors`. A response with no minted id and no transaction ULID must
 /// be the same text as a ```` ```json ```` block of the README.
-@Suite("README: the Get started examples", .timeLimit(.minutes(readmeSuiteMinutes)))
+@Suite("README: the Get started examples", .watcherBudget, .timeLimit(.minutes(readmeSuiteMinutes)))
 struct ReadmeExamplesTests {
     /// The README, relative to the repository root.
     private static let readmePath = DocumentationTests.readmePath
 
     /// The name of the folder of the board of each test.
     private static let folderName = "my-project"
-
-    /// The name of the directory of a git repo, which the folder of each test does not have.
-    private static let gitDirectoryName = ".git"
 
     /// The prefix of the id of each task of the board in ``folderName``.
     private static let taskIDPrefix = "kanban://local/\(folderName)/task/"
@@ -97,8 +94,8 @@ struct ReadmeExamplesTests {
 
     // MARK: - Board
 
-    /// A board of the examples, as example 1 opens it: a folder with the name ``folderName`` with no `.git`, and the
-    /// engine of the folder.
+    /// A board of the examples, as example 1 opens it: a git repo with no remote in a folder with the name
+    /// ``folderName``, and the engine of the folder.
     private struct ExampleBoard {
         /// The temporary directory that holds the folder. It removes the folder when the value ends.
         let directory: TemporaryDirectory
@@ -109,13 +106,15 @@ struct ReadmeExamplesTests {
         /// The engine, as example 1 makes it.
         let graph: KanbanGraph
 
-        /// Makes the folder and the engine of example 1.
+        /// Makes the folder, runs `git init` in it, and makes the engine of example 1.
         ///
-        /// - Throws: An error when the folder cannot be made, or when the engine cannot be made.
-        init() throws {
+        /// - Throws: An error when the folder cannot be made, when `git init` fails, or when the engine cannot be made.
+        init() async throws {
             directory = try TemporaryDirectory()
             root = directory.url.appending(path: ReadmeExamplesTests.folderName, directoryHint: .isDirectory)
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            let result = try await Git.run(withArguments: ["init", "--quiet"], inDirectory: root)
+            try #require(result.status == Git.successStatus, "git init failed: \(result.errorOutput)")
             graph = try KanbanGraph(root: root, actor: nil)
         }
 
@@ -181,7 +180,7 @@ struct ReadmeExamplesTests {
     /// - Returns: The `board` object of the response.
     /// - Throws: An error when a response has `errors`, or no `board` object.
     private static func boardAfterFirstTask(answering query: String) async throws -> [String: Any] {
-        let board = try ExampleBoard()
+        let board = try await ExampleBoard()
         try expectNoErrors(try await addFirstTask(on: board.graph))
         let response = try await KanbanGraphTests.execute(query, on: board.graph)
         await board.graph.close()
@@ -231,7 +230,7 @@ struct ReadmeExamplesTests {
 
     @Test("A query writes no file, and the first mutation makes .kanban/ with the default columns")
     func firstMutationMakesBoard() async throws {
-        let board = try ExampleBoard()
+        let board = try await ExampleBoard()
         try Self.expectNoErrors(try await KanbanGraphTests.execute(Self.columnsQuery, on: board.graph))
         let madeByQuery = FileManager.default.fileExists(atPath: board.boardDirectory.path)
         try Self.expectNoErrors(try await Self.addFirstTask(on: board.graph))
@@ -248,7 +247,7 @@ struct ReadmeExamplesTests {
 
     @Test("The addTask mutation with variables gives the response that the README shows")
     func addTaskGivesReadmeResponse() async throws {
-        let board = try ExampleBoard()
+        let board = try await ExampleBoard()
         let response = try await Self.addFirstTask(on: board.graph)
         await board.graph.close()
         let task = try #require(NameRewriteTests.data(of: response)["addTask"] as? [String: Any], "\(response)")
@@ -279,7 +278,7 @@ struct ReadmeExamplesTests {
 
     @Test("The history filter of a node that the board does not have gives no change")
     func nodeHistoryOfUnknownNodeIsEmpty() async throws {
-        let board = try ExampleBoard()
+        let board = try await ExampleBoard()
         try Self.expectNoErrors(try await Self.addFirstTask(on: board.graph))
         let response = try await KanbanGraphTests.execute(DocumentationTests.nodeHistoryQuery, on: board.graph)
         await board.graph.close()
@@ -289,8 +288,8 @@ struct ReadmeExamplesTests {
     // MARK: - Example 3: give the tool to a model
 
     @Test("A LanguageModelSession takes the kanban tool")
-    func sessionTakesKanbanTool() throws {
-        let board = try ExampleBoard()
+    func sessionTakesKanbanTool() async throws {
+        let board = try await ExampleBoard()
         let session = LanguageModelSession(
             tools: [KanbanTool(graph: board.graph)],
             instructions: Self.sessionInstructions
@@ -304,7 +303,7 @@ struct ReadmeExamplesTests {
     @Test("The code mode script of the README adds a task, reads nextTask, and moves the task")
     func codeModeScriptMovesTask() async throws {
         let script = try #require(try Self.readmeBlocks(of: .js).first, "README.md must have a js block")
-        let board = try ExampleBoard()
+        let board = try await ExampleBoard()
         let output = try await CodeModeTests.run(script, on: board.graph)
         await board.graph.close()
         try Self.expectReadmeShows(try Self.sortedJSON(output))
@@ -314,7 +313,7 @@ struct ReadmeExamplesTests {
 
     @Test("The subscription gets the change of a second bug task, and close() ends the stream")
     func subscriptionGetsSecondBug() async throws {
-        let board = try ExampleBoard()
+        let board = try await ExampleBoard()
         try Self.expectNoErrors(try await Self.addFirstTask(on: board.graph))
         let subscription = DocumentationTests.bugOrCommentSubscription
         let stream = try await SubscriptionTests.subscribe(subscription, on: board.graph)
@@ -348,7 +347,7 @@ struct ReadmeExamplesTests {
 
     @Test("After the examples, each entry of .kanban/ is in the README layout")
     func boardEntriesAreInLayout() async throws {
-        let board = try ExampleBoard()
+        let board = try await ExampleBoard()
         try Self.expectNoErrors(try await Self.addFirstTask(on: board.graph))
         try Self.expectNoErrors(try await KanbanGraphTests.execute(Self.secondBugMutation, on: board.graph))
         await board.graph.close()
@@ -364,17 +363,17 @@ struct ReadmeExamplesTests {
         #expect(Set(documents) == Self.swiftDocuments)
     }
 
-    @Test("Each graphql code block of the README runs with no errors on a board in a folder with no .git")
+    @Test("Each graphql code block of the README runs with no errors on a board in a git repo with no remote")
     func eachGraphQLBlockRuns() async throws {
         let blocks = try Self.readmeBlocks(of: .graphql)
-        let board = try ExampleBoard()
+        let board = try await ExampleBoard()
         try Self.expectNoErrors(try await Self.addFirstTask(on: board.graph))
         for block in blocks {
             try Self.expectNoErrors(try await Self.response(to: block, on: board.graph))
         }
         await board.graph.close()
         #expect(!blocks.isEmpty)
-        #expect(!FileManager.default.fileExists(atPath: board.root.appending(path: Self.gitDirectoryName).path))
+        #expect(FileManager.default.fileExists(atPath: board.boardDirectory.path))
     }
 
     /// Runs one GraphQL document: a subscription with `subscribe`, and each other document with `execute`.

@@ -8,9 +8,10 @@ import ULID
 /// of `Query.boards(enabled:)`, `node(id:)` with a URI of a related board, and the readiness of a cross-board
 /// `dependsOn` edge.
 ///
-/// Each test makes real git repos or plain folders in a ``GitSandbox`` and engines that read the board keys from git.
+/// Each test makes real git repos or plain folders in a ``GitSandbox`` and engines that read the worktree tops and the
+/// board keys from git.
 /// A test that waits for a change of a related board waits for a batch that the engine applies, with no fixed sleep.
-@Suite("Cross-repo: read related boards", .timeLimit(.minutes(1)))
+@Suite("Cross-repo: read related boards", .watcherBudget, .timeLimit(.minutes(1)))
 struct CrossRepoReadTests {
     /// The key of a board that no scan finds.
     static let missingKey = "github.com/example/missing"
@@ -140,16 +141,22 @@ struct CrossRepoReadTests {
         #expect(response == #"{"data":{"board":{"task":{"blockedBy":\#(edge),"dependsOn":\#(edge)}}}}"#)
     }
 
-    @Test(
-        "node(id:) with the URI of a node of a related board gives that node, also in plain folders with no .git",
-        arguments: CrossRepoFixture.FolderKind.allCases
-    )
-    func nodeReadsRelatedBoard(kind: CrossRepoFixture.FolderKind) async throws {
-        let repos = try await CrossRepoFixture.SideBySide.make(as: kind)
+    @Test("node(id:) with the URI of a node of a related board gives that node")
+    func nodeReadsRelatedBoard() async throws {
+        let repos = try await CrossRepoFixture.SideBySide.make()
         let target = try await CrossRepoFixture.addTask(with: "", on: GitGraphFixture.makeGraph(at: repos.lib))
         let query = #"{ node(id: "\#(target)") { id ... on Task { title } } }"#
         let response = try await KanbanGraphTests.execute(query, on: GitGraphFixture.makeGraph(at: repos.app))
         #expect(response == #"{"data":{"node":{"id":"\#(target)","title":"\#(AddUpdateTaskTests.title)"}}}"#)
+    }
+
+    @Test("A plain folder with a board and no .git is not a related board: the scan does not find it")
+    func plainFolderBoardIsNotFound() async throws {
+        let sandbox = try GitSandbox()
+        let app = try await sandbox.makeRepo(named: BoardLocatorTests.appName, origin: BoardLocatorTests.appOrigin)
+        let lib = try GitSandbox.makeFolder(named: BoardLocatorTests.libName, in: sandbox.root)
+        _ = try KanbanGraphTests.writeFixture(inRepoAt: lib)
+        #expect(try await Self.boardPaths(on: GitGraphFixture.makeGraph(at: app)) == [app.path])
     }
 
     @Test("A dependency on a task of a board that the scan cannot find counts as not done, with no error")
@@ -191,10 +198,10 @@ struct CrossRepoReadTests {
         #expect(try await Self.board("path", of: repos.secondCopy.path, on: graph) == repos.secondCopy.path)
     }
 
-    @Test("board(id:) with the path of a folder that the scan does not find reads the board in that folder")
-    func pathOutsidePlacesReadsFolder() async throws {
+    @Test("board(id:) with the path of a repo that the scan does not find reads the board in that repo")
+    func pathOutsidePlacesReadsRepo() async throws {
         let repos = try await CrossRepoFixture.SideBySide.make()
-        let other = try GitSandbox.makeFolder(named: BoardLocatorTests.outsidePath, in: repos.sandbox.root)
+        let other = try await repos.sandbox.makeRepo(named: BoardLocatorTests.outsidePath)
         _ = try KanbanGraphTests.writeFixture(inRepoAt: other)
         let graph = try GitGraphFixture.makeGraph(at: repos.app)
         #expect(try await Self.board("name", of: other.path, on: graph) == KanbanGraphTests.boardName)

@@ -13,7 +13,7 @@ extension Design {
     /// git `union` driver on each log file: the merged log holds the lines of one branch, then each line of the
     /// other branch that the first branch does not hold. A new commit session loads the merged board, and the test
     /// queries it. Each query must give no error, because replay never refuses a log (plan.md §3.3, rule 7).
-    @Suite("Design: union merge of two branches")
+    @Suite("Design: union merge of two branches", .watcherBudget)
     struct MergeTests {
         /// One branch of the board: a repo, and the commit session of its board.
         struct Branch {

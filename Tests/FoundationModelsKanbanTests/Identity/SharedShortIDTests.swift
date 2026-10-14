@@ -8,7 +8,7 @@ import ULID
 /// Tests a board where two tasks have the same short id, as a merge can make (plan.md §3.2). A short id is a unique
 /// ULID prefix (git style), so the shared short id names no task: a mutation and a filter that use it give
 /// `AMBIGUOUS_ID` with the full ids of the two tasks, and write nothing.
-@Suite("A short id that two tasks share")
+@Suite("A short id that two tasks share", .watcherBudget)
 struct SharedShortIDTests {
     /// The title of the second task with the shared short id.
     static let secondTitle = "Merge the branch"

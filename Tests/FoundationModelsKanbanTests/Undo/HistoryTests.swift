@@ -11,7 +11,7 @@ import ULID
 /// Each test writes the fixture logs of ``KanbanGraphTests`` and runs ``ChangeBuilderTests/baseSetup`` in a commit
 /// session of the board (``ChangeBuilderTests/baseSession(inRepoAt:writing:)``). The fixture writes three
 /// transactions (the board, the column `todo`, and the task), and the base setup writes one more.
-@Suite("History query")
+@Suite("History query", .watcherBudget)
 struct HistoryTests {
     /// The number of transactions of the board after the base setup: the three fixture transactions and the base
     /// setup.

@@ -65,8 +65,24 @@ comments:
     - evidence: 3 files — Sources/FoundationModelsKanban/GraphQL/Schema.swift, Tests/FoundationModelsKanbanTests/GraphQL/QueryFixture.swift, Tests/FoundationModelsKanbanTests/GraphQL/ResponseWarningsTests.swift. `swift test`: 1136 tests in 82 suites passed; only the accepted SwiftPM "missing creator" warning. 2/2 findings checked.
     - next: /review
   timestamp: 2026-10-14T13:23:13.032604+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4x9gbknn8374xs9skfef09p
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (6b84a39) — 0 findings, 0 confirmed, 0 refuted; 7 validator runs, 0 failed; 3 files reviewed. The 2 prior findings (2026-10-14 08:13) are checked.
+    - next: none. The task moved to done.
+  timestamp: 2026-10-14T13:26:54.325841+00:00
+- actor: claude-code
+  id: 01m4x9gjwyxp0p749dfpbt4b2j
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 3 files (both findings fixed)
+    - test: green — swift test, 1136 passed, 0 failed, 0 skipped
+    - commit: 6b84a39
+    - review: clean — task moved to done
+  timestamp: 2026-10-14T13:27:01.790601+00:00
+position_column: done
+position_ordinal: dd80
 title: Add one warnings list to each GraphQL response
 ---
 ## What

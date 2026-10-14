@@ -4,12 +4,12 @@ import Testing
 
 @testable import FoundationModelsKanban
 
-/// Tests the board locator: the scan of the places for git repos and for folders with a board, the index of the
-/// copies, and the board refs (plan.md §6.6, §12 items 13 and 26).
+/// Tests the board locator: the scan of the places for git repos, the index of the copies, and the board refs (plan.md
+/// §6.6, §12 items 13 and 26). A board is only in a git repo (divergence.md §16).
 ///
 /// Each test makes real git repos or plain folders in a ``GitSandbox``. The sandbox directory is the parent directory
 /// of the current repo, so the scan looks in it first.
-@Suite("Cross-repo: board locator")
+@Suite("Cross-repo: board locator", .watcherBudget)
 struct BoardLocatorTests {
     /// The `origin` of the current repo of the tests.
     static let appOrigin = "https://github.com/example/app.git"
@@ -168,39 +168,40 @@ struct BoardLocatorTests {
         return (try resolve(reference, in: repos, index: index), expected)
     }
 
-    /// Resolves a path ref to the board of any folder, with the keys from git.
+    /// Resolves a path ref to the board of the worktree top of a folder, with the worktree tops and the keys from git.
     ///
     /// - Parameters:
     ///   - reference: The board ref.
     ///   - root: The root directory of the current repo.
     /// - Returns: The resolution, or `nil` when the ref is not a path to a folder.
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the test is cancelled during the key read.
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the test is cancelled during a git read.
     static func resolveFolder(_ reference: String, around root: URL) async throws(BoardKeyError) -> BoardResolution? {
         try await BoardLocator.resolution(
             ofFolderAt: reference,
             currentRoot: root,
-            readingKeysWith: BoardKey.read(fromRepoAt:)
+            readingKeysWith: BoardKey.read(fromRepoAt:),
+            findingTopsWith: BoardKey.worktreeTop(of:)
         )
     }
 
-    /// Makes a folder at ``outsidePath``, where the scan does not look, and checks that a path ref to the folder
-    /// resolves to a copy with the key of the folder.
+    /// Makes a git repo at ``outsidePath``, where the scan does not look, and checks that a path ref to the repo or to
+    /// a folder in it resolves to a copy of the repo with the key of its `origin`.
     ///
     /// - Parameters:
-    ///   - kind: The kind of the folder. A git repo gets ``libOrigin``.
+    ///   - subpath: The path of the folder of the ref in the repo, or the empty text for the top folder of the repo.
     ///   - reference: Gives the path ref from the folder.
     /// - Throws: An error when the folder cannot be made, or when a git command fails.
-    static func expectOutsideFolderResolves(
-        as kind: CrossRepoFixture.FolderKind,
+    static func expectOutsideRepoResolves(
+        fromFolderAt subpath: String,
         namedBy reference: (URL) -> String
     ) async throws {
         let sandbox = try GitSandbox()
         let app = try await sandbox.makeRepo(named: appName, origin: appOrigin)
-        let other = try await kind.makeFolder(named: outsidePath, origin: libOrigin, in: sandbox)
+        let other = try await sandbox.makeRepo(named: outsidePath, origin: libOrigin)
+        let folder = try GitSandbox.makeFolder(named: subpath, in: other)
         #expect(names(in: try await scan(around: app)) == [appName])
-        let key = try kind.key(ofFolderNamed: outsideName, origin: libOrigin)
-        let expected = BoardResolution.copy(BoardCopy(directory: other, key: key, isEnabled: false))
-        #expect(try await resolveFolder(reference(other), around: app) == expected)
+        let expected = BoardResolution.copy(BoardCopy(directory: other, key: try key(of: libOrigin), isEnabled: false))
+        #expect(try await resolveFolder(reference(folder), around: app) == expected)
     }
 
     // MARK: - Scan
@@ -228,15 +229,13 @@ struct BoardLocatorTests {
         #expect(try await Self.scan(around: app).copies.map(\.isEnabled) == [false, true])
     }
 
-    @Test("A scan finds a folder with .kanban/board.jsonl and no .git, with the key local/<folder-name>")
-    func scanFindsBoardInFolderWithNoGit() async throws {
+    @Test("A folder with .kanban/board.jsonl and no .git is not a copy: a board is only in a git repo")
+    func folderWithBoardAndNoGitIsNotCopy() async throws {
         let sandbox = try GitSandbox()
         let app = try await sandbox.makeRepo(named: Self.appName, origin: Self.appOrigin)
         let lib = try GitSandbox.makeFolder(named: Self.libName, in: sandbox.root)
         _ = try KanbanGraphTests.writeFixture(inRepoAt: lib)
-        let index = try await Self.scan(around: app)
-        let expected = BoardCopy(directory: lib, key: BoardKey(localDirectoryName: Self.libName), isEnabled: true)
-        #expect(try Self.copy(at: lib, in: index) == expected)
+        #expect(Self.names(in: try await Self.scan(around: app)) == [Self.appName])
     }
 
     @Test("A folder with no .git and no .kanban/board.jsonl is not a copy")
@@ -363,27 +362,39 @@ struct BoardLocatorTests {
         #expect(resolved.actual == resolved.expected)
     }
 
-    @Test(
-        "A path to a folder that the scan does not find resolves to a copy with the key of the folder",
-        arguments: CrossRepoFixture.FolderKind.allCases
-    )
-    func pathOutsidePlacesResolvesToFolder(kind: CrossRepoFixture.FolderKind) async throws {
-        try await Self.expectOutsideFolderResolves(as: kind) { folder in folder.path }
+    @Test("A path to a repo that the scan does not find resolves to a copy with the key of the repo")
+    func pathOutsidePlacesResolvesToRepo() async throws {
+        try await Self.expectOutsideRepoResolves(fromFolderAt: "") { folder in folder.path }
     }
 
-    @Test(
-        "A path from the current root to a folder that the scan does not find resolves to that folder",
-        arguments: CrossRepoFixture.FolderKind.allCases
-    )
-    func relativePathOutsidePlacesResolvesToFolder(kind: CrossRepoFixture.FolderKind) async throws {
-        try await Self.expectOutsideFolderResolves(as: kind) { _ in Self.outsideReferenceFromRoot }
+    @Test("A path from the current root to a repo that the scan does not find resolves to that repo")
+    func relativePathOutsidePlacesResolvesToRepo() async throws {
+        try await Self.expectOutsideRepoResolves(fromFolderAt: "") { _ in Self.outsideReferenceFromRoot }
     }
 
-    @Test("The path of the current repo resolves to the current board with no scan")
-    func folderPathOfCurrentRepoResolvesToCurrent() async throws {
+    @Test("A path to a subfolder of a repo resolves to the board at the worktree top of the repo")
+    func subfolderPathResolvesToWorktreeTop() async throws {
+        try await Self.expectOutsideRepoResolves(fromFolderAt: "Sources/Deep") { folder in folder.path }
+    }
+
+    @Test("A path to a folder that is not in a git repo resolves to notARepo")
+    func pathOutsideGitResolvesToNotARepo() async throws {
         let sandbox = try GitSandbox()
         let app = try await sandbox.makeRepo(named: Self.appName, origin: Self.appOrigin)
-        #expect(try await Self.resolveFolder(app.path, around: app) == .current)
+        let other = try GitSandbox.makeFolder(named: Self.outsidePath, in: sandbox.root)
+        let resolution = try await Self.resolveFolder(Self.outsideReferenceFromRoot, around: app)
+        #expect(resolution == .notARepo(path: other.standardizedFileURL.path))
+    }
+
+    @Test(
+        "The path of the current repo or of a subfolder of it resolves to the current board",
+        arguments: ["", "Sources"]
+    )
+    func folderPathOfCurrentRepoResolvesToCurrent(subpath: String) async throws {
+        let sandbox = try GitSandbox()
+        let app = try await sandbox.makeRepo(named: Self.appName, origin: Self.appOrigin)
+        let folder = try GitSandbox.makeFolder(named: subpath, in: app)
+        #expect(try await Self.resolveFolder(folder.path, around: app) == .current)
     }
 
     @Test("A path to a folder that does not exist resolves to nothing")

@@ -7,7 +7,7 @@ import Testing
 /// current board of the engine names that board, and the node of an update is a node of the board of the update.
 ///
 /// Each test makes real git repos in a ``GitSandbox``. Each test closes each engine that it makes.
-@Suite("Cross-repo: the board of a change of a related board", .timeLimit(.minutes(1)))
+@Suite("Cross-repo: the board of a change of a related board", .watcherBudget, .timeLimit(.minutes(1)))
 struct CrossRepoEventBoardTests {
     /// The name of the session actor of the engine on the current repo. The related board has no actor with this
     /// name.

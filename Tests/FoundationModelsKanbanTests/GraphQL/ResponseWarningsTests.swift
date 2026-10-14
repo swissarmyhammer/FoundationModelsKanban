@@ -27,7 +27,7 @@ extension KanbanResolver {
 ///
 /// No field of the public schema gives a warning yet, so each test adds the test field `warn` to the public schema.
 /// The field adds one warning to the collector of its run.
-@Suite("Response warnings: extensions.warnings of each call")
+@Suite("Response warnings: extensions.warnings of each call", .watcherBudget)
 struct ResponseWarningsTests {
     /// The code of each warning of the test field.
     static let warningCode = "TEST_WARNING"

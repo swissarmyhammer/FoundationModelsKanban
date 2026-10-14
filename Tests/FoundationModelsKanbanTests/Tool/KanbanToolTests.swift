@@ -8,7 +8,7 @@ import Testing
 /// JSON output (plan.md §7.1, §7.2, §11 "Tool test").
 ///
 /// Each test uses the fixture repo of ``KanbanGraphTests``: one board, one terminal column, and one task.
-@Suite("KanbanTool: calls with GeneratedContent arguments")
+@Suite("KanbanTool: calls with GeneratedContent arguments", .watcherBudget)
 struct KanbanToolTests {
     /// The selection of a page of the tasks whose size is the variable `first`.
     static let pageSelection = """

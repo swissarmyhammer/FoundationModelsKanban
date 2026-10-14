@@ -13,7 +13,11 @@ private let changeFilterSuiteMinutes = 1
 ///
 /// Each case runs its steps on an engine with a subscription, reads the events of the subscription, and then reads
 /// `history` with the same filter. The two lists must be equal, and each must give the expected updates.
-@Suite("Change feed: tombstones with no filter and with #DELETED", .timeLimit(.minutes(changeFilterSuiteMinutes)))
+@Suite(
+    "Change feed: tombstones with no filter and with #DELETED",
+    .watcherBudget,
+    .timeLimit(.minutes(changeFilterSuiteMinutes))
+)
 struct ChangeFilterTests {
     /// One step of a case.
     enum Step: Sendable {

@@ -11,7 +11,7 @@ import ULID
 /// Most tests write the fixture logs of ``KanbanGraphTests`` and run ``ChangeBuilderTests/baseSetup`` in a commit
 /// session of the board (``ChangeBuilderTests/baseSession(inRepoAt:writing:)``). Then a test runs some calls, each in
 /// its own transaction, and an undo or a redo.
-@Suite("Undo and redo in one board")
+@Suite("Undo and redo in one board", .watcherBudget)
 struct UndoTests {
     /// The selection of the `Change` that `undo` and `redo` give.
     static let changeSelection = "txn undoes ops"

@@ -7,7 +7,7 @@ import Testing
 /// slug is the name of a virtual tag gives `INVALID_TAG_NAME` and writes nothing. A `#marker` that names a virtual
 /// tag makes no tag. The mutation fields come from ``ReservedSlugTests/Refusal``, with a virtual tag name in place
 /// of the reserved name.
-@Suite("Tag names that are the names of virtual tags")
+@Suite("Tag names that are the names of virtual tags", .watcherBudget)
 struct VirtualTagNameTests {
     /// Each mutation field that makes a tag, with the name or the id that the field gives, and the virtual tag that the
     /// name names. The names are in different cases, because the rule ignores case.

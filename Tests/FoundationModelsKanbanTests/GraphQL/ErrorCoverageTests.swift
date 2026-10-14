@@ -12,7 +12,7 @@ import ULID
 /// Each test runs a document on the fixture logs of ``KanbanGraphTests``: the board, the column `todo`, and one task
 /// in `todo`. A test that `execute` throws for fails, so each test also proves that a GraphQL error does not throw.
 /// The undo, commit, and tool tests cover the other codes of the catalog.
-@Suite("Error codes through execute")
+@Suite("Error codes through execute", .watcherBudget)
 struct ErrorCoverageTests {
     /// A document with a syntax error: the selection set of the operation does not close.
     static let syntaxErrorDocument = "{ board { name }"

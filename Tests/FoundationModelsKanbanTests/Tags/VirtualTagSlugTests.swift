@@ -7,7 +7,7 @@ import ULID
 /// Tests the rule of the virtual tag names (plan.md §6, §6.1): no mutation makes a tag whose slug is the name of a
 /// virtual tag, because the filter `#<slug>` matches only the virtual tag. A log that already has such a tag still
 /// loads, and the filter atom of the name still matches only the virtual tag.
-@Suite("Tag slugs that are the names of virtual tags")
+@Suite("Tag slugs that are the names of virtual tags", .watcherBudget)
 struct VirtualTagSlugTests {
     /// The slug of the real tag in the old log, and of the column of the done task: the name of ``VirtualTag/done``.
     static let doneSlug = VirtualTag.done.rawValue.lowercased()

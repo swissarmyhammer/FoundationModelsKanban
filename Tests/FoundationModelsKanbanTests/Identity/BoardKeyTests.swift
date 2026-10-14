@@ -5,7 +5,7 @@ import Testing
 
 /// Tests the board key: the normalization of a git remote URL, and the read of the key from a git repo (plan.md
 /// §3.2, §12 item 4).
-@Suite("Board keys")
+@Suite("Board keys", .watcherBudget)
 struct BoardKeyTests {
     /// The key that each form of the test remote gives.
     static let expectedKey = "github.com/swissarmyhammer/FoundationModelsKanban"
@@ -99,9 +99,9 @@ struct BoardKeyTests {
         }
     }
 
-    @Test("A repo with no remote has the key local/<directory-name>")
-    func localKeyHasDirectoryName() {
-        #expect(BoardKey(localDirectoryName: "my-repo").description == "local/my-repo")
+    @Test("A repo with no remote has the key local/<main-clone-name>")
+    func localKeyHasMainCloneName() {
+        #expect(BoardKey(mainCloneName: "my-repo").description == "local/my-repo")
     }
 
     @Test("A key from a remote is a valid board key of a node URI")
@@ -117,7 +117,7 @@ struct BoardKeyTests {
     func repoWithoutRemoteGivesLocalKey() async throws {
         let sandbox = try GitSandbox()
         let repo = try await sandbox.makeRepo(named: "my-repo")
-        #expect(try await BoardKey.read(fromRepoAt: repo) == BoardKey(localDirectoryName: "my-repo"))
+        #expect(try await BoardKey.read(fromRepoAt: repo) == BoardKey(mainCloneName: "my-repo"))
     }
 
     @Test("A repo with an SSH origin and a repo with an HTTPS origin give the same key")
@@ -129,19 +129,49 @@ struct BoardKeyTests {
         #expect(try await BoardKey.read(fromRepoAt: httpsRepo).description == Self.expectedKey)
     }
 
-    @Test("A subfolder of a repo gives local/<subfolder-name>, not the repo key", arguments: subfolderOrigins)
-    func subfolderGivesLocalKeyOfSubfolder(origin: String?) async throws {
+    @Test("A subfolder of a repo gives the key of the repo", arguments: subfolderOrigins)
+    func subfolderGivesKeyOfRepo(origin: String?) async throws {
         let sandbox = try GitSandbox()
         let repo = try await sandbox.makeRepo(named: "my-repo", origin: origin)
         let subfolder = try GitSandbox.makeFolder(named: Self.subfolderName, in: repo)
-        #expect(try await BoardKey.read(fromRepoAt: subfolder) == BoardKey(localDirectoryName: Self.subfolderName))
+        #expect(try await BoardKey.read(fromRepoAt: subfolder) == BoardKey.read(fromRepoAt: repo))
     }
 
-    @Test("A folder that is not in a git repo gives local/<folder-name>")
-    func folderOutsideRepoGivesLocalKey() async throws {
+    @Test("A folder that is not in a git repo has no key: the read throws notARepo")
+    func folderOutsideRepoThrowsNotARepo() async throws {
         let sandbox = try GitSandbox()
         let folder = try GitSandbox.makeFolder(named: Self.plainFolderName, in: sandbox.root)
-        #expect(try await BoardKey.read(fromRepoAt: folder) == BoardKey(localDirectoryName: Self.plainFolderName))
+        await #expect(throws: BoardKeyError.notARepo(path: folder.path)) {
+            try await BoardKey.read(fromRepoAt: folder)
+        }
+    }
+
+    // MARK: - Worktree top
+
+    @Test("The worktree top of a subfolder of a repo is the top folder of the repo, with the path of the caller")
+    func worktreeTopOfSubfolderIsRepo() async throws {
+        let sandbox = try GitSandbox()
+        let repo = try await sandbox.makeRepo(named: "my-repo")
+        let subfolder = try GitSandbox.makeFolder(named: "\(Self.subfolderName)/Deep", in: repo)
+        #expect(try await BoardKey.worktreeTop(of: subfolder).path == repo.standardizedFileURL.path)
+    }
+
+    @Test("The worktree top of a folder in a linked worktree is the top folder of that worktree")
+    func worktreeTopOfLinkedWorktreeIsWorktree() async throws {
+        let sandbox = try GitSandbox()
+        let repo = try await sandbox.makeRepo(named: "main-clone")
+        let worktree = try await sandbox.addWorktree(named: "feature-worktree", to: repo)
+        let subfolder = try GitSandbox.makeFolder(named: Self.subfolderName, in: worktree)
+        #expect(try await BoardKey.worktreeTop(of: subfolder).path == worktree.standardizedFileURL.path)
+    }
+
+    @Test("A folder that is not in a git repo has no worktree top: the read throws notARepo")
+    func worktreeTopOutsideRepoThrowsNotARepo() async throws {
+        let sandbox = try GitSandbox()
+        let folder = try GitSandbox.makeFolder(named: Self.plainFolderName, in: sandbox.root)
+        await #expect(throws: BoardKeyError.notARepo(path: folder.path)) {
+            try await BoardKey.worktreeTop(of: folder)
+        }
     }
 
     @Test("A git failure in a repo throws gitFailed, and does not give a local key")
@@ -162,7 +192,7 @@ struct BoardKeyTests {
     func originWithoutPathGivesLocalKey() async throws {
         let sandbox = try GitSandbox()
         let repo = try await sandbox.makeRepo(named: "main-clone", origin: Self.pathlessOrigin)
-        #expect(try await BoardKey.read(fromRepoAt: repo) == BoardKey(localDirectoryName: "main-clone"))
+        #expect(try await BoardKey.read(fromRepoAt: repo) == BoardKey(mainCloneName: "main-clone"))
     }
 
     @Test("An origin with no host gives local/<main-clone-name>, also in a worktree", arguments: localOrigins)
@@ -170,8 +200,8 @@ struct BoardKeyTests {
         let sandbox = try GitSandbox()
         let repo = try await sandbox.makeRepo(named: "main-clone", origin: origin)
         let worktree = try await sandbox.addWorktree(named: "feature-worktree", to: repo)
-        #expect(try await BoardKey.read(fromRepoAt: repo) == BoardKey(localDirectoryName: "main-clone"))
-        #expect(try await BoardKey.read(fromRepoAt: worktree) == BoardKey(localDirectoryName: "main-clone"))
+        #expect(try await BoardKey.read(fromRepoAt: repo) == BoardKey(mainCloneName: "main-clone"))
+        #expect(try await BoardKey.read(fromRepoAt: worktree) == BoardKey(mainCloneName: "main-clone"))
     }
 
     @Test("A worktree gives the same key as its main clone, with an origin")
@@ -190,7 +220,7 @@ struct BoardKeyTests {
         let sandbox = try GitSandbox()
         let repo = try await sandbox.makeRepo(named: "main-clone")
         let worktree = try await sandbox.addWorktree(named: "feature-worktree", to: repo)
-        #expect(try await BoardKey.read(fromRepoAt: worktree) == BoardKey(localDirectoryName: "main-clone"))
+        #expect(try await BoardKey.read(fromRepoAt: worktree) == BoardKey(mainCloneName: "main-clone"))
     }
 
     @Test("Each read gets the current origin, so a new remote gives a new key")
@@ -202,30 +232,13 @@ struct BoardKeyTests {
         #expect(try await BoardKey.read(fromRepoAt: repo).description == "gitlab.com/new-owner/moved-repo")
     }
 
-    @Test("An engine that reads the key from git gives local/<folder-name> outside a git repo")
-    func engineOutsideRepoGivesLocalKey() async throws {
-        let sandbox = try GitSandbox()
-        let response = try await Self.keyResponse(ofEngineAt: sandbox.root)
-        let key = BoardKey(localDirectoryName: sandbox.root.lastPathComponent)
-        #expect(response == KanbanGraphTests.keyResponse(of: key))
-    }
-
-    @Test("An engine in a subfolder of a repo gives local/<subfolder-name>, not the repo key")
-    func engineInSubfolderGivesLocalKey() async throws {
-        let sandbox = try GitSandbox()
-        let repo = try await sandbox.makeRepo(named: "my-repo", origin: Self.httpsRemote)
-        let subfolder = try GitSandbox.makeFolder(named: Self.subfolderName, in: repo)
-        let response = try await Self.keyResponse(ofEngineAt: subfolder)
-        #expect(response == KanbanGraphTests.keyResponse(of: BoardKey(localDirectoryName: Self.subfolderName)))
-    }
-
     @Test("An engine in a repo whose origin is a local path gives local/<main-clone-name>")
     func engineWithLocalOriginGivesLocalKey() async throws {
         let sandbox = try GitSandbox()
         let origin = try #require(Self.localOrigins.first)
         let repo = try await sandbox.makeRepo(named: "main-clone", origin: origin)
         let response = try await Self.keyResponse(ofEngineAt: repo)
-        #expect(response == KanbanGraphTests.keyResponse(of: BoardKey(localDirectoryName: "main-clone")))
+        #expect(response == KanbanGraphTests.keyResponse(of: BoardKey(mainCloneName: "main-clone")))
     }
 
     /// Runs ``KanbanGraphTests/keyQuery`` on an engine that reads the key from git, and closes the engine.

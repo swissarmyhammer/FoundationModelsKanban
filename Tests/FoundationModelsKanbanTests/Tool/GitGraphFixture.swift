@@ -3,7 +3,7 @@ import Foundation
 @testable import FoundationModelsKanban
 
 /// The engines of the suites that use real git repos, for example the portability and cross-repo suites. Each engine
-/// reads the board keys from git, not from the fake key reader of ``KanbanGraphTests``.
+/// reads the worktree tops and the board keys from git, not from the fake readers of ``KanbanGraphTests``.
 enum GitGraphFixture {
     /// The time step of the ULIDs of a second engine on the same repos. It is after the step of
     /// ``KanbanGraphTests/mutationIDs``, so the ids of the second engine sort after the ids of the first engine.
@@ -40,6 +40,7 @@ enum GitGraphFixture {
         try KanbanGraphTests.makeGraph(
             at: root,
             readingKeyWith: BoardKey.read(fromRepoAt:),
+            findingTopWith: BoardKey.worktreeTop(of:),
             actingAs: actor,
             mintingFrom: ids,
             locatedBy: locator,

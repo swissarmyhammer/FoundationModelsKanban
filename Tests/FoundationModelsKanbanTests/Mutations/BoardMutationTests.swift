@@ -9,7 +9,7 @@ import Testing
 /// These tests are the GraphQL form of the Rust auto-init and session actor dispatch tests. Each test uses a
 /// temporary repo directory, the fake board key, the fixed clock, and the fixed ULID source of
 /// ``KanbanGraphTests``.
-@Suite("Board mutations, auto-init, and session actor")
+@Suite("Board mutations, auto-init, and session actor", .watcherBudget)
 struct BoardMutationTests {
     /// The name that a test gives to the board.
     static let boardName = "My Board"

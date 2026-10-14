@@ -10,10 +10,10 @@ import ULID
 ///
 /// Each test uses a temporary repo directory, a fake board key, a fixed clock, and a fixed ULID source, so that each
 /// response is deterministic (plan.md §11).
-@Suite("KanbanGraph: execute, serial gate, and board load")
+@Suite("KanbanGraph: execute, serial gate, and board load", .watcherBudget)
 struct KanbanGraphTests {
     /// The fake key of the board. Only the test of a folder that is not a git repo runs git.
-    static let boardKey = BoardKey(localDirectoryName: "kanban")
+    static let boardKey = BoardKey(mainCloneName: "kanban")
 
     /// The time of the fixed clock and of each fixture event.
     static let time = ReplayTests.time(atStep: .zero)
@@ -88,11 +88,21 @@ struct KanbanGraphTests {
         boardKey
     }
 
+    /// The fake worktree top reader: the working directory is the top folder of its worktree, and git does not run.
+    ///
+    /// - Parameter directory: The working directory.
+    /// - Returns: The working directory.
+    @Sendable
+    static func fakeTop(of directory: URL) -> URL {
+        directory
+    }
+
     /// Makes an engine for a repo, with the fixed clock, a session actor, and a fixed ULID source.
     ///
     /// - Parameters:
     ///   - root: The root directory of the repo.
     ///   - keyReader: Gives the key of the board. The default is ``fakeKey(ofRepoAt:)``.
+    ///   - topReader: Gives the top folder of the worktree of a folder. The default is ``fakeTop(of:)``.
     ///   - clock: Gives the time of a change. The default always gives ``time``.
     ///   - actor: The session actor. The default is ``sessionActor``.
     ///   - ids: The source of the transaction ULIDs and the event ids. The default is ``mutationIDs``.
@@ -105,6 +115,7 @@ struct KanbanGraphTests {
     static func makeGraph(
         at root: URL,
         readingKeyWith keyReader: @escaping BoardKeyReader = fakeKey,
+        findingTopWith topReader: @escaping WorktreeTopReader = fakeTop,
         timedBy clock: @escaping @Sendable () -> DateTime = { time },
         actingAs actor: SessionActor = sessionActor,
         mintingFrom ids: FixedULIDSource = mutationIDs,
@@ -117,6 +128,7 @@ struct KanbanGraphTests {
         try KanbanGraph(
             root: root,
             readingKeyWith: keyReader,
+            findingTopWith: topReader,
             timedBy: clock,
             actingAs: actor,
             mintingFrom: ids,
@@ -284,17 +296,14 @@ struct KanbanGraphTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
     }
 
-    @Test("An engine in a folder that is not a git repo makes .kanban/ and gives the key local/<folder-name>")
+    @Test("An engine in a folder that is not a git repo gives NOT_A_REPO, and makes no .kanban/")
     func boardInPlainFolder() async throws {
         let directory = try TemporaryDirectory()
         let graph = try KanbanGraph(root: directory.url, actor: Self.actorName)
-        let task = try await CrossRepoFixture.addTask(with: "", on: graph)
         let response = try await Self.execute(Self.keyQuery, on: graph)
         await graph.close()
-        let key = BoardKey(localDirectoryName: directory.url.lastPathComponent)
-        #expect(try NodeURI(parsing: task).boardKey == key.description)
-        #expect(response == Self.keyResponse(of: key))
-        #expect(FileManager.default.fileExists(atPath: EventLog(repositoryAt: directory.url).directory.path))
+        #expect(response == (try KanbanError.notARepo(path: directory.url.path).responseJSON()))
+        #expect(!FileManager.default.fileExists(atPath: EventLog(repositoryAt: directory.url).directory.path))
     }
 
     @Test("Two concurrent execute calls on one KanbanGraph run one at a time")

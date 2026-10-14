@@ -13,7 +13,7 @@ import ULID
 /// engine applies, or a batch of a second watcher. The time limit only stops a test that would wait forever. A test
 /// that expects no batch does not wait for one: it reads the watch state of the engine directly (the active watch,
 /// and if its watcher runs), because the time of an FSEvents batch has no upper limit.
-@Suite("Live graph: FSEvents watcher and batches", .timeLimit(.minutes(1)))
+@Suite("Live graph: FSEvents watcher and batches", .watcherBudget, .timeLimit(.minutes(1)))
 struct BoardWatcherTests {
     /// The arguments of a `searchTasks` query for a word of ``KanbanGraphTests/laterTitle``, with no filter. The
     /// column of the fixture is the terminal column, so its tasks are done, and the search also finds them.

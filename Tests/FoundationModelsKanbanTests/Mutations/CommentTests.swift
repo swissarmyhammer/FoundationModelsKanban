@@ -14,7 +14,7 @@ import ULID
 /// Two rules are different from Rust. A comment is a full node, so `updateComment` and `deleteComment` need only the
 /// comment id, not also the task id. An `actor` that names no actor makes the actor in the same call; the Rust code
 /// gave an error.
-@Suite("Comment mutations")
+@Suite("Comment mutations", .watcherBudget)
 struct CommentTests {
     /// The body of a comment that a test adds.
     static let body = QueryFixture.commentBody

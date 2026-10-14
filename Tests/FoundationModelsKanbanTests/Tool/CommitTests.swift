@@ -11,7 +11,7 @@ import ULID
 /// Each test writes the board fixture of the loader tests to a temporary repo, loads its live graph, and drives the
 /// commit with a test mutation: a call that applies patches to the working copy. A test simulates a write by a
 /// different process with a direct append to a log file between the load and the commit.
-@Suite("Commit path: working copy, locks, and signature check")
+@Suite("Commit path: working copy, locks, and signature check", .watcherBudget)
 struct CommitTests {
     /// The step of the time and of the ids of the calls of a test. It is after each step of the fixture and after
     /// each step of the writes of a different process.

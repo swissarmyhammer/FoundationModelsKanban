@@ -13,7 +13,7 @@ import ULID
 /// and runs ``baseSetup`` in a commit session of the board. Then a test runs the setup of its case, and one
 /// transaction. The test keeps a copy of the session from before the transaction, so that it can query the board
 /// before and after the transaction.
-@Suite("Change model: NodeUpdate and FieldChange")
+@Suite("Change model: NodeUpdate and FieldChange", .watcherBudget)
 struct ChangeBuilderTests {
     /// The refs that the fields of a mutation case name: the fixture task, and the first comment of the board.
     struct CaseRefs: Sendable {

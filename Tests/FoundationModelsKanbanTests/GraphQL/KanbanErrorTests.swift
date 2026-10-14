@@ -63,7 +63,11 @@ struct KanbanErrorTests {
         (.graphQLValidationFailed(detail: engineMessage), "GRAPHQL_VALIDATION_FAILED"),
         (.ambiguousName(name: "taskz", matches: ["task", "tasks"]), "AMBIGUOUS_NAME"),
         (.internalFailure(detail: engineMessage), "INTERNAL"),
+        (.notARepo(path: plainFolderPath), "NOT_A_REPO"),
     ]
+
+    /// The path of a folder that is not in a git repo, in the `NOT_A_REPO` tests.
+    static let plainFolderPath = "/tmp/plain-folder"
 
     /// The errors of the reserved slugs: the slug `board`, and the names of the virtual tags. Each has the code of the
     /// slug rule of its node type. These cases share the codes of ``codes``, so the test of distinct codes does not
@@ -82,12 +86,20 @@ struct KanbanErrorTests {
         #expect(error.code == expectedCode)
     }
 
-    @Test("The cases give twenty-one different codes")
+    @Test("The cases give twenty-two different codes")
     func codesAreDistinct() {
         #expect(Set(Self.codes.map { $0.0.code }).count == Self.codes.count)
     }
 
     // MARK: - Messages
+
+    @Test("NOT_A_REPO tells that the kanban needs a git repo, and names the path")
+    func notARepoMessage() {
+        #expect(
+            KanbanError.notARepo(path: Self.plainFolderPath).message
+                == "The kanban needs a git repo. `/tmp/plain-folder` is not in a git repo."
+        )
+    }
 
     @Test("INVALID_VARIABLES tells the two correct forms of the variables")
     func invalidVariablesMessage() {

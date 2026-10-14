@@ -14,7 +14,7 @@ import ULID
 ///
 /// One rule is different from Rust: `addActor(ensure: true)` on an actor that exists writes nothing. The Rust code
 /// updated a changed name or color.
-@Suite("Column and actor mutations")
+@Suite("Column and actor mutations", .watcherBudget)
 struct ColumnActorTests {
     /// The slug of the column that a test adds.
     static let qaSlug = "qa"

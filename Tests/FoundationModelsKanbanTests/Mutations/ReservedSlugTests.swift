@@ -7,7 +7,7 @@ import ULID
 /// Tests the rule of the reserved slug `board` (plan.md §3.2): no mutation makes a column, an actor, or a tag with the
 /// slug ``Slug/reservedForBoard``, because the URI `kanban://<board-key>/column/board` parses as the board URI of the
 /// key `<board-key>/column`. A log that already has such a node still loads.
-@Suite("The reserved slug board")
+@Suite("The reserved slug board", .watcherBudget)
 struct ReservedSlugTests {
     /// A name whose slug is the reserved slug. The name is in mixed case, because the rule ignores case.
     static let reservedName = "Board"

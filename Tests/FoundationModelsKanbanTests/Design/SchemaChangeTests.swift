@@ -10,7 +10,7 @@ extension Design {
     ///
     /// Each test writes the fixture logs of ``KanbanGraphTests`` and one more task log, and queries the task through
     /// a new engine. A whole response compare also proves that the response has no error.
-    @Suite("Design: schema change with no upgrade step")
+    @Suite("Design: schema change with no upgrade step", .watcherBudget)
     struct SchemaChangeTests {
         /// The title of the task that a test writes after the fixture.
         static let title = KanbanGraphTests.laterTitle

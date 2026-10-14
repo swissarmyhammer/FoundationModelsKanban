@@ -18,6 +18,10 @@ enum KanbanError: Error, Hashable, Sendable {
     /// the scan looked in, in scan order.
     case boardNotFound(reference: String, searchRoots: [String])
 
+    /// `NOT_A_REPO`: the folder is not in a git repo, so it has no board (divergence.md §16). The path is the path of
+    /// the folder.
+    case notARepo(path: String)
+
     /// `AMBIGUOUS_ID`: the reference is a prefix of more than one id. The matches are the short ids of these ids.
     case ambiguousID(reference: String, matches: [ShortID])
 
@@ -121,6 +125,7 @@ extension KanbanError {
         switch self {
         case .invalidVariables: "INVALID_VARIABLES"
         case .notFound, .boardNotFound: "NOT_FOUND"
+        case .notARepo: "NOT_A_REPO"
         case .ambiguousID, .sharedShortID: "AMBIGUOUS_ID"
         case .actorNotFound: "ACTOR_NOT_FOUND"
         case .duplicateID: "DUPLICATE_ID"
@@ -156,6 +161,8 @@ extension KanbanError {
             "No board has the reference \"\(reference)\". The scan looked for git repos in: "
                 + "\(searchRoots.joined(separator: Self.listSeparator)). Use a board key, a repo directory name, "
                 + "or a repo path from these places, and then send the call again."
+        case .notARepo(let path):
+            "The kanban needs a git repo. `\(path)` is not in a git repo."
         case .ambiguousID(let reference, let matches):
             "The reference \"\(reference)\" matches more than one id: \(Self.sigilList(of: matches)). "
                 + "Send one of these short ids."

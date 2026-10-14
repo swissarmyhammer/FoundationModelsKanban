@@ -216,7 +216,7 @@ struct RelatedBoards: Sendable {
             .copy(formerCurrent)
         case .copy(let copy) where copy.directory.canonicalPath == path:
             .current
-        case .copy, .notFound:
+        case .copy, .notFound, .notARepo:
             resolution
         }
     }
@@ -263,12 +263,12 @@ struct RelatedBoards: Sendable {
     /// Gives the loaded board of a resolved board ref.
     ///
     /// - Parameter resolution: The board.
-    /// - Returns: The loaded board, or `nil` when the board is not found or not loaded.
+    /// - Returns: The loaded board, or `nil` when the board is not found, not in a git repo, or not loaded.
     func board(resolvedAs resolution: BoardResolution) -> BoardSnapshot? {
         switch resolution {
         case .current: current
         case .copy(let copy): boards[copy.directory.canonicalPath]
-        case .notFound: nil
+        case .notFound, .notARepo: nil
         }
     }
 

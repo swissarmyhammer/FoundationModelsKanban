@@ -15,7 +15,7 @@ extension Design {
     ///
     /// The sequences come from one fixed seed, so each run tests the same calls. The sequences run at the same time,
     /// each one in its own temporary repo.
-    @Suite("Design: replay of random public mutation sequences")
+    @Suite("Design: replay of random public mutation sequences", .watcherBudget)
     struct ReplayPropertyTests {
         /// The seed of the generator that gives the seed of each sequence.
         static let seed: UInt64 = 0x5EED_4E91

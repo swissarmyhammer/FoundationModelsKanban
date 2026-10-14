@@ -7,7 +7,7 @@ import Testing
 /// the cycle path, and the commit check covers each board that the check read.
 ///
 /// Each test makes two real git repos side by side in a ``GitSandbox``. The engines read the board keys from git.
-@Suite("Cross-repo: dependency cycles across boards", .timeLimit(.minutes(1)))
+@Suite("Cross-repo: dependency cycles across boards", .watcherBudget, .timeLimit(.minutes(1)))
 struct CrossRepoCycleTests {
     // MARK: - Helpers
 

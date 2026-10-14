@@ -6,7 +6,7 @@ import Testing
 @testable import FoundationModelsKanban
 
 /// Tests the forgiving decode of the tool arguments and the declared schema of `variables` (plan.md §7.1, §12 item 8).
-@Suite("KanbanArguments: forgiving variables and the variables schema")
+@Suite("KanbanArguments: forgiving variables and the variables schema", .watcherBudget)
 struct KanbanArgumentsTests {
     /// The document of each test.
     static let query = KanbanGraphTests.nameQuery

@@ -108,6 +108,7 @@ actor BoardStore {
     /// - Returns: The read view, or `nil` when the engine did not load the board yet. The store then records the
     ///   request, and the call runs again after the load.
     /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the ref.
+    ///   ``KanbanError/notARepo(path:)`` when the ref is the path of a folder that is not in a git repo.
     func view(ofBoardNamed reference: String) throws(KanbanError) -> BoardView? {
         try resolution(ofBoardNamed: reference).flatMap(view(of:))
     }
@@ -115,9 +116,11 @@ actor BoardStore {
     /// Finds the board that a board ref names, as the run sees it (plan.md §6.6, board refs).
     ///
     /// - Parameter reference: The board ref: a board key, a repo directory name, a path, or the URI of a board.
-    /// - Returns: The current board or a copy of a related repo, or `nil` when the engine did not resolve the ref
-    ///   yet. The store then records the request, and the call runs again after the load.
+    /// - Returns: The current board or a copy of a related repo (never ``BoardResolution/notFound`` or
+    ///   ``BoardResolution/notARepo(path:)``), or `nil` when the engine did not resolve the ref yet. The store then
+    ///   records the request, and the call runs again after the load.
     /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the ref.
+    ///   ``KanbanError/notARepo(path:)`` when the ref is the path of a folder that is not in a git repo.
     private func resolution(ofBoardNamed reference: String) throws(KanbanError) -> BoardResolution? {
         let resolver = RefResolver(graph: work.graph, boardKey: boardKey)
         if (try? resolver.storedRef(for: reference, ofType: .board)) != nil {
@@ -127,10 +130,14 @@ actor BoardStore {
             requests.insert(.board(reference))
             return nil
         }
-        guard resolution != .notFound else {
+        switch resolution {
+        case .current, .copy:
+            return resolution
+        case .notFound:
             throw .boardNotFound(reference: reference, searchRoots: related.searchRoots.map(\.path))
+        case .notARepo(let path):
+            throw .notARepo(path: path)
         }
-        return resolution
     }
 
     /// Finds the nodes of any type that some forgiving refs name, live or tombstoned: `Query.node` and
@@ -232,20 +239,18 @@ actor BoardStore {
     /// - Returns: The board, or `nil` when the engine did not load the board yet. The store then records the request,
     ///   and the call runs again after the load.
     /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the ref.
+    ///   ``KanbanError/notARepo(path:)`` when the ref is the path of a folder that is not in a git repo.
     func target(of board: MutationBoard) throws(KanbanError) -> MutationTarget? {
         guard let reference = board.reference else {
             return .current
         }
-        switch try resolution(ofBoardNamed: reference) {
-        case .none:
+        guard let resolution = try resolution(ofBoardNamed: reference) else {
             return nil
-        case .current:
-            return .current
-        case .copy(let copy):
-            return relatedTarget(of: copy, namedBy: reference)
-        case .notFound:
-            throw .boardNotFound(reference: reference, searchRoots: related.searchRoots.map(\.path))
         }
+        guard case .copy(let copy) = resolution else {
+            return .current
+        }
+        return relatedTarget(of: copy, namedBy: reference)
     }
 
     /// Gives the working copy of a copy of a related repo for a mutation field: the working copy of the run when an

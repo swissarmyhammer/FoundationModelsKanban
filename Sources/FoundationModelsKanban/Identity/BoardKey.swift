@@ -5,11 +5,10 @@ import Synchronization
 /// item 4).
 ///
 /// The SSH form (`git@host:owner/repo.git`), the HTTPS form (`https://host/owner/repo.git`), and the `ssh://` form of
-/// one remote give the same key. A repo with no remote has the key `local/<directory-name>`. A board in a directory
-/// that is not the top-level directory of a git repo also has the key `local/<directory-name>`. The log does not store
-/// the key. Each call that opens a board reads the key from git again with ``read(fromRepoAt:)``, so a repo that moves
-/// to a new remote gets a new key, and its data does not change. ``NodeURI`` holds the text of the key
-/// (``description``).
+/// one remote give the same key. A repo with no remote has the key `local/<main-clone-name>`. A board is only in a git
+/// repo (divergence.md §16), so a folder that is not in a git repo has no key. The log does not store the key. Each
+/// call that opens a board reads the key from git again with ``read(fromRepoAt:)``, so a repo that moves to a new
+/// remote gets a new key, and its data does not change. ``NodeURI`` holds the text of the key (``description``).
 struct BoardKey: Hashable, Sendable, CustomStringConvertible {
     /// The first segment of the key of a repo with no remote.
     static let localHost = "local"
@@ -59,10 +58,10 @@ struct BoardKey: Hashable, Sendable, CustomStringConvertible {
         description = Self.normalizedText(ofSegments: [String(host)] + pathSegments)
     }
 
-    /// Makes the key of a repo with no remote: `local/<directory-name>`.
+    /// Makes the key of a repo with no remote: `local/<main-clone-name>`.
     ///
     /// - Parameter name: The name of the directory of the main clone of the repo.
-    init(localDirectoryName name: String) {
+    init(mainCloneName name: String) {
         description = "\(Self.localHost)\(LocalRef.separator)\(name)"
     }
 }
@@ -149,57 +148,66 @@ extension BoardKey {
     /// `fatal: not a git repository (or any of the parent directories): .git`. The match ignores case.
     static let notInRepoMessage = "not a git repository"
 
-    /// Reads the key of the board of a directory (plan.md §3.2, §12 item 4). Git is not necessary.
+    /// Reads the key of the board of a repo (plan.md §3.2, §12 item 4). A board is only in a git repo (divergence.md
+    /// §16).
     ///
-    /// - When the directory is the top-level directory of a clone or of a worktree, the key comes from the current
-    ///   `origin` remote. When the repo has no remote, or the `origin` URL gives no key (a URL with no host, for
-    ///   example a local path or a `file://` URL, or a URL with a host but no path), the key is
-    ///   `local/<directory-name>`, with the name of the directory of the main clone. Thus, a worktree gets the same
-    ///   key as its main clone.
-    /// - When git says that the directory is not in a git repo, when git is not installed or cannot start, or when
-    ///   the directory is a subdirectory of a repo, the key is `local/<directory-name>`, with the name of the
-    ///   directory. Thus, two boards in one repo do not have the same key.
+    /// The key comes from the current `origin` remote of the repo. When the repo has no remote, or the `origin` URL
+    /// gives no key (a URL with no host, for example a local path or a `file://` URL, or a URL with a host but no
+    /// path), the key is `local/<main-clone-name>`, with the name of the directory of the main clone. Thus each
+    /// worktree of the repo and each folder in it gets the same key.
     ///
-    /// - Parameter directory: The directory of the board.
+    /// - Parameter directory: A folder in the repo: the top folder of a clone or of a worktree, or a folder in it.
     /// - Returns: The key of the board.
-    /// - Throws: ``BoardKeyError/gitTimedOut(arguments:)`` when git does not end in its time limit.
+    /// - Throws: ``BoardKeyError/notARepo(path:)`` when the folder is not in a git repo.
+    ///   ``BoardKeyError/gitTimedOut(arguments:)`` when git does not end in its time limit.
     ///   ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled before git ends.
-    ///   ``BoardKeyError/gitFailed(arguments:status:message:)`` when git fails for a different cause in a repo (for
-    ///   example a config file that git cannot read), or when the output of git does not have the two paths of the
-    ///   repo.
+    ///   ``BoardKeyError/gitUnavailable(message:)`` when git cannot start.
+    ///   ``BoardKeyError/gitFailed(arguments:status:message:)`` when git fails for a different cause (for example a
+    ///   config file that git cannot read, or git is not installed), or when the output of git does not have the two
+    ///   paths of the repo.
     static func read(fromRepoAt directory: URL) async throws(BoardKeyError) -> BoardKey {
-        guard let paths = try await repoPaths(at: directory), paths.hasTopLevel(at: directory) else {
-            return BoardKey(localDirectoryName: directory.standardizedFileURL.lastPathComponent)
-        }
+        let paths = try await repoPaths(at: directory)
         if let key = try await originKey(ofRepoAt: directory) {
             return key
         }
-        return BoardKey(localDirectoryName: paths.mainCloneName)
+        return BoardKey(mainCloneName: paths.mainCloneName)
+    }
+
+    /// Reads the top folder of the worktree of a folder with `git rev-parse --show-toplevel` (divergence.md §16). The
+    /// board of the folder is in the `.kanban/` directory of this top folder. In the main clone, it is the top folder
+    /// of the main clone. In a linked worktree, it is the top folder of that worktree.
+    ///
+    /// The top folder keeps the path form of the folder. Git gives the path with the symbolic links resolved (for
+    /// example `/private/var/…` for `/var/…`), so the read gives the parent folder of `directory` that is the same
+    /// folder as the path of git. When no parent folder is the same folder, the read gives the path of git.
+    ///
+    /// - Parameter directory: The folder.
+    /// - Returns: The top folder of the worktree.
+    /// - Throws: The errors of ``read(fromRepoAt:)``: ``BoardKeyError/notARepo(path:)`` when the folder is not in a
+    ///   git repo, and the failures of git.
+    static func worktreeTop(of directory: URL) async throws(BoardKeyError) -> URL {
+        try await repoPaths(at: directory).topLevel(seenFrom: directory)
     }
 
     /// Reads the paths of the repo of a directory with `git rev-parse`.
     ///
-    /// The directory has no repo only in three cases: git cannot start, git is not installed (``Git/launcherPath``
-    /// exits with ``Git/programNotFoundStatus``), or the standard error of git has ``notInRepoMessage`` (in any
-    /// case). Each other failure status of git is a real failure in a repo, so it throws.
+    /// The directory is not in a git repo only when the standard error of git has ``notInRepoMessage`` (in any case).
+    /// Each other failure of git is a real failure, so it throws.
     ///
     /// - Parameter directory: The directory.
-    /// - Returns: The paths, or `nil` when the directory has no repo.
-    /// - Throws: ``BoardKeyError/gitFailed(arguments:status:message:)`` when git exits with each other failure status,
-    ///   or when its output does not have the two paths. ``BoardKeyError/gitTimedOut(arguments:)`` and
-    ///   ``BoardKeyError/gitCancelled(arguments:)`` when git does not end.
-    private static func repoPaths(at directory: URL) async throws(BoardKeyError) -> RepoPaths? {
-        let result: Git.Output
-        do throws(BoardKeyError) {
-            result = try await Git.run(withArguments: repoPathsArguments, inDirectory: directory)
-        } catch .gitUnavailable {
-            return nil
-        }
+    /// - Returns: The paths.
+    /// - Throws: ``BoardKeyError/notARepo(path:)`` when the directory is not in a git repo.
+    ///   ``BoardKeyError/gitFailed(arguments:status:message:)`` when git exits with each other failure status, or when
+    ///   its output does not have the two paths. ``BoardKeyError/gitUnavailable(message:)`` when git cannot start.
+    ///   ``BoardKeyError/gitTimedOut(arguments:)`` and ``BoardKeyError/gitCancelled(arguments:)`` when git does not
+    ///   end.
+    private static func repoPaths(at directory: URL) async throws(BoardKeyError) -> RepoPaths {
+        let result = try await Git.run(withArguments: repoPathsArguments, inDirectory: directory)
         guard result.status == Git.successStatus else {
             guard isNoRepoFailure(result) else {
                 throw .gitFailed(arguments: repoPathsArguments, status: result.status, message: result.errorOutput)
             }
-            return nil
+            throw .notARepo(path: directory.path)
         }
         guard let paths = RepoPaths(gitOutput: result.output) else {
             throw .gitFailed(arguments: repoPathsArguments, status: result.status, message: result.output)
@@ -207,21 +215,19 @@ extension BoardKey {
         return paths
     }
 
-    /// Tells if a failed `git rev-parse` shows that the directory has no repo.
+    /// Tells if a failed `git rev-parse` shows that the directory is not in a git repo.
     ///
     /// - Parameter result: The result of git, with a failure status.
-    /// - Returns: `true` when git is not installed (the status is ``Git/programNotFoundStatus``), or when the
-    ///   standard error has ``notInRepoMessage`` (in any case).
+    /// - Returns: `true` when the standard error has ``notInRepoMessage`` (in any case).
     private static func isNoRepoFailure(_ result: Git.Output) -> Bool {
-        result.status == Git.programNotFoundStatus
-            || result.errorOutput.range(of: notInRepoMessage, options: .caseInsensitive) != nil
+        result.errorOutput.range(of: notInRepoMessage, options: .caseInsensitive) != nil
     }
 
     /// Reads the key of the current `origin` remote of a repo.
     ///
     /// An `origin` URL that ``init(remoteURL:)`` refuses gives no key: a URL with no host (for example a local path
     /// or a `file://` URL), or a URL with a host but no path (for example `https://example.com/`). The caller then
-    /// uses the key `local/<main-clone-name>`, the same as for a repo with no remote, so that a board always opens.
+    /// uses the key `local/<main-clone-name>`, the same as for a repo with no remote.
     ///
     /// - Parameter directory: A directory in the repo.
     /// - Returns: The key, or `nil` when the repo has no `origin` remote, or when ``init(remoteURL:)`` refuses the
@@ -283,13 +289,18 @@ private struct RepoPaths {
         return mainClone.lastPathComponent
     }
 
-    /// Tells if a directory is the top-level directory of the work tree. The two paths are compared with the symbolic
-    /// links resolved.
+    /// Gives the top-level directory in the path form of a folder in the work tree: the folder itself, or the parent
+    /// folder that is the same folder as ``topLevel`` with the symbolic links resolved.
     ///
-    /// - Parameter directory: The directory.
-    /// - Returns: `true` when the directory is the root of the clone or of the worktree, and not a subdirectory.
-    func hasTopLevel(at directory: URL) -> Bool {
-        topLevel.canonicalPath == directory.canonicalPath
+    /// - Parameter directory: A folder in the work tree.
+    /// - Returns: The top-level directory in the path form of `directory`, or ``topLevel`` when no parent folder of
+    ///   `directory` is the same folder.
+    func topLevel(seenFrom directory: URL) -> URL {
+        let topPath = topLevel.canonicalPath
+        let folders = sequence(first: directory.standardizedFileURL) { folder in
+            folder.pathComponents.count > 1 ? folder.deletingLastPathComponent() : nil
+        }
+        return folders.first { folder in folder.canonicalPath == topPath } ?? topLevel
     }
 }
 
@@ -299,6 +310,9 @@ private struct RepoPaths {
 enum BoardKeyError: Error, Hashable, Sendable {
     /// The remote URL has no host, no path, or an empty path segment.
     case invalidRemoteURL(url: String)
+
+    /// The folder is not in a git repo, so it has no board (divergence.md §16). The path is the path of the folder.
+    case notARepo(path: String)
 
     /// The `git` tool did not start, for example because git is not installed or the directory does not exist.
     case gitUnavailable(message: String)
@@ -325,9 +339,6 @@ enum Git {
 
     /// The name of the git program, which ``launcherPath`` finds.
     static let programName = "git"
-
-    /// The exit status of ``launcherPath`` when it cannot find ``programName`` on the `PATH`: git is not installed.
-    static let programNotFoundStatus: Int32 = 127
 
     /// The number of seconds in ``defaultTimeLimit``.
     private static let defaultTimeLimitSeconds = 30

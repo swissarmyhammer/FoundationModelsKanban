@@ -15,7 +15,7 @@ import ULID
 /// code wrote the new marker into each body. A rename to a tag that exists is a merge; the Rust code gave an error. A
 /// delete makes a tombstone and changes no task body, and the tasks lose the tag at read time; the Rust code removed
 /// the markers from each body.
-@Suite("Tag mutations")
+@Suite("Tag mutations", .watcherBudget)
 struct TagMutationTests {
     /// The slug of the first tag of a test.
     static let bug = "bug"

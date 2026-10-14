@@ -11,7 +11,7 @@ import ULID
 ///
 /// Most tests search the board of ``QueryFixture``: "Port the parser" in `doing` with the tag `bug`, "Write the tests"
 /// in `todo`, and "Ship it" in the terminal column `done`. The body of the first task holds the word "Write".
-@Suite("Search: searchTasks with MetadataSearcher")
+@Suite("Search: searchTasks with MetadataSearcher", .watcherBudget)
 struct TaskSearchTests {
     /// A word of the title of the second task only.
     static let titleWord = "tests"

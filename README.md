@@ -5,9 +5,10 @@ the graph with GraphQL: one document goes in, and one `{data, errors}`
 response comes out. The package moves the kanban function of the Rust
 `swissarmyhammer` tool to Swift. It gives a `KanbanGraph` engine and a
 FoundationModels `kanban` tool for in-process agents. Each board is an event
-log in the `.kanban/` directory of its folder. The folder can be a git repo, but
-git is not necessary. The port is not complete. See [plan.md](plan.md) for the
-design and the port order.
+log in the `.kanban/` directory of the top folder of a git worktree. A board
+needs a git repo. The port is not complete. See [plan.md](plan.md) for the
+design and the port order, and [divergence.md](divergence.md) for the decided
+changes to that design.
 
 ## Get started
 
@@ -36,12 +37,16 @@ import FoundationModelsKanban
 let graph = try KanbanGraph(root: URL(filePath: "/path/to/my-project"), actor: nil)
 ```
 
-- The board is in `<root>/.kanban/`. For the example above, the board is in
-  `/path/to/my-project/.kanban/`.
-- The folder does not have to be a git repo. In a folder that is not a git
-  repo, the board key is `local/<folder-name>`, for example `local/my-project`.
-  In a git repo with an `origin` remote, the key comes from the remote, for
-  example `github.com/owner/repo`.
+- The folder must be in a git repo. The board is in the `.kanban/` directory of
+  the top folder of the worktree (`git rev-parse --show-toplevel`). When
+  `/path/to/my-project` is the top folder of a repo, the board is in
+  `/path/to/my-project/.kanban/`, also for a `root` in a subfolder of the repo.
+  In a linked worktree, the board is in the top folder of that worktree.
+- A folder that is not in a git repo has no board. Each call then gives the
+  error `NOT_A_REPO`.
+- In a git repo with an `origin` remote, the key comes from the remote, for
+  example `github.com/owner/repo`. In a repo with no remote, the key is
+  `local/<main-clone-name>`, for example `local/my-project`.
 - `actor` is the name of the actor of your changes. `nil` uses the name of the
   user of the operating system.
 - The engine reads nothing until the first call. A query on a folder with no
