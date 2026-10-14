@@ -77,7 +77,9 @@ process into memory. A write of one session shows at once in a read of each
 other session. To give the related boards more search roots, or to give the
 search an embedder, call
 `await KanbanHost.shared.configure(locator:embedder:)` one time, before the
-first session. When a session ends, call `await graph.close()`.
+first session. A session is ready before the embeddings of its board are done:
+until then, `searchTasks` ranks with BM25 and trigram only, and `cosine` is
+null. When a session ends, call `await graph.close()`.
 
 ### 2. Add and list tasks
 

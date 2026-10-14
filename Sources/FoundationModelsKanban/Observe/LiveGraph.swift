@@ -47,9 +47,46 @@ struct LiveGraph: Sendable {
     /// - Returns: The live graph of the board.
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a directory or a file cannot be read.
     static func load(using loader: BoardLoader) async throws(EventLogError) -> LiveGraph {
+        try await join(using: loader).merged()
+    }
+
+    /// Reads a board with the full parallel loader and joins its nodes, and records the signature of each node file.
+    /// The event lists of the files are not merged yet: ``Joined/merged()`` merges them.
+    ///
+    /// The signatures are read before the files, as in ``load(using:)``.
+    ///
+    /// - Parameter loader: The loader of the board.
+    /// - Returns: The joined board.
+    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a directory or a file cannot be read.
+    static func join(using loader: BoardLoader) async throws(EventLogError) -> Joined {
         let signatures = try loader.log.nodeFileSignatures()
-        let board = try await loader.load()
-        return LiveGraph(loader: loader, graph: board.graph, events: board.events, signatures: signatures)
+        return Joined(loader: loader, board: try await loader.join(), signatures: signatures)
+    }
+
+    /// A board that the full parallel loader read and joined, before the merge of its event lists. The engine indexes
+    /// the tasks of ``graph`` for the search while ``merged()`` runs (divergence.md §16, L4).
+    struct Joined: Sendable {
+        /// The loader of the board.
+        fileprivate let loader: BoardLoader
+
+        /// The joined graph and the event list of each file.
+        fileprivate let board: JoinedBoard
+
+        /// The signature of each node file, read before the files.
+        fileprivate let signatures: [LocalRef: FileSignature]
+
+        /// The graph of the board.
+        var graph: Graph {
+            board.graph
+        }
+
+        /// Merges the event lists into the global event list, and makes the live graph.
+        ///
+        /// - Returns: The live graph of the board.
+        func merged() -> LiveGraph {
+            let loaded = board.merged()
+            return LiveGraph(loader: loader, graph: loaded.graph, events: loaded.events, signatures: signatures)
+        }
     }
 
     /// Applies a batch of changed files to the graph (plan.md §5.6, apply a batch).

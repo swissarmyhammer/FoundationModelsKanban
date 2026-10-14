@@ -118,13 +118,14 @@ struct QueryFixture {
             .respond(to: document, context: Self.context(reading: graph, searchingWith: search))
     }
 
-    /// Makes a task search that indexes the live tasks of the board.
+    /// Makes a task search that indexes the live tasks of the board, and waits until the embeddings are done.
     ///
     /// - Parameter embedder: The embedder of the search, or `nil` for no embedder.
     /// - Returns: The search.
     func makeSearch(embeddingWith embedder: (any PooledEmbedding)? = nil) async -> TaskSearch {
         let search = TaskSearch(embeddingWith: embedder)
         await search.update(from: BoardView(of: graph, inBoard: DependencyMarkersTests.boardKey))
+        await search.waitForEmbeddings()
         return search
     }
 

@@ -20,6 +20,21 @@ protocol BoardLoadObserver: Sendable {
     ///
     /// - Parameter root: The root directory of the repo of the board.
     func boardLoadDidFinish(at root: URL)
+
+    /// Tells that the merge of the event lists of a loaded board starts. The merge waits until this method returns.
+    ///
+    /// A test uses it to hold the merge, so that it can prove that the search update starts before the merge ends
+    /// (divergence.md §16, L4).
+    ///
+    /// - Parameter root: The root directory of the repo of the board.
+    func boardEventsWillMerge(at root: URL) async
+}
+
+extension BoardLoadObserver {
+    /// Does nothing. An observer that records only the file loads does not hold the merge.
+    ///
+    /// - Parameter root: The root directory of the repo of the board.
+    func boardEventsWillMerge(at root: URL) async {}
 }
 
 /// The engine of one board in a process: its live graph and commit path, its file watcher, its serial gate, its
@@ -113,17 +128,7 @@ actor BoardEngine {
     static func load(_ request: EngineLoad) async throws -> BoardEngine {
         let started = request.startsWatcher ? try BoardWatcher.started(onBoardAt: request.root) : nil
         do {
-            async let key = request.key()
-            async let live = request.liveGraph()
-            let session = CommitSession(
-                of: try await live,
-                inBoard: try await key,
-                mintingFrom: request.configuration.ids,
-                timedBy: request.configuration.clock,
-                searchingWith: TaskSearch(embeddingWith: request.embedder),
-                writingWith: request.configuration.logWriter
-            )
-            await session.updateSearch()
+            let session = try await request.session()
             let engine = BoardEngine(
                 identity: request.identity,
                 root: request.root,
@@ -159,12 +164,14 @@ actor BoardEngine {
         return BoardChanges(of: session, changes: changes)
     }
 
-    /// Stops the file watcher and ends each subscription of the board. After the call returns, a change of a file
-    /// applies nothing. The board stays in memory. A second call does nothing.
+    /// Stops the file watcher, ends each subscription of the board, and cancels the embeddings of the search in the
+    /// background. After the call returns, a change of a file applies nothing. The board stays in memory, and a
+    /// search uses the keyword index. A second call does nothing.
     func close() async {
         feed.finish()
         let watch = activeWatch
         watchState = .closed
+        await session.source.search.stopEmbedding()
         await watch?.end()
     }
 
@@ -351,20 +358,56 @@ struct EngineLoad: Sendable {
         return try await configuration.keyReader(root)
     }
 
-    /// Checks that the `.kanban/` directory is not a Rust board, and loads the live graph of the board from its log
-    /// files with the parallel loader (plan.md §5.3).
+    /// Loads the session of the board. The key read and the file load run at the same time (divergence.md §16, L1).
+    ///
+    /// When the task nodes are joined, the search update starts at the same time as the merge of the event lists
+    /// (divergence.md §16, L4). The session is ready when the graph, the event list, and the keyword index (BM25 and
+    /// trigram) are ready. The embeddings finish in the background.
+    ///
+    /// - Returns: The session, with the board in memory and its keyword index updated.
+    /// - Throws: ``EventLogError/incompatibleBoard(directory:)`` when the `.kanban/` directory has Rust files. An
+    ///   ``EventLogError`` when a file cannot be read, or a ``BoardKeyError`` when git cannot give the key.
+    func session() async throws -> CommitSession {
+        async let key = key()
+        let joined = try await joinedGraph()
+        async let live = liveGraph(mergingEventsOf: joined)
+        let boardKey = try await key
+        let search = TaskSearch(embeddingWith: embedder)
+        await search.update(from: BoardView(of: joined.graph, inBoard: boardKey.description))
+        return CommitSession(
+            of: await live,
+            inBoard: boardKey,
+            mintingFrom: configuration.ids,
+            timedBy: configuration.clock,
+            searchingWith: search,
+            writingWith: configuration.logWriter
+        )
+    }
+
+    /// Checks that the `.kanban/` directory is not a Rust board, and reads and joins the log files of the board with
+    /// the parallel loader (plan.md §5.3). The event lists of the files are not merged yet.
     ///
     /// The load observer gets the end of each load that started, also of a load that fails.
     ///
-    /// - Returns: The live graph.
+    /// - Returns: The joined board.
     /// - Throws: ``EventLogError/incompatibleBoard(directory:)`` when the `.kanban/` directory has Rust files.
     ///   ``EventLogError/fileSystem(path:detail:)`` when a directory or a file cannot be read.
-    func liveGraph() async throws(EventLogError) -> LiveGraph {
+    private func joinedGraph() async throws(EventLogError) -> LiveGraph.Joined {
         let log = EventLog(repositoryAt: root)
         try log.checkCompatibility()
         await configuration.loadObserver?.boardLoadDidStart(at: root)
         defer { configuration.loadObserver?.boardLoadDidFinish(at: root) }
-        return try await LiveGraph.load(using: BoardLoader(reading: log, reportingTo: configuration.workerObserver))
+        return try await LiveGraph.join(using: BoardLoader(reading: log, reportingTo: configuration.workerObserver))
+    }
+
+    /// Merges the event lists of a joined board into the global event list, and makes the live graph. The load
+    /// observer gets a call before the merge.
+    ///
+    /// - Parameter joined: The joined board.
+    /// - Returns: The live graph.
+    private func liveGraph(mergingEventsOf joined: LiveGraph.Joined) async -> LiveGraph {
+        await configuration.loadObserver?.boardEventsWillMerge(at: root)
+        return joined.merged()
     }
 }
 

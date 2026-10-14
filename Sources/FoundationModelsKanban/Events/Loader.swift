@@ -13,6 +13,23 @@ struct LoadedBoard: Sendable {
     let events: [Event]
 }
 
+/// One board after the join of its nodes, before the merge of its event lists (plan.md §5.3). The engine indexes the
+/// tasks of the graph for the search while the event lists merge (divergence.md §16, L4).
+struct JoinedBoard: Sendable {
+    /// The graph of the board. Each edge to a node of the board holds the slot of its target.
+    let graph: Graph
+
+    /// The event list of each log file, each in the order of its event ids. The lists are in the join order.
+    let eventLists: [[Event]]
+
+    /// Merges the event lists into the global event list with a k-way merge by event id.
+    ///
+    /// - Returns: The graph and the global event list.
+    func merged() -> LoadedBoard {
+        LoadedBoard(graph: graph, events: EventMerge.merged(eventLists))
+    }
+}
+
 /// Gets a call when a worker of the ``BoardLoader`` starts, when it starts to read each file, and when it ends.
 ///
 /// A test uses it to count the workers that run at the same time, and to see which files they read. The loader calls
@@ -93,12 +110,24 @@ struct BoardLoader: Sendable {
     /// - Returns: The graph and the global event list.
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a directory or a file is there and cannot be read.
     func load() async throws(EventLogError) -> LoadedBoard {
+        try await join().merged()
+    }
+
+    /// Reads all log files of the board with one worker pool, and joins the nodes into one graph. The event lists of
+    /// the files are not merged yet, so that a caller can do other work with the graph during the merge.
+    ///
+    /// A missing node directory (for example no `comments/`) is an empty stage. A board with no `.kanban/`
+    /// directory gives an empty graph.
+    ///
+    /// - Returns: The graph and the event list of each file.
+    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a directory or a file is there and cannot be read.
+    func join() async throws(EventLogError) -> JoinedBoard {
         var graph = Graph()
         let eventLists = try await readStages(
             listingFilesWith: { type throws(EventLogError) in try stageRefs(of: type) },
             joiningInto: &graph
         )
-        return LoadedBoard(graph: graph, events: EventMerge.merged(eventLists))
+        return JoinedBoard(graph: graph, eventLists: eventLists)
     }
 
     /// Reads some node files with one worker pool, and joins each node into a graph, stage by stage in

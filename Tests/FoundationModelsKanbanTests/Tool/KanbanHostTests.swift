@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsExtras
 import Synchronization
 import Testing
 
@@ -345,13 +346,15 @@ enum HostFixture {
     ///     ``KanbanGraphTests/mutationIDs``.
     ///   - loadObserver: Gets a call when each board load starts and ends, or `nil` for no calls.
     ///   - workerObserver: Gets a call when each worker of a loader reads a file, or `nil` for no calls.
+    ///   - embedder: The embedder of the search of each board, or `nil` for BM25 and trigram only.
     /// - Returns: The host.
     static func makeHost(
         readingKeyWith keyReader: @escaping BoardKeyReader = KanbanGraphTests.fakeKey,
         findingTopWith topReader: @escaping WorktreeTopReader = KanbanGraphTests.fakeTop,
         mintingFrom ids: any ULIDSource = KanbanGraphTests.mutationIDs,
         observingLoadsWith loadObserver: (any BoardLoadObserver)? = nil,
-        reportingWorkersTo workerObserver: (any LoaderWorkerObserver)? = nil
+        reportingWorkersTo workerObserver: (any LoaderWorkerObserver)? = nil,
+        embeddingWith embedder: (any PooledEmbedding)? = nil
     ) -> KanbanHost {
         KanbanHost(
             configuration: HostConfiguration(
@@ -359,6 +362,7 @@ enum HostFixture {
                 topReader: topReader,
                 clock: { KanbanGraphTests.time },
                 ids: ids,
+                embedder: embedder,
                 loadObserver: loadObserver,
                 workerObserver: workerObserver
             )

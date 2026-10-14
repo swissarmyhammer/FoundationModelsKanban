@@ -4,36 +4,59 @@ import FoundationModelsMetadataRegistry
 /// The ranked search over the tasks of one board (plan.md §6.4, §12 item 6). The selection of the call
 /// (``TaskSelection``) removes a tombstone from the hits unless the filter names `#DELETED`.
 ///
-/// The search holds one `MetadataSearcher` in `.retrieval` mode: BM25, trigram, and embedding cosine (only with an
+/// The search uses `MetadataSearcher` in `.retrieval` mode: BM25, trigram, and embedding cosine (only with an
 /// embedder), fused with reciprocal rank fusion. `.selection` is not used, because it calls a language model and its
-/// result changes from call to call. The searcher keeps its index in memory only.
+/// result changes from call to call. The searchers keep their indexes in memory only.
+///
+/// The search holds two searchers (divergence.md §16, L4). The keyword searcher has no embedder, so its update returns
+/// as soon as its BM25 and trigram indexes are ready. With an embedder, the ``EmbeddedTaskCatalog`` updates a second
+/// searcher in the background, and embeds again only the tasks that changed. A search uses the second searcher when
+/// it holds the newest catalog. Until then, the search uses the keyword searcher, and each hit gives no cosine score.
 ///
 /// ``KanbanGraph`` keeps one search for each board for its life. The commit session calls ``update(from:)`` after
-/// the first load and after each change of the live graph, and the searcher embeds again only the tasks that changed.
+/// the first load and after each change of the live graph.
 ///
 /// When the embedder fails, the searcher falls back to BM25 and trigram, and it records the diagnostic with swift-log.
 /// The search gives no error.
 struct TaskSearch: Sendable {
-    /// The searcher over the catalog of the tasks, live and tombstoned.
-    private let searcher: MetadataSearcher<TaskSearchItem>
+    /// The searcher with no embedder over the catalog of the tasks, live and tombstoned.
+    private let keywordSearcher: MetadataSearcher<TaskSearchItem>
 
-    /// `true` when the search has an embedder. Without one, each hit gives no cosine score.
-    private let hasEmbedder: Bool
+    /// The searcher with the embedder and its background update loop, or `nil` for BM25 and trigram only.
+    private let embeddedCatalog: EmbeddedTaskCatalog?
 
     /// Makes a search with an empty catalog. The search embeds nothing until the first update.
     ///
     /// - Parameter embedder: The embedder of the tasks and the queries, or `nil` for BM25 and trigram only.
     init(embeddingWith embedder: (any PooledEmbedding)?) {
-        searcher = MetadataSearcher(items: [], mode: .retrieval, embedder: embedder)
-        hasEmbedder = embedder != nil
+        keywordSearcher = MetadataSearcher(items: [], mode: .retrieval)
+        embeddedCatalog = embedder.map(EmbeddedTaskCatalog.init(embeddingWith:))
     }
 
     /// Replaces the catalog with the tasks of a board, live and tombstoned, so that a filter that names `#DELETED`
-    /// can find a tombstone. A task that did not change keeps its embedding.
+    /// can find a tombstone.
+    ///
+    /// The call returns when the BM25 and trigram indexes of the new catalog are ready. The embeddings of the tasks
+    /// that changed are done in the background (``waitForEmbeddings()``). The catalog goes to the embedding loop
+    /// first, so that no search uses the searcher with the embedder while it holds an older catalog.
     ///
     /// - Parameter view: The read view of the board.
     func update(from view: BoardView) async {
-        await searcher.update(items: view.allTasks.map(TaskSearchItem.init(of:)))
+        let items = view.allTasks.map(TaskSearchItem.init(of:))
+        await embeddedCatalog?.submit(items)
+        await keywordSearcher.update(items: items)
+    }
+
+    /// Waits until the embeddings of the newest catalog are done, or until ``stopEmbedding()`` stopped them. A search
+    /// with no embedder returns at once.
+    func waitForEmbeddings() async {
+        await embeddedCatalog?.waitForEmbeddings()
+    }
+
+    /// Cancels the embeddings in the background. After the call, each search uses the keyword searcher only. The
+    /// engine calls it when it closes, so that no embedding runs after the host closed.
+    func stopEmbedding() async {
+        await embeddedCatalog?.stop()
     }
 
     /// Ranks the tasks for a query, and keeps the selected tasks only (plan.md §6.4, filter).
@@ -56,21 +79,45 @@ struct TaskSearch: Sendable {
         first: Int
     ) async throws -> [TaskHit] {
         let selected = Dictionary(uniqueKeysWithValues: tasks.map { task in (task.id.text, task) })
-        let matches = try await searcher.search(intent: query, limit: view.graph.taskCount)
-        let hits = matches.compactMap { match in
+        let ranked = try await rankedMatches(for: query, limit: view.graph.taskCount)
+        let hits = ranked.matches.compactMap { match in
             selected[match.id].map { task in
-                TaskHit(task: task, score: match.score, signals: match.signals.map(signals(of:)))
+                TaskHit(
+                    task: task,
+                    score: match.score,
+                    signals: match.signals.map { scores in Self.signals(of: scores, withCosine: ranked.hasCosine) }
+                )
             }
         }
         return Array(hits.prefix(max(first, .zero)))
     }
 
+    /// Ranks the tasks for a query: with the searcher with the embedder when it holds the newest catalog, or else
+    /// with the keyword searcher.
+    ///
+    /// - Parameters:
+    ///   - query: The search text.
+    ///   - limit: The largest number of matches.
+    /// - Returns: The matches, highest score first, and `true` when the searcher with the embedder ranked them.
+    /// - Throws: An error of the searcher. The `.retrieval` mode gives none.
+    private func rankedMatches(
+        for query: String,
+        limit: Int
+    ) async throws -> (matches: [Match<TaskSearchItem>], hasCosine: Bool) {
+        if let matches = try await embeddedCatalog?.matchesOfNewestCatalog(for: query, limit: limit) {
+            return (matches, true)
+        }
+        return (try await keywordSearcher.search(intent: query, limit: limit), false)
+    }
+
     /// Gives the scores of the signals of one match.
     ///
-    /// - Parameter scores: The raw scores of the searcher.
-    /// - Returns: The scores, with no cosine score when the search has no embedder.
-    private func signals(of scores: Signals) -> SearchSignals {
-        SearchSignals(bm25: scores.bm25, trigram: scores.trigram, cosine: hasEmbedder ? scores.cosine : nil)
+    /// - Parameters:
+    ///   - scores: The raw scores of the searcher.
+    ///   - hasCosine: `true` when the searcher with the embedder ranked the match.
+    /// - Returns: The scores, with no cosine score when the keyword searcher ranked the match.
+    private static func signals(of scores: Signals, withCosine hasCosine: Bool) -> SearchSignals {
+        SearchSignals(bm25: scores.bm25, trigram: scores.trigram, cosine: hasCosine ? scores.cosine : nil)
     }
 }
 
@@ -94,7 +141,8 @@ struct SearchSignals: Sendable {
     /// The trigram score: partial words and typing errors.
     let trigram: Double
 
-    /// The embedding cosine score, or `nil` when the search has no embedder.
+    /// The embedding cosine score, or `nil` when the search has no embedder or the embeddings of the newest catalog
+    /// are not done yet.
     let cosine: Double?
 }
 
