@@ -54,7 +54,7 @@ struct LiveGraph: Sendable {
 
     /// Applies a batch of changed files to the graph (plan.md §5.6, apply a batch).
     ///
-    /// The apply uses the work queue and the stage order of the loader: board, actors, columns, tags, tasks,
+    /// The apply uses the worker pool and the join order of the loader: board, actors, columns, tags, tasks,
     /// comments. For each changed node file:
     ///
     /// - A changed file is read again from the start, and its node is folded again. The new state replaces the state
@@ -158,7 +158,7 @@ struct LiveGraph: Sendable {
         Set(current.filter { ref, signature in signature != signatures[ref] }.keys)
     }
 
-    /// Reads the files of some nodes again, stage by stage, and joins their nodes into the graph.
+    /// Reads the files of some nodes again with one worker pool, and joins their nodes into the graph, stage by stage.
     ///
     /// - Parameter refs: The local refs of the changed nodes.
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a file cannot be read. Then nothing changes.

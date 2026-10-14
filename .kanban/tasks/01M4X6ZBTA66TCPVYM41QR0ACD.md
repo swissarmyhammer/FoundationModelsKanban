@@ -88,13 +88,22 @@ comments:
     - finding KanbanGraph.swift:255 checked off.
     - next: /review
   timestamp: 2026-10-14T17:21:15.693844+00:00
+- actor: claude-code
+  id: 01m4xq618pwks82mvxymmn0s2s
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — 3 files (1 finding fixed, 1 new test)
+    - test: green — swift test, 1186 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 45211c3
+    - review: clean — none
+  timestamp: 2026-10-14T17:25:56.118901+00:00
 depends_on:
 - 01M4X6X6PS5P524DW45RBSSWN2
 - 01M4X6XKP0Y832GDRHQ1MG22VF
 - 01M4X6YD33YTSBBTG8VZFWTRZR
 - 01M4X6YRT3543TS3S5K6RGZMCJ
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: e180
 title: 'Add KanbanHost: one engine per board for each process, and a session view for each working directory'
 ---
 ## What

@@ -5,9 +5,9 @@ import ULID
 
 @testable import FoundationModelsKanban
 
-/// Tests the parallel loader: the stages, the work queue, the join, and the global event list (plan.md §5.3, §12
-/// item 23).
-@Suite("Parallel loader of one board")
+/// Tests the parallel loader: the folder listings, the worker pool, the join, and the global event list (plan.md
+/// §5.3, §12 item 23).
+@Suite("Parallel loader of one board", .watcherBudget)
 struct LoaderTests {
     /// The worker count of the serial load.
     static let singleWorker = 1
@@ -24,6 +24,10 @@ struct LoaderTests {
     /// The largest worker count of the peak test. The test uses fewer workers on a computer with fewer processors,
     /// because the workers can run at the same time only on different processors.
     static let peakWorkerLimit = 4
+
+    /// The worker count of the test of one worker pool: one worker waits on the board file, and the other worker
+    /// reads the files of the later node types.
+    static let overlapWorkerCount = 2
 
     /// The key of the different board of the cross-board `dependsOn` edge.
     static let remoteBoardKey = "github.com/o/other"
@@ -265,6 +269,99 @@ struct LoaderTests {
         _ = try await BoardLoader(reading: log, withWorkers: workerCount, reportingTo: meter).load()
         #expect(meter.peak == workerCount)
     }
+
+    @Test("One worker pool reads the files of all node types: a comment file starts before the board file ends")
+    func filesOfAllTypesShareOnePool() async throws {
+        let directory = try TemporaryDirectory()
+        let log = EventLog(repositoryAt: directory.url)
+        _ = try Self.writeBoard(to: log)
+        let probe = StageOverlapProbe(holding: .board, until: .comment)
+        _ = try await BoardLoader(reading: log, withWorkers: Self.overlapWorkerCount, reportingTo: probe).load()
+        #expect(probe.didOverlap)
+    }
+
+    @Test("The folder listings of all node types run at the same time")
+    func folderListingsRunAtSameTime() async throws {
+        let directory = try TemporaryDirectory()
+        let probe = StageOverlapProbe(holding: .board, until: .comment)
+        var graph = Graph()
+        _ = try await BoardLoader(reading: EventLog(repositoryAt: directory.url)).readStages(
+            listingFilesWith: { type in
+                probe.reach(type)
+                return []
+            },
+            joiningInto: &graph
+        )
+        #expect(probe.didOverlap)
+    }
+}
+
+// MARK: - Stage overlap probe
+
+/// Holds the work of one node type until the work of a different node type starts, or until a time limit.
+///
+/// With a barrier between the node types, the work of a later type cannot start while the work of an earlier type
+/// waits, so the hold ends at the time limit. When the loader does the work of all types at the same time, a
+/// different worker starts the work of the later type, and the hold ends at once.
+final class StageOverlapProbe: LoaderWorkerObserver {
+    /// The largest time, in seconds, that the hold waits for the work of the awaited type.
+    static let holdSeconds = 5.0
+
+    /// The node type whose work waits.
+    let heldType: PatchNodeType
+
+    /// The node type whose work ends the hold.
+    let awaitedType: PatchNodeType
+
+    /// Gets a signal when the work of the awaited type starts.
+    private let awaitedStart = DispatchSemaphore(value: 0)
+
+    /// Tells if the work of the awaited type started while the work of the held type waited. A lock keeps it,
+    /// because the workers run on different threads.
+    private let overlap = Mutex(false)
+
+    /// Tells if the work of the awaited type started while the work of the held type waited.
+    var didOverlap: Bool {
+        overlap.withLock { overlap in overlap }
+    }
+
+    /// Makes a probe.
+    ///
+    /// - Parameters:
+    ///   - heldType: The node type whose work waits.
+    ///   - awaitedType: The node type whose work ends the hold.
+    init(holding heldType: PatchNodeType, until awaitedType: PatchNodeType) {
+        self.heldType = heldType
+        self.awaitedType = awaitedType
+    }
+
+    /// Records that the work of one node type starts. The work of the held type waits here for the work of the
+    /// awaited type.
+    ///
+    /// - Parameter type: The node type of the work.
+    func reach(_ type: PatchNodeType) {
+        if type == awaitedType {
+            awaitedStart.signal()
+        }
+        guard type == heldType else {
+            return
+        }
+        let result = awaitedStart.wait(timeout: .now() + Self.holdSeconds)
+        overlap.withLock { overlap in overlap = result == .success }
+    }
+
+    /// Records that a worker starts to read the file of a node.
+    ///
+    /// - Parameter ref: The local ref of the node of the file.
+    func workerWillRead(fileOf ref: LocalRef) {
+        reach(ref.nodeType)
+    }
+
+    /// Does nothing: the probe does not count the workers.
+    func workerDidStart() {}
+
+    /// Does nothing: the probe does not count the workers.
+    func workerDidFinish() {}
 }
 
 // MARK: - Worker meter

@@ -13,37 +13,50 @@ struct LoadedBoard: Sendable {
     let events: [Event]
 }
 
-/// Gets a call when a worker of the ``BoardLoader`` starts and when it ends.
+/// Gets a call when a worker of the ``BoardLoader`` starts, when it starts to read each file, and when it ends.
 ///
-/// A test uses it to count the workers that run at the same time. The loader calls it from the thread of each
-/// worker, so a conforming type must be safe to call from different threads.
+/// A test uses it to count the workers that run at the same time, and to see which files they read. The loader calls
+/// it from the thread of each worker, so a conforming type must be safe to call from different threads.
 protocol LoaderWorkerObserver: Sendable {
     /// Tells that a worker started.
     func workerDidStart()
 
     /// Tells that a worker ended.
     func workerDidFinish()
+
+    /// Tells that a worker starts to read the log file of one node.
+    ///
+    /// - Parameter ref: The local ref of the node of the file.
+    func workerWillRead(fileOf ref: LocalRef)
+}
+
+extension LoaderWorkerObserver {
+    /// Does nothing. An observer that counts only the workers does not need the files.
+    ///
+    /// - Parameter ref: The local ref of the node of the file.
+    func workerWillRead(fileOf ref: LocalRef) {}
 }
 
 /// The parallel loader: it reads one board from its log files into a ``Graph`` (plan.md §5.3, §12 item 23).
 ///
-/// The loader reads the board in **stages**, in entity order: board, actors, columns, tags, tasks, comments. A stage
-/// puts all its files into a work queue. A fixed set of workers takes files from the queue until it is empty, and
-/// each worker folds one node from its file with ``NodeLog``. The stage ends when all workers are done (a barrier).
+/// The loader lists the folders of all node types at the same time, and puts the files of all node types into one
+/// work queue. A fixed set of workers takes files from the queue until it is empty, and each worker folds one node
+/// from its file with ``NodeLog``. Each file folds alone, so no worker waits for the files of a different node type.
 ///
-/// At the end of each stage, the loader **joins** the nodes of the stage: it inserts them into the graph in the sort
-/// order of their local refs, and the graph changes each stored ref to the slot of its target. A tag `renamedTo` edge
-/// and a task `dependsOn` edge can point to a node of the same stage, so they resolve when the stage ends. A ref to a
-/// different board, or to a node with no file, stays unresolved. The fixed insert order gives the same graph for
-/// each worker count.
+/// When all workers are done, the loader **joins** the nodes in memory, in **stages** in entity order: board, actors,
+/// columns, tags, tasks, comments. In each stage, it inserts the nodes into the graph in the sort order of their
+/// local refs, and the graph changes each stored ref to the slot of its target. A tag `renamedTo` edge and a task
+/// `dependsOn` edge can point to a node of the same stage, so they resolve when the stage ends. A ref to a different
+/// board, or to a node with no file, stays unresolved. The fixed insert order gives the same graph for each worker
+/// count.
 ///
-/// After the last stage, a k-way merge by event id makes one global event list from the sorted events of all files.
+/// After the join, a k-way merge by event id makes one global event list from the sorted events of all files.
 struct BoardLoader: Sendable {
-    /// The node types of the stages, in the order that the loader reads them. Each stage needs only the nodes of
-    /// the stages before it (plan.md §5.3, why this order).
+    /// The node types of the stages of the join, in order. Each stage needs only the nodes of the stages before it
+    /// (plan.md §5.3, why this order).
     static let stageOrder: [PatchNodeType] = [.board, .actor, .column, .tag, .task, .comment]
 
-    /// The smallest number of workers of a stage that has files.
+    /// The smallest number of workers of a load that has files.
     static let minimumWorkerCount = 1
 
     /// The log files of the board.
@@ -52,7 +65,7 @@ struct BoardLoader: Sendable {
     /// The largest number of workers that read files at the same time.
     let workerCount: Int
 
-    /// Gets a call when each worker starts and ends, or `nil` for no calls.
+    /// Gets a call when each worker starts, reads a file, and ends, or `nil` for no calls.
     let observer: (any LoaderWorkerObserver)?
 
     /// Makes a loader for one board.
@@ -61,7 +74,7 @@ struct BoardLoader: Sendable {
     ///   - log: The log files of the board.
     ///   - workerCount: The largest number of workers that read files at the same time. The default is the number of
     ///     active processors. A value less than one gives one worker.
-    ///   - observer: Gets a call when each worker starts and ends, or `nil` for no calls.
+    ///   - observer: Gets a call when each worker starts, reads a file, and ends, or `nil` for no calls.
     init(
         reading log: EventLog,
         withWorkers workerCount: Int = ProcessInfo.processInfo.activeProcessorCount,
@@ -72,7 +85,7 @@ struct BoardLoader: Sendable {
         self.observer = observer
     }
 
-    /// Reads all log files of the board, stage by stage, and joins the nodes into one graph.
+    /// Reads all log files of the board with one worker pool, and joins the nodes into one graph.
     ///
     /// A missing node directory (for example no `comments/`) is an empty stage. A board with no `.kanban/`
     /// directory gives an empty graph.
@@ -88,48 +101,67 @@ struct BoardLoader: Sendable {
         return LoadedBoard(graph: graph, events: EventMerge.merged(eventLists))
     }
 
-    /// Reads some node files, stage by stage in ``stageOrder``, and joins each node into a graph (plan.md §5.3,
-    /// §5.6).
+    /// Reads some node files with one worker pool, and joins each node into a graph, stage by stage in
+    /// ``stageOrder`` (plan.md §5.3, §5.6).
     ///
-    /// The full load and the apply of changed files both use this call. A file that gives a node inserts the node,
-    /// or replaces the state in the slot of the node. A file that gives no node (a removed file, or a file with no
-    /// valid line) removes the node from its slot, and each edge to it becomes unresolved. A ref that the graph does
-    /// not have changes nothing.
+    /// The full load and the apply of changed files both use this call. The listings of all node types run at the
+    /// same time, and then the workers read the files of all node types from one queue. When all files are read, the
+    /// join runs in memory. A file that gives a node inserts the node, or replaces the state in the slot of the node.
+    /// A file that gives no node (a removed file, or a file with no valid line) removes the node from its slot, and
+    /// each edge to it becomes unresolved. A ref that the graph does not have changes nothing.
     ///
     /// - Parameters:
-    ///   - fileList: Gives the refs of the files of the stage of one node type.
+    ///   - fileList: Gives the refs of the files of one node type. The loader calls it for each node type at the
+    ///     same time, from different threads.
     ///   - graph: The graph that gets the nodes.
-    /// - Returns: The event list of each file, each in the order of its event ids.
+    /// - Returns: The event list of each file, each in the order of its event ids. The lists are in the join order.
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a directory or a file cannot be read.
     func readStages(
-        listingFilesWith fileList: (PatchNodeType) throws(EventLogError) -> [LocalRef],
+        listingFilesWith fileList: @escaping @Sendable (PatchNodeType) throws(EventLogError) -> [LocalRef],
         joiningInto graph: inout Graph
     ) async throws(EventLogError) -> [[Event]] {
-        var eventLists: [[Event]] = []
-        for type in Self.stageOrder {
-            let stage = try await readStage(of: fileList(type))
-            for staged in stage {
-                if let node = staged.log.node {
-                    graph.update(with: node)
-                } else {
-                    graph.remove(nodeAt: staged.ref)
-                }
+        let logs = Self.joinOrder(of: try await readFiles(of: Self.listFiles(with: fileList)))
+        for staged in logs {
+            if let node = staged.log.node {
+                graph.update(with: node)
+            } else {
+                graph.remove(nodeAt: staged.ref)
             }
-            eventLists.append(contentsOf: stage.map(\.log.events))
         }
-        return eventLists
+        return logs.map(\.log.events)
     }
 }
 
-// MARK: - Stage
+// MARK: - Worker pool
 
 extension BoardLoader {
-    /// Reads the files of one stage with the workers. The call returns when all workers are done.
+    /// Lists the files of all node types at the same time.
     ///
-    /// - Parameter refs: The local refs of the files of the stage.
-    /// - Returns: The folded log of each file, in the sort order of the local refs.
+    /// - Parameter fileList: Gives the refs of the files of one node type.
+    /// - Returns: The refs of the files of all node types, in ``stageOrder``.
+    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a directory cannot be read. When more than one
+    ///   listing fails, the error of the first node type in ``stageOrder``.
+    private static func listFiles(
+        with fileList: @escaping @Sendable (PatchNodeType) throws(EventLogError) -> [LocalRef]
+    ) async throws(EventLogError) -> [LocalRef] {
+        let listings = await withTaskGroup(of: StageListing.self) { group in
+            for (stage, type) in stageOrder.enumerated() {
+                group.addTask {
+                    StageListing(stage: stage, refs: Result { () throws(EventLogError) in try fileList(type) })
+                }
+            }
+            return await group.reduce(into: []) { listings, listing in listings.append(listing) }
+        }
+        let ordered = listings.sorted { lhs, rhs in lhs.stage < rhs.stage }
+        return Array(try ordered.map { listing throws(EventLogError) in try listing.refs.get() }.joined())
+    }
+
+    /// Reads some files with one worker pool. The call returns when all workers are done.
+    ///
+    /// - Parameter refs: The local refs of the files, in the order that the workers take them.
+    /// - Returns: The folded log of each file, in no fixed order.
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a file cannot be read.
-    private func readStage(of refs: [LocalRef]) async throws(EventLogError) -> [StagedLog] {
+    private func readFiles(of refs: [LocalRef]) async throws(EventLogError) -> [StagedLog] {
         let queue = WorkQueue(holding: refs)
         let results = await withTaskGroup(of: Result<[StagedLog], EventLogError>.self) { group in
             for _ in 0..<min(workerCount, refs.count) {
@@ -139,14 +171,24 @@ extension BoardLoader {
             }
             return await group.reduce(into: []) { results, result in results.append(result) }
         }
-        let logs = try results.map { result throws(EventLogError) in try result.get() }.joined()
-        return logs.sorted(by: StagedLog.precedes)
+        return Array(try results.map { result throws(EventLogError) in try result.get() }.joined())
     }
 
-    /// Lists the refs of the files of one stage.
+    /// Puts the folded logs into the order of the join: by node type in ``stageOrder``, and in each node type, in
+    /// the sort order of the local refs. The fixed order gives the same graph and the same event list for each
+    /// worker count.
     ///
-    /// - Parameter type: The node type of the stage.
-    /// - Returns: The board ref for the board stage, or the ref of each file in the directory of the node type.
+    /// - Parameter logs: The folded logs, in no fixed order.
+    /// - Returns: The folded logs in the order of the join.
+    private static func joinOrder(of logs: [StagedLog]) -> [StagedLog] {
+        let logsByType = Dictionary(grouping: logs) { staged in staged.ref.nodeType }
+        return stageOrder.flatMap { type in logsByType[type, default: []].sorted(by: StagedLog.precedes) }
+    }
+
+    /// Lists the refs of the files of one node type.
+    ///
+    /// - Parameter type: The node type.
+    /// - Returns: The board ref for the board type, or the ref of each file in the directory of the node type.
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when the directory is there and cannot be read.
     private func stageRefs(of type: PatchNodeType) throws(EventLogError) -> [LocalRef] {
         guard type != .board else {
@@ -160,7 +202,7 @@ extension BoardLoader {
     /// When a file cannot be read, the worker empties the queue, so that the other workers stop after their current
     /// file.
     ///
-    /// - Parameter queue: The work queue of the stage.
+    /// - Parameter queue: The work queue of the files of all node types.
     /// - Returns: The folded log of each file that the worker read.
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a file cannot be read.
     private func runWorker(takingFrom queue: WorkQueue) throws(EventLogError) -> [StagedLog] {
@@ -168,7 +210,8 @@ extension BoardLoader {
         defer { observer?.workerDidFinish() }
         do {
             return try AnyIterator(queue.next).map { ref throws(EventLogError) in
-                StagedLog(ref: ref, log: try log.readLog(of: ref))
+                observer?.workerWillRead(fileOf: ref)
+                return StagedLog(ref: ref, log: try log.readLog(of: ref))
             }
         } catch {
             queue.removeAll()
@@ -177,7 +220,16 @@ extension BoardLoader {
     }
 }
 
-/// The folded log of one file of a stage, with the local ref of its node.
+/// The result of the listing of the files of one node type.
+private struct StageListing: Sendable {
+    /// The index of the node type in ``BoardLoader/stageOrder``.
+    let stage: Int
+
+    /// The refs of the files of the node type, or the error of the listing.
+    let refs: Result<[LocalRef], EventLogError>
+}
+
+/// The folded log of one file, with the local ref of its node.
 private struct StagedLog: Sendable {
     /// The local ref of the node of the file.
     let ref: LocalRef
@@ -199,13 +251,13 @@ private struct StagedLog: Sendable {
 
 // MARK: - Work queue
 
-/// The files of one stage that no worker has taken yet. The workers take files from different threads, so a lock
-/// keeps the list.
+/// The files of a load that no worker has taken yet. The workers take files from different threads, so a lock keeps
+/// the list.
 private final class WorkQueue: Sendable {
     /// The refs of the files that no worker has taken, in the order that the workers take them.
     private let pending: Mutex<ArraySlice<LocalRef>>
 
-    /// Makes a queue of the files of one stage.
+    /// Makes a queue of the files of a load.
     ///
     /// - Parameter refs: The local refs of the files.
     init(holding refs: [LocalRef]) {
