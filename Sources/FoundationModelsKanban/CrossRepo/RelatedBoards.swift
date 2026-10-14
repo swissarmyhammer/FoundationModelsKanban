@@ -17,6 +17,23 @@ enum BoardRequest: Hashable, Sendable {
     case allCopies
 }
 
+/// What the related boards of a run know of the target of a cross-board dependency (divergence.md Q3). The write
+/// stores the dependency in each state. Only the warning of the response depends on the state.
+enum DependencyTargetState: Sendable {
+    /// A loaded board has the task, live or tombstoned.
+    case found
+
+    /// The board is found and loaded, and it has no task for the URI.
+    case missingTask
+
+    /// The scan finds no board for the key of the URI. The repo can be absent on this machine.
+    case boardNotFound
+
+    /// The run does not know yet: the engine did not resolve the key, or the board cannot be read. A board that
+    /// cannot be read has a warning of its own (divergence.md Q7).
+    case unknown
+}
+
 /// One copy in the list of `Query.boards` (plan.md §6.6).
 struct ListedCopy: Sendable {
     /// The board of the copy: the current board, a copy of a related repo, or a copy whose board cannot be read.
@@ -318,6 +335,28 @@ struct RelatedBoards: Sendable {
     /// - Returns: `true` when a loaded board has the task and the task is a tombstone.
     func isTombstone(_ ref: StoredRef) -> Bool {
         task(for: ref)?.state.fields.isDeleted == true
+    }
+
+    /// Tells what the run knows of the target of a cross-board dependency that a field writes (divergence.md Q3).
+    ///
+    /// - Parameter uri: The full URI of the target, with the key of a different board.
+    /// - Returns: The state of the target. A key that the engine did not resolve yet, and a board that cannot be
+    ///   read, give ``DependencyTargetState/unknown``.
+    func state(ofDependencyOn uri: NodeURI) -> DependencyTargetState {
+        guard let resolution = resolution(ofBoard: uri.boardKey) else {
+            return .unknown
+        }
+        switch resolution {
+        case .notFound, .notARepo:
+            return .boardNotFound
+        case .unreadable:
+            return .unknown
+        case .current, .copy:
+            guard let board = board(resolvedAs: resolution) else {
+                return .unknown
+            }
+            return board.task(for: uri.ref) == nil ? .missingTask : .found
+        }
     }
 
     // MARK: - Requests

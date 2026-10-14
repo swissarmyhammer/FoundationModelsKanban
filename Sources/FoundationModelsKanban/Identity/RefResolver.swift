@@ -290,9 +290,11 @@ extension RefResolver {
 
     /// Gives the stored ref of a URI to a node of a different board.
     ///
-    /// The resolver does not read the other board, so it does not check that the node exists. A read of the
-    /// dependency finds the other board with the ``BoardLocator`` (plan.md §6.6). A target in a board that the scan
-    /// cannot find counts as not done.
+    /// The resolver does not read the other board, so it does not check that the node exists: a ref to a missing
+    /// task, or to a board that the scan cannot find, is accepted (divergence.md Q3 as P3 changed it). The task write
+    /// checks the target against the related boards of the run and gives a warning when it cannot resolve
+    /// (``DependencyWarnings``). A read of the dependency finds the other board with the ``BoardLocator`` (plan.md
+    /// §6.6). A target that no loaded board has counts as not done, and `unresolvedDependsOn` lists it.
     ///
     /// - Parameters:
     ///   - uri: The URI, with a key that is not the key of this board.

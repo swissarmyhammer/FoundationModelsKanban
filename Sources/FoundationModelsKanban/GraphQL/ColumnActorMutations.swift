@@ -360,7 +360,17 @@ extension BoardStore {
         let changed = try runMutation(named: operation, on: board, at: time) { work, resolver in
             try body(&work, resolver, time)
         }
-        return changed.flatMap { ref, view in view.graph.slot(for: ref).flatMap { slot in view.object(at: slot) } }
+        return changed.flatMap { ref, view in view.object(of: ref) }
+    }
+}
+
+extension BoardView {
+    /// Gives the object of the node of a local ref, live or tombstoned.
+    ///
+    /// - Parameter ref: The local ref of the node.
+    /// - Returns: The object, or `nil` when the graph has no node of the type of the object for the ref.
+    func object<Object: SlotNodeObject>(of ref: LocalRef) -> Object? {
+        graph.slot(for: ref).flatMap { slot in object(at: slot) }
     }
 }
 

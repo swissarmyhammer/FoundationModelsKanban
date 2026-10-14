@@ -38,6 +38,13 @@ actor ResponseWarnings {
         warnings.append(ResponseWarning(message: message, code: code))
     }
 
+    /// Adds some warnings to the list, in their order.
+    ///
+    /// - Parameter added: The warnings, for example the warnings that one mutation field gave.
+    func add(contentsOf added: [ResponseWarning]) {
+        warnings.append(contentsOf: added)
+    }
+
     /// Takes the warnings out of the list: the list is empty after the call.
     ///
     /// - Returns: The warnings that the run added since the last take, in the order of the adds.

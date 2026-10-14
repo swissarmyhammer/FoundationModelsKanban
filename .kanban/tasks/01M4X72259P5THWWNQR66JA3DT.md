@@ -1,11 +1,40 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m4y8g4szjkes0mc8g8y8ytct
+  text: |-
+    Research done.
+    - The store and the read already accept a dependsOn URI to a different board (`RefResolver.storedRef(acceptingRemote: true)` gives `.remote`) and a body marker to any board. The task is blocked, and the URI shows in `unresolvedDependsOn`. Only the warning is missing.
+    - `CommitSession.runReading` runs the call again after it loads the boards that the new edges and markers name (`dependencyRequests(of: work.graph)`). Thus in the last run, `WorkingCopy.otherBoards` has the resolution of each target board. Each run has a new `KanbanContext`, so a warning of an earlier run does not go into the response.
+    - Plan: add `RelatedBoards.state(ofDependencyOn:)` (found / task missing / board not found / not known yet). `WorkingCopy.write(_:toTask:inBoard:at:)` gives a warning for each remote target of the written dependsOn list and of the markers of the written body. addTask and updateTask run through `BoardStore.runMutation` so that the field gives the warnings back, and the resolver adds them to `context.warnings`.
+    - Codes: `DEPENDENCY_TASK_NOT_FOUND` (required) and `DEPENDENCY_BOARD_NOT_FOUND` (the optional warning; I add it, so that a typo in a key shows why). A board that cannot be read already has `BOARD_UNREADABLE`, so it gets no second warning.
+    - The existing test `addTaskDependsOnRemoteTask` checks `response.hasSuffix("ready":false}}}")`. The new board-not-found warning adds `extensions` to that response, so that test needs an update.
+  timestamp: 2026-10-14T22:28:33.215273+00:00
+- actor: claude-code
+  id: 01m4y8ynqy1fwcg4vp2yyrp5v3
+  text: |-
+    Implementation landed (TDD: 4 of 5 new tests failed first, only on the missing warning; then all passed).
+    - `RelatedBoards.state(ofDependencyOn:)` and `DependencyTargetState` (found / missingTask / boardNotFound / unknown). A key that the run did not resolve yet gives `unknown`, so the first run of a call gives no warning; the run after the board load gives it. A board that cannot be read gives `unknown`, because it already has `BOARD_UNREADABLE`.
+    - New `GraphQL/DependencyWarnings.swift`: codes `DEPENDENCY_TASK_NOT_FOUND` and `DEPENDENCY_BOARD_NOT_FOUND`. The targets are the remote refs of the written `dependsOn` list plus the remote markers of the written body, one time each. Same-board targets do not change.
+    - `WorkingCopy.write` gives the warnings. addTask and updateTask use the new `KanbanContext.changeTask`, which runs `BoardStore.runMutation` and adds the warnings with the new `ResponseWarnings.add(contentsOf:)`. `BoardView.object(of:)` is shared with `BoardStore.changeNode`.
+    - Doc comments of `RefResolver.remoteRef` and `dependencyRefs` state the decided behavior. The code of `remoteRef` did not need a change: it already accepts the URI.
+    - Existing test `addTaskDependsOnRemoteTask` now reads `ready` from the data and checks the board-not-found warning, because the response now has `extensions`.
+    - `swift test`: 1260 tests in 95 suites passed. Only the accepted SwiftPM "missing creator" warning.
+  timestamp: 2026-10-14T22:36:29.310038+00:00
+- actor: claude-code
+  id: 01m4y8yrr4zvppc67x351t1ffg
+  text: |-
+    ### implement — changed
+    - evidence: 7 files — Sources/FoundationModelsKanban/CrossRepo/RelatedBoards.swift, Sources/FoundationModelsKanban/GraphQL/DependencyWarnings.swift (new), Sources/FoundationModelsKanban/GraphQL/TaskMutations.swift, Sources/FoundationModelsKanban/GraphQL/ColumnActorMutations.swift, Sources/FoundationModelsKanban/GraphQL/ResponseWarnings.swift, Sources/FoundationModelsKanban/Identity/RefResolver.swift (doc only), Tests/FoundationModelsKanbanTests/CrossRepo/DependencyTargetWarningTests.swift (new), Tests/FoundationModelsKanbanTests/Mutations/AddUpdateTaskTests.swift; swift test 1260 passed, 0 failed
+    - next: /review
+  timestamp: 2026-10-14T22:36:32.388681+00:00
 depends_on:
 - 01M4X6X6PS5P524DW45RBSSWN2
 - 01M4X71QQPKCEJ5490KD8R4C92
-position_column: todo
-position_ordinal: 8f80
+position_column: doing
+position_ordinal: '80'
 title: Check cross-board dependsOn URIs and body task URLs on write, and warn for a missing task
 ---
 ## What

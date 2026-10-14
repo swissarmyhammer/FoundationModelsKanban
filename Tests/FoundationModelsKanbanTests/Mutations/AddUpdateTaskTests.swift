@@ -600,7 +600,13 @@ struct AddUpdateTaskTests {
         let add = Self.addTask(with: #"dependsOn: ["\#(Self.remoteTask)"]"#, selecting: "{ id ready }")
         let response = try await ColumnActorTests.respond(to: Self.mutation(of: add), onFixtureIn: directory)
         let task = try Self.firstTask(in: response)
-        #expect(response.hasSuffix(#""ready":false}}}"#))
+        let added = try #require(NameRewriteTests.data(of: response)[MutationName.addTask] as? [String: Any])
+        #expect(added["ready"] as? Bool == false, "\(response)")
+        try DependencyTargetWarningTests.expectWarning(
+            coded: DependencyTargetWarningTests.boardNotFoundCode,
+            naming: Self.remoteTask,
+            in: response
+        )
         let remote = try StoredRef(parsing: Self.remoteTask)
         #expect(try Self.lastPatch(of: task, in: directory)?.add == [PropertyName.dependsOn: [remote]])
     }

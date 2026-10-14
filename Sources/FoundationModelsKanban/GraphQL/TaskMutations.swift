@@ -78,6 +78,15 @@ private struct TaskChange {
     let edges: [String: [StoredRef]]
 }
 
+/// The result of the body of one `addTask` or `updateTask` field: the task, and the warnings of the field.
+private struct TaskWrite: Sendable {
+    /// The local ref of the task.
+    let ref: LocalRef
+
+    /// The warnings of the cross-board dependencies that the field wrote (``DependencyWarnings``).
+    let warnings: [ResponseWarning]
+}
+
 // MARK: - Resolvers
 
 extension KanbanResolver {
@@ -99,7 +108,7 @@ extension KanbanResolver {
     ) async throws -> TaskObject? {
         let input = arguments.input
         let board = MutationBoard.named(input.board)
-        return try await context.changeNode(named: MutationName.addTask, on: board) { work, resolver, time in
+        return try await context.changeTask(named: MutationName.addTask, on: board) { work, resolver, time in
             let knownActor = work.knownSessionActor.map { actor in [StoredRef.local(actor)] }
             let ref = LocalRef.task(work.mintULID())
             let column = try work.graph.columnRef(for: input.column, resolvingWith: resolver)
@@ -119,8 +128,8 @@ extension KanbanResolver {
             ]
             let body = input.body.map(FieldUpdate.changed) ?? .unchanged
             let change = TaskChange(values: values, body: body, edges: edges)
-            try work.write(change, toTask: ref, inBoard: resolver.boardKey, at: time)
-            return ref
+            let warnings = try work.write(change, toTask: ref, inBoard: resolver.boardKey, at: time)
+            return TaskWrite(ref: ref, warnings: warnings)
         }
     }
 
@@ -141,7 +150,7 @@ extension KanbanResolver {
     ) async throws -> TaskObject? {
         let input = arguments.input
         let board = MutationBoard.holding(input.id)
-        return try await context.changeNode(named: MutationName.updateTask, on: board) { work, resolver, time in
+        return try await context.changeTask(named: MutationName.updateTask, on: board) { work, resolver, time in
             let ref = try resolver.nodeRef(for: input.id, ofType: .task)
             let edges = try work.edges(
                 assignees: input.assignees.value(clearingTo: []),
@@ -152,9 +161,38 @@ extension KanbanResolver {
             )
             let values = [PropertyName.title: input.title.map(PatchValue.string)]
             let change = TaskChange(values: values, body: input.body, edges: edges)
-            try work.write(change, toTask: ref, inBoard: resolver.boardKey, at: time)
-            return ref
+            let warnings = try work.write(change, toTask: ref, inBoard: resolver.boardKey, at: time)
+            return TaskWrite(ref: ref, warnings: warnings)
         }
+    }
+}
+
+extension KanbanContext {
+    /// Runs one `addTask` or `updateTask` field at the time of ``clock``, the same as
+    /// ``changeNode(named:on:_:)``, and adds the warnings of the field to the warnings of the run.
+    ///
+    /// - Parameters:
+    ///   - operation: The name of the public mutation of the field.
+    ///   - board: The board of the field.
+    ///   - body: Makes and applies the patches of the field, and gives the task and the warnings. It gets the working
+    ///     copy, a resolver of the forgiving refs of the working graph, and the time.
+    /// - Returns: The task, live or tombstoned, or `nil` when the engine did not load the board yet.
+    /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the ref. The
+    ///   error of the body, or an ``EventError`` when a patch breaks a rule of the log.
+    fileprivate func changeTask(
+        named operation: String,
+        on board: MutationBoard,
+        _ body: sending (inout WorkingCopy, RefResolver, DateTime) throws -> TaskWrite
+    ) async throws -> TaskObject? {
+        let time = clock()
+        let changed = try await store.runMutation(named: operation, on: board, at: time) { work, resolver in
+            try body(&work, resolver, time)
+        }
+        guard let changed else {
+            return nil
+        }
+        await warnings.add(contentsOf: changed.value.warnings)
+        return changed.view.object(of: changed.value.ref)
     }
 }
 
@@ -189,7 +227,9 @@ extension RefResolver {
     }
 
     /// Changes the forgiving refs of the dependencies to stored refs: a local ref for a live task of this board, and
-    /// the full URI for a task of a different board (plan.md §3.2, §6.1).
+    /// the full URI for a task of a different board (plan.md §3.2, §6.1). A URI to a different board is always
+    /// accepted, also when that board has no such task or the scan cannot find the board (divergence.md Q3 as P3
+    /// changed it). The write gives a warning for such a target (``DependencyWarnings``).
     ///
     /// - Parameter ids: The refs as the caller wrote them.
     /// - Returns: The stored refs.
@@ -268,11 +308,15 @@ extension WorkingCopy {
     /// new list does not have. When the field replaces `dependsOn`, the body loses the URL of each removed dependency.
     /// A new `#marker` in the body gets a tag patch first (plan.md §6.1).
     ///
+    /// A cross-board target of the new `dependsOn` list or of the new body is always stored. When it cannot resolve,
+    /// the field gives a warning for it (``DependencyWarnings``).
+    ///
     /// - Parameters:
     ///   - change: The changes of the field.
     ///   - ref: The local ref of the task. A task that the graph does not have is a new task.
     ///   - key: The current key of the board. A dependency marker with this key names a task of the board.
     ///   - time: The time of the change.
+    /// - Returns: The warnings of the cross-board targets that the field writes.
     /// - Throws: ``KanbanError/dependencyCycle(path:)`` when an edge or a marker makes a cycle.
     ///   ``KanbanError/invalidTagName(name:)``, ``KanbanError/reservedTagName``, ``KanbanError/virtualTagName(tag:)``,
     ///   or an ``EventError`` when a patch breaks a rule of the log.
@@ -281,7 +325,7 @@ extension WorkingCopy {
         toTask ref: LocalRef,
         inBoard key: String,
         at time: DateTime
-    ) throws {
+    ) throws -> [ResponseWarning] {
         let task = graph.node(for: ref)?.state as? TaskNode
         let oldBody = task?.fields.body ?? ""
         let removedTargets = task.map { task in
@@ -303,6 +347,12 @@ extension WorkingCopy {
         if change.edges[PropertyName.dependsOn] != nil || newBody != oldBody {
             try checkNoCycle(throughTask: ref, inBoard: key)
         }
+        return DependencyWarnings.warnings(
+            forDependsOn: change.edges[PropertyName.dependsOn],
+            body: change.body.newBody,
+            inBoard: key,
+            reading: otherBoards
+        )
     }
 
     /// Gives the current edges of a task that a new list does not have.
