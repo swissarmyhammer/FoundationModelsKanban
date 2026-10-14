@@ -64,10 +64,14 @@ struct KanbanErrorTests {
         (.ambiguousName(name: "taskz", matches: ["task", "tasks"]), "AMBIGUOUS_NAME"),
         (.internalFailure(detail: engineMessage), "INTERNAL"),
         (.notARepo(path: plainFolderPath), "NOT_A_REPO"),
+        (.incompatibleBoard(directory: rustBoardPath), "INCOMPATIBLE_BOARD"),
     ]
 
     /// The path of a folder that is not in a git repo, in the `NOT_A_REPO` tests.
     static let plainFolderPath = "/tmp/plain-folder"
+
+    /// The path of a `.kanban/` directory of the old Rust kanban, in the `INCOMPATIBLE_BOARD` tests.
+    static let rustBoardPath = "/tmp/rust-repo/.kanban"
 
     /// The errors of the reserved slugs: the slug `board`, and the names of the virtual tags. Each has the code of the
     /// slug rule of its node type. These cases share the codes of ``codes``, so the test of distinct codes does not
@@ -86,7 +90,7 @@ struct KanbanErrorTests {
         #expect(error.code == expectedCode)
     }
 
-    @Test("The cases give twenty-two different codes")
+    @Test("The cases give twenty-three different codes")
     func codesAreDistinct() {
         #expect(Set(Self.codes.map { $0.0.code }).count == Self.codes.count)
     }
@@ -99,6 +103,31 @@ struct KanbanErrorTests {
             KanbanError.notARepo(path: Self.plainFolderPath).message
                 == "The kanban needs a git repo. `/tmp/plain-folder` is not in a git repo."
         )
+    }
+
+    @Test("INCOMPATIBLE_BOARD names the .kanban/ directory, and tells the caller to remove it")
+    func incompatibleBoardMessage() {
+        #expect(
+            KanbanError.incompatibleBoard(directory: Self.rustBoardPath).message
+                == "There is an incompatible board at `/tmp/rust-repo/.kanban`. Remove it, then try again."
+        )
+    }
+
+    // MARK: - Call failure
+
+    @Test("A call failure gives the KanbanError itself, and INCOMPATIBLE_BOARD for an incompatible event log")
+    func callFailureGivesCorrectableError() {
+        #expect(KanbanError(callFailure: KanbanError.nothingToUndo) == .nothingToUndo)
+        #expect(
+            KanbanError(callFailure: EventLogError.incompatibleBoard(directory: Self.rustBoardPath))
+                == .incompatibleBoard(directory: Self.rustBoardPath)
+        )
+    }
+
+    @Test("A call failure that the caller cannot correct gives no KanbanError")
+    func callFailureKeepsIOFault() {
+        let fault = EventLogError.fileSystem(path: Self.rustBoardPath, detail: "denied")
+        #expect(KanbanError(callFailure: fault) == nil)
     }
 
     @Test("INVALID_VARIABLES tells the two correct forms of the variables")

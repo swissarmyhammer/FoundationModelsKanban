@@ -1,10 +1,47 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m4xhwn5ymtjv5dmwa1h1yjnv
+  text: |-
+    Research done.
+    - Each board load goes through KanbanGraph.loadSession: loadedBoard (current board) and loadRelatedBoard (each related board, also for a `board:` mutation and for Query.boards). An error that loadSession throws goes out of runCall, so the whole call fails.
+    - runSchemaCall turns only a KanbanError into the error response. An EventLogError makes execute throw. So the Rust-board error must become KanbanError at that point.
+    - EventLog.prepareDirectory runs before each append and in BoardLock (lock of a commit). It makes `.kanban/` and the git files. A real Rust board has `.gitignore` but no `.gitattributes`, so without a check Swift writes `.gitattributes` into the Rust board.
+    - The watcher of the current board starts before loadSession, but it applies nothing while the board is not loaded.
+    - Plan: EventLog gets the Rust-only path check (one function that the host can call). EventLogError gets a new case for an incompatible board. loadSession and prepareDirectory call the check. runSchemaCall maps the EventLogError case to the new KanbanError.incompatibleBoard (code INCOMPATIBLE_BOARD).
+  timestamp: 2026-10-14T15:53:25.950644+00:00
+- actor: claude-code
+  id: 01m4xjfy93k3vdh1entaqv8064
+  text: |-
+    Implementation landed (TDD: the new tests failed first for the correct reason, then passed).
+    - New `EventLog.checkCompatibility()` in Sources/FoundationModelsKanban/Events/IncompatibleBoard.swift. It reads only names: the top of `.kanban/` (boards, perspectives, views, projects, .gitconfig, search-cache.sqlite3, undo_stack.yaml, mcp*.log) and `*.yaml` / `*.md` files in each node directory. The KanbanHost task can call it when it loads a board.
+    - New `EventLogError.incompatibleBoard(directory:)` and `KanbanError.incompatibleBoard(directory:)` (code INCOMPATIBLE_BOARD, message "There is an incompatible board at `<path>/.kanban`. Remove it, then try again.").
+    - `KanbanGraph.loadSession` runs the check before the loader reads a file. This one path loads the current board and each related board.
+    - `EventLog.prepareDirectory` runs the check first, so no auto-init and no commit lock writes into a Rust `.kanban/` (a real Rust board has `.gitignore` but no `.gitattributes`, so before this change Swift wrote `.gitattributes` into it).
+    - `runSchemaCall` maps the error through new `KanbanError(callFailure:)`, so the call gives one INCOMPATIBLE_BOARD error response and writes nothing.
+    - `EventLog.items(in:)` is a new shared directory listing; `nodeRefs` now uses it too.
+    - README: one bullet about INCOMPATIBLE_BOARD.
+    Discoveries for the next agent:
+    - `moveTask(board:)` and `copyTask` do not exist yet (task ^7zw4yre). They will go through loadRelatedBoard, so the check covers them; add their tests in that task.
+    - `Query.boards` loads each copy that the scan finds. A sibling repo with a Rust `.kanban/` now stops the `boards` call with INCOMPATIBLE_BOARD. This follows Q6, but the default scan looks in the parent folder, where many repos of the user still have Rust boards. Recorded as a new task for a decision.
+    - divergence.md Q6 says plan.md §12 item 11 must change. I did not edit plan.md (rule).
+    - `swift test`: 1169 tests in 85 suites passed. `swift build --build-tests` shows only the accepted mlx warnings.
+  timestamp: 2026-10-14T16:03:57.859200+00:00
+- actor: claude-code
+  id: 01m4xjgqgknz8w2h33ft96ngyx
+  text: |-
+    Correction to the comment above: the moveTask(board:)/copyTask task is ^7jyymre (not ^7zw4yre). Its card already asks for an INCOMPATIBLE_BOARD test. New task for the boards-listing decision: ^nxrqcgn.
+
+    ### implement — changed
+    - evidence: 8 files — Sources/FoundationModelsKanban/Events/IncompatibleBoard.swift (new), Sources/FoundationModelsKanban/Events/EventLog.swift, Sources/FoundationModelsKanban/GraphQL/Errors.swift, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift, Tests/FoundationModelsKanbanTests/Tool/IncompatibleBoardTests.swift (new), Tests/FoundationModelsKanbanTests/GraphQL/KanbanErrorTests.swift, README.md; `swift test` 1169 tests in 85 suites passed, no new build warnings.
+    - next: /review
+  timestamp: 2026-10-14T16:04:23.699840+00:00
 depends_on:
 - 01M4X6XKP0Y832GDRHQ1MG22VF
-position_column: todo
-position_ordinal: '8380'
+position_column: doing
+position_ordinal: '80'
 title: Detect an incompatible (Rust) .kanban folder and stop with INCOMPATIBLE_BOARD
 ---
 ## What
@@ -23,19 +60,19 @@ Decided behavior (Swift never deletes, imports, or changes a Rust board; it only
 IMPORTANT: this repo's own `.kanban/` is a Rust board, and it stays one while we use the old Rust tool to track tasks. Tests must use temporary fixture folders only. Never point a test, or the Swift code, at this repo's `.kanban/`, and never change it.
 
 ## Acceptance Criteria
-- [ ] A current board with any Rust-only path gives `INCOMPATIBLE_BOARD` with the exact message, and changes no file.
-- [ ] A related board with Rust files gives `INCOMPATIBLE_BOARD` and the call stops.
-- [ ] A mutation with `board:` that names a Rust board gives the error and writes nothing.
-- [ ] Swift does not make a new board in a `.kanban/` with Rust files.
-- [ ] A clean Swift `.kanban/` opens as before.
+- [x] A current board with any Rust-only path gives `INCOMPATIBLE_BOARD` with the exact message, and changes no file.
+- [x] A related board with Rust files gives `INCOMPATIBLE_BOARD` and the call stops.
+- [x] A mutation with `board:` that names a Rust board gives the error and writes nothing.
+- [x] Swift does not make a new board in a `.kanban/` with Rust files.
+- [x] A clean Swift `.kanban/` opens as before.
 
 ## Tests
-- [ ] A Rust board as the current board gives the error and changes no file (compare a listing with sizes and modification times before and after).
-- [ ] A related Rust board gives the error.
-- [ ] Swift does not make a new board in a `.kanban/` with Rust files.
-- [ ] One test for each Rust-only path in the list above.
-- [ ] Tests use temporary fixture folders. Never use the `.kanban/` of this repo.
-- [ ] `swift test` passes.
+- [x] A Rust board as the current board gives the error and changes no file (compare a listing with sizes and modification times before and after).
+- [x] A related Rust board gives the error.
+- [x] Swift does not make a new board in a `.kanban/` with Rust files.
+- [x] One test for each Rust-only path in the list above.
+- [x] Tests use temporary fixture folders. Never use the `.kanban/` of this repo.
+- [x] `swift test` passes.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.

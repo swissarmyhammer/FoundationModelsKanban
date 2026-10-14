@@ -131,10 +131,14 @@ extension EventLog {
     }
 
     /// Makes the directory of the board and each git file that is not there. A git file that is there does not
-    /// change.
+    /// change. A `.kanban/` with Rust files gets no new board (divergence.md Q6): the call checks it first
+    /// (``checkCompatibility()``), and then makes nothing.
     ///
-    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when the directory or a file cannot be written.
+    /// - Throws: ``EventLogError/incompatibleBoard(directory:)`` when the `.kanban/` directory has a Rust-only path,
+    ///   and then nothing is made. ``EventLogError/fileSystem(path:detail:)`` when the directory or a file cannot be
+    ///   read or written.
     func prepareDirectory() throws(EventLogError) {
+        try checkCompatibility()
         try Self.run(onFileAt: directory) {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         }
@@ -271,11 +275,7 @@ extension EventLog {
         guard let name = type.logDirectoryName else {
             return []
         }
-        let folder = directory.appending(path: name, directoryHint: .isDirectory)
-        let files = try Self.runIfPresent(onFileAt: folder) { url in
-            try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)
-        }
-        return (files ?? [])
+        return try Self.items(in: directory.appending(path: name, directoryHint: .isDirectory))
             .filter { file in file.pathExtension == Self.logExtension }
             .compactMap { file in Self.ref(ofFile: file, type: type) }
     }
@@ -384,6 +384,18 @@ extension EventLog {
             }
         }
     }
+
+    /// Lists the items of a directory that does not have to exist. The list holds hidden items too.
+    ///
+    /// - Parameter folder: The directory.
+    /// - Returns: The items, or an empty list when the directory is not there.
+    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when the directory is there and cannot be read.
+    static func items(in folder: URL) throws(EventLogError) -> [URL] {
+        let items = try runIfPresent(onFileAt: folder) { url in
+            try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)
+        }
+        return items ?? []
+    }
 }
 
 // MARK: - Directories
@@ -407,8 +419,14 @@ extension PatchNodeType {
 
 /// An error from the read or the write of the log files of a board.
 ///
-/// The ``KanbanError`` catalog has no code for these errors, because the caller of the tool cannot correct them.
+/// The ``KanbanError`` catalog has no code for these errors, because the caller of the tool cannot correct them. The
+/// one exception is ``incompatibleBoard(directory:)``: the engine gives it to the caller as
+/// ``KanbanError/incompatibleBoard(directory:)``, because the caller can remove the old board.
 enum EventLogError: Error, Hashable, Sendable {
+    /// The `.kanban/` directory has a path of the old Rust kanban, so the log does not read or write it
+    /// (divergence.md Q6). The directory is the path of the `.kanban/` directory.
+    case incompatibleBoard(directory: String)
+
     /// An event of an append changes a different node than the node of the log file.
     case nodeMismatch(log: LocalRef, event: LocalRef)
 

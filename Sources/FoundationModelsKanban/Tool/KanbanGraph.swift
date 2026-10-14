@@ -343,7 +343,8 @@ public actor KanbanGraph {
     }
 
     /// Runs one call of the public schema on the session of the current board, and gives a ``KanbanError`` of the run
-    /// or of the commit as one error response (plan.md §4.4, §5.4).
+    /// or of the commit as one error response (plan.md §4.4, §5.4). A `.kanban/` with Rust files, of the current
+    /// board or of a related board, stops the call with the one error `INCOMPATIBLE_BOARD` (divergence.md Q6).
     ///
     /// - Parameters:
     ///   - wrap: Gives the output of the response JSON text of a ``KanbanError``.
@@ -363,8 +364,11 @@ public actor KanbanGraph {
                     try await call(schema, context)
                 }
             )
-        } catch let error as KanbanError {
-            return .failed(wrap(try error.responseJSON()))
+        } catch {
+            guard let failure = KanbanError(callFailure: error) else {
+                throw error
+            }
+            return .failed(wrap(try failure.responseJSON()))
         }
     }
 
@@ -587,20 +591,28 @@ public actor KanbanGraph {
         }
     }
 
-    /// Loads the board of a repo, and gives its tasks to its search.
+    /// Loads the board of a repo, and gives its tasks to its search. This one load path serves the current board and
+    /// each related board.
+    ///
+    /// The load first checks that the `.kanban/` directory is not a board of the old Rust kanban
+    /// (``EventLog/checkCompatibility()``, divergence.md Q6). An incompatible board stops the load before it reads a
+    /// file, so the engine reads and writes nothing of it.
     ///
     /// - Parameters:
     ///   - directory: The root directory of the repo.
     ///   - key: The current key of the board.
     ///   - search: The ranked search over the tasks of the board.
     /// - Returns: The session of the board.
-    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a directory or a file cannot be read.
+    /// - Throws: ``EventLogError/incompatibleBoard(directory:)`` when the `.kanban/` directory has Rust files.
+    ///   ``EventLogError/fileSystem(path:detail:)`` when a directory or a file cannot be read.
     private func loadSession(
         at directory: URL,
         key: BoardKey,
         searchingWith search: TaskSearch
     ) async throws(EventLogError) -> CommitSession {
-        let live = try await LiveGraph.load(using: BoardLoader(reading: EventLog(repositoryAt: directory)))
+        let log = EventLog(repositoryAt: directory)
+        try log.checkCompatibility()
+        let live = try await LiveGraph.load(using: BoardLoader(reading: log))
         let loaded = CommitSession(
             of: live,
             inBoard: key,

@@ -22,6 +22,11 @@ enum KanbanError: Error, Hashable, Sendable {
     /// the folder.
     case notARepo(path: String)
 
+    /// `INCOMPATIBLE_BOARD`: a `.kanban/` directory has a file or a directory of the old Rust kanban, so the engine
+    /// does not read it, write to it, or make a new board in it (divergence.md Q6). The directory is the path of that
+    /// `.kanban/` directory.
+    case incompatibleBoard(directory: String)
+
     /// `AMBIGUOUS_ID`: the reference is a prefix of more than one id. The matches are the short ids of these ids.
     case ambiguousID(reference: String, matches: [ShortID])
 
@@ -126,6 +131,7 @@ extension KanbanError {
         case .invalidVariables: "INVALID_VARIABLES"
         case .notFound, .boardNotFound: "NOT_FOUND"
         case .notARepo: "NOT_A_REPO"
+        case .incompatibleBoard: "INCOMPATIBLE_BOARD"
         case .ambiguousID, .sharedShortID: "AMBIGUOUS_ID"
         case .actorNotFound: "ACTOR_NOT_FOUND"
         case .duplicateID: "DUPLICATE_ID"
@@ -163,6 +169,8 @@ extension KanbanError {
                 + "or a repo path from these places, and then send the call again."
         case .notARepo(let path):
             "The kanban needs a git repo. `\(path)` is not in a git repo."
+        case .incompatibleBoard(let directory):
+            "There is an incompatible board at `\(directory)`. Remove it, then try again."
         case .ambiguousID(let reference, let matches):
             "The reference \"\(reference)\" matches more than one id: \(Self.sigilList(of: matches)). "
                 + "Send one of these short ids."
@@ -253,6 +261,27 @@ extension KanbanError {
     /// - Returns: The list text.
     private static func sigilList(of shortIDs: [ShortID]) -> String {
         shortIDs.map { "\(ShortID.sigil)\($0.value)" }.joined(separator: listSeparator)
+    }
+}
+
+// MARK: - Call failure
+
+extension KanbanError {
+    /// Gives the ``KanbanError`` of an error that stops a call, when the caller can correct it: a ``KanbanError``
+    /// itself, or the ``EventLogError/incompatibleBoard(directory:)`` of a `.kanban/` with Rust files
+    /// (divergence.md Q6).
+    ///
+    /// - Parameter error: The error that stopped the call.
+    /// - Returns: The error for the response, or `nil` for an I/O fault that the caller cannot correct.
+    init?(callFailure error: any Error) {
+        switch error {
+        case let error as KanbanError:
+            self = error
+        case EventLogError.incompatibleBoard(let directory):
+            self = .incompatibleBoard(directory: directory)
+        default:
+            return nil
+        }
     }
 }
 

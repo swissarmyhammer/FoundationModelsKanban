@@ -61,10 +61,19 @@ comments:
     - evidence: `swift test --filter 'BoardKeyTests|ReadmeExamplesTests|PortabilityTests'` 51 tests passed; `swift test` 1157 tests in 84 suites passed, 0 failed. Only warning: the accepted SwiftPM "missing creator" warning. Files: Tests/FoundationModelsKanbanTests/Identity/BoardKeyTests.swift, Tests/FoundationModelsKanbanTests/ReadmeExamplesTests.swift, Tests/FoundationModelsKanbanTests/Design/PortabilityTests.swift.
     - next: /review
   timestamp: 2026-10-14T15:45:51.118817+00:00
+- actor: claude-code
+  id: 01m4xhrcf990x2zxm7ke8ntk30
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 3 test files (5 findings fixed)
+    - test: green — swift test, 1157 passed, 0 failed, 0 skipped
+    - commit: b4c2002
+    - review: clean — none
+  timestamp: 2026-10-14T15:51:05.961442+00:00
 depends_on:
 - 01M4X6XKP0Y832GDRHQ1MG22VF
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: df80
 title: Key a repo with no remote by its root commit, and make a first commit when the repo has none
 ---
 ## What

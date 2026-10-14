@@ -44,6 +44,10 @@ let graph = try KanbanGraph(root: URL(filePath: "/path/to/my-project"), actor: n
   In a linked worktree, the board is in the top folder of that worktree.
 - A folder that is not in a git repo has no board. Each call then gives the
   error `NOT_A_REPO`.
+- The engine does not read, change, or replace a `.kanban/` of the old Rust
+  kanban, for example a `.kanban/` with a `boards/` directory or `*.yaml`
+  entity files. Each call that opens such a board gives the error
+  `INCOMPATIBLE_BOARD`. Remove the old board, then try again.
 - In a git repo with an `origin` remote, the key comes from the remote, for
   example `github.com/owner/repo`. In a repo with no remote, the key is
   `local/<root commit>`: the first 12 hex digits of the root commit of the
