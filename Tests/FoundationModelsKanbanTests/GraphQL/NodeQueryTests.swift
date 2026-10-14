@@ -341,7 +341,7 @@ struct NodeQueryTests {
     }
 
     @Test(
-        "A deleted task shows DELETED in virtualTags, and none of READY, BLOCKED, and BLOCKING",
+        "A deleted task shows DELETED in virtualTags, and none of READY and BLOCKED",
         arguments: [ReadinessFixture.first, ReadinessFixture.second]
     )
     func deletedTaskHasOnlyDeletedVirtualTag(task: String) async throws {
@@ -353,7 +353,7 @@ struct NodeQueryTests {
     @Test(
         "An undeleted task loses DELETED in virtualTags, and shows its live virtual tags again",
         arguments: [
-            (ReadinessFixture.first, #"["READY","BLOCKING","MEDIUM"]"#),
+            (ReadinessFixture.first, #"["READY","MEDIUM"]"#),
             (ReadinessFixture.second, #"["BLOCKED","HIGH"]"#),
         ]
     )

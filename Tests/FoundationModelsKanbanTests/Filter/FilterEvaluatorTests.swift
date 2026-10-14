@@ -50,6 +50,9 @@ struct FilterEvaluatorTests {
     /// The slug of the target of the rename of the tag `old`.
     static let defectTag = "defect"
 
+    /// The slug of a real tag with the name of the Rust virtual tag `BLOCKING`, which is not a virtual tag here.
+    static let blockingTag = "blocking"
+
     /// The real tags of the sample board, other than the renamed tag.
     static let sampleTags = ["bug", "feature", "docs", "done", defectTag]
 
@@ -267,11 +270,26 @@ struct FilterEvaluatorTests {
         #expect(try Self.sampleMatches(of: "#bug @will").isEmpty)
     }
 
-    @Test("The virtual tags READY, BLOCKED, and BLOCKING")
+    @Test("The virtual tags READY and BLOCKED")
     func virtualTags() throws {
         #expect(try Self.sampleMatches(of: "#READY") == [Self.first])
         #expect(try Self.sampleMatches(of: "#BLOCKED") == [Self.second, Self.third, Self.fourth])
-        #expect(try Self.sampleMatches(of: "#BLOCKING") == [Self.first, Self.second])
+    }
+
+    @Test("#BLOCKING on a board with no tag blocking matches no task and gives no error, also for a depended-on task")
+    func blockingWithoutRealTagMatchesNothing() throws {
+        #expect(try Self.sampleMatches(of: "#BLOCKING").isEmpty)
+    }
+
+    @Test("#BLOCKING is an ordinary tag atom: it matches the tasks with the real tag blocking, in any case")
+    func blockingMatchesRealTag() throws {
+        var board = ReadinessFixture()
+        board.addTag(withSlug: Self.blockingTag)
+        try board.addTask(withULID: Self.first, taggedWith: [Self.blockingTag])
+        try board.addTask(withULID: Self.second)
+        try board.addTask(withULID: Self.third, dependingOn: [Self.second])
+        #expect(try Self.matches(of: "#BLOCKING", in: board) == [Self.first])
+        #expect(try Self.matches(of: "#blocking", in: board) == [Self.first])
     }
 
     @Test("The priority tags HIGH, MEDIUM, and LOW select the open tasks by their third of the board order")
@@ -285,7 +303,7 @@ struct FilterEvaluatorTests {
     @Test("A virtual tag ignores case")
     func virtualTagCaseInsensitive() throws {
         #expect(try Self.sampleMatches(of: "#ready") == [Self.first])
-        #expect(try Self.sampleMatches(of: "#Blocking") == [Self.first, Self.second])
+        #expect(try Self.sampleMatches(of: "#Blocked") == [Self.second, Self.third, Self.fourth])
     }
 
     @Test("A virtual tag together with a real tag")

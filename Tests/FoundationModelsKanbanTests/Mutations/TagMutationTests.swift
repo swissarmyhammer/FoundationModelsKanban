@@ -290,6 +290,21 @@ struct TagMutationTests {
         #expect(response == #"{"data":{"addTag":\#(Self.tagJSON(Self.bug))}}"#)
     }
 
+    @Test("addTag with the name blocking makes the tag, because blocking is not a reserved name")
+    func addTagNamedBlocking() async throws {
+        let directory = try TemporaryDirectory()
+        let mutation = AddUpdateTaskTests.mutation(of: Self.addTag(named: FilterEvaluatorTests.blockingTag))
+        let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
+        #expect(response == #"{"data":{"addTag":\#(Self.tagJSON(FilterEvaluatorTests.blockingTag))}}"#)
+    }
+
+    @Test("#BLOCKING matches the task with the real tag blocking")
+    func blockingFilterMatchesRealTag() async throws {
+        let directory = try TemporaryDirectory()
+        let added = try await Self.addedTask(with: Self.tags(FilterEvaluatorTests.blockingTag), in: directory)
+        #expect(try await Self.respond(toFilter: "#BLOCKING", on: added.graph) == Self.oneMatch)
+    }
+
     @Test("addTag stores the name with the tag name rule, and the id is the slug of the name")
     func addTagNormalizesName() async throws {
         let directory = try TemporaryDirectory()

@@ -4,17 +4,15 @@ import Foundation
 /// §6). No patch writes it. The filter `#READY` and the other `#` atoms match it.
 ///
 /// The cases are in the order of the Rust virtual tag registry. The new tags `CONFLICT`, `DELETED`, and `DONE`, and
-/// then the priority tags `HIGH`, `MEDIUM`, and `LOW`, come last. The raw value is the slug of the tag, and the match
-/// is case-sensitive.
+/// then the priority tags `HIGH`, `MEDIUM`, and `LOW`, come last. The Rust tag `BLOCKING` is not a virtual tag here
+/// (divergence.md Q1), so `#BLOCKING` is an ordinary tag atom. The raw value is the slug of the tag, and the match
+/// ignores case (``init(named:)``).
 enum VirtualTag: String, CaseIterable, Sendable {
     /// The task is live, it is not done, and all its dependencies are done.
     case ready = "READY"
 
     /// The task is live, and at least one dependency of the task is not done.
     case blocked = "BLOCKED"
-
-    /// The task is live, it is not done, and a live task depends on it.
-    case blocking = "BLOCKING"
 
     /// The body of the task has a conflict block from a diff that could not apply.
     case conflict = "CONFLICT"
@@ -70,7 +68,7 @@ extension Readiness {
     }
 
     /// Tells if one virtual tag applies to a task. A tombstone has the tag `DELETED`, and it can have `CONFLICT`. It
-    /// never has `READY`, `BLOCKED`, `BLOCKING`, or `DONE`. A done task never has `READY` or `BLOCKING`. As in Rust,
+    /// never has `READY`, `BLOCKED`, or `DONE`. A done task never has `READY`. As in Rust,
     /// it has `BLOCKED` when one of its dependencies is not done. Each open task has one priority tag, `HIGH`,
     /// `MEDIUM`, or `LOW` (``priorityTier(ofTaskAt:)``). A done task and a tombstone have no priority tag.
     ///
@@ -88,8 +86,6 @@ extension Readiness {
             return isLive && !isDone(taskAt: slot) && isReady(taskAt: slot)
         case .blocked:
             return isLive && !isReady(taskAt: slot)
-        case .blocking:
-            return isLive && !isDone(taskAt: slot) && !dependents(ofTaskAt: slot).isEmpty
         case .conflict:
             return task.fields.hasConflict
         case .deleted:

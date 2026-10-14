@@ -369,6 +369,16 @@ struct NameRewriteTests {
         #expect(message.hasPrefix(#"Cannot query field "nmae" on type "Board". Did you mean"#))
     }
 
+    @Test("The removed Task field blocks gives the unknown-field error of validation, and the document does not run")
+    func removedBlocksFieldGivesValidationError() async throws {
+        let response = try await QueryFixture().respond(
+            to: #"{ board { task(id: "\#(ReadinessFixture.first)") { blocks { id } } } }"#
+        )
+        let message = try Self.firstErrorMessage(of: response)
+        #expect(message.hasPrefix(#"Cannot query field "blocks" on type "Task"."#))
+        #expect(try KanbanGraphTests.object(of: response)["data"] == nil)
+    }
+
     @Test("A validation error after a rewrite has the location in the text that the caller wrote")
     func validationErrorHasCallerLocation() async throws {
         let document = "{ board { Name nmae } }"

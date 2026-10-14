@@ -107,13 +107,15 @@ struct ChangeBuilderTests {
         "tags": "tags { id }",
         "dependsOn": "dependsOn { id }",
         "blockedBy": "blockedBy { id }",
-        "blocks": "blocks { id }",
         "progress": "progress { completed fraction total }",
         "summary": "summary { blocked done percent ready total }",
     ]
 
     /// The fields whose value is a list: a field change gives `added` and `removed`.
-    static let listFields: Set<String> = ["assignees", "tags", "dependsOn", "blockedBy", "blocks", "virtualTags"]
+    static let listFields: Set<String> = ["assignees", "tags", "dependsOn", "blockedBy", "virtualTags"]
+
+    /// The name of the removed Task field `blocks`: no field change has this name.
+    static let removedBlocksField = "blocks"
 
     /// The name of the body field: a field change gives only `diff`.
     static let bodyField = "body"
@@ -643,6 +645,17 @@ struct ChangeBuilderTests {
         let recorded = try await Self.record(mutationCase)
         #expect(recorded.change.nodeUpdates.contains { update in !update.fields.isEmpty })
         try await Self.expectFieldsEqualQueries(of: recorded)
+    }
+
+    @Test(
+        "No public mutation gives a field change of blocks, also the addTask of a task that depends on a task",
+        arguments: mutationCases
+    )
+    func noFieldChangeOfBlocks(mutationCase: MutationCase) async throws {
+        let recorded = try await Self.record(mutationCase)
+        let names = recorded.change.nodeUpdates.flatMap { update in update.fields.map(\.name) }
+        #expect(!names.isEmpty)
+        #expect(!names.contains(Self.removedBlocksField))
     }
 
     // MARK: - Envelope

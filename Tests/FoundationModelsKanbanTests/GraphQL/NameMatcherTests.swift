@@ -18,7 +18,7 @@ struct NameMatcherTests {
     /// The fields of the `Task` type, with their aliases.
     static let taskFields = [
         "id", "body", "created", "updated", "deleted", "shortId", "title", "column", "ordinal", "assignees", "tags",
-        "dependsOn", "blockedBy", "blocks", "ready", "virtualTags", "progress", "comments", "started", "completed",
+        "dependsOn", "blockedBy", "ready", "virtualTags", "progress", "comments", "started", "completed",
     ].map { CanonicalName(field: $0) }
 
     /// The fields of the `Board` type. It has `task` and `tasks`, which differ by one letter.

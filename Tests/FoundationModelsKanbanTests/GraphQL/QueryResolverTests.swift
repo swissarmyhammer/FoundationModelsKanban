@@ -164,14 +164,14 @@ struct QueryResolverTests {
     func taskHasItsDerivedFields() async throws {
         let response = try await QueryFixture().respond(
             to: """
-                { board { task(id: "\(ReadinessFixture.first)") { shortId ready virtualTags blocks { title }
+                { board { task(id: "\(ReadinessFixture.first)") { shortId ready virtualTags
                     blockedBy { title } progress { total completed } assignees { name } tags { name color } } } }
                 """
         )
         let shortID = ShortID(ofULIDString: ReadinessFixture.first).value
         let color = AutoColor.color(forText: QueryFixture.tagSlug)
         let expected = #"{"data":{"board":{"task":{"shortId":"\#(shortID)","ready":true,"#
-            + #""virtualTags":["READY","BLOCKING","MEDIUM"],"blocks":[{"title":"\#(QueryFixture.secondTitle)"}],"#
+            + #""virtualTags":["READY","MEDIUM"],"#
             + #""blockedBy":[],"progress":{"total":2,"completed":1},"#
             + #""assignees":[{"name":"\#(QueryFixture.actorName)"}],"#
             + #""tags":[{"name":"\#(QueryFixture.tagSlug)","color":"\#(color)"}]}}}}"#

@@ -535,11 +535,6 @@ extension TaskObject {
         }
     }
 
-    /// The live tasks that depend on the task.
-    var blocks: [TaskObject] {
-        view.liveObjects(at: view.readiness.dependents(ofTaskAt: slot))
-    }
-
     /// `true` when no dependency blocks the task.
     var ready: Bool {
         view.readiness.isReady(taskAt: slot)

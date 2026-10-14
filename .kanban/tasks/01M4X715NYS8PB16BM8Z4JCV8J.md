@@ -58,11 +58,20 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsKanbanTests/CrossRepo/UnreadableRelatedBoardTests.swift. `swift test --filter UnreadableRelatedBoardTests`: 8 tests (14 cases) passed. Full `swift test`: 1244 tests in 93 suites passed, 0 failures. The only warning is the accepted SwiftPM "missing creator" warning. The finding is checked off.
     - next: /review
   timestamp: 2026-10-14T21:40:34.001205+00:00
+- actor: claude-code
+  id: 01m4y6719m3yv7p5es18hzaqpy
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 test file (1 finding fixed)
+    - test: green — swift test, 1244 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: b26b3fa
+    - review: clean — none
+  timestamp: 2026-10-14T21:48:37.556954+00:00
 depends_on:
 - 01M4X6X6PS5P524DW45RBSSWN2
 - 01M4X6ZBTA66TCPVYM41QR0ACD
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: e980
 title: Keep the call and the change feed working when a related board cannot be read
 ---
 ## What

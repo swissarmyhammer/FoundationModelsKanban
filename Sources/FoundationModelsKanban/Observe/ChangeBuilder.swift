@@ -416,7 +416,6 @@ extension TaskObject {
             ("tags", .ids(of: tags)),
             ("dependsOn", .ids(of: dependsOn)),
             ("blockedBy", .ids(of: blockedBy)),
-            ("blocks", .ids(of: blocks)),
             ("ready", .single(Map(ready))),
             ("virtualTags", .list(virtualTags.map { tag in Map(tag) })),
             ("progress", .single(progress.jsonValue)),

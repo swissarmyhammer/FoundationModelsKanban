@@ -3,11 +3,15 @@ import Testing
 
 @testable import FoundationModelsKanban
 
-/// Tests the virtual tags of a task: `READY`, `BLOCKED`, `BLOCKING`, `CONFLICT`, `DELETED`, and `DONE` (plan.md §5.5,
-/// §6). ``PriorityTagsTests`` tests the priority tags `HIGH`, `MEDIUM`, and `LOW`.
-/// The tests in the "Rust" sections are the port of the tests of the Rust `virtual_tags.rs`.
+/// Tests the virtual tags of a task: `READY`, `BLOCKED`, `CONFLICT`, `DELETED`, and `DONE` (plan.md §5.5, §6).
+/// ``PriorityTagsTests`` tests the priority tags `HIGH`, `MEDIUM`, and `LOW`.
+/// The tests in the "Rust" sections are the port of the tests of the Rust `virtual_tags.rs`. The Rust virtual tag
+/// `BLOCKING` is not a virtual tag here (divergence.md Q1).
 @Suite("Virtual tags")
 struct VirtualTagsTests {
+    /// The name of the Rust virtual tag `BLOCKING`, which is not a virtual tag here.
+    static let blockingName = "BLOCKING"
+
     /// Gives the virtual tags of one task of a board.
     ///
     /// - Parameters:
@@ -22,10 +26,10 @@ struct VirtualTagsTests {
     // MARK: - Rust: registry
 
     @Test(
-        "The virtual tags are READY, BLOCKED, BLOCKING, CONFLICT, DELETED, DONE, HIGH, MEDIUM, and LOW, in this order"
+        "The virtual tags are READY, BLOCKED, CONFLICT, DELETED, DONE, HIGH, MEDIUM, and LOW, in this order"
     )
     func tagsInRegistryOrder() {
-        let names = ["READY", "BLOCKED", "BLOCKING", "CONFLICT", "DELETED", "DONE", "HIGH", "MEDIUM", "LOW"]
+        let names = ["READY", "BLOCKED", "CONFLICT", "DELETED", "DONE", "HIGH", "MEDIUM", "LOW"]
         #expect(VirtualTag.allCases.map(\.rawValue) == names)
     }
 
@@ -108,30 +112,21 @@ struct VirtualTagsTests {
         #expect(try !Self.tags(ofTask: ReadinessFixture.first, on: board).contains(.blocked))
     }
 
-    // MARK: - Rust: BLOCKING
+    // MARK: - No BLOCKING
 
-    @Test("A task that another task depends on is BLOCKING (Rust blocking_has_dependents)")
-    func dependedOnIsBlocking() throws {
+    @Test("BLOCKING is not the name of a virtual tag, in any case")
+    func blockingIsNotVirtualTag() {
+        #expect(VirtualTag(named: Self.blockingName) == nil)
+        #expect(VirtualTag(named: Self.blockingName.lowercased()) == nil)
+    }
+
+    @Test("A task that an open task depends on has no BLOCKING virtual tag")
+    func dependedOnTaskHasNoBlockingTag() throws {
         var board = ReadinessFixture()
         try board.addTask(withULID: ReadinessFixture.first, inColumn: ReadinessFixture.doing)
         try board.addTask(withULID: ReadinessFixture.second, dependingOn: [ReadinessFixture.first])
-        #expect(try Self.tags(ofTask: ReadinessFixture.first, on: board).contains(.blocking))
-    }
-
-    @Test("A done task that another task depends on is not BLOCKING (Rust blocking_completed)")
-    func doneTaskIsNotBlocking() throws {
-        var board = ReadinessFixture()
-        try board.addTask(withULID: ReadinessFixture.first, inColumn: ReadinessFixture.done)
-        try board.addTask(withULID: ReadinessFixture.second, dependingOn: [ReadinessFixture.first])
-        #expect(try !Self.tags(ofTask: ReadinessFixture.first, on: board).contains(.blocking))
-    }
-
-    @Test("A task that no task depends on is not BLOCKING (Rust blocking_no_dependents)")
-    func noDependentsIsNotBlocking() throws {
-        var board = ReadinessFixture()
-        try board.addTask(withULID: ReadinessFixture.first, inColumn: ReadinessFixture.doing)
-        try board.addTask(withULID: ReadinessFixture.second)
-        #expect(try !Self.tags(ofTask: ReadinessFixture.first, on: board).contains(.blocking))
+        let names = try Self.tags(ofTask: ReadinessFixture.first, on: board).map(\.rawValue)
+        #expect(!names.contains(Self.blockingName))
     }
 
     // MARK: - CONFLICT
@@ -152,7 +147,7 @@ struct VirtualTagsTests {
 
     // MARK: - DONE
 
-    @Test("A live task in the terminal column has DONE, and not READY or BLOCKING")
+    @Test("A live task in the terminal column that a task depends on has DONE, and not READY")
     func doneTaskHasDone() throws {
         var board = ReadinessFixture()
         try board.addTask(withULID: ReadinessFixture.first, inColumn: ReadinessFixture.done)
@@ -207,6 +202,6 @@ struct VirtualTagsTests {
             dependingOn: [ReadinessFixture.ghost],
             fields: ReadinessFixture.fields(hasConflict: true)
         )
-        #expect(try Self.tags(ofTask: ReadinessFixture.first, on: board) == [.blocked, .blocking, .conflict, .high])
+        #expect(try Self.tags(ofTask: ReadinessFixture.first, on: board) == [.blocked, .conflict, .high])
     }
 }

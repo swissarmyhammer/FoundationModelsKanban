@@ -3,9 +3,9 @@ import Testing
 
 @testable import FoundationModelsKanban
 
-/// Tests the readiness of a task at read time: the terminal column, done, `ready`, `blockedBy`, and `blocks`
-/// (plan.md §3.3 rules 3 and 4, §5.3 steps 4 and 5, §6). The port of the readiness tests of the Rust
-/// `task_helpers.rs` is in the "Rust" section.
+/// Tests the readiness of a task at read time: the terminal column, done, `ready`, and `blockedBy` (plan.md §3.3
+/// rules 3 and 4, §5.3 steps 4 and 5, §6). The port of the readiness tests of the Rust `task_helpers.rs` is in the
+/// "Rust" section. The Rust reverse dependencies (`blocks`) are not ported (divergence.md Q1).
 @Suite("Readiness")
 struct ReadinessTests {
     // MARK: - Terminal column
@@ -95,27 +95,6 @@ struct ReadinessTests {
         #expect(board.readiness.blockers(ofTaskAt: slot) == [ghost])
     }
 
-    @Test("The tasks that depend on a task are the tasks that it blocks (Rust test_task_blocks)")
-    func blocksGivesDependents() throws {
-        var board = ReadinessFixture()
-        let target = try board.addTask(withULID: ReadinessFixture.first)
-        let dependent = try board.addTask(withULID: ReadinessFixture.second, dependingOn: [ReadinessFixture.first])
-        let other = try board.addTask(
-            withULID: ReadinessFixture.third,
-            dependingOn: [ReadinessFixture.first, ReadinessFixture.ghost]
-        )
-        try board.addTask(withULID: ReadinessFixture.fourth)
-        #expect(board.readiness.dependents(ofTaskAt: target) == [dependent, other])
-    }
-
-    @Test("A task that no task depends on blocks nothing (Rust find_dependent_task_ids, no reverse dependencies)")
-    func noDependentsBlocksNothing() throws {
-        var board = ReadinessFixture()
-        let target = try board.addTask(withULID: ReadinessFixture.first)
-        try board.addTask(withULID: ReadinessFixture.second)
-        #expect(board.readiness.dependents(ofTaskAt: target).isEmpty)
-    }
-
     // MARK: - Unknown and remote targets
 
     @Test("A task that depends on a task of a board that is not loaded is blocked")
@@ -152,18 +131,6 @@ struct ReadinessTests {
         let slot = try board.addTask(withULID: ReadinessFixture.first, dependingOn: [ReadinessFixture.second])
         #expect(board.readiness.isReady(taskAt: slot))
         #expect(board.readiness.blockers(ofTaskAt: slot).isEmpty)
-    }
-
-    @Test("A tombstoned task that depends on a task is not one of its dependents")
-    func tombstonedDependentIsIgnored() throws {
-        var board = ReadinessFixture()
-        let target = try board.addTask(withULID: ReadinessFixture.first)
-        try board.addTask(
-            withULID: ReadinessFixture.second,
-            dependingOn: [ReadinessFixture.first],
-            fields: ReadinessFixture.fields(isDeleted: true)
-        )
-        #expect(board.readiness.dependents(ofTaskAt: target).isEmpty)
     }
 
     // MARK: - Cycles from a merge

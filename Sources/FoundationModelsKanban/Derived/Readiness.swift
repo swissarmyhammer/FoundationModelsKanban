@@ -1,7 +1,7 @@
 import Foundation
 
-/// The readiness of the tasks of one board at read time: done, `ready`, `blockedBy`, and `blocks` (plan.md §5.3
-/// step 4, §6).
+/// The readiness of the tasks of one board at read time: done, `ready`, and `blockedBy` (plan.md §5.3 step 4, §6).
+/// The dependencies go in one direction only: there is no reverse `blocks` list (divergence.md Q1).
 ///
 /// - A task is **done** when it shows in the terminal column (``ColumnOrder``). A task with no column, or with a
 ///   column that is tombstoned or missing, shows in the first column. Thus, it is done only when the first column is
@@ -32,9 +32,6 @@ struct Readiness {
     /// is not in the list.
     private let dependencies: [Int: [EdgeTarget]]
 
-    /// The live tasks that depend on each task, by the slot of the target task, in slot order.
-    private let dependents: [Int: [Int]]
-
     /// The slots of the tasks, live and tombstoned, in board order: by the position of the column where the task
     /// shows, then by ordinal, then by ULID. A task with no live column to show in comes last.
     let taskOrder: [Int]
@@ -62,7 +59,6 @@ struct Readiness {
             }
         )
         self.dependencies = dependencies
-        dependents = graph.dependents(from: dependencies)
         let taskOrder = graph.boardOrder(of: columnOrder)
         self.taskOrder = taskOrder
         priorityTiers = graph.priorityTiers(of: taskOrder, by: columnOrder)
@@ -120,14 +116,6 @@ struct Readiness {
     /// - Returns: `true` when the task is ready.
     func isReady(taskAt slot: Int) -> Bool {
         blockers(ofTaskAt: slot).isEmpty
-    }
-
-    /// Gives the live tasks that depend on a task: the `blocks` field.
-    ///
-    /// - Parameter slot: The slot of the task.
-    /// - Returns: The slots of the dependent tasks, in slot order.
-    func dependents(ofTaskAt slot: Int) -> [Int] {
-        dependents[slot, default: []]
     }
 }
 
@@ -212,20 +200,6 @@ extension Graph {
                 }
             }
         }
-    }
-
-    /// Gives the live tasks that depend on each task.
-    ///
-    /// - Parameter dependencies: The dependencies of each task, by the slot of the task.
-    /// - Returns: The slots of the live dependent tasks, in slot order, by the slot of the target task.
-    fileprivate func dependents(from dependencies: [Int: [EdgeTarget]]) -> [Int: [Int]] {
-        let links = dependencies.keys.sorted().flatMap { holder -> [(target: Int, holder: Int)] in
-            guard isLiveTask(at: holder) else {
-                return []
-            }
-            return dependencies[holder, default: []].compactMap(\.resolvedSlot).map { target in (target, holder) }
-        }
-        return Dictionary(grouping: links, by: \.target).mapValues { group in group.map(\.holder) }
     }
 
     /// Gives the column where a task shows (``ColumnOrder/displaySlot(of:)``).

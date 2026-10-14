@@ -1,8 +1,40 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: 8d80
+comments:
+- actor: claude-code
+  id: 01m4y6ef6xnxd6fyp1fbszasq2
+  text: |-
+    Research:
+    - The refusal of virtual tag names (TagSlug.checkSlugIsNotReserved, TaskMutations marker check) and the filter atom (FilterCompiler.tagTest) use VirtualTag(named:). When the case `blocking` goes out of the enum, `addTag(name: "blocking")` works and `#BLOCKING` falls through to the real tag path. No special code is necessary.
+    - `dependents` in Readiness has only two users: `TaskObject.blocks` and the BLOCKING case. Both go, so the stored `dependents` and `Graph.dependents(from:)` go too.
+    - T/CrossRepo/CrossRepoReadTests.swift has no use of `blocks` or BLOCKING. Its only hit is `CountingKeyReader(blockingFirstReadOf:)`, which is a different thing. No change is necessary there.
+    - Tests to change: VirtualTagsTests, ReadinessTests (dependents tests), FilterEvaluatorTests (BLOCKING lines), QueryResolverTests and NodeQueryTests (expected virtualTags and blocks), ChangeBuilderTests (selections and listFields), NameMatcherTests (taskFields list).
+  timestamp: 2026-10-14T21:52:41.181725+00:00
+- actor: claude-code
+  id: 01m4y6sh339be1aezabyhy7crv
+  text: |-
+    Implementation landed (TDD). RED: 16 issues in the new and changed tests, each for the expected reason (BLOCKING still a virtual tag, `blocks` still in the schema and the change feed). GREEN: the same 32 tests pass. Full `swift test`: 1246 tests in 93 suites pass. The only warning is the accepted SwiftPM "missing creator" warning.
+
+    Changes:
+    - VirtualTag: case `blocking` is gone. The doc comment now says the match ignores case (`init(named:)`), and that `#BLOCKING` is an ordinary tag atom. The `hasVirtualTag` doc no longer names BLOCKING.
+    - Readiness: the stored `dependents`, `dependents(ofTaskAt:)`, and `Graph.dependents(from:)` are gone. The type doc names only done, `ready`, and `blockedBy`.
+    - QueryResolvers `TaskObject.blocks`, Schema `Field("blocks")`, and ChangeBuilder `("blocks", ...)` are gone.
+    - No special code for the name `blocking`: the virtual tag name check and the filter atom use `VirtualTag(named:)`, so `blocking` is now an ordinary tag name.
+
+    New tests: VirtualTagsTests (BLOCKING is not a virtual tag; a depended-on task has no BLOCKING), FilterEvaluatorTests (`#BLOCKING` with no real tag gives an empty result and no error; `#BLOCKING` and `#blocking` match the real tag `blocking`), TagMutationTests (`addTag(name: "blocking")` works; `#BLOCKING` matches the task with the real tag, through the GraphQL engine), NameRewriteTests (a `blocks` query gives the validation error `Cannot query field "blocks" on type "Task".` and no data), ChangeBuilderTests (no public mutation gives a `blocks` field change).
+
+    Discovery: T/CrossRepo/CrossRepoReadTests.swift had no use of `blocks` or BLOCKING, so it has no change. All new graph tests are in suites with the `.watcherBudget` trait. All fixtures are temporary folders or in-memory ReadinessFixture boards.
+  timestamp: 2026-10-14T21:58:43.555946+00:00
+- actor: claude-code
+  id: 01m4y6sn5jgedqx5h7yyr037xe
+  text: |-
+    ### implement — changed
+    - evidence: 14 files — Sources/FoundationModelsKanban/Derived/Readiness.swift, Sources/FoundationModelsKanban/Derived/VirtualTags.swift, Sources/FoundationModelsKanban/GraphQL/QueryResolvers.swift, Sources/FoundationModelsKanban/GraphQL/Schema.swift, Sources/FoundationModelsKanban/Observe/ChangeBuilder.swift, Tests/FoundationModelsKanbanTests/Derived/ReadinessTests.swift, Tests/FoundationModelsKanbanTests/Derived/VirtualTagsTests.swift, Tests/FoundationModelsKanbanTests/Filter/FilterEvaluatorTests.swift, Tests/FoundationModelsKanbanTests/GraphQL/NameMatcherTests.swift, Tests/FoundationModelsKanbanTests/GraphQL/NameRewriteTests.swift, Tests/FoundationModelsKanbanTests/GraphQL/NodeQueryTests.swift, Tests/FoundationModelsKanbanTests/GraphQL/QueryResolverTests.swift, Tests/FoundationModelsKanbanTests/Mutations/TagMutationTests.swift, Tests/FoundationModelsKanbanTests/Observe/ChangeBuilderTests.swift; swift test: 1246 tests in 93 suites pass, only the accepted SwiftPM warning
+    - next: /review
+  timestamp: 2026-10-14T21:58:47.730349+00:00
+position_column: doing
+position_ordinal: '80'
 title: Remove the blocks field and the BLOCKING virtual tag
 ---
 ## What
