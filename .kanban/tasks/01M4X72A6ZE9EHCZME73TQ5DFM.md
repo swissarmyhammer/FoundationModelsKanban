@@ -29,6 +29,31 @@ comments:
     - evidence: 7 files — Sources/FoundationModelsKanban/Body/MarkdownCode.swift (new), Sources/FoundationModelsKanban/Derived/DependencyMarkers.swift, Sources/FoundationModelsKanban/Tags/TagMarkers.swift, Tests/FoundationModelsKanbanTests/Body/MarkdownCodeTests.swift (new), Tests/FoundationModelsKanbanTests/Derived/DependencyMarkersTests.swift, Tests/FoundationModelsKanbanTests/Tags/TagMarkersTests.swift, Tests/FoundationModelsKanbanTests/Mutations/AddUpdateTaskTests.swift; swift test: 1266 passed, 0 failed
     - next: /review
   timestamp: 2026-10-14T23:05:00.139477+00:00
+- actor: claude-code
+  id: 01m4yb0ypw9rswwfv70jb9s1yc
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 7 files
+    - test: green — swift test, 1266 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 6379e93
+    - review: findings — Sources/FoundationModelsKanban/Body/MarkdownCode.swift:60, Sources/FoundationModelsKanban/Body/MarkdownCode.swift:100
+  timestamp: 2026-10-14T23:12:41.180912+00:00
+- actor: claude-code
+  id: 01m4ybcfmgx7hc8nhaz5747h16
+  text: |-
+    Review findings fixed in Sources/FoundationModelsKanban/Body/MarkdownCode.swift.
+    - Fence walk: a new private FenceLine value (marker, run length, info string) holds the opening fence. A fence closes only on a fence line with the same marker, a run that is not shorter, and only whitespace after the run (CommonMark). A backtick run with a backtick in its info string does not open a fence. fencePrefixes and Substring.isFenceLine are gone; fenceMarkers and minimumFenceLength replace them.
+    - Inline code: inlineCodeEnd now reads the length of the opening backtick run and closes only on a later run of the same length. A run of a different length is part of the span. A span that does not close still goes to the end of the line (the earlier rule, kept on purpose; CommonMark makes an unclosed run literal text).
+    - Tests (RED seen first, then GREEN): MarkdownCodeTests (new double/triple backtick prose cases; new fenceClosesOnMatchingFence with mixed ``` and ~~~, run length, info string, backtick in info string), DependencyMarkersTests (mixed fences, double- and triple-backtick spans with a task URL), TagMarkersTests (mixed fences, double-backtick span).
+    - swift test: 1267 tests in 96 suites passed; only the accepted SwiftPM "missing creator" warning.
+  timestamp: 2026-10-14T23:18:58.960034+00:00
+- actor: claude-code
+  id: 01m4ybch373j9dysa1w6zqrj9d
+  text: |-
+    ### implement — changed
+    - evidence: 4 files — Sources/FoundationModelsKanban/Body/MarkdownCode.swift, Tests/FoundationModelsKanbanTests/Body/MarkdownCodeTests.swift, Tests/FoundationModelsKanbanTests/Derived/DependencyMarkersTests.swift, Tests/FoundationModelsKanbanTests/Tags/TagMarkersTests.swift; swift test: 1267 passed, 0 failed; 2 of 2 review findings checked
+    - next: /review
+  timestamp: 2026-10-14T23:19:00.455004+00:00
 position_column: doing
 position_ordinal: '80'
 title: Skip task URLs in code blocks, inline code, and headings for dependency markers
@@ -60,3 +85,13 @@ Decided behavior: use the same rule as for tag markers. A task URL in a fenced c
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-14 18:08)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 7 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsKanban/Body/MarkdownCode.swift:60` `completeness/invariant-propagation` — The fence walk treats any fence line as toggling one shared state, so a `~~~` line inside a ``` block closes the block early and a ``` line inside a ~~~ block does too. The text after the early close is then scanned as prose, so a task URL inside a real code block can count as a marker. Fence-type and fence-length matching are not part of the rule, though the doc comment describes a fenced code block as the unit. Record the opening fence's prefix in the walk and close only on a fence line with the same prefix, as CommonMark does. Add one test that mixes ``` and ~~~ inside a block.
+- [x] `Sources/FoundationModelsKanban/Body/MarkdownCode.swift:100` `completeness/invariant-propagation` — The inline-code scanner only handles single-backtick spans. A double-backtick opener is read as an empty span followed by a second empty span, so the text between them is treated as prose. A task URL inside a double-backtick code span is therefore counted as a marker, and the rule the change was meant to enforce ("a URL in inline code is not a marker") is only enforced for one delimiter width. Match the opening run length of backticks and close only on a run of the same length. Add one test with a double-backtick span that holds a task URL, in DependencyMarkersTests and in TagMarkersTests.

@@ -53,6 +53,11 @@ struct TagMarkersTests {
         ("see #bug- now", ["bug"]),
         // A marker in a fence that opens with tildes is not a tag.
         ("~~~\n#fake\n~~~\n#real", ["real"]),
+        // A fence closes only on a fence line with the same marker as the fence line that opens it.
+        ("```\n~~~\n#fake\n```\n#real", ["real"]),
+        ("~~~\n```\n#fake\n~~~\n#real", ["real"]),
+        // A marker in a double-backtick code span is not a tag.
+        ("use ``#fake ` #fake`` but #real", ["real"]),
         // A marker keeps each `_` in its text and gives the slug of the full name.
         ("Fix #\(underscoreMarker) now", [underscoreMarkerSlug]),
         ("#Needs_Review", [underscoreMarkerSlug]),

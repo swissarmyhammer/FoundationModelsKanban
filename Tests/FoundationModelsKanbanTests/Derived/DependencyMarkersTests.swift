@@ -175,6 +175,10 @@ struct DependencyMarkersTests {
             "Example:\n  ~~~swift\n  let link = \"\(url(ofTask: targetULID))\"\n  ~~~",
             "Write `\(url(ofTask: targetULID))` to make a dependency.",
             "## Blocked by \(url(ofTask: targetULID))",
+            "Example:\n```\n~~~\n\(url(ofTask: targetULID))\n```\n",
+            "Example:\n~~~\n```\n\(url(ofTask: targetULID))\n~~~\n",
+            "Write ``` `` \(url(ofTask: targetULID)) ` ``` to make a dependency.",
+            "Write ``\(url(ofTask: targetULID)) ` x`` to make a dependency.",
         ]
     )
     func urlInCodeOrHeadingIsNotMarker(body: String) {
