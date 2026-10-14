@@ -56,10 +56,19 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsKanbanTests/Search/SearchReadinessTests.swift. `swift build --build-tests`: only the accepted SwiftPM "missing creator" warning. `swift test --filter SearchReadinessTests`: 3 passed. `swift test`: 1194 tests in 88 suites passed. 3 of 3 review findings checked.
     - next: /review
   timestamp: 2026-10-14T18:47:41.951312+00:00
+- actor: claude-code
+  id: 01m4xw4akpk27xvcg7wtsy0476
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 test file (3 findings fixed)
+    - test: green — swift test, 1194 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: ac16008
+    - review: clean — none
+  timestamp: 2026-10-14T18:52:23.030306+00:00
 depends_on:
 - 01M4X6ZBTA66TCPVYM41QR0ACD
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: e480
 title: Start the search update early and make the session ready before the embeddings finish
 ---
 ## What

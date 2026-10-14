@@ -45,13 +45,15 @@ public struct BoardLocator: Sendable {
 
     /// Scans the places for repos.
     ///
-    /// A repo whose key cannot be read (for example, git fails in it) is not in the index, and the scan records it
-    /// with swift-log. A cancel of the task is not such a failure: it stops the scan, and the scan gives no index.
+    /// A repo whose key cannot be read (for example, git fails in it) is not a copy of the index: the index records
+    /// it in ``BoardIndex/unreadable``, and the scan records it with swift-log. A cancel of the task is not such a
+    /// failure: it stops the scan, and the scan gives no index.
     ///
     /// - Parameters:
     ///   - root: The root directory of the current repo.
     ///   - earlier: The index of the earlier scan, or `nil` for the first scan. A repo of the earlier scan keeps its
-    ///     key, so the scan reads the key only of a new repo (plan.md §6.6, index life).
+    ///     key, and the scan does not read again the key of a repo whose key read failed in the earlier scan, so the
+    ///     scan reads the key only of a new repo (plan.md §6.6, index life; divergence.md §16, Gap 1).
     ///   - keyReader: Reads the key of a repo that the earlier scan did not find.
     /// - Returns: The index of the repos, in scan order.
     /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled before the scan reads each
@@ -66,12 +68,15 @@ public struct BoardLocator: Sendable {
             (earlier?.copies ?? []).map { copy in (copy.directory.canonicalPath, copy.key) },
             uniquingKeysWith: { first, _ in first }
         )
+        let knownFailures = earlier?.unreadable ?? []
         let directories = places.flatMap(Self.repos(in:))
-        let keys = try await Self.keys(ofReposAt: directories, knowing: knownKeys, readingKeysWith: keyReader)
+        let readable = directories.filter { directory in !knownFailures.contains(directory.canonicalPath) }
+        let keys = try await Self.keys(ofReposAt: readable, knowing: knownKeys, readingKeysWith: keyReader)
         let copies = directories.compactMap { directory in
             keys[directory.canonicalPath].map { key in BoardCopy(directory: directory, key: key) }
         }
-        return BoardIndex(places: places, copies: copies)
+        let unreadable = Set(directories.map(\.canonicalPath)).subtracting(keys.keys)
+        return BoardIndex(places: places, copies: copies, unreadable: unreadable)
     }
 
     /// Finds the board of the folder that a path ref names, also when the scan does not look in that folder (plan.md
@@ -261,6 +266,10 @@ struct BoardIndex: Sendable {
 
     /// The copies that the scan found, in scan order.
     let copies: [BoardCopy]
+
+    /// The canonical path of each repo whose key read failed. A later scan that reuses the index does not read these
+    /// keys again; only a change of the scan place makes the host forget one (``ScanChange``).
+    let unreadable: Set<String>
 
     /// Finds the board that a board ref names (plan.md §6.6, board refs).
     ///

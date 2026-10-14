@@ -469,15 +469,17 @@ extension BoardWatcher {
     }
 }
 
-/// The file watcher of one loaded board, and the task that gives its batches to the engine (plan.md §5.6).
+/// The file watcher of one directory, and the task that gives its batches to their receiver (plan.md §5.6): the engine
+/// of a loaded board, or the host for a scan place (divergence.md §16, Gap 1).
 struct BoardWatch: Sendable {
     /// The watcher.
     let watcher: BoardWatcher
 
-    /// The watched directory: the `.kanban/` directory of the board, or the repo directory until `.kanban/` appears.
+    /// The watched directory: the `.kanban/` directory of a board, the repo directory of a board until `.kanban/`
+    /// appears, or a scan place.
     let directory: URL
 
-    /// The task that gives each batch of the watcher to the engine. It ends when the batches of the watcher end.
+    /// The task that gives each batch of the watcher to its receiver. It ends when the batches of the watcher end.
     let consumer: Task<Void, Never>
 
     /// Stops the watcher, and waits until the task ends. After the call returns, the watch applies no batch.

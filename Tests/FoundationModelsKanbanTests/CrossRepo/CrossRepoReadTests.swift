@@ -16,6 +16,9 @@ struct CrossRepoReadTests {
     /// The key of a board that no scan finds.
     static let missingKey = "github.com/example/missing"
 
+    /// The name of a repo that a test moves into the scan place after the first scan.
+    static let newRepoName = "e-new-lib"
+
     /// The selection of the `ready` field of a task.
     static let readySelection = "{ ready }"
 
@@ -226,16 +229,27 @@ struct CrossRepoReadTests {
         #expect(try await Self.board("name", of: key, on: graph) == BoardLocatorTests.firstCopyName)
     }
 
-    @Test("A key that the first scan did not find makes the engine scan one more time")
+    @Test("A key that the first scan did not find is found after the file watcher of the place sees its new repo")
     func unknownKeyScansAgain() async throws {
         let sandbox = try GitSandbox()
         let repos = try await BoardLocatorTests.TwoCopies.make(in: sandbox)
-        let graph = try GitGraphFixture.makeGraph(at: repos.current)
+        let recorder = ScanRecorder()
+        let host = HostFixture.makeHost(
+            readingKeyWith: BoardKey.read(fromRepoAt:),
+            findingTopWith: BoardKey.worktreeTop(of:),
+            observingScansWith: recorder
+        )
+        let graph = try await host.session(workingDirectory: repos.current, actor: KanbanHostTests.firstActor)
         let key = try CrossRepoFixture.keyText(of: BoardLocatorTests.libOrigin)
         #expect(try await Self.board("path", of: key, on: graph) == repos.firstCopy.path)
-        let newRepo = try await sandbox.makeRepo(named: "e-new-lib", origin: BoardLocatorTests.newOrigin)
+        let staging = try GitSandbox()
+        let built = try await staging.makeRepo(named: Self.newRepoName, origin: BoardLocatorTests.newOrigin)
+        let moved = sandbox.root.appending(path: Self.newRepoName, directoryHint: .isDirectory)
+        try FileManager.default.moveItem(at: built, to: moved)
+        await recorder.waitForChange(.repo(moved.canonicalPath))
         let newKey = try CrossRepoFixture.keyText(of: BoardLocatorTests.newOrigin)
-        #expect(try await Self.board("path", of: newKey, on: graph) == newRepo.path)
+        #expect(try await Self.board("path", of: newKey, on: graph) == moved.path)
+        await host.close()
     }
 
     @Test("A cancelled scan stores no index: the call throws, and the next call reads the key again")

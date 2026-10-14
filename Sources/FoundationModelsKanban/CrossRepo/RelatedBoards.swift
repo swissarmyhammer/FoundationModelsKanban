@@ -13,7 +13,7 @@ enum BoardRequest: Hashable, Sendable {
     /// The board that a board ref names: a board key, a repo directory name, a path, or the URI of a board.
     case board(String)
 
-    /// Each copy that a new scan finds, for `Query.boards`.
+    /// Each copy of the current scan index of the host, for `Query.boards`.
     case allCopies
 }
 

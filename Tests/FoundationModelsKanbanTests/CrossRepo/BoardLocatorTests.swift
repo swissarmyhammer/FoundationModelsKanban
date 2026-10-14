@@ -293,6 +293,23 @@ struct BoardLocatorTests {
         #expect(try Self.copy(at: newRepo, in: second).key == Self.key(of: Self.newOrigin))
     }
 
+    @Test("A rescan does not read again the key of a repo whose key read failed in the earlier scan")
+    func rescanSkipsUnreadableRepo() async throws {
+        let place = try ScanPlace.make()
+        let reader = ScanKeyReader()
+        let first = try await BoardLocator.default.scan(around: place.app, readingKeysWith: reader.keyReader)
+        let reads = reader.count
+        let second = try await BoardLocator.default.scan(
+            around: place.app,
+            reusing: first,
+            readingKeysWith: reader.keyReader
+        )
+        let broken = place.directory.url.appending(path: ScanCacheTests.brokenName, directoryHint: .isDirectory)
+        #expect(reader.count == reads)
+        #expect(first.unreadable == [broken.canonicalPath])
+        #expect(second.unreadable == first.unreadable)
+    }
+
     // MARK: - Board refs
 
     @Test("The current key resolves to the current directory, also when a different copy comes first")

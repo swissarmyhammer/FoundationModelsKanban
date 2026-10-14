@@ -347,6 +347,7 @@ enum HostFixture {
     ///   - loadObserver: Gets a call when each board load starts and ends, or `nil` for no calls.
     ///   - workerObserver: Gets a call when each worker of a loader reads a file, or `nil` for no calls.
     ///   - embedder: The embedder of the search of each board, or `nil` for BM25 and trigram only.
+    ///   - scanObserver: Gets a call when each scan starts and when a scan place changes, or `nil` for no calls.
     /// - Returns: The host.
     static func makeHost(
         readingKeyWith keyReader: @escaping BoardKeyReader = KanbanGraphTests.fakeKey,
@@ -354,7 +355,8 @@ enum HostFixture {
         mintingFrom ids: any ULIDSource = KanbanGraphTests.mutationIDs,
         observingLoadsWith loadObserver: (any BoardLoadObserver)? = nil,
         reportingWorkersTo workerObserver: (any LoaderWorkerObserver)? = nil,
-        embeddingWith embedder: (any PooledEmbedding)? = nil
+        embeddingWith embedder: (any PooledEmbedding)? = nil,
+        observingScansWith scanObserver: (any BoardScanObserver)? = nil
     ) -> KanbanHost {
         KanbanHost(
             configuration: HostConfiguration(
@@ -364,7 +366,8 @@ enum HostFixture {
                 ids: ids,
                 embedder: embedder,
                 loadObserver: loadObserver,
-                workerObserver: workerObserver
+                workerObserver: workerObserver,
+                scanObserver: scanObserver
             )
         )
     }

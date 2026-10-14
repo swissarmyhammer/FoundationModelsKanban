@@ -826,7 +826,8 @@ public actor KanbanGraph {
     /// Finds the board that a board ref names in the index of the scan of the host (plan.md §6.6, index life, board
     /// refs). The first call scans. A path to a folder that the index does not have gives the board at the top folder
     /// of the worktree of that folder, with no scan (divergence.md §16). A later call whose ref names no copy of the
-    /// index and no folder scans one more time.
+    /// index and no folder scans again only when a file watcher of a scan place saw a change since the last scan
+    /// (divergence.md §16, Gap 1). Else the ref is not found, with no scan and no `git`.
     ///
     /// - Parameters:
     ///   - reference: The board ref.
@@ -854,10 +855,11 @@ public actor KanbanGraph {
         if let folder {
             return folder
         }
-        return resolve(try await host.rescan(around: current.directory))
+        return resolve(try await host.currentScanIndex(around: current.directory))
     }
 
-    /// Scans for the copies of `Query.boards`, and loads each copy that is not the current repo. The copies load at
+    /// Gives the copies of `Query.boards` from the current scan index of the host, and loads each copy that is not the
+    /// current repo. The host scans only when the index is not current (divergence.md §16, Gap 1). The copies load at
     /// the same time (divergence.md §16, L5).
     ///
     /// - Parameter root: The top folder of the worktree of the current board.
@@ -865,7 +867,7 @@ public actor KanbanGraph {
     /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the scan. A
     ///   ``BoardWatcherError`` or an ``EventLogError`` when a board cannot load: of the first such copy in scan order.
     private func loadEachCopy(around root: URL) async throws -> [ListedCopy] {
-        let index = try await host.rescan(around: root)
+        let index = try await host.currentScanIndex(around: root)
         return try await index.copies.concurrentMap { copy in
             try await self.listedCopy(of: copy, currentRoot: root)
         }

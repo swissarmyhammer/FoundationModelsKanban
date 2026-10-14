@@ -36,8 +36,13 @@ public actor KanbanHost {
     /// The engine of each board, by the identity of its repo directory: loaded, or loading.
     private var engines: [FolderIdentity: EngineSlot] = [:]
 
-    /// The index of the last scan of each list of scan places (plan.md §6.6, index life).
-    private var scanIndexes: [[String]: BoardIndex] = [:]
+    /// The index of the last scan of each list of scan places, and when it can serve a call with no new scan
+    /// (plan.md §6.6, index life; divergence.md §16, Gap 1).
+    private var scanCache = ScanCache()
+
+    /// The file watcher of each scan place, by the canonical path of the place. A change that a watcher sees makes
+    /// the indexes of the place out of date.
+    private var placeWatches: [String: BoardWatch] = [:]
 
     /// The session views that get the changes of the boards, by their object identity. The host does not keep a view
     /// alive.
@@ -194,27 +199,117 @@ public actor KanbanHost {
 
     // MARK: - Scan
 
-    /// Gives the index of the last scan of the places around a repo, or `nil` before the first scan (plan.md §6.6,
-    /// index life).
+    /// Gives the index of the last scan of the places around a repo, current or not, or `nil` before the first scan
+    /// (plan.md §6.6, index life). A ref that this index has resolves with no scan.
     ///
     /// - Parameter root: The top folder of the worktree of the current board of a session.
     /// - Returns: The index.
     func scanIndex(around root: URL) -> BoardIndex? {
-        scanIndexes[Self.placesKey(of: locator.places(around: root))]
+        scanCache.index(ofPlaces: Self.placesKey(of: locator.places(around: root)))
     }
 
-    /// Scans the places around a repo for repos, and records the new index. A repo of the earlier scan of the same
-    /// places keeps its key.
+    /// Gives the current index of the places around a repo, and scans only when the index is not current
+    /// (divergence.md §16, Gap 1).
+    ///
+    /// The index is current after a scan while the file watcher of each place runs, until the watcher sees a new or
+    /// removed repo folder, a new `.git`, a changed git config, or a new board log in a place. Thus a ref that names no
+    /// board of a current index is not found, with no scan and no `git`. A new scan reuses each key that no change
+    /// made unknown, and does not read again a key whose read failed.
     ///
     /// - Parameter root: The top folder of the worktree of the current board of a session.
+    /// - Returns: The current index.
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during a scan. Then the host
+    ///   keeps the earlier index.
+    func currentScanIndex(around root: URL) async throws(BoardKeyError) -> BoardIndex {
+        let places = locator.places(around: root)
+        let key = Self.placesKey(of: places)
+        if isWatching(key), let index = scanCache.currentIndex(ofPlaces: key) {
+            return index
+        }
+        return try await rescan(around: root, inPlaces: places)
+    }
+
+    /// Scans the places around a repo for repos, and records the new index. The file watcher of each place starts
+    /// before the scan, so a change during the scan is not lost.
+    ///
+    /// - Parameters:
+    ///   - root: The top folder of the worktree of the current board of a session.
+    ///   - places: The places of the scan, in scan order.
     /// - Returns: The new index.
     /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the scan. Then the host
     ///   keeps the earlier index.
-    func rescan(around root: URL) async throws(BoardKeyError) -> BoardIndex {
-        let key = Self.placesKey(of: locator.places(around: root))
-        let scanned = try await locator.scan(around: root, reusing: scanIndexes[key], readingKeysWith: configuration.keyReader)
-        scanIndexes[key] = scanned
-        return scanned
+    private func rescan(around root: URL, inPlaces places: [URL]) async throws(BoardKeyError) -> BoardIndex {
+        let key = Self.placesKey(of: places)
+        watch(places)
+        configuration.scanObserver?.scanDidStart(inPlaces: places)
+        let earlier = scanCache.beginScan(ofPlaces: key)
+        let scanned: BoardIndex
+        do {
+            scanned = try await locator.scan(around: root, reusing: earlier, readingKeysWith: configuration.keyReader)
+        } catch {
+            scanCache.abandonScan(ofPlaces: key)
+            throw error
+        }
+        return scanCache.finishScan(scanned, ofPlaces: key, isWatched: isWatching(key))
+    }
+
+    /// Starts the file watcher of each place that has none yet. A closed host starts no watcher. A place whose
+    /// watcher cannot start has no watcher: its indexes are never current, so each call that needs more than the
+    /// index scans again, and the host records the failure with swift-log.
+    ///
+    /// - Parameter places: The places.
+    private func watch(_ places: [URL]) {
+        guard !isClosed else {
+            return
+        }
+        for place in places where placeWatches[place.canonicalPath] == nil {
+            do {
+                placeWatches[place.canonicalPath] = try makePlaceWatch(of: place)
+            } catch {
+                Log.kanban.warning(
+                    "The host cannot watch a scan place, so a board ref that names no board scans again",
+                    metadata: ["path": "\(place.path)", "error": "\(error)"]
+                )
+            }
+        }
+    }
+
+    /// Makes the watch of a scan place: a file watcher on the place, and a task that gives each of its batches to
+    /// ``placeDidChange(_:in:)``. The task holds the host weakly, so the watcher does not keep the host alive.
+    ///
+    /// - Parameter place: The place.
+    /// - Returns: The watch.
+    /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when the watcher cannot start.
+    private func makePlaceWatch(of place: URL) throws(BoardWatcherError) -> BoardWatch {
+        let watched = WatchedPlace(watching: place)
+        let watcher = try BoardWatcher(watching: place)
+        let batches = watcher.batches
+        let consumer = Task { [weak self] in
+            for await paths in batches {
+                await self?.placeDidChange(watched, in: paths)
+            }
+        }
+        return BoardWatch(watcher: watcher, directory: place, consumer: consumer)
+    }
+
+    /// Applies the changes of one batch of the file watcher of a scan place to the scan indexes.
+    ///
+    /// - Parameters:
+    ///   - place: The place.
+    ///   - paths: The changed paths of the batch.
+    private func placeDidChange(_ place: WatchedPlace, in paths: [URL]) {
+        for change in place.changes(in: paths) {
+            scanCache.apply(change, inPlace: place.path)
+            configuration.scanObserver?.scanPlaceDidChange(change)
+        }
+    }
+
+    /// Tells if each place of a list of scan places has a running file watcher, so that a change reaches the cache.
+    ///
+    /// - Parameter places: The canonical path of each place.
+    /// - Returns: `true` when each place has a watcher.
+    private func isWatching(_ places: [String]) -> Bool {
+        places.allSatisfy { place in placeWatches[place] != nil }
     }
 
     /// Gives the key of a list of scan places in the table of the scan indexes.
@@ -264,11 +359,16 @@ public actor KanbanHost {
 
     // MARK: - Close
 
-    /// Stops the file watcher of each board and ends each subscription. The boards stay in memory, and a board that
-    /// loads later has no watcher. The shared host stays open for the life of the process; a test closes its own
-    /// host.
+    /// Stops the file watcher of each board and of each scan place, and ends each subscription. The boards stay in
+    /// memory, and a board that loads later has no watcher. With no watcher on its places, a scan index is not
+    /// current any more. The shared host stays open for the life of the process; a test closes its own host.
     func close() async {
         isClosed = true
+        let watches = placeWatches.values
+        placeWatches = [:]
+        for watch in watches {
+            await watch.end()
+        }
         for slot in engines.values {
             switch slot {
             case .loaded(let engine):
@@ -315,6 +415,10 @@ struct HostConfiguration: Sendable {
     /// Gets a call when each worker of a loader reads a file, or `nil` for no calls.
     let workerObserver: (any LoaderWorkerObserver)?
 
+    /// Gets a call when a scan for the related boards starts, and when the file watcher of a scan place sees a
+    /// change, or `nil` for no calls.
+    let scanObserver: (any BoardScanObserver)?
+
     /// Makes a configuration. Each default is the value of the process: git, the system clock, random ULIDs, and the
     /// log files.
     ///
@@ -329,6 +433,8 @@ struct HostConfiguration: Sendable {
     ///   - logWriter: The writer of the appends of each commit.
     ///   - loadObserver: Gets a call when the file load of a board starts and ends, or `nil` for no calls.
     ///   - workerObserver: Gets a call when each worker of a loader reads a file, or `nil` for no calls.
+    ///   - scanObserver: Gets a call when a scan starts, and when the file watcher of a scan place sees a change, or
+    ///     `nil` for no calls.
     init(
         keyReader: @escaping BoardKeyReader = BoardKey.read(fromRepoAt:),
         topReader: @escaping WorktreeTopReader = BoardKey.worktreeTop(of:),
@@ -339,7 +445,8 @@ struct HostConfiguration: Sendable {
         batchObserver: (any LiveGraphObserver)? = nil,
         logWriter: any EventLogWriter = FileEventLogWriter(),
         loadObserver: (any BoardLoadObserver)? = nil,
-        workerObserver: (any LoaderWorkerObserver)? = nil
+        workerObserver: (any LoaderWorkerObserver)? = nil,
+        scanObserver: (any BoardScanObserver)? = nil
     ) {
         self.keyReader = keyReader
         self.topReader = topReader
@@ -351,6 +458,7 @@ struct HostConfiguration: Sendable {
         self.logWriter = logWriter
         self.loadObserver = loadObserver
         self.workerObserver = workerObserver
+        self.scanObserver = scanObserver
     }
 }
 
