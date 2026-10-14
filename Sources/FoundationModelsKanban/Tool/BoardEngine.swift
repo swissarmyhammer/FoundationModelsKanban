@@ -243,6 +243,9 @@ actor BoardEngine {
     /// When the watcher moved, the batch also holds the `.kanban/` directory, so that it compares each file of the
     /// board.
     ///
+    /// ``close()`` can run during each wait of the apply. After each wait, a closed engine stores nothing: it keeps
+    /// no moved watch and no applied session, so a change applies nothing after ``close()``.
+    ///
     /// - Parameter paths: The changed paths of the batch.
     /// - Throws: A ``BoardWatcherError`` when the watcher cannot move, or an ``EventLogError`` when a file cannot be
     ///   read.
@@ -251,17 +254,42 @@ actor BoardEngine {
             return
         }
         let moved = try await movedWatch(watch)
-        if let moved {
-            watchState = .watching(moved)
+        if let moved, await !adopt(moved) {
+            return
         }
         var updated = session
         let boardDirectory = updated.live.log.directory
         let applied = try await updated.apply(watchedPaths: moved == nil ? paths : paths + [boardDirectory])
+        guard !isClosed else {
+            return
+        }
         session = updated
         guard !applied.isEmpty else {
             return
         }
         batchObserver?.didApply(changedPaths: applied)
+    }
+
+    /// Stores the watch that a move of the watcher made, when the engine is not closed. A closed engine keeps no
+    /// watch: it ends the moved watch, so that no watcher runs after ``close()``.
+    ///
+    /// - Parameter moved: The new watch.
+    /// - Returns: `true` when the engine keeps the watch, or `false` when the engine is closed.
+    func adopt(_ moved: BoardWatch) async -> Bool {
+        guard !isClosed else {
+            await moved.end()
+            return false
+        }
+        watchState = .watching(moved)
+        return true
+    }
+
+    /// `true` after ``close()``.
+    private var isClosed: Bool {
+        guard case .closed = watchState else {
+            return false
+        }
+        return true
     }
 
     /// Moves the watcher from the repo directory to the `.kanban/` directory, when the watcher watches the repo
@@ -279,9 +307,7 @@ actor BoardEngine {
         else {
             return nil
         }
-        let moved = makeWatch(
-            of: StartedWatcher(watcher: try BoardWatcher(watching: boardDirectory), directory: boardDirectory)
-        )
+        let moved = makeWatch(of: try StartedWatcher(watching: boardDirectory))
         await watch.watcher.stop()
         return moved
     }
@@ -327,6 +353,8 @@ struct EngineLoad: Sendable {
     /// Checks that the `.kanban/` directory is not a Rust board, and loads the live graph of the board from its log
     /// files with the parallel loader (plan.md §5.3).
     ///
+    /// The load observer gets the end of each load that started, also of a load that fails.
+    ///
     /// - Returns: The live graph.
     /// - Throws: ``EventLogError/incompatibleBoard(directory:)`` when the `.kanban/` directory has Rust files.
     ///   ``EventLogError/fileSystem(path:detail:)`` when a directory or a file cannot be read.
@@ -334,9 +362,8 @@ struct EngineLoad: Sendable {
         let log = EventLog(repositoryAt: root)
         try log.checkCompatibility()
         configuration.loadObserver?.boardLoadDidStart(at: root)
-        let live = try await LiveGraph.load(using: BoardLoader(reading: log, reportingTo: configuration.workerObserver))
-        configuration.loadObserver?.boardLoadDidFinish(at: root)
-        return live
+        defer { configuration.loadObserver?.boardLoadDidFinish(at: root) }
+        return try await LiveGraph.load(using: BoardLoader(reading: log, reportingTo: configuration.workerObserver))
     }
 }
 
@@ -363,6 +390,15 @@ struct StartedWatcher: Sendable {
 
     /// The watched directory: the `.kanban/` directory of the board, or the repo directory until `.kanban/` appears.
     let directory: URL
+
+    /// Starts a file watcher on one directory.
+    ///
+    /// - Parameter directory: The directory to watch.
+    /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when the watcher cannot start.
+    init(watching directory: URL) throws(BoardWatcherError) {
+        watcher = try BoardWatcher(watching: directory)
+        self.directory = directory
+    }
 }
 
 extension BoardWatcher {
@@ -373,8 +409,7 @@ extension BoardWatcher {
     /// - Returns: The started watcher.
     /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when the watcher cannot start.
     static func started(onBoardAt root: URL) throws(BoardWatcherError) -> StartedWatcher {
-        let directory = existingBoardDirectory(ofBoardAt: root) ?? root
-        return StartedWatcher(watcher: try BoardWatcher(watching: directory), directory: directory)
+        try StartedWatcher(watching: existingBoardDirectory(ofBoardAt: root) ?? root)
     }
 
     /// Gives the `.kanban/` directory of a board when it is there.

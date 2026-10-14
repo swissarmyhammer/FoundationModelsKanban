@@ -227,7 +227,8 @@ public actor KanbanHost {
 
     // MARK: - Views
 
-    /// Records a session view, so that it gets the changes of the boards.
+    /// Records a session view, so that it gets the changes of the boards. A view records itself when it finds its
+    /// board and when a subscription of the view starts. A second record of a view changes nothing.
     ///
     /// - Parameter view: The view.
     func register(_ view: KanbanGraph) {

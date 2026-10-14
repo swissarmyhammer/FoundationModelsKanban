@@ -24,6 +24,9 @@ struct KanbanHostTests {
     /// The time that the slow key reader of the load tests takes. The file load of a small board takes much less.
     static let keyReadDelay = Duration.milliseconds(300)
 
+    /// The POSIX permissions of a log file that no user can read, so that the load of its board fails.
+    static let unreadablePermissions = 0o000
+
     /// A query that counts the tasks of the board.
     static let countQuery = "{ board { tasks { totalCount } } }"
 
@@ -107,6 +110,22 @@ struct KanbanHostTests {
         await host.close()
     }
 
+    @Test("A load that fails after it started tells the load observer that it ended")
+    func failedLoadTellsItsEnd() async throws {
+        let directory = try TemporaryDirectory()
+        let (task, _) = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
+        let file = EventLog(repositoryAt: directory.url).fileURL(for: .task(task))
+        try FileManager.default.setAttributes([.posixPermissions: Self.unreadablePermissions], ofItemAtPath: file.path)
+        let recorder = LoadRecorder()
+        let host = HostFixture.makeHost(observingLoadsWith: recorder)
+        await #expect(throws: EventLogError.self) {
+            try await host.session(workingDirectory: directory.url, actor: Self.firstActor)
+        }
+        #expect(recorder.loadStarts == [directory.url])
+        #expect(recorder.loadFinishes == [directory.url])
+        await host.close()
+    }
+
     @Test("A session in a folder that is not in a git repo has no board, and each call gives NOT_A_REPO")
     func folderOutsideRepoHasNoBoard() async throws {
         let sandbox = try GitSandbox()
@@ -145,6 +164,40 @@ struct KanbanHostTests {
         await second.close()
         #expect(await host.engineCount == 1)
         #expect(await host.runningWatcherCount == 1)
+        await host.close()
+    }
+
+    @Test("A subscription that starts after close() of its view gets the change of a second session")
+    func subscriptionAfterCloseGetsChanges() async throws {
+        let directory = try TemporaryDirectory()
+        _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
+        let host = HostFixture.makeHost()
+        let first = try await host.session(workingDirectory: directory.url, actor: Self.firstActor)
+        let second = try await host.session(workingDirectory: directory.url, actor: Self.secondActor)
+        await first.close()
+        let document = SubscriptionTests.subscription(SubscriptionTests.taskArguments)
+        let stream = try await SubscriptionTests.subscribe(document, on: first)
+        _ = try await CrossRepoFixture.addTask(with: "", on: second)
+        let events = try await SubscriptionTests.events(SubscriptionTests.oneEvent, of: stream)
+        #expect(events.count == SubscriptionTests.oneEvent)
+        await host.close()
+    }
+
+    @Test("A closed engine does not keep a moved watch: the watch stops, and the engine has no watcher")
+    func closedEngineEndsMovedWatch() async throws {
+        let directory = try TemporaryDirectory()
+        _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
+        let host = HostFixture.makeHost()
+        let engine = try await host.engine(ofBoardAt: directory.url)
+        await engine.close()
+        let moved = BoardWatch(
+            watcher: try BoardWatcher(watching: directory.url),
+            directory: directory.url,
+            consumer: Task {}
+        )
+        #expect(await !engine.adopt(moved))
+        #expect(await !moved.watcher.isRunning)
+        #expect(await engine.activeWatch == nil)
         await host.close()
     }
 

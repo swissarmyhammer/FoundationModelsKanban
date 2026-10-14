@@ -51,7 +51,7 @@ extension KanbanResolver {
         from feed: SessionFeeds
     ) async throws(KanbanError) -> AsyncStream<ChangeEvent> {
         guard let view = try await store.view(ofBoard: arguments.board) else {
-            return endedEvents()
+            return ChangeEvent.endedStream()
         }
         let filter = try ChangeFilter(parsing: arguments.filter)
         try filter.check(against: view)
@@ -63,13 +63,6 @@ extension KanbanResolver {
             throw .notFound(type: .board, reference: view.boardKey)
         }
         return feed.subscribe(toBoardAt: directory.canonicalPath, filteredBy: filter)
-    }
-
-    /// Gives a stream of events that has ended.
-    ///
-    /// - Returns: The stream.
-    private static func endedEvents() -> AsyncStream<ChangeEvent> {
-        AsyncStream { continuation in continuation.finish() }
     }
 }
 

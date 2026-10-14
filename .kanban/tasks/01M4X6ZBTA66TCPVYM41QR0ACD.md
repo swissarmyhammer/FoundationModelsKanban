@@ -32,6 +32,35 @@ comments:
     - note: divergence.md §16 proposal text says "real path"; the code keys by device and inode, as the hard rules say. ARCHITECTURE.md does not exist.
     - next: /review
   timestamp: 2026-10-14T16:48:13.003757+00:00
+- actor: claude-code
+  id: 01m4xnr69gmwht93sva8kn0t14
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — KanbanHost, BoardEngine, BoardGates, FolderIdentity, SessionFeeds + tests
+    - test: green — swift test, 1182 passed, 0 failed, 0 skipped; IntegrationTests 2 passed (separate scratch path)
+    - commit: 126dd30
+    - review: findings — Sources/FoundationModelsKanban/Observe/SessionFeeds.swift:64 (duplication/duplication), Sources/FoundationModelsKanban/Observe/SessionFeeds.swift:64 (reuse/reuse), Sources/FoundationModelsKanban/Tool/BoardEngine.swift:255, Sources/FoundationModelsKanban/Tool/BoardEngine.swift:283, Sources/FoundationModelsKanban/Tool/BoardEngine.swift:338, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift:261
+  timestamp: 2026-10-14T17:00:53.936317+00:00
+- actor: claude-code
+  id: 01m4xnynph2kzh7ebabvegk2wt
+  text: |-
+    Picked up for the 6 review findings. Plan:
+    - endedEvents (2 findings): one shared `ChangeEvent.endedStream()` in Observe/ChangeFeed.swift. SessionFeeds and KanbanResolver (ChangeSubscription.swift) both call it. ChangeSubscription.swift is in this change (commit 126dd30 changed it), so the second copy goes now, not as a separate task.
+    - BoardEngine.apply: after each await, check that the engine is not closed before it stores state (the moved watch, and the session). A closed engine ends the moved watch and applies nothing. Seam: internal `adopt(_:)` so a unit test can prove the closed case without a timing race.
+    - StartedWatcher: one `init(watching:)` that both movedWatch and BoardWatcher.started(onBoardAt:) call.
+    - EngineLoad.liveGraph: `defer` the boardLoadDidFinish call. Test: a log file with no read permission makes the load fail after the start.
+    - KanbanGraph.close(): SessionFeeds.finish() ends the subscribers of the view now and keeps the feeds, so a later subscribe works. The view registers with the host again when a subscription starts. Doc states this.
+  timestamp: 2026-10-14T17:04:26.321704+00:00
+- actor: claude-code
+  id: 01m4xp7nvczj805yqdfprwj28d
+  text: |-
+    ### implement — changed
+    - evidence: TDD. RED: 3 new KanbanHostTests failed for the expected reasons (load observer had no finish on a failed load; a subscribe after close() got 0 events; adopt() kept a moved watch on a closed engine). GREEN: the 3 pass. Full `swift test`: 1185 tests in 86 suites pass, 0 failures; build shows only the accepted SwiftPM "missing creator" warning.
+    - files: Sources/FoundationModelsKanban/Observe/ChangeFeed.swift (new `ChangeEvent.endedStream()`), Observe/ChangeSubscription.swift (private copy removed, calls the shared helper), Observe/SessionFeeds.swift (copy removed; `finish()` now ends the subscribers of the view that run now and keeps the feeds; the closed state is gone), Tool/BoardEngine.swift (`adopt(_:)` and `isClosed`: a closed engine ends a moved watch and stores no applied session; `StartedWatcher.init(watching:)` used by `movedWatch` and `BoardWatcher.started(onBoardAt:)`; `defer` for `boardLoadDidFinish`), Tool/KanbanGraph.swift (`subscribe` registers the view with the host again; `close()` and `subscribe` docs state the exact behaviour), Tool/KanbanHost.swift (`register` doc), Tests/FoundationModelsKanbanTests/Tool/KanbanHostTests.swift (3 new tests).
+    - note: finding 1 asked for the ChangeSubscription.swift copy as a separate task. Commit 126dd30 changed that file, so it is in this change, and finding 2 asked to call the helper from both places. Both copies now call `ChangeEvent.endedStream()`; no separate task is necessary.
+    - note: the closed check in BoardEngine.apply also guards the session store after the second wait (the same cause as finding 3, in the same function).
+    - next: /review
+  timestamp: 2026-10-14T17:09:21.388230+00:00
 depends_on:
 - 01M4X6X6PS5P524DW45RBSSWN2
 - 01M4X6XKP0Y832GDRHQ1MG22VF
@@ -98,3 +127,20 @@ Session API:
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-14 11:52)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 17 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsKanban/Observe/SessionFeeds.swift:64` `duplication/duplication` — The new `SessionFeeds.endedEvents()` is a verbatim copy of `KanbanResolver.endedEvents()`, including the doc comment. Both bodies are `AsyncStream { continuation in continuation.finish() }`. The two copies can drift apart, and the fix to one will be missed in the other. Extract one non-private helper that returns an ended `AsyncStream<ChangeEvent>`, for example a static on `ChangeFeed` or a free function next to `ChangeEvent`. Call it from `SessionFeeds.subscribe` and from `KanbanResolver.events`, and delete the private copy added at SessionFeeds.swift:64-66. Make the ChangeSubscription.swift copy call the shared helper as a separate task, since that file is outside this change.
+- [x] `Sources/FoundationModelsKanban/Observe/SessionFeeds.swift:64` `reuse/reuse` — The new private static function endedEvents() in SessionFeeds reimplements the existing private static endedEvents() in KanbanResolver. Both return an AsyncStream<ChangeEvent> that finishes at once. Two copies must now be kept in step. Move the ended-stream helper to one shared place, for example a static on ChangeEvent or a file-level internal function in Observe/ChangeFeed.swift. Then call it from both KanbanResolver (ChangeSubscription.swift) and SessionFeeds.subscribe. Delete the copy in SessionFeeds.swift.
+- [x] `Sources/FoundationModelsKanban/Tool/BoardEngine.swift:255` `completeness/invariant-propagation` — apply() stores the moved watch with watchState = .watching(moved) without checking for .closed. close() can run during the await in movedWatch, because actor calls can interleave. apply() then overwrites .closed, and the new watcher keeps running after close() returns. This breaks the close contract that a change applies nothing after close returns. After the await, check that watchState is still `.watching` before storing the moved watch. If the engine is closed, call `await moved.end()` and return without storing it.
+- [x] `Sources/FoundationModelsKanban/Tool/BoardEngine.swift:283` `duplication/duplication` — `movedWatch` builds a `StartedWatcher` from `BoardWatcher(watching:)` and the same directory for both fields. `BoardWatcher.started(onBoardAt:)` builds the same value again. The two lines differ only by the variable name, so the construction is repeated in the same file. Add a small `StartedWatcher` initializer or a `BoardWatcher` static such as `watching(directory:)` that returns the started watcher for one directory. Call it from both `movedWatch` and `started(onBoardAt:)`. If the team prefers to keep one-line constructors inline, drop this finding.
+- [x] `Sources/FoundationModelsKanban/Tool/BoardEngine.swift:338` `completeness/inverse-operation-coverage` — liveGraph() calls boardLoadDidStart before the load and boardLoadDidFinish after it. If LiveGraph.load throws, boardLoadDidFinish is never called. The observer then records a start with no matching finish for a failed load, so a test or other observer that pairs the two calls gets an unbalanced count. Call boardLoadDidFinish on every exit path, for example with `defer { configuration.loadObserver?.boardLoadDidFinish(at: root) }` placed right after the start call.
+- [x] `Sources/FoundationModelsKanban/Tool/KanbanGraph.swift:261` `completeness/public-output-contract` — close() unregisters the view from the host, and nothing registers it again. The doc says a later call of the view still runs. But a subscribe() that starts after close() on the same view gets no changes from other sessions or from the file watcher. Register the view again when a new subscription starts, or make close() end only the current subscriptions and keep the registration. Also correct the doc comment so it states the exact behaviour.

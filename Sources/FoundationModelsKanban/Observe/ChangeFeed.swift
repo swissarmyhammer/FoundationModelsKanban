@@ -28,6 +28,13 @@ struct ChangeEvent: Sendable {
 
     /// The board that the resolvers of the change read.
     let board: EventBoard
+
+    /// Gives a stream of events that has ended: the stream of a subscriber that gets no event.
+    ///
+    /// - Returns: The stream.
+    static func endedStream() -> AsyncStream<ChangeEvent> {
+        AsyncStream { continuation in continuation.finish() }
+    }
 }
 
 // MARK: - Feed

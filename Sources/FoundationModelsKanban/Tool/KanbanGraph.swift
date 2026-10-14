@@ -226,6 +226,9 @@ public actor KanbanGraph {
     /// not parse or validate, and a subscription that cannot start, give a stream with one response with the errors,
     /// and the stream then ends. ``close()`` ends the stream.
     ///
+    /// A subscription that starts after ``close()`` gets the changes again: the view registers with the host again,
+    /// so that the commits of each session and the batches of each file watcher reach the new stream.
+    ///
     /// - Parameters:
     ///   - query: The subscription document.
     ///   - variables: The values of the variables of the document.
@@ -238,7 +241,7 @@ public actor KanbanGraph {
         operationName: String?
     ) async throws -> AsyncThrowingStream<String, Error> {
         let board = await resolvedBoard()
-        return try await holdingGates(startingWith: board) { held in
+        let stream = try await holdingGates(startingWith: board) { held in
             try await self.publishingChanges(of: held, postingPlansTo: nil) {
                 try await self.startSubscription(
                     to: query,
@@ -249,13 +252,18 @@ public actor KanbanGraph {
                 )
             }
         }
+        await host.register(self)
+        return stream
     }
 
-    /// Ends the subscriptions of this session view, and releases its references (plan.md §7.2, divergence.md §16).
+    /// Ends each subscription of this session view that runs now, and takes the view out of the host until its next
+    /// subscription (plan.md §7.2, divergence.md §16).
     ///
     /// The boards stay loaded in the host, with their file watchers, for each other session and for a later session.
-    /// A later call of this view still runs. A view that a test made with its own host also closes that host: its
-    /// file watchers stop, and its graphs stay in memory but do not follow the files any more.
+    /// A later call of this view still runs, and a later ``subscribe(query:variables:operationName:)`` starts a
+    /// subscription that gets the changes of each session and of each file watcher. A view that a test made with its
+    /// own host also closes that host: its file watchers stop, its subscriptions end, and its graphs stay in memory
+    /// but do not follow the files any more.
     public func close() async {
         feeds.finish()
         await host.unregister(self)
