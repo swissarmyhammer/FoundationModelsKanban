@@ -246,8 +246,10 @@ struct CrossRepoReadTests {
         let built = try await staging.makeRepo(named: Self.newRepoName, origin: BoardLocatorTests.newOrigin)
         let moved = sandbox.root.appending(path: Self.newRepoName, directoryHint: .isDirectory)
         try FileManager.default.moveItem(at: built, to: moved)
-        await recorder.waitForChange(.repo(moved.canonicalPath))
         let newKey = try CrossRepoFixture.keyText(of: BoardLocatorTests.newOrigin)
+        try await recorder.waitForChange(.repo(moved.canonicalPath)) {
+            try await ScanCacheTests.hasBoard(of: newKey, on: graph)
+        }
         #expect(try await Self.board("path", of: newKey, on: graph) == moved.path)
         await host.close()
     }

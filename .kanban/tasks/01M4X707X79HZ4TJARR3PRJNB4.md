@@ -39,6 +39,28 @@ comments:
     - evidence: `swift test` 1217 tests in 90 suites passed, 0 failures; only the accepted SwiftPM "missing creator" warning. 13 files: 2 new sources (CrossRepo/ScanChange.swift, CrossRepo/ScanCache.swift), 5 changed sources (BoardLocator.swift, RelatedBoards.swift, KanbanHost.swift, KanbanGraph.swift, BoardEngine.swift), 2 new tests (ScanCacheTests.swift, ScanChangeTests.swift), 3 changed tests (BoardLocatorTests.swift, CrossRepoReadTests.swift, KanbanHostTests.swift). New follow-up card: ^58v2scm (path refs that run git on each call).
     - next: /review
   timestamp: 2026-10-14T19:22:28.548086+00:00
+- actor: claude-code
+  id: 01m4xygn2j5e9k6njdrey6rf30
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 13 files (ScanCache, ScanChange, scan-place watchers)
+    - test: green — swift test, 1217 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 19b05eb
+    - review: findings — Sources/FoundationModelsKanban/CrossRepo/ScanCache.swift:123
+  timestamp: 2026-10-14T19:34:04.114008+00:00
+- actor: claude-code
+  id: 01m4xytth6frctrdmvahe5ts4f
+  text: |-
+    Finding ScanCache.swift:123 `swift/preconditions` is fixed (TDD: RED seen, then GREEN).
+    - `ScanRecord.endScan()`: when `runningScans` is already 0, it calls `assertionFailure("A scan ended with no running scan")` and `Log.kanban.error(...)`. The clamp `max(runningScans - 1, 0)` stays as the recovery value.
+    - Same cause in the file: `ScanCache.abandonScan(ofPlaces:)` did nothing, with no signal, for places with no record (a stop with no scan that began). It now has a `guard` with `assertionFailure` and `Log.kanban.error` (metadata: places), and changes nothing. `finishScan` with no begin makes a default record, so `endScan` now catches it.
+    - New exit tests in `ScanChangeTests` (`#expect(processExitsWith: .failure)`): abandon after finish, finish with no begin, abandon of unknown places. The child process uses an index with no copy, so only the assertion can stop it.
+    - The one production caller (`KanbanHost.rescan(around:inPlaces:)`) keeps each begin matched with one finish or one abandon.
+
+    ### implement — changed
+    - evidence: `swift test` 1220 tests in 90 suites passed, 0 failures; only the accepted SwiftPM "missing creator" warning. Files: Sources/FoundationModelsKanban/CrossRepo/ScanCache.swift, Tests/FoundationModelsKanbanTests/CrossRepo/ScanChangeTests.swift
+    - next: /review
+  timestamp: 2026-10-14T19:39:37.382385+00:00
 depends_on:
 - 01M4X6ZBTA66TCPVYM41QR0ACD
 position_column: doing
@@ -69,3 +91,12 @@ Change:
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-14 14:26)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 12 file(s) reviewed, 6 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+- [x] `Sources/FoundationModelsKanban/CrossRepo/ScanCache.swift:123` `swift/preconditions` — endScan() clamps runningScans with max(runningScans - 1, 0). A scan end with no running scan is an unexpected state, but the clamp hides it silently in debug and release builds. A mismatch between beginScan and finishScan or abandonScan then goes unseen. Add `assertionFailure("scan ended with no running scan")` and a `Log.kanban.error(...)` call in the case where runningScans is already 0, then keep the clamp as the recovery value. The assertion stops debug builds, and the log records the defect in release builds.

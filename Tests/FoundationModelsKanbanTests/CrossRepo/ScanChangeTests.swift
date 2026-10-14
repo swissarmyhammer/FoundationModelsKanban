@@ -240,4 +240,35 @@ struct ScanChangeTests {
         cache.abandonScan(ofPlaces: Self.placesKey)
         #expect(cache.currentIndex(ofPlaces: Self.placesKey).map(Self.paths(in:)) == Self.paths(in: index))
     }
+
+    // MARK: - Unexpected scan ends
+
+    /// An index with no copy. It cannot throw, so only an assertion can stop the child process of an exit test.
+    static let emptyIndex = BoardIndex(places: [], copies: [], unreadable: [])
+
+    @Test("A scan that stops when no scan of the places runs stops a debug build")
+    func abandonWithNoRunningScanStops() async {
+        await #expect(processExitsWith: .failure) {
+            var cache = ScanCache()
+            _ = cache.beginScan(ofPlaces: Self.placesKey)
+            _ = cache.finishScan(Self.emptyIndex, ofPlaces: Self.placesKey, isWatched: true)
+            cache.abandonScan(ofPlaces: Self.placesKey)
+        }
+    }
+
+    @Test("A scan that ends with no scan of the places that began stops a debug build")
+    func finishWithNoBegunScanStops() async {
+        await #expect(processExitsWith: .failure) {
+            var cache = ScanCache()
+            _ = cache.finishScan(Self.emptyIndex, ofPlaces: Self.placesKey, isWatched: true)
+        }
+    }
+
+    @Test("A scan that stops for places that the cache does not know stops a debug build")
+    func abandonOfUnknownPlacesStops() async {
+        await #expect(processExitsWith: .failure) {
+            var cache = ScanCache()
+            cache.abandonScan(ofPlaces: Self.placesKey)
+        }
+    }
 }

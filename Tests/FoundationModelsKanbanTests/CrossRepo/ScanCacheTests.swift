@@ -103,7 +103,9 @@ struct ScanCacheTests {
         let built = try ScanPlace.makeRepoFolder(named: Self.newName, in: staging.url)
         let moved = place.directory.url.appending(path: Self.newName, directoryHint: .isDirectory)
         try FileManager.default.moveItem(at: built, to: moved)
-        await recorder.waitForChange(.repo(moved.canonicalPath))
+        try await recorder.waitForChange(.repo(moved.canonicalPath)) {
+            try await Self.hasBoard(of: newKey, on: session)
+        }
         #expect(try await CrossRepoReadTests.board("path", of: newKey, on: session) == moved.path)
         await host.close()
     }
@@ -120,7 +122,9 @@ struct ScanCacheTests {
         reader.setOrigin(Self.newOrigin, ofRepoNamed: Self.libName)
         let config = place.lib.appending(path: BoardKey.gitDirectoryName).appending(path: Self.gitConfigName)
         try Data(Self.newOrigin.utf8).write(to: config)
-        await recorder.waitForChange(.repo(place.lib.canonicalPath))
+        try await recorder.waitForChange(.repo(place.lib.canonicalPath)) {
+            try await Self.hasBoard(of: newKey, on: session)
+        }
         #expect(try await CrossRepoReadTests.board("path", of: newKey, on: session) == place.lib.path)
         await host.close()
     }
@@ -134,13 +138,27 @@ struct ScanCacheTests {
         let enabled = "(enabled: true)"
         #expect(try await CrossRepoReadTests.boardPaths(with: enabled, on: session) == [place.app.path])
         _ = try KanbanGraphTests.writeFixture(inRepoAt: place.lib)
-        await recorder.waitForChange(.board(inRepo: place.lib.canonicalPath))
+        try await recorder.waitForChange(.board(inRepo: place.lib.canonicalPath)) {
+            try await CrossRepoReadTests.boardPaths(with: enabled, on: session).contains(place.lib.path)
+        }
         let paths = try await CrossRepoReadTests.boardPaths(with: enabled, on: session)
         #expect(paths == [place.app.path, place.lib.path])
         await host.close()
     }
 
     // MARK: - Helpers
+
+    /// Tells if a call finds the board of a board key.
+    ///
+    /// - Parameters:
+    ///   - key: The board key.
+    ///   - graph: The engine.
+    /// - Returns: `true` when the call gives a board, and `false` when it gives no board.
+    /// - Throws: An error when the call cannot run.
+    static func hasBoard(of key: String, on graph: KanbanGraph) async throws -> Bool {
+        let response = try await KanbanGraphTests.execute(#"{ board(id: "\#(key)") { path } }"#, on: graph)
+        return try NameRewriteTests.data(of: response)["board"] as? [String: Any] != nil
+    }
 
     /// Makes a host whose git reads come from a key reader, and whose scans a recorder records.
     ///
@@ -290,12 +308,20 @@ final class ScanRecorder: BoardScanObserver {
         changeSink.yield(change)
     }
 
-    /// Waits until the host saw a change. Call it one time for each recorder.
+    /// Waits until the host saw a change, and the effect of the change shows. The file watcher can tell a change that
+    /// came before the test action, for example the make of the repo folders, so the first change that is equal to
+    /// `expected` is not always the change of the test action. After each change that is equal to `expected`, the
+    /// wait asks the condition, and it ends when the condition is `true`. Call it one time for each recorder.
     ///
-    /// - Parameter expected: The change.
-    func waitForChange(_ expected: ScanChange) async {
+    /// - Parameters:
+    ///   - expected: The change.
+    ///   - isShown: Tells if the effect of the test action shows. The wait asks it after each equal change.
+    /// - Throws: An error that `isShown` throws.
+    func waitForChange(_ expected: ScanChange, until isShown: () async throws -> Bool) async throws {
         for await change in changes where change == expected {
-            return
+            if try await isShown() {
+                return
+            }
         }
     }
 }

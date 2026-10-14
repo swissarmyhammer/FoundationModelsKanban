@@ -56,8 +56,19 @@ struct ScanCache {
 
     /// Records the end of a scan that gave no index, for example a cancelled scan. The earlier index stays.
     ///
+    /// A scan of places that the cache does not know did not begin. That is a defect of the caller: a debug build
+    /// stops, and a release build logs it and changes nothing.
+    ///
     /// - Parameter places: The canonical path of each place, in scan order.
     mutating func abandonScan(ofPlaces places: [String]) {
+        guard records[places] != nil else {
+            assertionFailure("A scan of \(places) stopped, and no scan of the places began")
+            Log.kanban.error(
+                "A scan stopped for places with no scan that began; the cache stays the same",
+                metadata: ["places": "\(places)"]
+            )
+            return
+        }
         records[places]?.endScan()
     }
 
@@ -119,7 +130,17 @@ private struct ScanRecord {
     }
 
     /// Records that one running scan ended. The kept changes go when no scan runs.
+    ///
+    /// A scan end with no running scan is a defect of the caller: a ``ScanCache/beginScan(ofPlaces:)`` does not match
+    /// each ``ScanCache/finishScan(_:ofPlaces:isWatched:)`` or ``ScanCache/abandonScan(ofPlaces:)``. A debug build
+    /// stops, and a release build logs it and keeps the count of running scans at zero.
     mutating func endScan() {
+        if runningScans == 0 {
+            assertionFailure("A scan ended with no running scan")
+            Log.kanban.error(
+                "A scan of the scan places ended with no running scan; the count of running scans stays at zero"
+            )
+        }
         runningScans = max(runningScans - 1, 0)
         if runningScans == 0 {
             changesDuringScans = []
