@@ -33,6 +33,31 @@ comments:
     - evidence: `swift test` 1244 tests in 93 suites passed, 0 failures; only the accepted SwiftPM "missing creator" warning. Files: Sources/FoundationModelsKanban/CrossRepo/BoardLocator.swift, CrossRepo/RelatedBoards.swift, GraphQL/Schema.swift, Observe/ChangeSubscription.swift, Tool/BoardEngine.swift, Tool/KanbanGraph.swift, Tool/KanbanHost.swift; new Tests/FoundationModelsKanbanTests/CrossRepo/UnreadableRelatedBoardTests.swift (10 test cases, `.watcherBudget`, temporary git sandboxes only).
     - next: /review
   timestamp: 2026-10-14T21:27:53.956137+00:00
+- actor: claude-code
+  id: 01m4y5fjx3bbrpppzejt4m45a7
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 8 files
+    - test: green — swift test, 1244 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 910eff3
+    - review: findings — Tests/FoundationModelsKanbanTests/CrossRepo/UnreadableRelatedBoardTests.swift:254
+  timestamp: 2026-10-14T21:35:49.155093+00:00
+- actor: claude-code
+  id: 01m4y5r7c74tn9p1ah0ns548bp
+  text: |-
+    Picked up the finding (UnreadableRelatedBoardTests.swift `changeOfFilesLoadsAgain`, completeness/inverse-operation-coverage) and fixed it in the test file only.
+    - New `Breakage.repair(_:)` reverses `apply(toTask:inRepoAt:)`. For `.noReadPermission` it gives the read permission back (new constant `readablePermissions = 0o644`). For `.brokenLog` it removes the directory.
+    - `changeOfFilesLoadsAgain` now runs over `Breakage.allCases` and calls `breakage.repair(broken)`, not `removeItem`. It waits for the effect through `recorder.waitForChange` inside `StreamWait.value`. It uses no fixed sleep.
+    - The same gap (only `.brokenLog`) was in 3 more tests of the file. These now also run over `Breakage.allCases`: `secondCallDoesNotLoadAgain`, `subscriberGetsChangesOfCurrentBoard`, `subscriptionToUnreadableBoardEnds`.
+    - Discovery: a chmod on a file in `.kanban/` gives an FSEvents event (an inode metadata change with `kFSEventStreamCreateFlagFileEvents`). The unloadable-board watcher sees it, clears the mark, and the next call loads the board. No production change was necessary. The new `.noReadPermission` case passed on its first run, so this test proves the existing reload path. It does not drive new code.
+  timestamp: 2026-10-14T21:40:32.263913+00:00
+- actor: claude-code
+  id: 01m4y5r92h37k5x55sfee3011p
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsKanbanTests/CrossRepo/UnreadableRelatedBoardTests.swift. `swift test --filter UnreadableRelatedBoardTests`: 8 tests (14 cases) passed. Full `swift test`: 1244 tests in 93 suites passed, 0 failures. The only warning is the accepted SwiftPM "missing creator" warning. The finding is checked off.
+    - next: /review
+  timestamp: 2026-10-14T21:40:34.001205+00:00
 depends_on:
 - 01M4X6X6PS5P524DW45RBSSWN2
 - 01M4X6ZBTA66TCPVYM41QR0ACD
@@ -71,3 +96,12 @@ Change the code at S/Tool/KanbanGraph.swift:761-775 (`loadRelatedBoard`) and :43
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-14 16:30)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 8 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/UnreadableRelatedBoardTests.swift:254` `completeness/inverse-operation-coverage` — The reload-after-change test only runs the .brokenLog breakage. The .noReadPermission breakage has its own reload path: the host marks the board, watches it, and must load it again after a change. That path is never exercised. The test also removes the broken file, which does not show that a permission change reloads the board. Parameterize changeOfFilesLoadsAgain over Breakage.allCases. For .noReadPermission, restore the file's read permission instead of removing the file, so the test proves the reload for each breakage kind.

@@ -22,6 +22,9 @@ struct UnreadableRelatedBoardTests {
     /// The name of a Rust-only file that makes a `.kanban/` directory incompatible (divergence.md Q6).
     static let rustLogName = "mcp.17281.log"
 
+    /// The POSIX permissions of a log file that its owner can read and write, and that each other user can read.
+    static let readablePermissions = 0o644
+
     // MARK: - Fixture
 
     /// A way to make a related board that cannot be read.
@@ -62,6 +65,24 @@ struct UnreadableRelatedBoardTests {
                 let directory = log.fileURL(for: .task(ULID()))
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                 return directory
+            }
+        }
+
+        /// Makes a board that ``apply(toTask:inRepoAt:)`` made unreadable readable again. For a log file with no
+        /// read permission, the function gives the read permission back to the file. For a log path that is a
+        /// directory, the function removes the directory.
+        ///
+        /// - Parameter changed: The log path that ``apply(toTask:inRepoAt:)`` gave.
+        /// - Throws: An error when the file or the directory cannot be changed.
+        func repair(_ changed: URL) throws {
+            switch self {
+            case .noReadPermission:
+                try FileManager.default.setAttributes(
+                    [.posixPermissions: UnreadableRelatedBoardTests.readablePermissions],
+                    ofItemAtPath: changed.path
+                )
+            case .brokenLog:
+                try FileManager.default.removeItem(at: changed)
             }
         }
     }
@@ -163,9 +184,12 @@ struct UnreadableRelatedBoardTests {
 
     // MARK: - Change feed
 
-    @Test("A subscriber gets the changes of the current board when a related board cannot be read")
-    func subscriberGetsChangesOfCurrentBoard() async throws {
-        let dependency = try await Self.makeBrokenDependency(.brokenLog)
+    @Test(
+        "A subscriber gets the changes of the current board when a related board cannot be read",
+        arguments: Breakage.allCases
+    )
+    func subscriberGetsChangesOfCurrentBoard(breakage: Breakage) async throws {
+        let dependency = try await Self.makeBrokenDependency(breakage)
         let app = try GitGraphFixture.makeGraph(at: dependency.repos.app)
         let document = SubscriptionTests.subscription(SubscriptionTests.taskArguments)
         let stream = try await SubscriptionTests.subscribe(document, on: app)
@@ -176,9 +200,12 @@ struct UnreadableRelatedBoardTests {
         #expect(try NameRewriteTests.data(of: event)["changes"] != nil, "\(event)")
     }
 
-    @Test("A subscription to a related board that cannot be read gives NOT_FOUND for the board, and ends")
-    func subscriptionToUnreadableBoardEnds() async throws {
-        let dependency = try await Self.makeBrokenDependency(.brokenLog)
+    @Test(
+        "A subscription to a related board that cannot be read gives NOT_FOUND for the board, and ends",
+        arguments: Breakage.allCases
+    )
+    func subscriptionToUnreadableBoardEnds(breakage: Breakage) async throws {
+        let dependency = try await Self.makeBrokenDependency(breakage)
         let app = try GitGraphFixture.makeGraph(at: dependency.repos.app)
         let document = SubscriptionTests.subscription(#"(board: "\#(try CrossRepoWriteTests.libKey())")"#)
         let stream = try await SubscriptionTests.subscribe(document, on: app)
@@ -236,9 +263,12 @@ struct UnreadableRelatedBoardTests {
         try KanbanGraphTests.object(of: response)["extensions"] == nil
     }
 
-    @Test("A second call does not load again a related board that could not load, while its files do not change")
-    func secondCallDoesNotLoadAgain() async throws {
-        let dependency = try await Self.makeBrokenDependency(.brokenLog)
+    @Test(
+        "A second call does not load again a related board that could not load, while its files do not change",
+        arguments: Breakage.allCases
+    )
+    func secondCallDoesNotLoadAgain(breakage: Breakage) async throws {
+        let dependency = try await Self.makeBrokenDependency(breakage)
         let recorder = UnreadableBoardRecorder()
         let host = Self.makeHost(recordedBy: recorder)
         let app = try await host.session(workingDirectory: dependency.repos.app, actor: KanbanHostTests.firstActor)
@@ -250,16 +280,19 @@ struct UnreadableRelatedBoardTests {
         #expect(recorder.loadCount(ofBoardAt: dependency.repos.lib) == 1)
     }
 
-    @Test("After a change of the files of a related board that could not load, the next call reads the board")
-    func changeOfFilesLoadsAgain() async throws {
+    @Test(
+        "After a repair of the files of a related board that could not load, the next call reads the board",
+        arguments: Breakage.allCases
+    )
+    func changeOfFilesLoadsAgain(breakage: Breakage) async throws {
         let dependency = try await Self.makeDependency()
-        let broken = try Breakage.brokenLog.apply(toTask: dependency.target, inRepoAt: dependency.repos.lib)
+        let broken = try breakage.apply(toTask: dependency.target, inRepoAt: dependency.repos.lib)
         let recorder = UnreadableBoardRecorder()
         let host = Self.makeHost(recordedBy: recorder)
         let app = try await host.session(workingDirectory: dependency.repos.app, actor: KanbanHostTests.firstActor)
         let first = try await KanbanGraphTests.execute(KanbanGraphTests.nameQuery, on: app)
         try Self.expectUnreadableWarning(in: first, for: dependency.repos)
-        try FileManager.default.removeItem(at: broken)
+        try breakage.repair(broken)
         let isRead = try await StreamWait.value {
             try await recorder.waitForChange {
                 try Self.hasNoWarning(try await KanbanGraphTests.execute(KanbanGraphTests.nameQuery, on: app))
