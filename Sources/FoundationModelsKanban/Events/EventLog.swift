@@ -297,11 +297,36 @@ extension EventLog {
         if file.lastPathComponent == Self.boardFileName, isBoardDirectory(at: folder) {
             return .board
         }
+        guard let type = nodeType(ofDirectoryAt: folder) else {
+            return nil
+        }
+        return Self.ref(ofFile: file, type: type)
+    }
+
+    /// Tells if a directory is a node directory of this board, for example `.kanban/tasks/`. A tool that moves a whole
+    /// directory can make the file watcher report only the directory, and no file of it (plan.md §5.6).
+    ///
+    /// The directory does not have to exist, because a directory that was moved away is also a change. The compare
+    /// of the directories resolves symbolic links, the same as ``ref(ofFileAt:)``.
+    ///
+    /// - Parameter folder: The directory.
+    /// - Returns: `true` when the name of the directory is the log directory name of a node type, and its parent is
+    ///   the `.kanban/` directory of this board.
+    func isNodeDirectory(at folder: URL) -> Bool {
+        nodeType(ofDirectoryAt: folder) != nil
+    }
+
+    /// Finds the node type of a node directory of this board.
+    ///
+    /// - Parameter folder: The directory.
+    /// - Returns: The node type whose log directory name is the name of the directory, or `nil` when no node type
+    ///   has that name or the parent of the directory is not the `.kanban/` directory of this board.
+    private func nodeType(ofDirectoryAt folder: URL) -> PatchNodeType? {
         let type = PatchNodeType.allCases.first { type in type.logDirectoryName == folder.lastPathComponent }
         guard let type, isBoardDirectory(at: folder.deletingLastPathComponent()) else {
             return nil
         }
-        return Self.ref(ofFile: file, type: type)
+        return type
     }
 
     /// Tells if a directory is the `.kanban/` directory of this board.

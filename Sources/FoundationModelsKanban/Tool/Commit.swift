@@ -329,8 +329,9 @@ struct CommitSession: Sendable {
     ///
     /// A file whose signature equals the recorded signature is not read again: a write of this process, or a
     /// repeated event. A batch with no other file changes nothing, and the search does not change. A batch that holds
-    /// the `.kanban/` directory itself (FSEvents dropped events, or the directory appeared) compares each node file
-    /// of the board, and not only the paths of the batch.
+    /// a directory compares each node file of the board, and not only the paths of the batch: the `.kanban/`
+    /// directory itself (FSEvents dropped events, or the directory appeared), or a node directory in it, for example
+    /// `.kanban/tasks/` (a tool moved the whole directory, and FSEvents reported only the directory).
     ///
     /// - Parameter paths: The changed paths of the batch.
     /// - Returns: The node files that the apply read again, in the sort order of their refs. The list is empty when
@@ -338,12 +339,13 @@ struct CommitSession: Sendable {
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a directory or a file cannot be read. Then the live
     ///   graph does not change.
     mutating func apply(watchedPaths paths: [URL]) async throws(EventLogError) -> [URL] {
-        let isFullCheck = paths.contains(where: live.log.isBoardDirectory(at:))
+        let log = live.log
+        let isFullCheck = paths.contains { path in log.isBoardDirectory(at: path) || log.isNodeDirectory(at: path) }
         let refs = isFullCheck ? try live.changedRefs() : try live.changedRefs(among: paths)
         guard !refs.isEmpty else {
             return []
         }
-        let files = refs.sorted { lhs, rhs in lhs.description < rhs.description }.map(live.log.fileURL(for:))
+        let files = refs.sorted { lhs, rhs in lhs.description < rhs.description }.map(log.fileURL(for:))
         _ = try await live.apply(changedPaths: files)
         await updateSearch()
         return files

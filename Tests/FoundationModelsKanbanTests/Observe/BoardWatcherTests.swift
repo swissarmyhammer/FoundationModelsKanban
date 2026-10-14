@@ -26,6 +26,13 @@ struct BoardWatcherTests {
     /// The selection of the task query of the merge test: the title and the column name.
     static let titleAndColumnSelection = "{ title column { name } }"
 
+    /// The name of the folder in the repo, outside `.kanban/`, that holds a moved node directory for a short time.
+    static let movedFolderName = "moved"
+
+    /// The step of the title that the single file test writes to a second task: the step after
+    /// ``LiveGraphApplyTests/laterStep``, so that the two events have different ids.
+    static let secondTitleStep = LiveGraphApplyTests.laterStep + 1
+
     // MARK: - Fixture
 
     /// Waits for the first batch that satisfies a condition.
@@ -91,6 +98,30 @@ struct BoardWatcherTests {
     static func writeLaterTitle(to task: ULID, mintingFrom ids: inout FixedULIDSource, in log: EventLog) throws {
         let patch = try ReplayTests.titlePatch(setting: KanbanGraphTests.laterTitle, of: .task(task))
         try KanbanGraphTests.append(patch, mintingFrom: &ids, to: log)
+    }
+
+    /// Replaces the directory of a node log with a changed copy, the same as a tool that moves a whole directory:
+    /// moves the directory out of `.kanban/`, writes the change to the moved copy, and moves the copy back in. The
+    /// file watcher of the board then can report the directory only, and no file of it.
+    ///
+    /// - Parameters:
+    ///   - node: A node whose log is in the directory. The directory of its log file is the replaced directory.
+    ///   - log: The event log of the board.
+    ///   - write: Writes the change. It gets the event log of the moved copy, which is outside the `.kanban/`
+    ///     directory of the board.
+    static func replaceLogDirectory(
+        holding node: LocalRef,
+        in log: EventLog,
+        writing write: (EventLog) throws -> Void
+    ) throws {
+        let repository = log.directory.deletingLastPathComponent()
+        let movedLog = EventLog(repositoryAt: repository.appending(path: movedFolderName, directoryHint: .isDirectory))
+        let directory = log.fileURL(for: node).deletingLastPathComponent()
+        let moved = movedLog.fileURL(for: node).deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: movedLog.directory, withIntermediateDirectories: true)
+        try FileManager.default.moveItem(at: directory, to: moved)
+        try write(movedLog)
+        try FileManager.default.moveItem(at: moved, to: directory)
     }
 
     // MARK: - Tests
@@ -243,6 +274,54 @@ struct BoardWatcherTests {
         let applied = try await session.apply(watchedPaths: [log.directory])
         #expect(applied == [log.fileURL(for: task)])
         #expect(try CommitTests.title(of: task, in: session) == LiveGraphApplyTests.changedTitle)
+    }
+
+    @Test("A batch that holds a node directory of the board, for example .kanban/tasks/, reads each changed file")
+    func nodeDirectoryBatchReadsEachChangedFile() async throws {
+        let directory = try TemporaryDirectory()
+        let (log, tasks) = try CommitTests.writeBoard(in: directory)
+        var session = try await CommitTests.makeSession(of: log)
+        let task = try #require(tasks.first)
+        let taskFile = log.fileURL(for: task)
+        try Self.replaceLogDirectory(holding: task, in: log) { moved in
+            try LiveGraphApplyTests.writeTitle(to: task, atStep: LiveGraphApplyTests.laterStep, in: moved)
+        }
+        let applied = try await session.apply(watchedPaths: [taskFile.deletingLastPathComponent()])
+        #expect(applied == [taskFile])
+        #expect(try CommitTests.title(of: task, in: session) == LiveGraphApplyTests.changedTitle)
+    }
+
+    @Test("A batch that holds one node file reads only that file, also when a different file changed")
+    func fileBatchReadsOnlyThatFile() async throws {
+        let directory = try TemporaryDirectory()
+        let (log, tasks) = try CommitTests.writeBoard(in: directory)
+        var session = try await CommitTests.makeSession(of: log)
+        let task = try #require(tasks.first)
+        let other = try #require(tasks.last)
+        try #require(task != other)
+        let otherTitle = try CommitTests.title(of: other, in: session)
+        try LiveGraphApplyTests.writeTitle(to: task, atStep: LiveGraphApplyTests.laterStep, in: log)
+        try LiveGraphApplyTests.writeTitle(to: other, atStep: Self.secondTitleStep, in: log)
+        let applied = try await session.apply(watchedPaths: [log.fileURL(for: task)])
+        #expect(applied == [log.fileURL(for: task)])
+        #expect(try CommitTests.title(of: task, in: session) == LiveGraphApplyTests.changedTitle)
+        #expect(try CommitTests.title(of: other, in: session) == otherTitle)
+    }
+
+    @Test("When .kanban/tasks/ is moved away and a changed copy is moved back in, a later query shows the change")
+    func movedTaskDirectoryChangesLaterQuery() async throws {
+        let directory = try TemporaryDirectory()
+        var (task, ids) = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
+        let recorder = BatchRecorder()
+        let graph = try KanbanGraphTests.makeGraph(at: directory.url, observingBatchesWith: recorder)
+        let before = try await KanbanGraphTests.execute(KanbanGraphTests.boardQuery, on: graph)
+        #expect(before == KanbanGraphTests.boardResponse(withTask: task, titled: KanbanGraphTests.taskTitle))
+        try Self.replaceLogDirectory(holding: .task(task), in: EventLog(repositoryAt: directory.url)) { moved in
+            try Self.writeLaterTitle(to: task, mintingFrom: &ids, in: moved)
+        }
+        let expected = KanbanGraphTests.boardResponse(withTask: task, titled: KanbanGraphTests.laterTitle)
+        #expect(try await Self.query(KanbanGraphTests.boardQuery, reaches: expected, on: graph, recordedBy: recorder))
+        await graph.close()
     }
 }
 

@@ -61,10 +61,26 @@ comments:
     - evidence: `swift test` 1220 tests in 90 suites passed, 0 failures; only the accepted SwiftPM "missing creator" warning. Files: Sources/FoundationModelsKanban/CrossRepo/ScanCache.swift, Tests/FoundationModelsKanbanTests/CrossRepo/ScanChangeTests.swift
     - next: /review
   timestamp: 2026-10-14T19:39:37.382385+00:00
+- actor: claude-code
+  id: 01m4xzcx529ds2bsvkmahhqbr8
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 2 files (1 finding fixed, 3 exit tests)
+    - test: green — swift test, 1220 passed, 0 failed, 0 skipped; IntegrationTests 2 passed (test step fixed a watcher-wait race in 4 tests)
+    - commit: afd3bc3
+    - review: clean — none
+  timestamp: 2026-10-14T19:49:29.890665+00:00
+- actor: claude-code
+  id: 01m4xzcyf3rcvx5mczn4eh130g
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (afd3bc3); 0 findings, 0 confirmed, 1 refuted, 7 attempted, 0 failed; 4 files reviewed, 2 .kanban files not reviewed (ignore rule); the prior finding (ScanCache.swift:123) is checked
+    - next: none — task moved to done
+  timestamp: 2026-10-14T19:49:31.235812+00:00
 depends_on:
 - 01M4X6ZBTA66TCPVYM41QR0ACD
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: e580
 title: Keep a "board not found" result in memory and run no git on reads
 ---
 ## What
