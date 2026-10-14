@@ -34,6 +34,33 @@ comments:
     - note: the integration package builds with 0 errors only with a separate --scratch-path. The usual `IntegrationTests/.build/checkouts` gives "Operation not permitted" when SwiftPM removes old checkouts. This is a file permission problem on this machine, not a code problem. The integration tests were not run.
     - next: /review
   timestamp: 2026-10-14T15:20:30.254245+00:00
+- actor: claude-code
+  id: 01m4xh2yf6nrw98s9y27gb34xh
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 10 files
+    - test: green — swift test, 1157 passed, 0 failed, 0 skipped (IntegrationTests not run: SwiftPM checkout permission error 513)
+    - commit: 8c31c28
+    - review: findings — Tests/FoundationModelsKanbanTests/Identity/BoardKeyTests.swift:164, Tests/FoundationModelsKanbanTests/Identity/BoardKeyTests.swift:167, Tests/FoundationModelsKanbanTests/Identity/BoardKeyTests.swift:206, Tests/FoundationModelsKanbanTests/Identity/BoardKeyTests.swift:811, Tests/FoundationModelsKanbanTests/ReadmeExamplesTests.swift:119
+  timestamp: 2026-10-14T15:39:23.494990+00:00
+- actor: claude-code
+  id: 01m4xhepryw38pyf13pckyh1y6
+  text: |-
+    Review findings fixed (all 5 checked).
+    - reuse (BoardKeyTests 164/167/206): new static GitSandbox.headSHA(of:) runs `rev-parse HEAD`. headKey(of:) calls it. All rev-parse HEAD reads in the file use it (also the second read in repoWithCommitsGetsNoNewCommit).
+    - fluent-usage (811): environmentWithoutIdentity() is now makeEnvironmentWithoutIdentity(). The call site and the four doc references changed.
+    - reuse (ReadmeExamplesTests 119): new static GitSandbox.initializeRepo(at:withIdentity:) runs `git init` and the identityConfig `git config` steps. makeEmptyRepo and ExampleBoard.init call it. ExampleBoard.init also uses GitSandbox.makeFolder.
+    - Same cause in the whole file: makeRepo also ran its own `git init` with `-c` identity arguments. makeRepo now calls makeEmptyRepo, then commits with the local identity config. identityArguments and unsignedArguments are dead and are removed. The commit message is the constant startCommitMessage. makeRepo keeps the current commit time (not fixedCommitDate), so two repos made in one test do not get the same root commit.
+    - GitSandbox.runGit and GitSandbox.output are now static (they use no instance state), so the static helpers can call them. Call sites in BoardKeyTests and PortabilityTests use GitSandbox.runGit / GitSandbox.output.
+    - Note: the IntegrationTests TemporaryGitRepo has a third copy of the init and identity steps. It is in a different SwiftPM package and cannot import GitSandbox from the unit test target, so it stays.
+  timestamp: 2026-10-14T15:45:48.830718+00:00
+- actor: claude-code
+  id: 01m4xhes0ebqg5y0qsh23nhf3y
+  text: |-
+    ### implement — changed
+    - evidence: `swift test --filter 'BoardKeyTests|ReadmeExamplesTests|PortabilityTests'` 51 tests passed; `swift test` 1157 tests in 84 suites passed, 0 failed. Only warning: the accepted SwiftPM "missing creator" warning. Files: Tests/FoundationModelsKanbanTests/Identity/BoardKeyTests.swift, Tests/FoundationModelsKanbanTests/ReadmeExamplesTests.swift, Tests/FoundationModelsKanbanTests/Design/PortabilityTests.swift.
+    - next: /review
+  timestamp: 2026-10-14T15:45:51.118817+00:00
 depends_on:
 - 01M4X6XKP0Y832GDRHQ1MG22VF
 position_column: doing
@@ -75,3 +102,19 @@ M8, a repo with no commit:
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-14 10:32)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 9 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsKanbanTests/Identity/BoardKeyTests.swift:164` `reuse/reuse` — The test reads the HEAD SHA with a direct `rev-parse HEAD` call. GitSandbox.headKey(of:) already runs that same command inside the sandbox, but it returns a BoardKey, not the SHA, so the test cannot use it and repeats the command. Add a GitSandbox helper such as headSHA(of:) that runs `rev-parse HEAD` and returns the SHA. Have headKey(of:) call it, and use it here and in the other rev-parse calls.
+- [x] `Tests/FoundationModelsKanbanTests/Identity/BoardKeyTests.swift:167` `reuse/reuse` — The second root SHA is read with a direct `rev-parse HEAD` call, which repeats the same command as line 164 and GitSandbox.headKey(of:). Use the shared HEAD SHA helper suggested for line 164.
+- [x] `Tests/FoundationModelsKanbanTests/Identity/BoardKeyTests.swift:206` `reuse/reuse` — The test reads HEAD with a direct `rev-parse HEAD` call, which repeats the command already used inside GitSandbox.headKey(of:). Use the shared HEAD SHA helper suggested for line 164.
+- [x] `Tests/FoundationModelsKanbanTests/Identity/BoardKeyTests.swift:811` `swift/fluent-usage` — `environmentWithoutIdentity()` is a factory. It creates a new folder and config file, then returns a new environment dictionary. The rule says factory methods begin with `make`, so this name reads like a property getter and does not signal that the call writes files. Rename the method to `makeEnvironmentWithoutIdentity()`, and update the call sites at lines 216 and 218 to match.
+- [x] `Tests/FoundationModelsKanbanTests/ReadmeExamplesTests.swift:119` `reuse/reuse` — ExampleBoard.init repeats the repo setup that GitSandbox.makeEmptyRepo(named:withIdentity:) already does: it runs `git init --quiet`, then writes each GitSandbox.identityConfig pair with `git config`, and checks each status with the same require pattern. Two copies of this setup must now be kept in step, and a change to one will not reach the other. Move the init and identity-config steps into one shared static helper that takes a folder URL, such as a static form of GitSandbox.makeEmptyRepo. Call it from both GitSandbox.makeEmptyRepo and ExampleBoard.init so the setup exists once.

@@ -104,22 +104,17 @@ struct ReadmeExamplesTests {
         /// The engine, as example 1 makes it.
         let graph: KanbanGraph
 
-        /// Makes the folder, runs `git init` in it, and makes the engine of example 1. The repo gets the local config
-        /// ``GitSandbox/identityConfig``: a name and an email of the author, and no commit signatures. Thus the engine
-        /// can make the first commit of the repo also on a machine with no global git identity.
+        /// Makes the folder, runs `git init` in it with ``GitSandbox/initializeRepo(at:withIdentity:)``, and makes the
+        /// engine of example 1. The repo gets the local config ``GitSandbox/identityConfig``: a name and an email of the
+        /// author, and no commit signatures. Thus the engine can make the first commit of the repo also on a machine
+        /// with no global git identity.
         ///
         /// - Throws: An error when the folder cannot be made, when `git init` or `git config` fails, or when the engine
         ///   cannot be made.
         init() async throws {
             directory = try TemporaryDirectory()
-            root = directory.url.appending(path: ReadmeExamplesTests.folderName, directoryHint: .isDirectory)
-            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-            let result = try await Git.run(withArguments: ["init", "--quiet"], inDirectory: root)
-            try #require(result.status == Git.successStatus, "git init failed: \(result.errorOutput)")
-            for (key, value) in GitSandbox.identityConfig {
-                let config = try await Git.run(withArguments: ["config", key, value], inDirectory: root)
-                try #require(config.status == Git.successStatus, "git config \(key) failed: \(config.errorOutput)")
-            }
+            root = try GitSandbox.makeFolder(named: ReadmeExamplesTests.folderName, in: directory.url)
+            try await GitSandbox.initializeRepo(at: root)
             graph = try KanbanGraph(root: root, actor: nil)
         }
 

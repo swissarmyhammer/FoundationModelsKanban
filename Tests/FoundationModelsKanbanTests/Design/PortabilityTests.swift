@@ -60,7 +60,7 @@ extension Design {
             func move(_ repo: URL, in sandbox: GitSandbox) async throws -> URL {
                 switch self {
                 case .newOrigin:
-                    try await sandbox.runGit(
+                    try await GitSandbox.runGit(
                         withArguments: ["remote", "set-url", "origin", Self.newOriginURL],
                         in: repo
                     )
