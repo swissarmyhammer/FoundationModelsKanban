@@ -227,7 +227,9 @@ public actor KanbanGraph {
     /// and the stream then ends. ``close()`` ends the stream.
     ///
     /// A subscription that starts after ``close()`` gets the changes again: the view registers with the host again,
-    /// so that the commits of each session and the batches of each file watcher reach the new stream.
+    /// so that the commits of each session and the batches of each file watcher reach the new stream. The view
+    /// registers before it takes the gate, and thus before it adds the subscriber, so the stream gets each change
+    /// that a commit or a file watcher publishes after the start.
     ///
     /// - Parameters:
     ///   - query: The subscription document.
@@ -241,7 +243,8 @@ public actor KanbanGraph {
         operationName: String?
     ) async throws -> AsyncThrowingStream<String, Error> {
         let board = await resolvedBoard()
-        let stream = try await holdingGates(startingWith: board) { held in
+        await host.register(self)
+        return try await holdingGates(startingWith: board) { held in
             try await self.publishingChanges(of: held, postingPlansTo: nil) {
                 try await self.startSubscription(
                     to: query,
@@ -252,8 +255,6 @@ public actor KanbanGraph {
                 )
             }
         }
-        await host.register(self)
-        return stream
     }
 
     /// Ends each subscription of this session view that runs now, and takes the view out of the host until its next

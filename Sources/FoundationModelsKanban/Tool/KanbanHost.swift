@@ -242,6 +242,15 @@ public actor KanbanHost {
         views[ObjectIdentifier(view)] = nil
     }
 
+    /// Tells whether a session view gets the changes of the boards. A test reads it to prove that a subscription
+    /// registers its view before it adds its subscriber.
+    ///
+    /// - Parameter view: The view.
+    /// - Returns: `true` when the host has the view registered.
+    func hasView(_ view: KanbanGraph) -> Bool {
+        views[ObjectIdentifier(view)]?.view === view
+    }
+
     /// Sends the changes of some boards to each session view, so that each view sends them to its own subscribers
     /// (plan.md §6.7).
     ///

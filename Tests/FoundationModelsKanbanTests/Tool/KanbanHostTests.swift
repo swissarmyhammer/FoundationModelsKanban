@@ -183,6 +183,29 @@ struct KanbanHostTests {
         await host.close()
     }
 
+    @Test("A subscription after close() registers its view before it adds its subscriber, inside the gate")
+    func subscriptionRegistersViewBeforeSubscriber() async throws {
+        let directory = try TemporaryDirectory()
+        _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
+        let host = HostFixture.makeHost()
+        let probe = RegistrationProbe()
+        let view = try KanbanGraph(
+            host: host,
+            owningHost: false,
+            workingDirectory: directory.url,
+            actingAs: KanbanGraph.sessionActor(named: Self.firstActor),
+            locatedBy: await host.locator,
+            reportingTo: probe
+        )
+        try await view.prepareBoard()
+        await view.close()
+        probe.arm(host: host, view: view)
+        let document = SubscriptionTests.subscription(SubscriptionTests.taskArguments)
+        _ = try await SubscriptionTests.subscribe(document, on: view)
+        #expect(probe.registrations == [true])
+        await host.close()
+    }
+
     @Test("A closed engine does not keep a moved watch: the watch stops, and the engine has no watcher")
     func closedEngineEndsMovedWatch() async throws {
         let directory = try TemporaryDirectory()
@@ -451,6 +474,46 @@ final class LoadRecorder: BoardLoadObserver {
     private func roots(of kind: LoadEventKind) -> [URL] {
         events.filter { event in event.kind == kind }.map(\.root)
     }
+}
+
+// MARK: - Registration probe
+
+/// Records, at the start of each call of a view, whether the host sends the changes of the boards to the view. The
+/// call starts inside the serial gate, before a subscription adds its subscriber, so each answer tells whether the
+/// view registered before its subscriber could miss a change.
+final class RegistrationProbe: KanbanCallObserver {
+    /// The host and the view to check, behind a lock, or `nil` until the test arms the probe.
+    private let target = Mutex<(host: KanbanHost, view: KanbanGraph)?>(nil)
+
+    /// The recorded answers, behind a lock, because the calls run on different threads.
+    private let answers = Mutex<[Bool]>([])
+
+    /// The answer of each call that started after the test armed the probe, in order: `true` when the host had the
+    /// view registered.
+    var registrations: [Bool] {
+        answers.withLock { answers in answers }
+    }
+
+    /// Starts the checks: each later call start records whether the host has the view registered.
+    ///
+    /// - Parameters:
+    ///   - host: The host of the view.
+    ///   - view: The view.
+    func arm(host: KanbanHost, view: KanbanGraph) {
+        target.withLock { target in target = (host, view) }
+    }
+
+    /// Records whether the host has the view registered, after the test armed the probe.
+    func callDidStart() async {
+        guard let (host, view) = target.withLock({ target in target }) else {
+            return
+        }
+        let isRegistered = await host.hasView(view)
+        answers.withLock { answers in answers.append(isRegistered) }
+    }
+
+    /// Does nothing: the probe checks only the starts.
+    func callDidFinish() {}
 }
 
 // MARK: - Counters

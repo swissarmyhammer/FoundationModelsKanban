@@ -61,6 +61,33 @@ comments:
     - note: the closed check in BoardEngine.apply also guards the session store after the second wait (the same cause as finding 3, in the same function).
     - next: /review
   timestamp: 2026-10-14T17:09:21.388230+00:00
+- actor: claude-code
+  id: 01m4xpjhhe3f96pc78pn7k2qgq
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 7 files (6 findings fixed, 3 new tests)
+    - test: green — swift test, 1185 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 8c4b433
+    - review: findings — Sources/FoundationModelsKanban/Tool/KanbanGraph.swift:255
+  timestamp: 2026-10-14T17:15:17.422154+00:00
+- actor: claude-code
+  id: 01m4xpxc6hy53c6x6j6ryw7r7s
+  text: |-
+    Picked up for the open finding KanbanGraph.swift:255 (completeness/invariant-propagation).
+    - Cause: subscribe() called host.register(self) after holdingGates returned. The subscriber is added inside the gate. A commit of a different session (or a watcher batch) publishes inside its own gate, so it can publish after the gate release and before the register. The view is then not registered, and the new subscriber misses the change. This happens only after close(), because resolveBoard() registers the view at session start.
+    - Other sites: resolveBoard() registers after feeds.add but before any subscriber exists, so it does not have the cause. No other register call exists.
+    - Fix: subscribe() registers the view before holdingGates, so the register always comes before the subscriber add. Doc of subscribe() states the order.
+    - Test seam: a commit cannot be put deterministically between the gate release and the register (the race window is a hop to the host actor). The test confirms the order instead, as the finding allows: a KanbanCallObserver probe (RegistrationProbe) asks the host at the call start, inside the gate and before the subscriber add, if the view is registered. New internal `KanbanHost.hasView(_:)` for the probe, the same pattern as `engineCount`.
+  timestamp: 2026-10-14T17:21:12.401323+00:00
+- actor: claude-code
+  id: 01m4xpxfdd6dr39vq602qpegak
+  text: |-
+    ### implement — changed
+    - evidence: TDD. RED: `swift test --filter KanbanHostTests/subscriptionRegistersViewBeforeSubscriber` failed with `probe.registrations → [false]`. GREEN: the same test passes. Full `swift test`: 1186 tests in 86 suites pass, 0 failures; the build shows only the accepted SwiftPM "missing creator" warning.
+    - files: Sources/FoundationModelsKanban/Tool/KanbanGraph.swift (subscribe registers the view before holdingGates; doc states the order), Sources/FoundationModelsKanban/Tool/KanbanHost.swift (new internal `hasView(_:)` for tests), Tests/FoundationModelsKanbanTests/Tool/KanbanHostTests.swift (new test `subscriptionRegistersViewBeforeSubscriber` and `RegistrationProbe`).
+    - finding KanbanGraph.swift:255 checked off.
+    - next: /review
+  timestamp: 2026-10-14T17:21:15.693844+00:00
 depends_on:
 - 01M4X6X6PS5P524DW45RBSSWN2
 - 01M4X6XKP0Y832GDRHQ1MG22VF
@@ -144,3 +171,12 @@ Session API:
 - [x] `Sources/FoundationModelsKanban/Tool/BoardEngine.swift:283` `duplication/duplication` — `movedWatch` builds a `StartedWatcher` from `BoardWatcher(watching:)` and the same directory for both fields. `BoardWatcher.started(onBoardAt:)` builds the same value again. The two lines differ only by the variable name, so the construction is repeated in the same file. Add a small `StartedWatcher` initializer or a `BoardWatcher` static such as `watching(directory:)` that returns the started watcher for one directory. Call it from both `movedWatch` and `started(onBoardAt:)`. If the team prefers to keep one-line constructors inline, drop this finding.
 - [x] `Sources/FoundationModelsKanban/Tool/BoardEngine.swift:338` `completeness/inverse-operation-coverage` — liveGraph() calls boardLoadDidStart before the load and boardLoadDidFinish after it. If LiveGraph.load throws, boardLoadDidFinish is never called. The observer then records a start with no matching finish for a failed load, so a test or other observer that pairs the two calls gets an unbalanced count. Call boardLoadDidFinish on every exit path, for example with `defer { configuration.loadObserver?.boardLoadDidFinish(at: root) }` placed right after the start call.
 - [x] `Sources/FoundationModelsKanban/Tool/KanbanGraph.swift:261` `completeness/public-output-contract` — close() unregisters the view from the host, and nothing registers it again. The doc says a later call of the view still runs. But a subscribe() that starts after close() on the same view gets no changes from other sessions or from the file watcher. Register the view again when a new subscription starts, or make close() end only the current subscriptions and keep the registration. Also correct the doc comment so it states the exact behaviour.
+
+## Review Findings (2026-10-14 12:11)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 7 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Sources/FoundationModelsKanban/Tool/KanbanGraph.swift:255` `completeness/invariant-propagation` — subscribe() registers the view with the host only after holdingGates returns. The subscriber is already added to the feed inside the gate. A commit or watcher batch that publishes after the gate is released, but before host.register runs, skips this view, so the new subscriber misses that change. This is the path the doc comment on close() says must deliver every change. Register the view before the subscriber is added, for example call `await host.register(self)` before `holdingGates`, or inside the gate before startSubscription. Then add a test that commits between the gate release and the register, or at least confirm that the order of register and subscriber setup is covered.
