@@ -28,6 +28,14 @@ protocol BoardLoadObserver: Sendable {
     ///
     /// - Parameter root: The root directory of the repo of the board.
     func boardEventsWillMerge(at root: URL) async
+
+    /// Tells that the file watcher of a board that could not load saw a change, so the next call that reaches the
+    /// board loads it again (divergence.md Q7).
+    ///
+    /// A test uses it to wait for the change, and then for its effect.
+    ///
+    /// - Parameter root: The root directory of the repo of the board.
+    func unreadableBoardDidChange(at root: URL)
 }
 
 extension BoardLoadObserver {
@@ -35,6 +43,12 @@ extension BoardLoadObserver {
     ///
     /// - Parameter root: The root directory of the repo of the board.
     func boardEventsWillMerge(at root: URL) async {}
+
+    /// Does nothing. An observer that records only the file loads does not wait for a change of a board that could
+    /// not load.
+    ///
+    /// - Parameter root: The root directory of the repo of the board.
+    func unreadableBoardDidChange(at root: URL) {}
 }
 
 /// The engine of one board in a process: its live graph and commit path, its file watcher, its serial gate, its
@@ -194,13 +208,9 @@ actor BoardEngine {
     /// - Parameter started: The started watcher and its directory.
     /// - Returns: The watch.
     private func makeWatch(of started: StartedWatcher) -> BoardWatch {
-        let batches = started.watcher.batches
-        let consumer = Task { [weak self] in
-            for await paths in batches {
-                await self?.receive(paths)
-            }
+        BoardWatch(of: started) { [weak self] paths in
+            await self?.receive(paths)
         }
-        return BoardWatch(watcher: started.watcher, directory: started.directory, consumer: consumer)
     }
 
     /// Gives one batch of the watcher to the serial gate (plan.md §5.6, batch). A batch that cannot apply is recorded
@@ -470,7 +480,8 @@ extension BoardWatcher {
 }
 
 /// The file watcher of one directory, and the task that gives its batches to their receiver (plan.md §5.6): the engine
-/// of a loaded board, or the host for a scan place (divergence.md §16, Gap 1).
+/// of a loaded board, the host for a scan place (divergence.md §16, Gap 1), or the host for a board that could not
+/// load (divergence.md Q7).
 struct BoardWatch: Sendable {
     /// The watcher.
     let watcher: BoardWatcher
@@ -487,5 +498,24 @@ struct BoardWatch: Sendable {
         await watcher.stop()
         consumer.cancel()
         await consumer.value
+    }
+}
+
+extension BoardWatch {
+    /// Makes the watch of a started watcher: the watcher, and a task that gives each of its batches to a receiver.
+    /// The task ends when the batches of the watcher end. A receiver that holds its owner weakly does not keep the
+    /// owner alive.
+    ///
+    /// - Parameters:
+    ///   - started: The started watcher and its directory.
+    ///   - receive: Gets the changed paths of each batch.
+    init(of started: StartedWatcher, sendingBatchesTo receive: @escaping @Sendable ([URL]) async -> Void) {
+        let batches = started.watcher.batches
+        let consumer = Task {
+            for await paths in batches {
+                await receive(paths)
+            }
+        }
+        self.init(watcher: started.watcher, directory: started.directory, consumer: consumer)
     }
 }

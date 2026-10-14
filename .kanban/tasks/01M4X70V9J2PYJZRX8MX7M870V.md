@@ -29,8 +29,17 @@ comments:
     - evidence: 4 files — Sources/FoundationModelsKanban/Events/PatchInput.swift, Sources/FoundationModelsKanban/Events/Event.swift, Sources/FoundationModelsKanban/Events/Replay.swift, Tests/FoundationModelsKanbanTests/Events/ReplayBadValueTests.swift (new). swift test: 1236 tests in 92 suites passed; only the accepted SwiftPM "missing creator" warning.
     - next: /review
   timestamp: 2026-10-14T20:55:04.001967+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4y3jxcv6p5yrn6ecpcwa0qn
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 4 files
+    - test: green — swift test, 1236 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 164c743
+    - review: clean — none
+  timestamp: 2026-10-14T21:02:41.051219+00:00
+position_column: done
+position_ordinal: e880
 title: Make replay skip only a bad value, not the whole event line
 ---
 ## What

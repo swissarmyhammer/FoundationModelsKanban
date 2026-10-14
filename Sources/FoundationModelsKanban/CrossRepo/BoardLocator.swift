@@ -388,6 +388,11 @@ enum BoardResolution: Hashable, Sendable {
     /// No board: the folder that a path ref names is not in a git repo (divergence.md §16). The path is the path of
     /// the folder.
     case notARepo(path: String)
+
+    /// A copy of a related repo whose board cannot be read, for example a log file with no read permission
+    /// (divergence.md Q7). The call continues: a read of the board gives nothing, and each dependency on a task of
+    /// the board is not done. A board with a ``UnreadableBoard/callFailure`` stops the call.
+    case unreadable(UnreadableBoard)
 }
 
 extension BoardResolution {
@@ -398,6 +403,40 @@ extension BoardResolution {
     ///   - root: The root directory of the current repo.
     init(of copy: BoardCopy, currentRoot root: URL) {
         self = copy.directory.canonicalPath == root.canonicalPath ? .current : .copy(copy)
+    }
+
+    /// The board that cannot be read, or `nil` for each other resolution.
+    var unreadableBoard: UnreadableBoard? {
+        guard case .unreadable(let board) = self else {
+            return nil
+        }
+        return board
+    }
+}
+
+/// A copy of a related repo whose board cannot be read (divergence.md Q7). The response of each call that reaches the
+/// board has a warning that names the board and the reason. A board of the old Rust kanban is the one exception: it
+/// stops each call that reaches it (divergence.md Q6), and only the change feed continues without it.
+struct UnreadableBoard: Hashable, Sendable {
+    /// The code of the warning of a board that cannot be read, in `extensions.warnings` (plan.md §4.4).
+    static let warningCode = "BOARD_UNREADABLE"
+
+    /// The copy of the repo of the board.
+    let copy: BoardCopy
+
+    /// The error of the load, as text.
+    let reason: String
+
+    /// The error that stops each call that reaches the board, for example
+    /// ``KanbanError/incompatibleBoard(directory:)``, or `nil` when the call continues with a warning.
+    let callFailure: KanbanError?
+
+    /// The text of the warning: the key and the `.kanban/` directory of the board, the reason, and what the call did.
+    var warningMessage: String {
+        let directory = EventLog(repositoryAt: copy.directory).directory.path
+        return "The related board \(copy.key) at `\(directory)` cannot be read: \(reason). The call continued without "
+            + "this board, and each dependency on a task of this board is not done. Correct the board. The next call "
+            + "after a change of its files reads it again."
     }
 }
 

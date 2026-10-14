@@ -470,7 +470,9 @@ public actor KanbanGraph {
     }
 
     /// Runs one call on a copy of the session of the board of the working directory, and commits the patches that its
-    /// mutation fields kept (plan.md §5.4). The call loads the related boards that it asks for. The new session goes
+    /// mutation fields kept (plan.md §5.4). The call loads the related boards that it asks for. A related board that
+    /// cannot be read gives one warning in the response (divergence.md Q7), and a related board of the old Rust kanban
+    /// stops the call with `INCOMPATIBLE_BOARD` (divergence.md Q6). The new session goes
     /// back to the engine while the call holds the gate, also when the call fails, because a commit check can apply
     /// the changed files of a different process before the call fails.
     ///
@@ -509,7 +511,9 @@ public actor KanbanGraph {
                     try await self.admit(paths, holding: held, current: engine)
                 },
                 { store in
-                    try await call(KanbanContext(store: store, clock: clock, search: search, feed: feeds))
+                    let context = KanbanContext(store: store, clock: clock, search: search, feed: feeds)
+                    try await Self.checkUnreadableBoards(of: store, in: context)
+                    return try await call(context)
                 }
             )
             await engine.replaceSession(with: session)
@@ -517,6 +521,29 @@ public actor KanbanGraph {
         } catch {
             await engine.replaceSession(with: session)
             throw error
+        }
+    }
+
+    /// Checks the related boards that a run reached and that cannot be read (divergence.md Q7). A board that stops each
+    /// call, for example a board of the old Rust kanban (divergence.md Q6), stops the run with its error. Else the
+    /// response of the run gets one warning for each of these boards, with the key and the `.kanban/` directory of the
+    /// board and the reason.
+    ///
+    /// - Parameters:
+    ///   - store: The store of the run. Its related boards are answered for each request of the run.
+    ///   - context: The context of the run, whose warnings become `extensions.warnings` of the response.
+    /// - Throws: The ``UnreadableBoard/callFailure`` of the first board in the sort order of the path that has one,
+    ///   for example ``KanbanError/incompatibleBoard(directory:)``.
+    private static func checkUnreadableBoards(
+        of store: BoardStore,
+        in context: KanbanContext
+    ) async throws(KanbanError) {
+        let boards = await store.unreadableBoards
+        if let failure = boards.lazy.compactMap(\.callFailure).first {
+            throw failure
+        }
+        for board in boards {
+            await context.warnings.add(board.warningMessage, code: UnreadableBoard.warningCode)
         }
     }
 
@@ -595,7 +622,9 @@ public actor KanbanGraph {
     /// operation of each session and after each batch of a file watcher. A view with no subscriber does nothing.
     ///
     /// Before it makes the changes, the view loads each board that a `dependsOn` edge of its board reaches, so that
-    /// the derived fields read the tasks of those boards. A board that cannot load is recorded with swift-log, and the
+    /// the derived fields read the tasks of those boards. A related board that cannot load, also a board of the old
+    /// Rust kanban, does not stop the changes (divergence.md Q7, X12): the derived fields read no task of that board,
+    /// and the changes of the boards that load go out. Only a cancel of the task is recorded with swift-log, and the
     /// changes are then not sent.
     ///
     /// - Parameter changed: The changes of each board that changed, by the canonical path of its repo directory.
@@ -615,7 +644,7 @@ public actor KanbanGraph {
             related = try await relatedBoards(updating: .loadable, toAnswer: requests, current: copy)
         } catch {
             Log.kanban.error(
-                "The change feed cannot load the boards that the dependencies reach; the changes are not sent",
+                "The change feed stopped while it read the boards of the dependencies; the changes are not sent",
                 metadata: ["error": "\(error)"]
             )
             return
@@ -723,10 +752,9 @@ public actor KanbanGraph {
     ///   - related: The related boards of the run.
     ///   - requests: The requests of the run.
     ///   - current: The copy of the current board: the top folder of its worktree and its current key.
-    /// - Returns: The related boards with an answer for each request, and with each loaded related board.
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during a scan. A
-    ///   ``BoardWatcherError`` when the watcher of a board cannot start, or an ``EventLogError`` when a log file cannot
-    ///   be read.
+    /// - Returns: The related boards with an answer for each request, and with each loaded related board. A board that
+    ///   cannot load is ``BoardResolution/unreadable(_:)`` (divergence.md Q7).
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during a scan or a load.
     private func relatedBoards(
         updating related: RelatedBoards,
         toAnswer requests: Set<BoardRequest>,
@@ -800,8 +828,7 @@ public actor KanbanGraph {
     ///   - request: The request.
     ///   - current: The copy of the current board: the top folder of its worktree and its current key.
     /// - Returns: The answer, for the related boards of the next run.
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the scan. A
-    ///   ``BoardWatcherError`` or an ``EventLogError`` when a board cannot load.
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the scan or a load.
     private func answer(_ request: BoardRequest, current: BoardCopy) async throws -> BoardAnswer {
         switch request {
         case .board(let reference):
@@ -816,9 +843,8 @@ public actor KanbanGraph {
     /// - Parameters:
     ///   - reference: The board ref.
     ///   - current: The copy of the current board: the top folder of its worktree and its current key.
-    /// - Returns: The board.
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the scan. A
-    ///   ``BoardWatcherError`` or an ``EventLogError`` when the board cannot load.
+    /// - Returns: The board. A board that cannot load is ``BoardResolution/unreadable(_:)``.
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the scan or the load.
     private func loadBoard(named reference: String, current: BoardCopy) async throws -> BoardResolution {
         let resolution = try await resolution(of: reference, current: current)
         guard case .copy(let copy) = resolution else {
@@ -867,9 +893,8 @@ public actor KanbanGraph {
     /// the same time (divergence.md §16, L5).
     ///
     /// - Parameter root: The top folder of the worktree of the current board.
-    /// - Returns: The copies, in scan order.
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the scan. A
-    ///   ``BoardWatcherError`` or an ``EventLogError`` when a board cannot load: of the first such copy in scan order.
+    /// - Returns: The copies, in scan order. A copy whose board cannot load is ``BoardResolution/unreadable(_:)``.
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the scan or a load.
     private func loadEachCopy(around root: URL) async throws -> [ListedCopy] {
         let index = try await host.currentScanIndex(around: root)
         return try await index.copies.concurrentMap { copy in
@@ -882,8 +907,8 @@ public actor KanbanGraph {
     /// - Parameters:
     ///   - copy: The copy that the scan found.
     ///   - root: The top folder of the worktree of the current board.
-    /// - Returns: The copy in the list.
-    /// - Throws: A ``BoardWatcherError`` or an ``EventLogError`` when the board cannot load.
+    /// - Returns: The copy in the list. A copy whose board cannot load is ``BoardResolution/unreadable(_:)``.
+    /// - Throws: The error of the load when the task is cancelled.
     private func listedCopy(of copy: BoardCopy, currentRoot root: URL) async throws -> ListedCopy {
         let resolution = BoardResolution(of: copy, currentRoot: root)
         guard case .copy(let related) = resolution else {
@@ -899,12 +924,30 @@ public actor KanbanGraph {
     /// by a different path gives ``BoardResolution/current``, and a copy whose engine has a different path text gives
     /// the copy at the path of the engine.
     ///
+    /// A board that cannot load, for example a log file with no read permission, is
+    /// ``BoardResolution/unreadable(_:)`` (divergence.md Q7): a call continues with a warning that names it, and the
+    /// change feed continues without it. A board of the old Rust kanban keeps its error as the
+    /// ``UnreadableBoard/callFailure``, so it still stops each call with `INCOMPATIBLE_BOARD` (divergence.md Q6).
+    ///
     /// - Parameter copy: The copy of the related repo.
-    /// - Returns: The board: the copy at the root directory of its engine, or ``BoardResolution/current``.
-    /// - Throws: A ``BoardWatcherError`` when the watcher cannot start, or an ``EventLogError`` when a log file cannot
-    ///   be read. Then the board is not loaded.
+    /// - Returns: The board: the copy at the root directory of its engine, ``BoardResolution/current``, or
+    ///   ``BoardResolution/unreadable(_:)`` when the board cannot load.
+    /// - Throws: The error of the load when the task is cancelled.
     private func loadRelatedBoard(_ copy: BoardCopy) async throws -> BoardResolution {
-        let engine = try await host.engine(ofBoardAt: copy.directory, knownKey: copy.key)
+        let engine: BoardEngine
+        do {
+            engine = try await host.relatedEngine(ofBoardAt: copy.directory, knownKey: copy.key)
+        } catch {
+            guard !Task.isCancelled else {
+                throw error
+            }
+            let board = UnreadableBoard(
+                copy: copy,
+                reason: String(describing: error),
+                callFailure: KanbanError(callFailure: error)
+            )
+            return .unreadable(board)
+        }
         if case .resolved(.board(let current)) = boardState, current.identity == engine.identity {
             return .current
         }

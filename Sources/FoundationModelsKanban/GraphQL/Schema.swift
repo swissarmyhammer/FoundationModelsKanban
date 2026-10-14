@@ -116,9 +116,9 @@ actor BoardStore {
     /// Finds the board that a board ref names, as the run sees it (plan.md §6.6, board refs).
     ///
     /// - Parameter reference: The board ref: a board key, a repo directory name, a path, or the URI of a board.
-    /// - Returns: The current board or a copy of a related repo (never ``BoardResolution/notFound`` or
-    ///   ``BoardResolution/notARepo(path:)``), or `nil` when the engine did not resolve the ref yet. The store then
-    ///   records the request, and the call runs again after the load.
+    /// - Returns: The current board, a copy of a related repo, or a copy whose board cannot be read (never
+    ///   ``BoardResolution/notFound`` or ``BoardResolution/notARepo(path:)``), or `nil` when the engine did not resolve
+    ///   the ref yet. The store then records the request, and the call runs again after the load.
     /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the ref.
     ///   ``KanbanError/notARepo(path:)`` when the ref is the path of a folder that is not in a git repo.
     private func resolution(ofBoardNamed reference: String) throws(KanbanError) -> BoardResolution? {
@@ -131,7 +131,7 @@ actor BoardStore {
             return nil
         }
         switch resolution {
-        case .current, .copy:
+        case .current, .copy, .unreadable:
             return resolution
         case .notFound:
             throw .boardNotFound(reference: reference, searchRoots: related.searchRoots.map(\.path))
@@ -240,6 +240,8 @@ actor BoardStore {
     ///   and the call runs again after the load.
     /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the ref.
     ///   ``KanbanError/notARepo(path:)`` when the ref is the path of a folder that is not in a git repo.
+    ///   ``KanbanError/notFound(type:reference:)`` for the board when its board cannot be read (divergence.md Q7): the
+    ///   field writes nothing, and the warning of the response names the board.
     func target(of board: MutationBoard) throws(KanbanError) -> MutationTarget? {
         guard let reference = board.reference else {
             return .current
@@ -247,10 +249,28 @@ actor BoardStore {
         guard let resolution = try resolution(ofBoardNamed: reference) else {
             return nil
         }
-        guard case .copy(let copy) = resolution else {
+        switch resolution {
+        case .copy(let copy):
+            return relatedTarget(of: copy, namedBy: reference)
+        case .unreadable:
+            throw .notFound(type: .board, reference: reference)
+        case .current, .notFound, .notARepo:
             return .current
         }
-        return relatedTarget(of: copy, namedBy: reference)
+    }
+
+    /// Each related board that the run reached and that cannot be read (divergence.md Q7). The response of the run
+    /// has one warning for each of them.
+    var unreadableBoards: [UnreadableBoard] {
+        related.unreadableBoards
+    }
+
+    /// Tells if a board ref names a related board that cannot be read (divergence.md Q7).
+    ///
+    /// - Parameter reference: The board ref.
+    /// - Returns: `true` when the engine resolved the ref to a board that cannot be read.
+    func isUnreadable(board reference: String) -> Bool {
+        related.resolution(ofBoard: reference)?.unreadableBoard != nil
     }
 
     /// Gives the working copy of a copy of a related repo for a mutation field: the working copy of the run when an

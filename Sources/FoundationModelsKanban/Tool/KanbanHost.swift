@@ -36,6 +36,11 @@ public actor KanbanHost {
     /// The engine of each board, by the identity of its repo directory: loaded, or loading.
     private var engines: [FolderIdentity: EngineSlot] = [:]
 
+    /// Each related board whose last load failed, by the identity of its repo directory (divergence.md Q7). A related
+    /// load of such a board gives the same error again, with no read of a file, until the file watcher of the board
+    /// sees a change.
+    private var unloadableBoards: [FolderIdentity: UnloadableBoard] = [:]
+
     /// The index of the last scan of each list of scan places, and when it can serve a call with no new scan
     /// (plan.md §6.6, index life; divergence.md §16, Gap 1).
     private var scanCache = ScanCache()
@@ -123,7 +128,51 @@ public actor KanbanHost {
     /// - Returns: The engine.
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when the folder cannot be read. An error of the load.
     func engine(ofBoardAt root: URL, knownKey: BoardKey? = nil) async throws -> BoardEngine {
+        try await engine(identifiedBy: try FolderIdentity(of: root), at: root, knownKey: knownKey)
+    }
+
+    /// Gives the engine of a related board, as ``engine(ofBoardAt:knownKey:)`` does, and marks a board that cannot
+    /// load (divergence.md Q7).
+    ///
+    /// When the load fails, the host keeps the error and starts a file watcher on the board. Each later related load
+    /// of the board gives the same error with no read of a file, until the watcher sees a change of the board: the
+    /// next load after the change reads the files again. A load that the host cannot repeat with the same result is
+    /// not marked: an incompatible (Rust) board, whose error stops each call (divergence.md Q6), and a load that a
+    /// cancel stopped.
+    ///
+    /// - Parameters:
+    ///   - root: The root directory of the repo of the board.
+    ///   - knownKey: The key of the board when the caller knows it, or `nil` to read it from git.
+    /// - Returns: The engine.
+    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when the folder cannot be read. An error of the load, or
+    ///   the kept error of the last load while the board did not change.
+    func relatedEngine(ofBoardAt root: URL, knownKey: BoardKey?) async throws -> BoardEngine {
         let identity = try FolderIdentity(of: root)
+        if engines[identity] == nil, let board = unloadableBoards[identity] {
+            throw board.error
+        }
+        do {
+            return try await engine(identifiedBy: identity, at: root, knownKey: knownKey)
+        } catch {
+            markUnloadable(identity, at: root, failingWith: error)
+            throw error
+        }
+    }
+
+    /// Gives the engine of a board by the identity of its repo directory, and loads the board when no engine has it
+    /// yet.
+    ///
+    /// - Parameters:
+    ///   - identity: The identity of the root directory.
+    ///   - root: The root directory of the repo of the board.
+    ///   - knownKey: The key of the board when the caller knows it, or `nil` to read it from git.
+    /// - Returns: The engine.
+    /// - Throws: An error of the load.
+    private func engine(
+        identifiedBy identity: FolderIdentity,
+        at root: URL,
+        knownKey: BoardKey?
+    ) async throws -> BoardEngine {
         switch engines[identity] {
         case .loaded(let engine):
             return engine
@@ -164,11 +213,74 @@ public actor KanbanHost {
             if isClosed {
                 await engine.close()
             }
+            await unloadableBoards.removeValue(forKey: identity)?.watch.end()
             return engine
         } catch {
             engines[identity] = nil
             throw error
         }
+    }
+
+    // MARK: - Boards that cannot load
+
+    /// Marks a related board whose load failed, and starts a file watcher on it, so that each later related load
+    /// gives the same error until the board changes (divergence.md Q7). A closed host starts no watcher, so it marks
+    /// nothing. When the watcher cannot start, the board is not marked, and the host records it with swift-log.
+    ///
+    /// - Parameters:
+    ///   - identity: The identity of the repo directory of the board.
+    ///   - root: The root directory of the repo of the board.
+    ///   - error: The error of the load.
+    private func markUnloadable(_ identity: FolderIdentity, at root: URL, failingWith error: any Error) {
+        guard
+            !isClosed,
+            unloadableBoards[identity] == nil,
+            KanbanError(callFailure: error) == nil,
+            !Task.isCancelled
+        else {
+            return
+        }
+        do {
+            let watch = try makeUnloadableWatch(of: root, identity)
+            unloadableBoards[identity] = UnloadableBoard(error: error, watch: watch)
+        } catch {
+            Log.kanban.warning(
+                "The host cannot watch a board that could not load, so each call loads the board again",
+                metadata: ["path": "\(root.path)", "error": "\(error)"]
+            )
+        }
+    }
+
+    /// Makes the watch of a board that could not load: a file watcher on its `.kanban/` directory, or on its repo
+    /// directory when `.kanban/` is not there, and a task that gives each batch to
+    /// ``unloadableBoardDidChange(_:at:)``. The task holds the host weakly.
+    ///
+    /// - Parameters:
+    ///   - root: The root directory of the repo of the board.
+    ///   - identity: The identity of the repo directory of the board.
+    /// - Returns: The watch.
+    /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when the watcher cannot start.
+    private func makeUnloadableWatch(
+        of root: URL,
+        _ identity: FolderIdentity
+    ) throws(BoardWatcherError) -> BoardWatch {
+        BoardWatch(of: try BoardWatcher.started(onBoardAt: root)) { [weak self] _ in
+            await self?.unloadableBoardDidChange(identity, at: root)
+        }
+    }
+
+    /// Forgets the mark of a board that could not load, because its file watcher saw a change: the next related load
+    /// of the board reads its files again. The watcher then stops.
+    ///
+    /// - Parameters:
+    ///   - identity: The identity of the repo directory of the board.
+    ///   - root: The root directory of the repo of the board.
+    private func unloadableBoardDidChange(_ identity: FolderIdentity, at root: URL) async {
+        guard let board = unloadableBoards.removeValue(forKey: identity) else {
+            return
+        }
+        configuration.loadObserver?.unreadableBoardDidChange(at: root)
+        await board.watch.watcher.stop()
     }
 
     /// The number of loaded boards. A test reads it to prove that each board loads one time.
@@ -282,14 +394,9 @@ public actor KanbanHost {
     /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when the watcher cannot start.
     private func makePlaceWatch(of place: URL) throws(BoardWatcherError) -> BoardWatch {
         let watched = WatchedPlace(watching: place)
-        let watcher = try BoardWatcher(watching: place)
-        let batches = watcher.batches
-        let consumer = Task { [weak self] in
-            for await paths in batches {
-                await self?.placeDidChange(watched, in: paths)
-            }
+        return BoardWatch(of: try StartedWatcher(watching: place)) { [weak self] paths in
+            await self?.placeDidChange(watched, in: paths)
         }
-        return BoardWatch(watcher: watcher, directory: place, consumer: consumer)
     }
 
     /// Applies the changes of one batch of the file watcher of a scan place to the scan indexes.
@@ -359,13 +466,15 @@ public actor KanbanHost {
 
     // MARK: - Close
 
-    /// Stops the file watcher of each board and of each scan place, and ends each subscription. The boards stay in
-    /// memory, and a board that loads later has no watcher. With no watcher on its places, a scan index is not
-    /// current any more. The shared host stays open for the life of the process; a test closes its own host.
+    /// Stops the file watcher of each board, of each scan place, and of each board that could not load, and ends
+    /// each subscription. The boards stay in memory, and a board that loads later has no watcher. With no watcher on
+    /// its places, a scan index is not current any more. A board that could not load loads again at its next related
+    /// load. The shared host stays open for the life of the process; a test closes its own host.
     func close() async {
         isClosed = true
-        let watches = placeWatches.values
+        let watches = Array(placeWatches.values) + unloadableBoards.values.map(\.watch)
         placeWatches = [:]
+        unloadableBoards = [:]
         for watch in watches {
             await watch.end()
         }
@@ -471,6 +580,16 @@ private enum EngineSlot {
 
     /// The board is loaded.
     case loaded(BoardEngine)
+}
+
+/// A related board that could not load (divergence.md Q7): the error of its last load, and the file watcher whose
+/// first batch makes the host load the board again.
+private struct UnloadableBoard {
+    /// The error of the last load of the board.
+    let error: any Error
+
+    /// The file watcher of the `.kanban/` directory of the board, or of its repo directory.
+    let watch: BoardWatch
 }
 
 /// A session view that the host does not keep alive.

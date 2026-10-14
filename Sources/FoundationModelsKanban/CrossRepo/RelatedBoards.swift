@@ -19,7 +19,7 @@ enum BoardRequest: Hashable, Sendable {
 
 /// One copy in the list of `Query.boards` (plan.md §6.6).
 struct ListedCopy: Sendable {
-    /// The board of the copy: the current board, or a copy of a related repo.
+    /// The board of the copy: the current board, a copy of a related repo, or a copy whose board cannot be read.
     let board: BoardResolution
 
     /// `true` when the copy has `.kanban/board.jsonl`.
@@ -216,7 +216,7 @@ struct RelatedBoards: Sendable {
             .copy(formerCurrent)
         case .copy(let copy) where copy.directory.canonicalPath == path:
             .current
-        case .copy, .notFound, .notARepo:
+        case .copy, .notFound, .notARepo, .unreadable:
             resolution
         }
     }
@@ -263,13 +263,27 @@ struct RelatedBoards: Sendable {
     /// Gives the loaded board of a resolved board ref.
     ///
     /// - Parameter resolution: The board.
-    /// - Returns: The loaded board, or `nil` when the board is not found, not in a git repo, or not loaded.
+    /// - Returns: The loaded board, or `nil` when the board is not found, not in a git repo, cannot be read, or is not
+    ///   loaded.
     func board(resolvedAs resolution: BoardResolution) -> BoardSnapshot? {
         switch resolution {
         case .current: current
         case .copy(let copy): boards[copy.directory.canonicalPath]
-        case .notFound, .notARepo: nil
+        case .notFound, .notARepo, .unreadable: nil
         }
+    }
+
+    /// Each related board that the run reached and that cannot be read: by a board ref, by a dependency, or in the
+    /// list of `Query.boards` (divergence.md Q7). Each board is one time in the list, in the sort order of the path
+    /// of its repo directory.
+    var unreadableBoards: [UnreadableBoard] {
+        let named = resolutions.values.compactMap(\.unreadableBoard)
+        let listed = (listing ?? []).compactMap(\.board.unreadableBoard)
+        let byPath = Dictionary(
+            (named + listed).map { board in (board.copy.directory.canonicalPath, board) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return byPath.keys.sorted().compactMap { path in byPath[path] }
     }
 
     /// Finds the task of a stored ref to a node of a different board.

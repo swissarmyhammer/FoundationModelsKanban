@@ -22,7 +22,7 @@ extension KanbanResolver {
     ///   and the subscriber is not added.
     /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for `board`. An
     ///   error of ``ChangeFilter/init(parsing:)`` or of ``ChangeFilter/check(against:)``.
-    ///   ``KanbanError/notFound(type:reference:)`` when the board has no repo directory to watch.
+    ///   ``KanbanError/notFound(type:reference:)`` when the board has no repo directory to watch, or cannot be read.
     func changes(context: KanbanContext, arguments: ChangesArguments) async throws(KanbanError) -> ChangeEvents {
         let store = context.store
         let events = try await Self.events(of: arguments, readIn: store, from: context.feed)
@@ -44,13 +44,17 @@ extension KanbanResolver {
     ///   ``ChangeFilter/check(against:)`` on the board now, for example `AMBIGUOUS_ID` for a `^id` value that is a
     ///   short id of two or more tasks.
     ///   ``KanbanError/notFound(type:reference:)`` for the board when the board has no repo directory to watch, for
-    ///   example a board in memory only. The subscription then gives one response with the error, and ends.
+    ///   example a board in memory only, or when the board is a related board that cannot be read (divergence.md Q7).
+    ///   The subscription then gives one response with the error, and ends.
     private static func events(
         of arguments: ChangesArguments,
         readIn store: BoardStore,
         from feed: SessionFeeds
     ) async throws(KanbanError) -> AsyncStream<ChangeEvent> {
         guard let view = try await store.view(ofBoard: arguments.board) else {
+            if let reference = arguments.board, await store.isUnreadable(board: reference) {
+                throw .notFound(type: .board, reference: reference)
+            }
             return ChangeEvent.endedStream()
         }
         let filter = try ChangeFilter(parsing: arguments.filter)
