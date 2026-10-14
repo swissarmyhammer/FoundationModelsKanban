@@ -12,12 +12,6 @@ import ULID
 /// Each test makes real git repos in a ``GitSandbox``. No test reads or changes the `.kanban/` directory of this repo.
 @Suite("Cross-repo: the check of a dependency on a different board on write", .watcherBudget, .timeLimit(.minutes(1)))
 struct DependencyTargetWarningTests {
-    /// The code of the warning of a dependency on a task that a found board does not have.
-    static let taskNotFoundCode = "DEPENDENCY_TASK_NOT_FOUND"
-
-    /// The code of the warning of a dependency on a board that the scan cannot find.
-    static let boardNotFoundCode = "DEPENDENCY_BOARD_NOT_FOUND"
-
     /// The selection of a written task: its id, and its readiness fields.
     static let selection = "{ id ready blockedBy { id } unresolvedDependsOn }"
 
@@ -95,7 +89,7 @@ struct DependencyTargetWarningTests {
             onlyByUnresolved: [missing],
             in: try Self.task(of: MutationName.addTask, in: response)
         )
-        try Self.expectWarning(coded: Self.taskNotFoundCode, naming: missing, in: response)
+        try Self.expectWarning(coded: DependencyWarnings.taskNotFoundCode, naming: missing, in: response)
     }
 
     @Test("addTask with a body task URL to a missing task on a found board works, blocks the task, and warns")
@@ -107,7 +101,7 @@ struct DependencyTargetWarningTests {
             onlyByUnresolved: [missing],
             in: try Self.task(of: MutationName.addTask, in: response)
         )
-        try Self.expectWarning(coded: Self.taskNotFoundCode, naming: missing, in: response)
+        try Self.expectWarning(coded: DependencyWarnings.taskNotFoundCode, naming: missing, in: response)
     }
 
     @Test("updateTask with a dependsOn URI to a missing task on a found board works, blocks the task, and warns")
@@ -124,7 +118,7 @@ struct DependencyTargetWarningTests {
             onlyByUnresolved: [missing],
             in: try Self.task(of: MutationName.updateTask, in: response)
         )
-        try Self.expectWarning(coded: Self.taskNotFoundCode, naming: missing, in: response)
+        try Self.expectWarning(coded: DependencyWarnings.taskNotFoundCode, naming: missing, in: response)
     }
 
     // MARK: - A board that is not found
@@ -141,7 +135,7 @@ struct DependencyTargetWarningTests {
             onlyByUnresolved: [target],
             in: try Self.task(of: MutationName.addTask, in: response)
         )
-        try Self.expectWarning(coded: Self.boardNotFoundCode, naming: target, in: response)
+        try Self.expectWarning(coded: DependencyWarnings.boardNotFoundCode, naming: target, in: response)
     }
 
     // MARK: - A task that exists

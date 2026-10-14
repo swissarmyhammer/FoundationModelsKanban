@@ -168,8 +168,8 @@ extension KanbanResolver {
 }
 
 extension KanbanContext {
-    /// Runs one `addTask` or `updateTask` field at the time of ``clock``, the same as
-    /// ``changeNode(named:on:_:)``, and adds the warnings of the field to the warnings of the run.
+    /// Runs one `addTask` or `updateTask` field with ``runMutation(named:on:_:)``, and adds the warnings of the field
+    /// to the warnings of the run.
     ///
     /// - Parameters:
     ///   - operation: The name of the public mutation of the field.
@@ -184,11 +184,7 @@ extension KanbanContext {
         on board: MutationBoard,
         _ body: sending (inout WorkingCopy, RefResolver, DateTime) throws -> TaskWrite
     ) async throws -> TaskObject? {
-        let time = clock()
-        let changed = try await store.runMutation(named: operation, on: board, at: time) { work, resolver in
-            try body(&work, resolver, time)
-        }
-        guard let changed else {
+        guard let changed = try await runMutation(named: operation, on: board, body) else {
             return nil
         }
         await warnings.add(contentsOf: changed.value.warnings)

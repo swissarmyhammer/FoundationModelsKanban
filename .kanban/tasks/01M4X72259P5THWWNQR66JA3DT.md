@@ -30,6 +30,33 @@ comments:
     - evidence: 7 files — Sources/FoundationModelsKanban/CrossRepo/RelatedBoards.swift, Sources/FoundationModelsKanban/GraphQL/DependencyWarnings.swift (new), Sources/FoundationModelsKanban/GraphQL/TaskMutations.swift, Sources/FoundationModelsKanban/GraphQL/ColumnActorMutations.swift, Sources/FoundationModelsKanban/GraphQL/ResponseWarnings.swift, Sources/FoundationModelsKanban/Identity/RefResolver.swift (doc only), Tests/FoundationModelsKanbanTests/CrossRepo/DependencyTargetWarningTests.swift (new), Tests/FoundationModelsKanbanTests/Mutations/AddUpdateTaskTests.swift; swift test 1260 passed, 0 failed
     - next: /review
   timestamp: 2026-10-14T22:36:32.388681+00:00
+- actor: claude-code
+  id: 01m4y9d2k27c0vkc3qs2yvqs5e
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 8 files
+    - test: green — swift test, 1260 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 7e32657
+    - review: findings — Sources/FoundationModelsKanban/GraphQL/TaskMutations.swift:182 (duplication/duplication), Sources/FoundationModelsKanban/GraphQL/TaskMutations.swift:182 (reuse/reuse), Tests/FoundationModelsKanbanTests/CrossRepo/DependencyTargetWarningTests.swift:19 (reuse/reuse)
+  timestamp: 2026-10-14T22:44:21.218710+00:00
+- actor: claude-code
+  id: 01m4y9pqdvm1r6zzjcn42w9mxt
+  text: |-
+    Review findings fixed (iteration 2).
+    - Findings 1 and 2 (duplication, reuse): new generic `KanbanContext.runMutation(named:on:_:)` in GraphQL/ColumnActorMutations.swift. It reads `clock()` and calls `BoardStore.runMutation` one time, and gives `(value, view)?`. `KanbanContext.changeNode` and `KanbanContext.changeTask` both call it. `changeTask` now only adds the warnings and reads the task object.
+    - `BoardStore.changeNode(named:on:at:_:)` had no caller after this change (only `KanbanContext.changeNode` called it), so I deleted it as dead code. The doc links that named it now name `runMutation(named:on:_:)`.
+    - Note: finding 1 says "Have changeNode and changeTask both call it" and also "Do not edit the existing changeNode copy". The dispatcher said that one shared helper that both call satisfies findings 1 and 2, so `KanbanContext.changeNode` changed only to call the helper.
+    - Finding 3: deleted both test-side code constants (`taskNotFoundCode` and `boardNotFoundCode`) in DependencyTargetWarningTests.swift; the tests use `DependencyWarnings.*`. AddUpdateTaskTests.swift also read `DependencyTargetWarningTests.boardNotFoundCode`; it now reads `DependencyWarnings.boardNotFoundCode`.
+    - Tool note: the `files` edit with `replace_all: true` changed only the first match. Check the count of replacements.
+    - swift test: 1260 tests in 95 suites passed. Only the accepted SwiftPM "missing creator" warning.
+  timestamp: 2026-10-14T22:49:37.467751+00:00
+- actor: claude-code
+  id: 01m4y9psm08wfbvyr3rwjq4x92
+  text: |-
+    ### implement — changed
+    - evidence: 4 files — Sources/FoundationModelsKanban/GraphQL/ColumnActorMutations.swift, Sources/FoundationModelsKanban/GraphQL/TaskMutations.swift, Tests/FoundationModelsKanbanTests/CrossRepo/DependencyTargetWarningTests.swift, Tests/FoundationModelsKanbanTests/Mutations/AddUpdateTaskTests.swift; swift test 1260 passed, 0 failed; 3 of 3 findings checked
+    - next: /review
+  timestamp: 2026-10-14T22:49:39.712618+00:00
 depends_on:
 - 01M4X6X6PS5P524DW45RBSSWN2
 - 01M4X71QQPKCEJ5490KD8R4C92
@@ -68,3 +95,14 @@ Change the code: S/Identity/RefResolver.swift:303-312 (`remoteRef`) and S/GraphQ
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-14 17:39)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 8 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsKanban/GraphQL/TaskMutations.swift:182` `duplication/duplication` — The new `KanbanContext.changeTask` repeats the body of the existing `KanbanContext.changeNode`. Both read `clock()`, call `store.runMutation` with the same arguments, return `nil` when the board is not loaded, and return the object of the changed node. Only the warnings handling and the return type differ. If the mutation flow changes, both copies must change in step. Make one shared helper that takes the body and returns the changed value plus its view, with the clock and the `runMutation` call written once. Have `changeNode` and `changeTask` both call it. The warnings are then added only in `changeTask`. Do not edit the existing `changeNode` copy as part of this change; if it must change, report that as a separate task.
+- [x] `Sources/FoundationModelsKanban/GraphQL/TaskMutations.swift:182` `reuse/reuse` — `KanbanContext.changeTask` repeats the body of `KanbanContext.changeNode` in ColumnActorMutations.swift: it reads `clock()`, calls `store.runMutation`, returns nil when the board is not loaded, and returns `view.object(of:)`. Only the body's return type (`TaskWrite`) and the added `warnings.add(contentsOf:)` call differ. The near-match was copied instead of generalized, so the mutation flow now lives in two places. Generalize the existing `KanbanContext.changeNode` so its body can return a result type `R` together with the object, or add a small generic helper that both `changeNode` and `changeTask` call. Keep the warnings hand-off as the only task-specific step in `changeTask`.
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/DependencyTargetWarningTests.swift:19` `reuse/reuse` — The test suite redeclares `boardNotFoundCode` with the same literal value as the production constant `DependencyWarnings.boardNotFoundCode`. The same drift risk applies. Delete the test-side constant and reference `DependencyWarnings.boardNotFoundCode` directly.

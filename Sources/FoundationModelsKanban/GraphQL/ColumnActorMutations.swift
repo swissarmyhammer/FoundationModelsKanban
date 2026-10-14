@@ -336,34 +336,6 @@ extension KanbanResolver {
 
 // MARK: - Store
 
-extension BoardStore {
-    /// Runs one public mutation field that changes one node, and gives the object of the node after the field.
-    ///
-    /// The field obeys the rules of ``runMutation(named:on:at:_:)``: it writes to the board that it names, with the
-    /// auto-init and the session actor of that board.
-    ///
-    /// - Parameters:
-    ///   - operation: The name of the public mutation of the field.
-    ///   - board: The board of the field.
-    ///   - time: The time of the change.
-    ///   - body: Makes and applies the patches of the field, and gives the local ref of the node. It gets the working
-    ///     copy, a resolver of the forgiving refs of the working graph, and the time.
-    /// - Returns: The object of the node, live or tombstoned, or `nil` when the engine did not load the board yet.
-    /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the ref. The
-    ///   error of the body, or an ``EventError`` when a patch breaks a rule of the log.
-    func changeNode<Object: SlotNodeObject>(
-        named operation: String,
-        on board: MutationBoard,
-        at time: DateTime,
-        _ body: (inout WorkingCopy, RefResolver, DateTime) throws -> LocalRef
-    ) throws -> Object? {
-        let changed = try runMutation(named: operation, on: board, at: time) { work, resolver in
-            try body(&work, resolver, time)
-        }
-        return changed.flatMap { ref, view in view.object(of: ref) }
-    }
-}
-
 extension BoardView {
     /// Gives the object of the node of a local ref, live or tombstoned.
     ///
@@ -375,8 +347,34 @@ extension BoardView {
 }
 
 extension KanbanContext {
+    /// Runs one public mutation field at the time of ``clock``, and gives the value of the body and the read view of
+    /// the board after the field.
+    ///
+    /// The field obeys the rules of ``BoardStore/runMutation(named:on:at:_:)``: it writes to the board that it names,
+    /// with the auto-init and the session actor of that board.
+    ///
+    /// - Parameters:
+    ///   - operation: The name of the public mutation of the field.
+    ///   - board: The board of the field.
+    ///   - body: Makes and applies the patches of the field, and gives its value. It gets the working copy, a resolver
+    ///     of the forgiving refs of the working graph, and the time.
+    /// - Returns: The value of the body and the read view of the board after the field, or `nil` when the engine did
+    ///   not load the board yet.
+    /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the ref. The
+    ///   error of the body, or an ``EventError`` when a patch breaks a rule of the log.
+    func runMutation<Value: Sendable>(
+        named operation: String,
+        on board: MutationBoard,
+        _ body: sending (inout WorkingCopy, RefResolver, DateTime) throws -> Value
+    ) async throws -> (value: Value, view: BoardView)? {
+        let time = clock()
+        return try await store.runMutation(named: operation, on: board, at: time) { work, resolver in
+            try body(&work, resolver, time)
+        }
+    }
+
     /// Runs one public mutation field that changes one node at the time of ``clock``, and gives the object of the node
-    /// after the field. The field obeys the rules of ``BoardStore/changeNode(named:on:at:_:)``.
+    /// after the field. The field obeys the rules of ``runMutation(named:on:_:)``.
     ///
     /// - Parameters:
     ///   - operation: The name of the public mutation of the field.
@@ -391,7 +389,8 @@ extension KanbanContext {
         on board: MutationBoard,
         _ body: sending (inout WorkingCopy, RefResolver, DateTime) throws -> LocalRef
     ) async throws -> Object? {
-        try await store.changeNode(named: operation, on: board, at: clock(), body)
+        let changed = try await runMutation(named: operation, on: board, body)
+        return changed.flatMap { ref, view in view.object(of: ref) }
     }
 }
 

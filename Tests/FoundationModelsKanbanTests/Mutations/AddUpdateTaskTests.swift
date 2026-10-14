@@ -603,7 +603,7 @@ struct AddUpdateTaskTests {
         let added = try #require(NameRewriteTests.data(of: response)[MutationName.addTask] as? [String: Any])
         #expect(added["ready"] as? Bool == false, "\(response)")
         try DependencyTargetWarningTests.expectWarning(
-            coded: DependencyTargetWarningTests.boardNotFoundCode,
+            coded: DependencyWarnings.boardNotFoundCode,
             naming: Self.remoteTask,
             in: response
         )
