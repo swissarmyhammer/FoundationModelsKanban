@@ -140,7 +140,8 @@ actor BoardEngine {
     ///   ``EventLogError`` when a file cannot be read, a ``BoardKeyError`` when git cannot give the key, or a
     ///   ``BoardWatcherError`` when the watcher cannot start.
     static func load(_ request: EngineLoad) async throws -> BoardEngine {
-        let started = request.startsWatcher ? try BoardWatcher.started(onBoardAt: request.root) : nil
+        let started =
+            request.startsWatcher ? try BoardWatcher.started(onBoardAt: request.root, in: request.folderStreams) : nil
         do {
             let session = try await request.session()
             let engine = BoardEngine(
@@ -325,7 +326,7 @@ actor BoardEngine {
             return nil
         }
         let moved = BoardWatch(
-            of: try StartedWatcher(watching: boardDirectory),
+            of: try StartedWatcher(watching: boardDirectory, in: watch.watcher.folderStreams),
             heldWeaklyBy: self,
             sendingBatchesTo: Self.batchDidArrive
         )
@@ -355,6 +356,9 @@ struct EngineLoad: Sendable {
 
     /// `true` when the engine starts a file watcher. A closed host loads a board with no watcher.
     let startsWatcher: Bool
+
+    /// The one FSEvents stream of the host, which watches the directory of the board (divergence.md §16).
+    let folderStreams: FolderStreams
 
     /// Sends the changes of a batch of the watcher to the session views.
     let publish: ChangePublisher
@@ -450,10 +454,12 @@ struct StartedWatcher: Sendable {
 
     /// Starts a file watcher on one directory.
     ///
-    /// - Parameter directory: The directory to watch.
+    /// - Parameters:
+    ///   - directory: The directory to watch.
+    ///   - folderStreams: The FSEvents stream of the host.
     /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when the watcher cannot start.
-    init(watching directory: URL) throws(BoardWatcherError) {
-        watcher = try BoardWatcher(watching: directory)
+    init(watching directory: URL, in folderStreams: FolderStreams) throws(BoardWatcherError) {
+        watcher = try BoardWatcher(watching: directory, in: folderStreams)
         self.directory = directory
     }
 }
@@ -462,11 +468,16 @@ extension BoardWatcher {
     /// Starts a file watcher on a board: on its `.kanban/` directory, or on the repo directory when `.kanban/` is not
     /// there.
     ///
-    /// - Parameter root: The root directory of the repo of the board.
+    /// - Parameters:
+    ///   - root: The root directory of the repo of the board.
+    ///   - folderStreams: The FSEvents stream of the host.
     /// - Returns: The started watcher.
     /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when the watcher cannot start.
-    static func started(onBoardAt root: URL) throws(BoardWatcherError) -> StartedWatcher {
-        try StartedWatcher(watching: existingBoardDirectory(ofBoardAt: root) ?? root)
+    static func started(
+        onBoardAt root: URL,
+        in folderStreams: FolderStreams
+    ) throws(BoardWatcherError) -> StartedWatcher {
+        try StartedWatcher(watching: existingBoardDirectory(ofBoardAt: root) ?? root, in: folderStreams)
     }
 
     /// Gives the `.kanban/` directory of a board when it is there.

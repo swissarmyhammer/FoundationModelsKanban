@@ -4,10 +4,11 @@ import Testing
 
 /// Limits the number of tests that run at the same time and can hold a file watcher.
 ///
-/// Each loaded board of a ``KanbanGraph`` holds one FSEvents stream, and the system gives a small number of streams
-/// to all processes together. When too many tests hold a graph at the same time, `FSEventStreamStart` fails, and the
-/// call of the test throws ``BoardWatcherError/streamNotStarted(path:)``. A test takes one slot of the budget for the
-/// time that it runs. The graph of the test, and its streams, are gone before the slot is free.
+/// Each host of a test, and each ``FolderStreams`` that a test makes, holds one FSEvents stream, and the system gives a
+/// small number of streams to all processes together. When too many tests hold a stream at the same time,
+/// `FSEventStreamStart` fails, and the call of the test throws ``BoardWatcherError/streamNotStarted(path:)``. A test
+/// takes one slot of the budget for the time that it runs. The host of the test, and its stream, are gone before the
+/// slot is free.
 enum WatcherBudget {
     /// The number of tests that can hold a slot at the same time. Each test holds at most a few streams, so the whole
     /// budget stays far below the limit of the system.

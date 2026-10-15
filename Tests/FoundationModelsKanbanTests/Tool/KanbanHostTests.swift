@@ -114,9 +114,7 @@ struct KanbanHostTests {
     @Test("A load that fails after it started tells the load observer that it ended")
     func failedLoadTellsItsEnd() async throws {
         let directory = try TemporaryDirectory()
-        let (task, _) = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
-        let file = EventLog(repositoryAt: directory.url).fileURL(for: .task(task))
-        try FileManager.default.setAttributes([.posixPermissions: Self.unreadablePermissions], ofItemAtPath: file.path)
+        try Self.writeUnreadableBoard(inRepoAt: directory.url)
         let recorder = LoadRecorder()
         let host = HostFixture.makeHost(observingLoadsWith: recorder)
         await #expect(throws: EventLogError.self) {
@@ -215,7 +213,7 @@ struct KanbanHostTests {
         let engine = try await host.engine(ofBoardAt: directory.url)
         await engine.close()
         let moved = BoardWatch(
-            watcher: try BoardWatcher(watching: directory.url),
+            watcher: try BoardWatcher(watching: directory.url, in: host.folderStreams),
             directory: directory.url,
             consumer: Task {}
         )
@@ -327,6 +325,87 @@ struct KanbanHostTests {
         #expect(try await KanbanGraphTests.execute(Self.countQuery, on: merged) == Self.countResponse(of: 2))
         await reader.close()
     }
+
+    // MARK: - One FSEvents stream
+
+    @Test("A host with many boards, scan places, and boards that cannot load holds one FSEvents stream")
+    func hostHoldsOneStream() async throws {
+        let boards = try (0..<Self.streamTestBoardCount).map { _ in try TemporaryDirectory() }
+        for board in boards {
+            _ = try KanbanGraphTests.writeFixture(inRepoAt: board.url)
+        }
+        let place = try ScanPlace.make()
+        let unreadable = try TemporaryDirectory()
+        try Self.writeUnreadableBoard(inRepoAt: unreadable.url)
+        let host = HostFixture.makeHost()
+        for board in boards {
+            _ = try await host.engine(ofBoardAt: board.url)
+        }
+        _ = try await host.currentScanIndex(around: place.app)
+        await #expect(throws: EventLogError.self) {
+            try await host.relatedEngine(ofBoardAt: unreadable.url, knownKey: nil)
+        }
+        let places = await host.locator.places(around: place.app)
+        #expect(host.folderStreams.folderCount == boards.count + places.count + 1)
+        #expect(host.folderStreams.streamCount == 1)
+        await host.close()
+        #expect(host.folderStreams.streamCount == 0)
+    }
+
+    @Test("A manual edit of a board while a second board loads reaches the first board")
+    func editDuringSecondLoadArrives() async throws {
+        let first = try TemporaryDirectory()
+        let second = try TemporaryDirectory()
+        var (task, ids) = try KanbanGraphTests.writeFixture(inRepoAt: first.url)
+        _ = try KanbanGraphTests.writeFixture(inRepoAt: second.url)
+        let recorder = BatchRecorder()
+        let host = HostFixture.makeHost(observingBatchesWith: recorder)
+        let session = try await host.session(workingDirectory: first.url, actor: Self.firstActor)
+        try BoardWatcherTests.writeLaterTitle(to: task, mintingFrom: &ids, in: EventLog(repositoryAt: first.url))
+        _ = try await host.engine(ofBoardAt: second.url)
+        let expected = KanbanGraphTests.boardResponse(withTask: task, titled: KanbanGraphTests.laterTitle)
+        let query = KanbanGraphTests.boardQuery
+        #expect(try await BoardWatcherTests.query(query, reaches: expected, on: session, recordedBy: recorder))
+        await host.close()
+    }
+
+    @Test("A manual edit of one board of a host goes to the engine of that board only")
+    func editGoesToItsEngineOnly() async throws {
+        let first = try TemporaryDirectory()
+        let second = try TemporaryDirectory()
+        var (task, ids) = try KanbanGraphTests.writeFixture(inRepoAt: first.url)
+        let (secondTask, _) = try KanbanGraphTests.writeFixture(inRepoAt: second.url)
+        let recorder = BatchRecorder()
+        let host = HostFixture.makeHost(observingBatchesWith: recorder)
+        let firstSession = try await host.session(workingDirectory: first.url, actor: Self.firstActor)
+        let secondSession = try await host.session(workingDirectory: second.url, actor: Self.secondActor)
+        let firstLog = EventLog(repositoryAt: first.url)
+        try BoardWatcherTests.writeLaterTitle(to: task, mintingFrom: &ids, in: firstLog)
+        let expected = KanbanGraphTests.boardResponse(withTask: task, titled: KanbanGraphTests.laterTitle)
+        let query = KanbanGraphTests.boardQuery
+        #expect(try await BoardWatcherTests.query(query, reaches: expected, on: firstSession, recordedBy: recorder))
+        let unchanged = KanbanGraphTests.boardResponse(withTask: secondTask, titled: KanbanGraphTests.taskTitle)
+        #expect(try await KanbanGraphTests.execute(query, on: secondSession) == unchanged)
+        let boardPath = firstLog.directory.canonicalPath + "/"
+        #expect(recorder.appliedBatches.joined().allSatisfy { file in file.canonicalPath.hasPrefix(boardPath) })
+        await host.close()
+    }
+
+    // MARK: - Helpers
+
+    /// The number of boards that the stream test loads.
+    static let streamTestBoardCount = 3
+
+    /// Writes the fixture board in a repo, and takes the read permission from the log file of its task, so that a
+    /// load of the board fails.
+    ///
+    /// - Parameter root: The root directory of the repo.
+    /// - Throws: An error when a file cannot be written or changed.
+    static func writeUnreadableBoard(inRepoAt root: URL) throws {
+        let (task, _) = try KanbanGraphTests.writeFixture(inRepoAt: root)
+        let file = EventLog(repositoryAt: root).fileURL(for: .task(task))
+        try FileManager.default.setAttributes([.posixPermissions: unreadablePermissions], ofItemAtPath: file.path)
+    }
 }
 
 // MARK: - Fixture
@@ -348,6 +427,7 @@ enum HostFixture {
     ///   - workerObserver: Gets a call when each worker of a loader reads a file, or `nil` for no calls.
     ///   - embedder: The embedder of the search of each board, or `nil` for BM25 and trigram only.
     ///   - scanObserver: Gets a call when each scan starts and when a scan place changes, or `nil` for no calls.
+    ///   - batchObserver: Gets a call when a file watcher applies a batch, or `nil` for no calls.
     /// - Returns: The host.
     static func makeHost(
         readingKeyWith keyReader: @escaping BoardKeyReader = KanbanGraphTests.fakeKey,
@@ -356,7 +436,8 @@ enum HostFixture {
         observingLoadsWith loadObserver: (any BoardLoadObserver)? = nil,
         reportingWorkersTo workerObserver: (any LoaderWorkerObserver)? = nil,
         embeddingWith embedder: (any PooledEmbedding)? = nil,
-        observingScansWith scanObserver: (any BoardScanObserver)? = nil
+        observingScansWith scanObserver: (any BoardScanObserver)? = nil,
+        observingBatchesWith batchObserver: (any LiveGraphObserver)? = nil
     ) -> KanbanHost {
         KanbanHost(
             configuration: HostConfiguration(
@@ -365,6 +446,7 @@ enum HostFixture {
                 clock: { KanbanGraphTests.time },
                 ids: ids,
                 embedder: embedder,
+                batchObserver: batchObserver,
                 loadObserver: loadObserver,
                 workerObserver: workerObserver,
                 scanObserver: scanObserver

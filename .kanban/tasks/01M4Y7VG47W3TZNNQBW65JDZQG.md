@@ -19,8 +19,17 @@ comments:
     - RED: 2 tests failed with "no field unresolvedDependsOn". GREEN: 2 tests passed. Full `swift test`: 1514 tests in 120 suites passed; only the accepted SwiftPM "missing creator" warning.
     - next: /review
   timestamp: 2026-10-15T18:04:55.066918+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m50caky9af4mtva3381kdzzk
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 2 files
+    - test: green — swift test, 1514 passed, 0 failed, 0 skipped; IntegrationTests 3 passed
+    - commit: 0fc4e64
+    - review: clean — none (review sha HEAD~1..HEAD: 0 findings, 0 confirmed, 1 refuted, 7 attempted, 0 failed)
+  timestamp: 2026-10-15T18:13:55.273005+00:00
+position_column: done
+position_ordinal: ff8880
 title: Send unresolvedDependsOn changes in the change feed
 ---
 ## What

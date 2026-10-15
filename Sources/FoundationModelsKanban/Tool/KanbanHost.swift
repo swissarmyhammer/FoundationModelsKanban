@@ -27,6 +27,11 @@ public actor KanbanHost {
     /// The readers, the clock, the ULID source, the writer, and the observers of the boards of the host.
     nonisolated let configuration: HostConfiguration
 
+    /// The one FSEvents stream of each folder that a file watcher of the host watches: the board directories, the
+    /// scan places, the boards that could not load, and the folders that a path ref named (divergence.md §16). The
+    /// system gives few FSEvents streams to all processes together, so the host does not start one for each folder.
+    nonisolated let folderStreams = FolderStreams()
+
     /// Finds the related boards (plan.md §6.6). ``configure(locator:embedder:)`` can change it before the first
     /// session.
     private(set) var locator: BoardLocator
@@ -211,6 +216,7 @@ public actor KanbanHost {
             configuration: configuration,
             embedder: embedder,
             startsWatcher: !isClosed,
+            folderStreams: folderStreams,
             publish: { [weak self] changed in await self?.publish(changed) }
         )
         let load = Task { try await BoardEngine.load(request) }
@@ -273,7 +279,8 @@ public actor KanbanHost {
         of root: URL,
         _ identity: FolderIdentity
     ) throws(BoardWatcherError) -> BoardWatch {
-        BoardWatch(of: try BoardWatcher.started(onBoardAt: root), heldWeaklyBy: self) { host, _ in
+        let started = try BoardWatcher.started(onBoardAt: root, in: folderStreams)
+        return BoardWatch(of: started, heldWeaklyBy: self) { host, _ in
             await host.unloadableBoardDidChange(identity, at: root)
         }
     }
@@ -594,7 +601,8 @@ public actor KanbanHost {
         of folder: URL,
         sendingBatchesTo receive: @escaping @Sendable (KanbanHost, [URL]) async -> Void
     ) throws(BoardWatcherError) -> BoardWatch {
-        BoardWatch(of: try StartedWatcher(watching: folder), heldWeaklyBy: self, sendingBatchesTo: receive)
+        let started = try StartedWatcher(watching: folder, in: folderStreams)
+        return BoardWatch(of: started, heldWeaklyBy: self, sendingBatchesTo: receive)
     }
 
     /// Records with swift-log that a file watcher of the host cannot start.
