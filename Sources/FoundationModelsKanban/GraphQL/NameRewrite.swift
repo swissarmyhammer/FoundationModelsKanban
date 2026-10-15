@@ -718,8 +718,27 @@ private struct RewriteWalk {
             return nil
         }
         replace(name, with: canonical, recordingAs: canonical, at: path + [name.text])
+        if let edit = Self.listEdit(of: value, ofType: type) {
+            edits.append(edit)
+        }
         try visitValue(value, ofType: getNamedType(type: type), under: coordinate, at: path + [name.text])
         return nil
+    }
+
+    /// Gives the edit that replaces a string literal at a list position with a GraphQL list literal of its items, when
+    /// the string is a JSON array of strings (divergence.md Q13). Thus `tags: "[\"bug\",\"ui\"]"` gives two tags.
+    ///
+    /// - Parameters:
+    ///   - value: The value of an argument or an `input` field.
+    ///   - type: The input type of the argument or the `input` field.
+    /// - Returns: The edit, or `nil` when the type is not a list, or the value is not such a string literal.
+    private static func listEdit(of value: any GraphQL.Value, ofType type: any GraphQLInputType) -> TextEdit? {
+        guard JSONListText.isList(type), let literal = JSONListText.listLiteral(of: value),
+              let start = value.loc?.start, let end = value.loc?.startToken.valueEnd.end
+        else {
+            return nil
+        }
+        return TextEdit(range: start..<end, replacement: literal)
     }
 
     /// Visits a value of an argument or an `input` field: each item of a list, each field of an `input` object, and
@@ -770,6 +789,10 @@ private struct RewriteWalk {
     /// coordinate of the aliases. A variable that the operation does not declare, or that the document does not read,
     /// stays as it is.
     ///
+    /// A string at a list position that is a JSON array of strings becomes the array of its items (divergence.md
+    /// Q13): the value of a variable whose declared type is a list, and the value of an `input` key whose type is a
+    /// list.
+    ///
     /// - Parameters:
     ///   - variables: The values of the variables, as the caller sent them.
     ///   - document: The parsed document.
@@ -782,8 +805,12 @@ private struct RewriteWalk {
         operationName: String?
     ) throws -> [String: Map] {
         let definitions = Self.variableDefinitions(in: document, operationName: operationName)
-        let rewritten = try variables.map { name, value in
-            guard let definition = definitions[name], let use = variableUses[name] else {
+        let rewritten = try variables.map { name, written in
+            guard let definition = definitions[name] else {
+                return (name, written)
+            }
+            let value = JSONListText.isList(definition.type) ? JSONListText.splitting(written) : written
+            guard let use = variableUses[name] else {
                 return (name, value)
             }
             let declared = Self.namedTypeName(of: definition.type).flatMap { type in schema.getType(name: type) }
@@ -865,8 +892,10 @@ private struct RewriteWalk {
             if target != field.key {
                 rewrites.append(NameRewrite(from: field.key, to: target, path: fieldPath))
             }
-            let fieldType = getNamedType(type: names.types[canonical])
-            return (target, try rewrittenValue(field.value, ofType: fieldType, at: fieldPath, readAt: read))
+            let fieldType = names.types[canonical]
+            let value = JSONListText.isList(fieldType) ? JSONListText.splitting(field.value) : field.value
+            let namedType = getNamedType(type: fieldType)
+            return (target, try rewrittenValue(value, ofType: namedType, at: fieldPath, readAt: read))
         }
         return OrderedDictionary(uniqueKeysWithValues: rewritten)
     }
