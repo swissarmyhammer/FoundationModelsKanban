@@ -7,7 +7,8 @@ extension MutationName {
     /// The mutation that makes a tag. It is idempotent on the slug.
     static let addTag = "addTag"
 
-    /// The mutation that changes the name, the color, or the body of a tag. The slug does not change.
+    /// The mutation that changes the name, the color, or the body of a tag. A name of a new slug renames the tag, the
+    /// same as ``renameTag`` (divergence.md C4).
     static let updateTag = "updateTag"
 
     /// The mutation that makes a tag a tombstone.
@@ -49,8 +50,8 @@ private struct UpdateTagInput: Decodable, Sendable {
     /// The tag: a full URI, the slug, or a tag name (plan.md §3.2). A renamed slug names the rename target.
     let id: NodeID
 
-    /// The new name of the tag. The tag name rule applies, and the slug does not change. `null` gives no change and a
-    /// warning (``IgnoredNull``).
+    /// The new name of the tag. The tag name rule applies. A name of the same slug changes only the display name, and
+    /// a name of a new slug renames the tag (divergence.md C4). `null` gives no change and a warning (``IgnoredNull``).
     let name: FieldUpdate<String>
 
     /// The new color of the tag.
@@ -111,15 +112,22 @@ extension KanbanResolver {
         }
     }
 
-    /// Resolves `Mutation.updateTag`: changes the given fields of a tag. The slug does not change. A renamed slug
-    /// names the rename target (plan.md §6.2).
+    /// Resolves `Mutation.updateTag`: changes the given fields of a tag. A renamed slug names the rename target
+    /// (plan.md §6.2).
+    ///
+    /// A name whose slug is the slug of the tag changes only the display name. A name whose slug is different renames
+    /// the tag, the same as `renameTag` (divergence.md C4, E1): a redirect from the old slug, or a merge into a tag
+    /// that has the new slug, and the same errors. The color and the body then go to the tag at the end of the rename.
     ///
     /// - Parameters:
     ///   - context: The context of the call.
     ///   - arguments: The tag and the changes.
-    /// - Returns: The tag after the change.
+    /// - Returns: The tag after the change: the tag at the end of the rename chain when the name renames the tag.
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live tag has the id.
     ///   ``KanbanError/invalidTagName(name:)`` when the new name gives an empty slug.
+    ///   ``KanbanError/reservedTagName`` when the new name renames the tag to the slug ``Slug/reservedForBoard``.
+    ///   ``KanbanError/virtualTagName(tag:)`` when the new name renames the tag to the name of a virtual tag.
+    ///   ``KanbanError/tagRenameCycle(path:)`` when the rename makes a rename cycle.
     fileprivate func updateTag(
         context: KanbanContext,
         arguments: InputArguments<UpdateTagInput>
@@ -131,13 +139,8 @@ extension KanbanResolver {
             on: board
         ) { work, resolver, time in
             let ref = try resolver.nodeRef(for: input.id, ofType: .tag)
-            let name = try input.name.ignoringNull.map { name in try TagName(normalizing: name).name }
-            let values = [
-                PropertyName.name: name.map(PatchValue.string),
-                PropertyName.color: input.color.map(PatchValue.string),
-            ]
-            try work.updateNode(ref, updating: values, body: input.body, at: time)
-            return ref
+            let name = try input.name.ignoringNull.map(TagName.init(normalizing:))
+            return try work.updateTag(ref, naming: name, color: input.color, body: input.body, at: time)
         }
         await context.warnIfNull(input.name, forField: PropertyName.name, of: MutationName.updateTag)
         return tag
@@ -283,6 +286,51 @@ extension WorkingCopy {
         let start = graph.slot(for: source)
         try checkNoRenameCycle(fromTagAt: start)
         return start.flatMap(graph.renameTarget(ofTagAt:)).flatMap(graph.node(at:))?.ref ?? target
+    }
+
+    /// Changes the given fields of a tag (divergence.md C4, E1).
+    ///
+    /// A name whose slug is different from the slug of the tag renames the tag with ``renameTag(_:to:at:)``, and the
+    /// color and the body go to the tag at the end of the rename. That tag keeps its own name: the new tag of a rename
+    /// gets the new name, and the target of a merge keeps its name. A name of the same slug is the new display name.
+    ///
+    /// - Parameters:
+    ///   - ref: The local ref of the tag.
+    ///   - name: The new name of the tag.
+    ///   - color: The new color of the tag.
+    ///   - body: The new body of the tag: the full text.
+    ///   - time: The time of the change.
+    /// - Returns: The local ref of the changed tag: the tag at the end of the rename chain when the name renames the
+    ///   tag.
+    /// - Throws: The errors of ``renameTag(_:to:at:)`` and of the new tag of the rename. An ``EventError`` when a patch
+    ///   breaks a rule of the log.
+    fileprivate mutating func updateTag(
+        _ ref: LocalRef,
+        naming name: FieldUpdate<TagName>,
+        color: FieldUpdate<String>,
+        body: FieldUpdate<String>,
+        at time: DateTime
+    ) throws -> LocalRef {
+        let newSlugName = Self.name(name, renaming: ref)
+        let target = try newSlugName.map { newName in try renameTag(ref, to: newName, at: time) } ?? ref
+        let displayName = newSlugName == nil ? name.map { newName in PatchValue.string(newName.name) } : .unchanged
+        let values = [PropertyName.name: displayName, PropertyName.color: color.map(PatchValue.string)]
+        try updateNode(target, updating: values, body: body, at: time)
+        return target
+    }
+
+    /// Gives the new name of a tag when the name renames the tag: when its slug is different from the slug of the tag
+    /// (divergence.md C4).
+    ///
+    /// - Parameters:
+    ///   - name: The new name of the tag.
+    ///   - ref: The local ref of the tag.
+    /// - Returns: The new name, or `nil` when the input gives no name or a name of the same slug.
+    private static func name(_ name: FieldUpdate<TagName>, renaming ref: LocalRef) -> TagName? {
+        guard case .changed(let newName) = name, LocalRef.tag(slug: newName.slug.value) != ref else {
+            return nil
+        }
+        return newName
     }
 
     /// Checks that the rename chain from a tag has no cycle (plan.md §6.2).

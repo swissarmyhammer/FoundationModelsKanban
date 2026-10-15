@@ -15,6 +15,9 @@ import ULID
 /// code wrote the new marker into each body. A rename to a tag that exists is a merge; the Rust code gave an error. A
 /// delete makes a tombstone and changes no task body, and the tasks lose the tag at read time; the Rust code removed
 /// the markers from each body.
+///
+/// `updateTag` with a name of a new slug does the same as `renameTag` (divergence.md C4, E1), so the rename tests run
+/// on the two fields.
 @Suite("Tag mutations", .watcherBudget)
 struct TagMutationTests {
     /// The slug of the first tag of a test.
@@ -40,6 +43,19 @@ struct TagMutationTests {
 
     /// The slug of ``spacedName``.
     private static let spacedSlug = "bug-fix"
+
+    /// A tag name whose slug is ``bug``: a display name that does not rename the tag.
+    private static let capitalizedName = "Bug"
+
+    /// The response key of each field of ``bugToDefectRenames``.
+    private static let renameKey = "rename"
+
+    /// The two fields that rename ``bug`` to ``defect``, each with the response key ``renameKey``: `renameTag`, and
+    /// `updateTag` with a name of a new slug (divergence.md C4).
+    private static let bugToDefectRenames = [
+        "\(renameKey): " + renameTag(from: bug, to: defect),
+        "\(renameKey): " + updateTag(naming: defect),
+    ]
 
     /// A slug that names no tag.
     private static let unknownTag = "nothing"
@@ -130,6 +146,16 @@ struct TagMutationTests {
         selecting selection: String = tagSelection
     ) -> String {
         #"renameTag(input: { from: "\#(source)", to: "\#(target)" }) \#(selection)"#
+    }
+
+    /// Makes an `updateTag` field that gives a new name to ``bug``.
+    ///
+    /// - Parameters:
+    ///   - name: The new tag name.
+    ///   - selection: The selection of the field.
+    /// - Returns: The field.
+    static func updateTag(naming name: String, selecting selection: String = tagSelection) -> String {
+        bugField(MutationName.updateTag, with: #"name: "\#(name)""#, selecting: selection)
     }
 
     /// Makes the `tags` part of an `addTask` input with one tag.
@@ -387,7 +413,7 @@ struct TagMutationTests {
     @Test("updateTag changes the name, the color, and the body, and keeps the slug")
     func updateTagChangesFields() async throws {
         let directory = try TemporaryDirectory()
-        let input = #"name: "\#(Self.spacedName)", \#(Self.greenInput), body: $body"#
+        let input = #"name: "\#(Self.capitalizedName)", \#(Self.greenInput), body: $body"#
         let update = Self.bugField("updateTag", with: input, selecting: "{ id name body }")
         let response = try await ColumnActorTests.respond(
             to: AddUpdateTaskTests.bodyMutation(of: Self.addTag(named: Self.bug), update),
@@ -395,11 +421,41 @@ struct TagMutationTests {
             onFixtureIn: directory
         )
         let id = ColumnActorTests.id(of: Self.bugTag)
-        let tag = #"{"body":"\#(ColumnActorTests.bodyJSON)","id":"\#(id)","name":"\#(Self.storedSpacedName)"}"#
+        let tag = #"{"body":"\#(ColumnActorTests.bodyJSON)","id":"\#(id)","name":"\#(Self.capitalizedName)"}"#
         #expect(response.hasSuffix(#""updateTag":\#(tag)}}"#))
-        let set = ColumnActorTests.setting(name: Self.storedSpacedName, color: ColumnActorTests.green)
+        let set = ColumnActorTests.setting(name: Self.capitalizedName, color: ColumnActorTests.green)
         let expected = try ColumnActorTests.bodyPatch(of: Self.bugTag, setting: set)
         #expect(try Self.lastPatch(of: Self.bugTag, in: directory) == expected)
+    }
+
+    @Test("updateTag with a name of the same slug changes only the display name, and writes no redirect")
+    func updateTagWithSameSlugChangesOnlyName() async throws {
+        let directory = try TemporaryDirectory()
+        let graph = try await Self.graph(after: Self.addBug, in: directory)
+        let response = try await CommentTests.run(Self.updateTag(naming: Self.capitalizedName), on: graph)
+        #expect(response == #"{"data":{"updateTag":\#(Self.tagJSON(Self.bug, named: Self.capitalizedName))}}"#)
+        let added = try PatchInput(node: Self.bugTag, set: Self.autoColorSetting(of: Self.bug))
+        let named = try PatchInput(node: Self.bugTag, set: [PropertyName.name: .string(Self.capitalizedName)])
+        #expect(try ColumnActorTests.patches(of: Self.bugTag, in: directory) == [added, named])
+    }
+
+    @Test("updateTag with a name of a new slug, a color, and a body sets the color and the body on the rename target")
+    func updateTagRenameSetsColorAndBodyOnTarget() async throws {
+        let directory = try TemporaryDirectory()
+        let input = #"name: "\#(Self.defect)", \#(Self.greenInput), body: $body"#
+        let update = Self.bugField("updateTag", with: input, selecting: "{ id color body }")
+        let response = try await ColumnActorTests.respond(
+            to: AddUpdateTaskTests.bodyMutation(of: Self.addTag(named: Self.bug), update),
+            with: ColumnActorTests.bodyVariables,
+            onFixtureIn: directory
+        )
+        let id = ColumnActorTests.id(of: Self.defectTag)
+        let tag = #"{"body":"\#(ColumnActorTests.bodyJSON)","color":"\#(ColumnActorTests.green)","id":"\#(id)"}"#
+        #expect(response.hasSuffix(#""updateTag":\#(tag)}}"#))
+        let set = [PropertyName.color: PatchValue.string(ColumnActorTests.green)]
+        let expected = try ColumnActorTests.bodyPatch(of: Self.defectTag, setting: set)
+        #expect(try Self.lastPatch(of: Self.defectTag, in: directory) == expected)
+        #expect(try Self.lastPatch(of: Self.bugTag, in: directory) == Self.redirect(of: Self.bugTag, to: Self.defect))
     }
 
     @Test("updateTag with only a color writes a set of the color, and keeps the name and the body")
@@ -519,27 +575,34 @@ struct TagMutationTests {
 
     // MARK: - renameTag
 
-    @Test("renameTag to a new slug writes the new tag with the color and the body of the old tag, then the redirect")
-    func renameTagToNewSlug() async throws {
+    @Test(
+        "A rename to a new slug writes the new tag with the color and the body of the old tag, then the redirect",
+        arguments: bugToDefectRenames
+    )
+    func renameTagToNewSlug(rename: String) async throws {
         let directory = try TemporaryDirectory()
         let add = Self.addTag(with: #"name: "\#(Self.bug)", color: "\#(ColumnActorTests.red)", body: $body"#)
         let response = try await ColumnActorTests.respond(
-            to: AddUpdateTaskTests.bodyMutation(of: add, Self.renameTag(from: Self.bug, to: Self.defect)),
+            to: AddUpdateTaskTests.bodyMutation(of: add, rename),
             with: ColumnActorTests.bodyVariables,
             onFixtureIn: directory
         )
-        #expect(response.hasSuffix(#""renameTag":\#(Self.tagJSON(Self.defect, color: ColumnActorTests.red))}}"#))
+        let defect = Self.tagJSON(Self.defect, color: ColumnActorTests.red)
+        #expect(response.hasSuffix(#""\#(Self.renameKey)":\#(defect)}}"#))
         let set = ColumnActorTests.setting(name: Self.defect, color: ColumnActorTests.red)
         let expected = try ColumnActorTests.bodyPatch(of: Self.defectTag, setting: set)
         #expect(try ColumnActorTests.patches(of: Self.defectTag, in: directory) == [expected])
         #expect(try Self.lastPatch(of: Self.bugTag, in: directory) == Self.redirect(of: Self.bugTag, to: Self.defect))
     }
 
-    @Test("After renameTag, a task with the old tag shows the new tag, and the filters of the two slugs match it")
-    func renamedTagShowsOnTask() async throws {
+    @Test(
+        "After a rename, a task with the old tag as an edge or a marker shows the new tag, and the two slugs match it",
+        arguments: bugToDefectRenames, [tags(bug), #"body: "\#(markedBody)""#]
+    )
+    func renamedTagShowsOnTask(rename: String, taskInput: String) async throws {
         let directory = try TemporaryDirectory()
-        let added = try await Self.addedTask(with: Self.tags(Self.bug), in: directory)
-        _ = try await CommentTests.run(Self.renameTag(from: Self.bug, to: Self.defect), on: added.graph)
+        let added = try await Self.addedTask(with: taskInput, in: directory)
+        _ = try await CommentTests.run(rename, on: added.graph)
         #expect(try await Self.tagNames(of: added.task, on: added.graph) == Self.tagNamesResponse(Self.defect))
         #expect(try await Self.respond(toFilter: "#\(Self.bug)", on: added.graph) == Self.oneMatch)
         #expect(try await Self.respond(toFilter: "#\(Self.defect)", on: added.graph) == Self.oneMatch)
@@ -563,16 +626,20 @@ struct TagMutationTests {
         #expect(response == #"{"data":{"board":{"tags":[{"name":"\#(Self.defect)"}]}}}"#)
     }
 
-    @Test("renameTag to a tag that exists writes only the redirect, and the tag keeps its own values")
-    func renameTagMergesIntoExistingTag() async throws {
+    @Test(
+        "A rename to a tag that exists writes only the redirect, and the tag keeps its own values",
+        arguments: bugToDefectRenames
+    )
+    func renameTagMergesIntoExistingTag(rename: String) async throws {
         let directory = try TemporaryDirectory()
         let mutation = AddUpdateTaskTests.mutation(
             of: "a: " + Self.addTag(named: Self.bug),
             "b: " + Self.addTag(with: #"name: "\#(Self.defect)", \#(Self.greenInput)"#),
-            Self.renameTag(from: Self.bug, to: Self.defect)
+            rename
         )
         let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
-        #expect(response.hasSuffix(#""renameTag":\#(Self.tagJSON(Self.defect, color: ColumnActorTests.green))}}"#))
+        let defect = Self.tagJSON(Self.defect, color: ColumnActorTests.green)
+        #expect(response.hasSuffix(#""\#(Self.renameKey)":\#(defect)}}"#))
         let added = try PatchInput(
             node: Self.defectTag,
             set: ColumnActorTests.setting(name: Self.defect, color: ColumnActorTests.green)

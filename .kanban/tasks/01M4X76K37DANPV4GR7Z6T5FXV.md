@@ -30,8 +30,17 @@ comments:
     - evidence: 8 files — Sources/FoundationModelsKanban/GraphQL/IgnoredNull.swift (new), Sources/FoundationModelsKanban/GraphQL/TaskMutations.swift, Sources/FoundationModelsKanban/GraphQL/ColumnActorMutations.swift, Sources/FoundationModelsKanban/GraphQL/TagMutations.swift, Sources/FoundationModelsKanban/GraphQL/MutationResolvers.swift, Tests/FoundationModelsKanbanTests/Mutations/AddUpdateTaskTests.swift, Tests/FoundationModelsKanbanTests/Mutations/ColumnActorTests.swift, Tests/FoundationModelsKanbanTests/Mutations/TagMutationTests.swift; `swift test` 1385 tests pass
     - next: /review
   timestamp: 2026-10-15T07:47:44.120196+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4z8s4wted8b89tdg4qkydmg
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 8 files
+    - test: green — swift test, 1385 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: eca2dbb
+    - review: clean — none
+  timestamp: 2026-10-15T07:52:42.650401+00:00
+position_column: done
+position_ordinal: fb80
 title: Ignore null on a required text field in update mutations
 ---
 ## What

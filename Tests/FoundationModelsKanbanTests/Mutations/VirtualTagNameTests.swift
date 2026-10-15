@@ -17,6 +17,7 @@ struct VirtualTagNameTests {
         (.addTagByID, "DONE", .done),
         (.addTagByURI, "Done", .done),
         (.renameTag, "High", .high),
+        (.updateTagName, "Done", .done),
         (.addTaskTag, "done", .done),
         (.updateTaskTag, "Low", .low),
         (.tagTask, "medium", .medium),

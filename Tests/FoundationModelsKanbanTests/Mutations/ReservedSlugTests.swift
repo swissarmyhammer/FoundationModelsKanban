@@ -68,6 +68,9 @@ struct ReservedSlugTests {
         /// `renameTag` to a name that gives the reserved slug.
         case renameTag
 
+        /// `updateTag` with a name that gives the reserved slug, which renames the tag (divergence.md C4, E1).
+        case updateTagName
+
         /// `addTask` with a tag name that gives the reserved slug.
         case addTaskTag
 
@@ -107,6 +110,7 @@ struct ReservedSlugTests {
             case .addTagByID: Self.idField(MutationName.addTag, id: id)
             case .addTagByURI: Self.idField(MutationName.addTag, id: Self.uri(of: LocalRef.tag, id: id))
             case .renameTag: TagMutationTests.renameTag(from: TagMutationTests.bug, to: name)
+            case .updateTagName: TagMutationTests.updateTag(naming: name)
             case .addTaskTag: AddUpdateTaskTests.addTask(with: TaskOperationTests.tagsInput(name))
             case .addTaskMarker: AddUpdateTaskTests.addTask(with: Self.markerBody(naming: name))
             case .updateTaskTag: AddUpdateTaskTests.updateTask(task, with: TaskOperationTests.tagsInput(name))
@@ -151,9 +155,9 @@ struct ReservedSlugTests {
             #"body: "\#(markedBody(naming: name))""#
         }
 
-        /// The document that runs before the field, or `nil` for none.
+        /// The document that runs before the field, or `nil` for none. A field that renames a tag needs the tag.
         var setup: String? {
-            guard self == .renameTag else {
+            guard self == .renameTag || self == .updateTagName else {
                 return nil
             }
             return AddUpdateTaskTests.mutation(of: TagMutationTests.addTag(named: TagMutationTests.bug))
@@ -166,8 +170,8 @@ struct ReservedSlugTests {
                 .reservedSlug(type: .column)
             case .addActorByName, .addActorByID, .addActorByURI, .addActorEnsure, .addCommentByNewActor:
                 .reservedSlug(type: .actor)
-            case .addTagByName, .addTagByID, .addTagByURI, .renameTag, .addTaskTag, .addTaskMarker, .updateTaskTag,
-                .updateTaskMarker, .tagTask:
+            case .addTagByName, .addTagByID, .addTagByURI, .renameTag, .updateTagName, .addTaskTag, .addTaskMarker,
+                .updateTaskTag, .updateTaskMarker, .tagTask:
                 .reservedTagName
             }
         }
