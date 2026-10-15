@@ -43,6 +43,11 @@ struct Event: Codable, Hashable, Sendable {
     /// The transaction that this transaction reverses, only on the patches of `undo` and `redo`.
     let undoes: ULID?
 
+    /// The count of the log files of this board that the transaction wrote, or `nil` for a line with no count, for
+    /// example a line of an older version (divergence.md Q23). The load applies the events of a transaction only when
+    /// at least this count of files of the board have lines of the transaction. A line with no count is complete.
+    private(set) var files: Int?
+
     /// The GraphQL document of the request.
     let query: String
 
@@ -64,6 +69,7 @@ struct Event: Codable, Hashable, Sendable {
     ///   - actor: The local ref of the actor.
     ///   - boards: The keys of the other boards that the transaction changes, or `nil` for this board only.
     ///   - undoes: The transaction that this transaction reverses, or `nil`.
+    ///   - files: The count of the log files of this board that the transaction wrote, or `nil` for no count.
     ///   - patch: The patch.
     init(
         id: ULID,
@@ -73,6 +79,7 @@ struct Event: Codable, Hashable, Sendable {
         actor: LocalRef,
         boards: [String]? = nil,
         undoes: ULID? = nil,
+        files: Int? = nil,
         patch: PatchInput
     ) {
         self.id = id
@@ -82,6 +89,7 @@ struct Event: Codable, Hashable, Sendable {
         self.actor = actor
         self.boards = boards
         self.undoes = undoes
+        self.files = files
         query = Self.patchQuery
         variables = Variables(patch: patch)
     }
@@ -137,6 +145,17 @@ extension Event {
         } catch {
             throw .unencodable(detail: String(describing: error))
         }
+    }
+
+    /// Gives this event with the count of the log files of this board that its transaction writes (divergence.md
+    /// Q23).
+    ///
+    /// - Parameter count: The count of the log files.
+    /// - Returns: The event with the count, and the same other values.
+    func recording(fileCount count: Int) -> Event {
+        var event = self
+        event.files = count
+        return event
     }
 }
 

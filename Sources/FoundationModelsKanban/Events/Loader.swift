@@ -8,9 +8,13 @@ struct LoadedBoard: Sendable {
     /// The graph of the board. Each edge to a node of the board holds the slot of its target.
     let graph: Graph
 
-    /// The events of all log files of the board, in the order of their event ids. Undo, `history`, and the change
-    /// feed read this list (plan.md §5.3, global order).
+    /// The events of all log files of the board whose transaction is complete, in the order of their event ids. Undo,
+    /// `history`, and the change feed read this list (plan.md §5.3, global order).
     let events: [Event]
+
+    /// The events of the transactions that are not complete in all their log files, in the order of their event ids
+    /// (divergence.md Q23). The graph does not hold their state.
+    let heldEvents: [Event]
 }
 
 /// One board after the join of its nodes, before the merge of its event lists (plan.md §5.3). The engine indexes the
@@ -19,14 +23,19 @@ struct JoinedBoard: Sendable {
     /// The graph of the board. Each edge to a node of the board holds the slot of its target.
     let graph: Graph
 
-    /// The event list of each log file, each in the order of its event ids. The lists are in the join order.
+    /// The event list of each log file whose transaction is complete, each in the order of its event ids. The lists
+    /// are in the join order.
     let eventLists: [[Event]]
+
+    /// The event list of each log file whose transaction is not complete, each in the order of its event ids. The
+    /// lists are in the join order.
+    let heldLists: [[Event]]
 
     /// Merges the event lists into the global event list with a k-way merge by event id.
     ///
-    /// - Returns: The graph and the global event list.
+    /// - Returns: The graph, the global event list, and the held events.
     func merged() -> LoadedBoard {
-        LoadedBoard(graph: graph, events: EventMerge.merged(eventLists))
+        LoadedBoard(graph: graph, events: EventMerge.merged(eventLists), heldEvents: EventMerge.merged(heldLists))
     }
 }
 
@@ -123,41 +132,56 @@ struct BoardLoader: Sendable {
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a directory or a file is there and cannot be read.
     func join() async throws(EventLogError) -> JoinedBoard {
         var graph = Graph()
-        let eventLists = try await readStages(
+        let logs = try await readStages(
             listingFilesWith: { type throws(EventLogError) in try stageRefs(of: type) },
             joiningInto: &graph
         )
-        return JoinedBoard(graph: graph, eventLists: eventLists)
+        return JoinedBoard(graph: graph, eventLists: logs.map(\.log.events), heldLists: logs.map(\.held))
     }
 
-    /// Reads some node files with one worker pool, and joins each node into a graph, stage by stage in
-    /// ``stageOrder`` (plan.md §5.3, §5.6).
+    /// Reads some node files with one worker pool, checks the transactions, and joins each node into a graph, stage
+    /// by stage in ``stageOrder`` (plan.md §5.3, §5.6, divergence.md Q23).
     ///
     /// The full load and the apply of changed files both use this call. The listings of all node types run at the
     /// same time, and then the workers read the files of all node types from one queue. When all files are read, the
-    /// join runs in memory. A file that gives a node inserts the node, or replaces the state in the slot of the node.
-    /// A file that gives no node (a removed file, or a file with no valid line) removes the node from its slot, and
-    /// each edge to it becomes unresolved. A ref that the graph does not have changes nothing.
+    /// check finds each transaction that is not complete in all its files (``IncompleteTransactions``), over the read
+    /// files and the events of the other files. A node with an event of such a transaction folds again without it,
+    /// and the event waits in the held list. A node of the other files whose state the check changes folds again from
+    /// its events in memory: a transaction that is complete now applies, and a transaction that is not complete now
+    /// waits. Then the join runs in memory. A log that gives a node inserts the node, or replaces the state in the
+    /// slot of the node. A log that gives no node (a removed file, or a file with no valid line) removes the node
+    /// from its slot, and each edge to it becomes unresolved. A ref that the graph does not have changes nothing.
     ///
     /// - Parameters:
     ///   - fileList: Gives the refs of the files of one node type. The loader calls it for each node type at the
     ///     same time, from different threads.
+    ///   - others: The applied and the held events of the files that the call does not read. The default has no
+    ///     event: the call reads all files of the board.
     ///   - graph: The graph that gets the nodes.
-    /// - Returns: The event list of each file, each in the order of its event ids. The lists are in the join order.
+    /// - Returns: The log of each node that the call joined: each read file, and each node of the other files whose
+    ///   state the check changed. The logs are in the join order.
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a directory or a file cannot be read.
     func readStages(
         listingFilesWith fileList: @escaping @Sendable (PatchNodeType) throws(EventLogError) -> [LocalRef],
+        besides others: CheckedEvents = .none,
         joiningInto graph: inout Graph
-    ) async throws(EventLogError) -> [[Event]] {
-        let logs = Self.joinOrder(of: try await readFiles(of: Self.listFiles(with: fileList)))
-        for staged in logs {
+    ) async throws(EventLogError) -> [StagedLog] {
+        let logs = try await readFiles(of: Self.listFiles(with: fileList))
+        let otherFiles = others.excluding(nodes: Set(logs.map(\.ref)))
+        let incomplete = IncompleteTransactions(
+            among: logs.flatMap(\.log.events) + otherFiles.applied + otherFiles.held
+        )
+        incomplete.recordHold()
+        let checked = logs.map { staged in staged.checked(by: incomplete) } + otherFiles.refolded(by: incomplete)
+        let ordered = Self.joinOrder(of: checked)
+        for staged in ordered {
             if let node = staged.log.node {
                 graph.update(with: node)
             } else {
                 graph.remove(nodeAt: staged.ref)
             }
         }
-        return logs.map(\.log.events)
+        return ordered
     }
 }
 
@@ -258,13 +282,65 @@ private struct StageListing: Sendable {
     let refs: Result<[LocalRef], EventLogError>
 }
 
-/// The folded log of one file, with the local ref of its node.
-private struct StagedLog: Sendable {
-    /// The local ref of the node of the file.
+/// The folded log of one node, with the local ref of the node, and the events of the node that wait for their
+/// transaction (divergence.md Q23).
+struct StagedLog: Sendable {
+    /// The local ref of the node.
     let ref: LocalRef
 
-    /// The folded log of the file.
+    /// The folded log of the node. It holds only the events whose transaction is complete.
     let log: NodeLog
+
+    /// The events of the node whose transaction is not complete, in the order of their ids. The fold does not apply
+    /// them.
+    let held: [Event]
+
+    /// Makes the log of one node that a worker read: no transaction check ran yet, so no event waits.
+    ///
+    /// - Parameters:
+    ///   - ref: The local ref of the node.
+    ///   - log: The folded log of the file of the node.
+    init(ref: LocalRef, log: NodeLog) {
+        self.init(ref: ref, log: log, held: [])
+    }
+
+    /// Folds the events of one node, and holds the events whose transaction is not complete.
+    ///
+    /// - Parameters:
+    ///   - ref: The local ref of the node.
+    ///   - events: The events of the node, in any order.
+    ///   - incomplete: The transactions that are not complete.
+    init(ref: LocalRef, folding events: [Event], by incomplete: IncompleteTransactions) {
+        self.init(
+            ref: ref,
+            log: NodeLog(folding: events.filter { event in !incomplete.holds(event) }, for: ref),
+            held: events.filter(incomplete.holds).sorted { lhs, rhs in lhs.id < rhs.id }
+        )
+    }
+
+    /// Makes the log of one node.
+    ///
+    /// - Parameters:
+    ///   - ref: The local ref of the node.
+    ///   - log: The folded log of the node.
+    ///   - held: The events of the node whose transaction is not complete, in the order of their ids.
+    private init(ref: LocalRef, log: NodeLog, held: [Event]) {
+        self.ref = ref
+        self.log = log
+        self.held = held
+    }
+
+    /// Gives this log after a transaction check. A log with no event of a transaction that is not complete does not
+    /// change. Else the node folds again without these events, and they wait.
+    ///
+    /// - Parameter incomplete: The transactions that are not complete.
+    /// - Returns: The checked log.
+    func checked(by incomplete: IncompleteTransactions) -> StagedLog {
+        guard log.events.contains(where: incomplete.holds) else {
+            return self
+        }
+        return StagedLog(ref: ref, folding: log.events + held, by: incomplete)
+    }
 
     /// Tells if one log comes before a different log in the insert order of the join: the sort order of the text of
     /// the local ref.

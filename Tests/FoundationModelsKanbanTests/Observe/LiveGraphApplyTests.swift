@@ -70,7 +70,7 @@ struct LiveGraphApplyTests {
     }
 
     /// Checks that a live graph equals a fresh load of the files of its board: the nodes and their edges, the global
-    /// event list, and the file signatures.
+    /// event list, the events of the transactions that are not complete, and the file signatures.
     ///
     /// - Parameters:
     ///   - live: The live graph after the apply.
@@ -79,6 +79,7 @@ struct LiveGraphApplyTests {
         let fresh = try await BoardLoader(reading: log).load()
         #expect(canonicalNodes(of: live.graph) == canonicalNodes(of: fresh.graph))
         #expect(live.events == fresh.events)
+        #expect(live.heldEvents == fresh.heldEvents)
         #expect(live.signatures == (try log.nodeFileSignatures()))
     }
 

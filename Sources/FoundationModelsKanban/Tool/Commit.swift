@@ -612,16 +612,20 @@ struct CommitSession: Sendable {
     /// Appends the kept patches of each changed board, and then makes each working copy the live graph of its board
     /// (plan.md §5.4 steps 5.3 to 5.5). No live graph changes until each append of each board succeeds.
     ///
-    /// Before the first append, the commit records the state of each log file that it changes. When an append or the
-    /// read of a new signature fails, the commit puts each of these files back while it holds the locks, and no live
-    /// graph changes. Thus no log keeps a part of the transaction.
+    /// Before the first append, the commit records the state of each log file that it changes. When an append, the
+    /// fsync, or the read of a new signature fails, the commit puts each of these files back while it holds the
+    /// locks, and no live graph changes. Thus no log keeps a part of the transaction.
+    ///
+    /// After the appends of all boards, the commit calls fsync on each file that it appended to (divergence.md Q23).
+    /// Each line records the count of the files of its board that the transaction wrote, so that a load after a
+    /// crash between two files does not apply a part of the transaction.
     ///
     /// - Parameters:
     ///   - writes: The boards of the commit. Each changed board gets its new live graph.
     ///   - operations: The names of the public mutations of the full call.
     /// - Throws: An ``EventLogError`` when the state of a log file cannot be read before the first append, and then
-    ///   nothing is written. The ``EventLogError`` of the append or the signature read that failed, after the
-    ///   rollback.
+    ///   nothing is written. The ``EventLogError`` of the append, the fsync, or the signature read that failed, after
+    ///   the rollback.
     private static func append(_ writes: inout [BoardWrite], recording operations: [String]) throws(EventLogError) {
         let changedBoards = writes.indices.filter { index in writes[index].hasPatches }
         let keys = changedBoards.map { index in writes[index].key.description }
@@ -629,6 +633,9 @@ struct CommitSession: Sendable {
         do throws(EventLogError) {
             let written = try changedBoards.map { index throws(EventLogError) in
                 try writes[index].append(recording: operations, changing: keys)
+            }
+            for index in changedBoards {
+                try writes[index].synchronize()
             }
             var adopted = writes
             for (index, events) in zip(changedBoards, written) {
@@ -734,11 +741,19 @@ private struct BoardWrite {
     /// - Returns: The mark of each log file.
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when the state of a log file cannot be read.
     func marks() throws(EventLogError) -> [LogFileMark] {
-        try Set(work.kept.map(\.patch.node)).map { ref throws(EventLogError) in try live.log.mark(ofLogOf: ref) }
+        try writtenNodes.map { ref throws(EventLogError) in try live.log.mark(ofLogOf: ref) }
+    }
+
+    /// The local refs of the nodes whose log files the kept patches of the board append to.
+    private var writtenNodes: Set<LocalRef> {
+        Set(work.kept.map(\.patch.node))
     }
 
     /// Appends the kept patches of the board to their node logs (plan.md §5.4 step 5.3). The live graph does not
     /// change: ``adopt(writing:)`` changes it after each append of each board succeeds.
+    ///
+    /// Each written event records the count of the log files of the board that the transaction writes (divergence.md
+    /// Q23).
     ///
     /// - Parameters:
     ///   - operations: The names of the public mutations of the full call.
@@ -746,13 +761,25 @@ private struct BoardWrite {
     /// - Returns: The written events, in the order of their ids.
     /// - Throws: An ``EventLogError`` when a log file cannot be written.
     func append(recording operations: [String], changing keys: [String]) throws(EventLogError) -> [Event] {
+        let fileCount = writtenNodes.count
         let written = work.kept.map { event in
             event.recording(operations: operations, changing: keys, inBoard: key.description)
+                .recording(fileCount: fileCount)
         }
         for (ref, events) in OrderedDictionary(grouping: written, by: \.patch.node) {
             try writer.append(contentsOf: events, toLogOf: ref, in: live.log)
         }
         return written
+    }
+
+    /// Calls fsync on each log file of the board that the kept patches appended to (divergence.md Q23). The commit
+    /// calls it after the appends of all boards.
+    ///
+    /// - Throws: An ``EventLogError`` when a log file is not there or the fsync fails.
+    func synchronize() throws(EventLogError) {
+        for ref in writtenNodes.sorted(by: { lhs, rhs in lhs.description < rhs.description }) {
+            try writer.synchronize(logOf: ref, in: live.log)
+        }
     }
 
     /// Makes the working copy the live graph, and records the new signature of each log file that the commit
@@ -826,6 +853,7 @@ extension Event {
             actor: actor,
             boards: others.isEmpty ? nil : others,
             undoes: undoes,
+            files: files,
             patch: patch
         )
     }

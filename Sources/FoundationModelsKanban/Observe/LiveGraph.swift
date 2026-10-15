@@ -22,8 +22,14 @@ struct LiveGraph: Sendable {
     /// The graph of the board.
     private(set) var graph: Graph
 
-    /// The events of all log files of the board, in the order of their event ids (plan.md §5.3, global order).
+    /// The events of all log files of the board whose transaction is complete, in the order of their event ids
+    /// (plan.md §5.3, global order).
     private(set) var events: [Event]
+
+    /// The events of the transactions that are not complete in all their log files, in the order of their event ids
+    /// (divergence.md Q23). The graph does not hold their state. The value keeps them, so that a reload that reads
+    /// only the missing file of a transaction applies the transaction on all its nodes.
+    private(set) var heldEvents: [Event]
 
     /// The signature of each node file that the graph read, by the local ref of its node. A node with no file has no
     /// entry.
@@ -95,8 +101,9 @@ struct LiveGraph: Sendable {
                 loader: loader,
                 graph: loaded.graph,
                 events: loaded.events,
+                heldEvents: loaded.heldEvents,
                 signatures: signatures,
-                largestEventID: loaded.events.last?.id
+                largestEventID: [loaded.events.last?.id, loaded.heldEvents.last?.id].compactMap(\.self).max()
             )
         }
     }
@@ -173,7 +180,11 @@ struct LiveGraph: Sendable {
     mutating func adopt(_ committed: Graph, writing written: [Event]) throws(EventLogError) {
         let newSignatures = try fileSignatures(of: Set(written.map(\.patch.node)))
         record(LiveGraphChange(before: graph, after: committed, events: written))
-        install(committed, events: EventMerge.merged([events, written]), signatures: newSignatures)
+        install(
+            committed,
+            events: CheckedEvents(applied: EventMerge.merged([events, written]), held: heldEvents),
+            signatures: newSignatures
+        )
     }
 
     /// Lists the node files of the board that changed after the live graph read them (plan.md §5.4 step 5.2): a file
@@ -208,19 +219,31 @@ struct LiveGraph: Sendable {
         Set(current.filter { ref, signature in signature != signatures[ref] }.keys)
     }
 
-    /// Reads the files of some nodes again with one worker pool, and joins their nodes into the graph, stage by stage.
+    /// Reads the files of some nodes again with one worker pool, checks the transactions, and joins the changed nodes
+    /// into the graph, stage by stage (divergence.md Q23).
+    ///
+    /// The check reads the events of the read files and the events of all other files of the board, so a transaction
+    /// that is not complete does not apply. A transaction whose missing lines the read files bring applies on all its
+    /// nodes, also on a node whose file did not change. A transaction that loses the lines of a read file waits again
+    /// on all its nodes.
     ///
     /// - Parameter refs: The local refs of the changed nodes.
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a file cannot be read. Then nothing changes.
     private mutating func reload(filesOf refs: Set<LocalRef>) async throws(EventLogError) {
         let newSignatures = try fileSignatures(of: refs)
         var updated = graph
-        let eventLists = try await loader.readStages(
+        let current = CheckedEvents(applied: events, held: heldEvents)
+        let logs = try await loader.readStages(
             listingFilesWith: { type in Array(refs.filter { ref in ref.nodeType == type }) },
+            besides: current,
             joiningInto: &updated
         )
-        let keptEvents = events.filter { event in !refs.contains(event.patch.node) }
-        install(updated, events: EventMerge.merged([keptEvents] + eventLists), signatures: newSignatures)
+        let kept = current.excluding(nodes: Set(logs.map(\.ref)))
+        let merged = CheckedEvents(
+            applied: EventMerge.merged([kept.applied] + logs.map(\.log.events)),
+            held: EventMerge.merged([kept.held] + logs.map(\.held))
+        )
+        install(updated, events: merged, signatures: newSignatures)
     }
 
     /// Reads the signature of the log file of each of some nodes.
@@ -243,22 +266,24 @@ struct LiveGraph: Sendable {
         largestEventID = id
     }
 
-    /// Replaces the graph and the event list, records the signatures of the changed files, and raises
-    /// ``largestEventID`` to the largest id of the new event list.
+    /// Replaces the graph, the event list, and the held events, records the signatures of the changed files, and
+    /// raises ``largestEventID`` to the largest id of the new events.
     ///
     /// - Parameters:
     ///   - newGraph: The new graph.
-    ///   - newEvents: The new global event list, in the order of the event ids.
+    ///   - newEvents: The new global event list and the new held events, each in the order of the event ids.
     ///   - newSignatures: The signature of each changed file, by the local ref of its node. A `nil` signature removes
     ///     the entry of a file that is gone.
     private mutating func install(
         _ newGraph: Graph,
-        events newEvents: [Event],
+        events newEvents: CheckedEvents,
         signatures newSignatures: [LocalRef: FileSignature?]
     ) {
         graph = newGraph
-        events = newEvents
-        raiseLargestEventID(to: newEvents.last?.id)
+        events = newEvents.applied
+        heldEvents = newEvents.held
+        raiseLargestEventID(to: newEvents.applied.last?.id)
+        raiseLargestEventID(to: newEvents.held.last?.id)
         for (ref, signature) in newSignatures {
             signatures[ref] = signature
         }

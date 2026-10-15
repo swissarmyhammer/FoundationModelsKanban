@@ -317,4 +317,14 @@ final class FaultingLogWriter: EventLogWriter {
             throw Self.fault
         }
     }
+
+    /// Writes the log file to the disk through the file writer. The writer does not make a synchronize fail.
+    ///
+    /// - Parameters:
+    ///   - ref: The local ref of the node.
+    ///   - log: The event log of the board.
+    /// - Throws: The error of the file writer.
+    func synchronize(logOf ref: LocalRef, in log: EventLog) throws(EventLogError) {
+        try FileEventLogWriter().synchronize(logOf: ref, in: log)
+    }
 }

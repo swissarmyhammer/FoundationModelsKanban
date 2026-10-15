@@ -79,10 +79,19 @@ comments:
     - evidence: 3 files — Tests/FoundationModelsKanbanTests/Tool/KanbanGraphTests.swift, Tests/FoundationModelsKanbanTests/Identity/SharedShortIDTests.swift, Tests/FoundationModelsKanbanTests/Identity/TitleSlugRefTests.swift. `swift test`: 1459 tests in 112 suites passed. The only warning is the accepted SwiftPM "missing creator" warning. Both 09:15 review findings are checked.
     - next: /review
   timestamp: 2026-10-15T14:25:28.036013+00:00
+- actor: claude-code
+  id: 01m4zzq4kxgrkn1197bx0tj5h0
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — 3 test files (2 findings fixed with one shared helper)
+    - test: green — swift test, 1459 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: d5c5a50
+    - review: clean — none
+  timestamp: 2026-10-15T14:33:34.077728+00:00
 depends_on:
 - 01M4X77PG6CNGC9JZYCN9WJGTY
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ff8380
 title: Accept a title slug and ^^short in the filter, and a title slug as a task ref
 ---
 ## What

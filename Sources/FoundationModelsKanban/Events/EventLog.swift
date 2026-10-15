@@ -117,6 +117,21 @@ extension EventLog {
         }
     }
 
+    /// Writes the data of the log file of one node to the disk with fsync, so that a crash after the call does not
+    /// lose the lines that the file holds (divergence.md Q23). The commit calls it on each file that it appended to,
+    /// after all appends of the transaction.
+    ///
+    /// - Parameter ref: The local ref of the node.
+    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when the file is not there or the fsync fails.
+    func synchronize(logOf ref: LocalRef) throws(EventLogError) {
+        let file = fileURL(for: ref)
+        try Self.run(onFileAt: file) {
+            let handle = try FileHandle(forWritingTo: file)
+            defer { try? handle.close() }
+            try handle.synchronize()
+        }
+    }
+
     /// Writes an event as one line, with its line break.
     ///
     /// - Parameter event: The event.

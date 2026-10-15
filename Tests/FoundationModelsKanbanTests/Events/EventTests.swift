@@ -51,6 +51,9 @@ struct EventTests {
         + #""node":"task/\#(taskULID)","remove":{"tags":["tag/bug"]},"#
         + #""set":{"column":"column/doing","open":true,"points":3},"type":"Task","unset":["ordinal"]}}}"#
 
+    /// The file count of the file count tests: a transaction that writes two log files of the board.
+    static let fileCount = 2
+
     /// The names of the time values, which no patch can set (plan.md §5.3, §12 item 20).
     static let timeNames = ["created", "updated", "deleted", "started", "completed"]
 
@@ -120,6 +123,33 @@ struct EventTests {
             + #""txn":"\#(Self.txnULID)","variables":{"p":{"delete":true,"node":"task/\#(Self.taskULID)","#
             + #""type":"Task"}}}"#
         #expect(try event.encodedLine() == expected)
+    }
+
+    // MARK: - File count
+
+    @Test("A line with a file count gives the count, and round-trips with the same bytes")
+    func fileCountRoundTrips() throws {
+        let line = #"{"actor":"actor/claude-code","at":"\#(Self.atText)","files":\#(Self.fileCount),"#
+            + #""id":"\#(Self.eventULID)","ops":["deleteTask"],"#
+            + #""query":"mutation($p: PatchInput!) { patch(input: $p) }","txn":"\#(Self.txnULID)","#
+            + #""variables":{"p":{"delete":true,"node":"task/\#(Self.taskULID)","type":"Task"}}}"#
+        let event = try Event(parsing: line)
+        #expect(event.files == Self.fileCount)
+        #expect(try event.encodedLine() == line)
+    }
+
+    @Test("An old line with no file count gives no count")
+    func oldLineHasNoFileCount() throws {
+        #expect(try Event(parsing: Self.planLine).files == nil)
+    }
+
+    @Test("An event with a recorded file count writes it in its line")
+    func recordedFileCountIsWritten() throws {
+        let event = try Self.makeEvent(ops: ["deleteTask"], patch: PatchInput(node: Self.taskRef(), delete: true))
+        let counted = event.recording(fileCount: Self.fileCount)
+        #expect(try Event(parsing: counted.encodedLine()).files == Self.fileCount)
+        #expect(counted.id == event.id)
+        #expect(counted.patch == event.patch)
     }
 
     // MARK: - The plan example
