@@ -332,12 +332,20 @@ struct NameRewriteTests {
         #expect(rewritten.rewrites == [NameRewrite(from: written, to: "board", path: [written])])
     }
 
-    @Test("A root query verb in a fragment definition on the query type moves into board")
-    func fragmentQueryVerbMovesIntoBoard() throws {
-        let rewritten = try Self.rewritten(from: "{ ...Q } fragment Q on Query { listTasks { totalCount } }")
-        let moved = "\(Self.firstMoveKey): board { listTasks: tasks { totalCount } }"
-        #expect(rewritten.text == "{ ...Q } fragment Q on Query { \(moved) }")
-        #expect(rewritten.rewrites == [NameRewrite(from: "listTasks", to: "board.tasks", path: ["Q", "listTasks"])])
+    @Test(
+        "A root query verb in an inline fragment or a fragment definition on the query type moves into board",
+        arguments: [
+            ("{ ... on Query { listTasks { totalCount } } }",
+             "{ ... on Query { \(Self.firstMoveKey): board { listTasks: tasks { totalCount } } } }", ["listTasks"]),
+            ("{ ...Q } fragment Q on Query { listTasks { totalCount } }",
+             "{ ...Q } fragment Q on Query { \(Self.firstMoveKey): board { listTasks: tasks { totalCount } } }",
+             ["Q", "listTasks"]),
+        ]
+    )
+    func fragmentQueryVerbMovesIntoBoard(document: String, text: String, path: [String]) throws {
+        let rewritten = try Self.rewritten(from: document)
+        #expect(rewritten.text == text)
+        #expect(rewritten.rewrites == [NameRewrite(from: "listTasks", to: "board.tasks", path: path)])
     }
 
     @Test("{ getTask(id:) { title } } gives the title of the task under getTask")

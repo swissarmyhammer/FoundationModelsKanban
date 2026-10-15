@@ -47,6 +47,30 @@ comments:
     - evidence: 6 files — Sources/FoundationModelsKanban/GraphQL/Schema.swift, Sources/FoundationModelsKanban/GraphQL/SchemaDescription.swift, Tests/FoundationModelsKanbanTests/GraphQL/SchemaDescriptionTests.swift, Tests/FoundationModelsKanbanTests/GraphQL/QueryResolverTests.swift, Tests/FoundationModelsKanbanTests/GraphQL/NameRewriteTests.swift, divergence.md; this pass and the earlier pass also changed NameMatcher.swift, NameRewrite.swift, NameMatcherTests.swift. swift test: 1350 passed, 0 failed.
     - next: /review
   timestamp: 2026-10-15T05:12:41.067923+00:00
+- actor: claude-code
+  id: 01m4z00t213nqz7er37wj8398n
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 10 files (root verbs, createBoard/newBoard → initBoard, TaskConnection.nodes; the nodes field was an orchestrator decision by the very-forgiving principle, recorded in divergence.md §4)
+    - test: green — swift test, 1350 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 4881827
+    - review: findings — Tests/FoundationModelsKanbanTests/GraphQL/NameRewriteTests.swift:335
+  timestamp: 2026-10-15T05:19:36.513046+00:00
+- actor: claude-code
+  id: 01m4z0a5qsg0jbzj2j5fzp84pf
+  text: |-
+    Picked up for the open finding at NameRewriteTests.swift:335 (completeness/invariant-propagation).
+    - Change: `fragmentQueryVerbMovesIntoBoard` is now a parameterized test with two cases, the same shape as `fragmentRootFieldMovesIntoBoard`. Case 1 (new): `{ ... on Query { listTasks { totalCount } } }` must rewrite to `{ ... on Query { _kanbanRoot0: board { listTasks: tasks { totalCount } } } }` with the rewrite record `listTasks -> board.tasks`, path `["listTasks"]`. Case 2 (kept): the fragment definition form, path `["Q", "listTasks"]`. No full matrix.
+    - Result: the inline-fragment case passed on its first run. RewriteWalk already uses `.topLevelQuery` for an inline fragment on the query type, so no code change was necessary. There was no RED, because the behavior exists; the test is coverage for the sibling form.
+    - I made the cases one parameterized test and not a second test function, so that the duplication rule does not see a copied test body.
+  timestamp: 2026-10-15T05:24:43.385490+00:00
+- actor: claude-code
+  id: 01m4z0aaqpn0c93p6wmmky45z3
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsKanbanTests/GraphQL/NameRewriteTests.swift (fragmentQueryVerbMovesIntoBoard now covers the inline-fragment form and the fragment-definition form). `swift test --filter NameRewriteTests/fragmentQueryVerbMovesIntoBoard`: 2 cases passed. Full `swift test`: 1350 tests in 106 suites passed, 0 failed. Only the accepted SwiftPM "missing creator" warning. No production code change was necessary.
+    - next: /review
+  timestamp: 2026-10-15T05:24:48.502381+00:00
 position_column: doing
 position_ordinal: '80'
 title: Add root query verbs and map createBoard and newBoard to initBoard
@@ -80,3 +104,15 @@ Q11 (N4): `createBoard` and `newBoard` map to `initBoard`. There is no `addBoard
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-15 00:15)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 8 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `divergence.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsKanbanTests/GraphQL/NameRewriteTests.swift:335` `completeness/invariant-propagation` — The root query verb fix is tested only in a fragment definition on the query type (`{ ...Q } fragment Q on Query { listTasks ... }`). The same verb in an inline fragment (`{ ... on Query { listTasks ... } }`) has no test. The existing `tasks` rule has a test for both forms (lines 289-313), so the verb path has an untested sibling form. Add one case for a query verb in an inline fragment, such as `{ ... on Query { listTasks { totalCount } } }`, to the verb tests. Check that it rewrites to `_kanbanRoot0: board { listTasks: tasks ... }` with the same rewrite record. Do not add a full matrix.
