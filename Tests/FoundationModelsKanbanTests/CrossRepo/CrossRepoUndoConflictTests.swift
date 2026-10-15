@@ -70,28 +70,65 @@ struct CrossRepoUndoConflictTests {
         await app.close()
     }
 
-    // MARK: - Tests
-
-    @Test("undo of the call that added lib#X, after app#Y depends on X, gives UNDO_CONFLICT and writes nothing")
-    func laterEdgeFromOtherBoardConflicts() async throws {
-        try await Self.expectConflict { libTask in "dependsOn: \(AddUpdateTaskTests.list(of: [libTask]))" }
-    }
-
-    @Test("undo of the call that added lib#X, after a body marker of X in app#Y, gives UNDO_CONFLICT, writes nothing")
-    func laterBodyMarkerFromOtherBoardConflicts() async throws {
-        try await Self.expectConflict { libTask in #"body: "Needs \#(libTask)""# }
-    }
-
-    @Test("undo of the call that added lib#X, when no task of a different board refers to X, tombstones X")
-    func undoWithNoLaterEdgeFromOtherBoardWorks() async throws {
+    /// Makes the example, runs `undo(call1)`, and expects success with no errors, a tombstone for `lib#X` in the log of
+    /// the related repo, and `undoes` set to call 1.
+    ///
+    /// - Parameters:
+    ///   - isForced: `true` to send `force: true`, which writes the inverse also when a later transaction conflicts.
+    ///   - input: Makes the other fields of the `input` object of call 2 from the full URI of `X`.
+    /// - Throws: An error when the example cannot be made, the undo gives an error, or a log cannot be read.
+    static func expectTombstone(forcing isForced: Bool, addingY input: (String) -> String) async throws {
         let repos = try await CrossRepoFixture.SideBySide.make()
         let app = try GitGraphFixture.makeGraph(at: repos.app)
-        let example = try await Self.makeExample(in: repos, on: app) { _ in #"body: "No dependency""# }
-        let field = UndoTests.reverseField(MutationName.undo, with: UndoTests.txnInput(example.first))
-        try await CrossRepoUndoTests.runWithNoErrors(field, on: app)
+        let example = try await makeExample(in: repos, on: app, addingY: input)
+        let txnInput = UndoTests.txnInput(example.first, forcing: isForced)
+        try await CrossRepoUndoTests.runWithNoErrors(UndoTests.reverseField(MutationName.undo, with: txnInput), on: app)
         let undoEvent = try CrossRepoUndoTests.lastEvent(ofTask: example.libTask, inRepoAt: repos.lib)
         #expect(undoEvent.patch.delete == true)
         #expect(undoEvent.undoes == example.first)
         await app.close()
+    }
+
+    /// The other fields of call 2 that give `app#Y` an edge to `X`.
+    ///
+    /// - Parameter libTask: The full URI of `X`.
+    /// - Returns: The `dependsOn` field.
+    static func edge(to libTask: String) -> String {
+        "dependsOn: \(AddUpdateTaskTests.list(of: [libTask]))"
+    }
+
+    /// The other fields of call 2 that give `app#Y` a body marker of `X`.
+    ///
+    /// - Parameter libTask: The full URI of `X`.
+    /// - Returns: The `body` field.
+    static func bodyMarker(of libTask: String) -> String {
+        #"body: "Needs \#(libTask)""#
+    }
+
+    // MARK: - Tests
+
+    @Test("undo of the call that added lib#X, after app#Y depends on X, gives UNDO_CONFLICT and writes nothing")
+    func laterEdgeFromOtherBoardConflicts() async throws {
+        try await Self.expectConflict(addingY: Self.edge(to:))
+    }
+
+    @Test("undo of the call that added lib#X, after a body marker of X in app#Y, gives UNDO_CONFLICT, writes nothing")
+    func laterBodyMarkerFromOtherBoardConflicts() async throws {
+        try await Self.expectConflict(addingY: Self.bodyMarker(of:))
+    }
+
+    @Test("forced undo of the call that added lib#X, after app#Y depends on X, tombstones X")
+    func forcedUndoWithLaterEdgeFromOtherBoardTombstones() async throws {
+        try await Self.expectTombstone(forcing: true, addingY: Self.edge(to:))
+    }
+
+    @Test("forced undo of the call that added lib#X, after a body marker of X in app#Y, tombstones X")
+    func forcedUndoWithLaterBodyMarkerFromOtherBoardTombstones() async throws {
+        try await Self.expectTombstone(forcing: true, addingY: Self.bodyMarker(of:))
+    }
+
+    @Test("undo of the call that added lib#X, when no task of a different board refers to X, tombstones X")
+    func undoWithNoLaterEdgeFromOtherBoardWorks() async throws {
+        try await Self.expectTombstone(forcing: false) { _ in #"body: "No dependency""# }
     }
 }

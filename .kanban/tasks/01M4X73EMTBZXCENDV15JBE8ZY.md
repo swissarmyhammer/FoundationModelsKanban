@@ -17,6 +17,26 @@ comments:
     - evidence: 4 files — Sources/FoundationModelsKanban/GraphQL/UndoMutations.swift, Sources/FoundationModelsKanban/Undo/UndoLog.swift, Sources/FoundationModelsKanban/Undo/Inverse.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoUndoConflictTests.swift (new). `swift test`: 1294 tests in 102 suites passed; only the accepted SwiftPM "missing creator" mlx warning.
     - next: /review
   timestamp: 2026-10-15T02:17:35.702109+00:00
+- actor: claude-code
+  id: 01m4yp2226jh35tpy7y8p08j85
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 4 files
+    - test: green — swift test, 1294 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 52cc435
+    - review: findings — Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoUndoConflictTests.swift:54
+  timestamp: 2026-10-15T02:25:31.718585+00:00
+- actor: claude-code
+  id: 01m4yph31fkws6tzrt4ktejntj
+  text: 'Finding CrossRepoUndoConflictTests.swift:54 (completeness/inverse-operation-coverage) is fixed. Two new tests: `forcedUndoWithLaterEdgeFromOtherBoardTombstones` and `forcedUndoWithLaterBodyMarkerFromOtherBoardTombstones`. Each makes the same example as `expectConflict`, sends `force: true`, and expects no errors, a tombstone (`delete: true`) for lib#X in the lib log, and `undoes` = call 1. A new helper `expectTombstone(forcing:addingY:)` holds that body, and the old no-edge test now calls it too (`forcing: false`), so the file has no copied block. The input closures are now `edge(to:)` and `bodyMarker(of:)`, shared by the conflict tests and the forced tests. RED was a mutation check: I made `BoardStore.reverse` ignore the force flag, and both forced tests failed with UNDO_CONFLICT. Then I reverted the mutation, and the production source is now the same as HEAD. Do not repeat this: my first mutation called `laterReferences` inside the `runField` closure, and Swift stopped with "Fatal access conflict detected" (exclusivity). Compute any store read before `runField`. GREEN: the suite has 5 of 5 pass. Full `swift test`: 1296 tests in 102 suites pass. The only warning is the accepted SwiftPM "missing creator" mlx warning.'
+  timestamp: 2026-10-15T02:33:44.239520+00:00
+- actor: claude-code
+  id: 01m4yph4egsbz1j9aczpwrybhq
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoUndoConflictTests.swift. `swift test`: 1296 tests in 102 suites passed, 0 failed; only the accepted SwiftPM "missing creator" mlx warning.
+    - next: /review
+  timestamp: 2026-10-15T02:33:45.680982+00:00
 position_column: doing
 position_ordinal: '80'
 title: Add the undo conflict check across boards
@@ -41,3 +61,12 @@ Change: when an undo would tombstone a node, also look for later edges to that n
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-14 21:21)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoUndoConflictTests.swift:54` `completeness/inverse-operation-coverage` — The `force` path skips the cross-board check: `reverse` passes `isForced ? []` to `laterReferences` and the field then writes the undo in every board. No test proves that a forced undo of a transaction with a later cross-board edge writes the inverse. The only conflict tests use the non-forced path, so a regression in the force branch would pass the suite. Add one cross-repo test that runs the same example as `expectConflict` with `force: true`. It should expect success, a tombstone for `lib#X` in the lib log, and `undoes` set to the first transaction.
