@@ -135,6 +135,13 @@ struct VirtualTagsTests {
         #expect(try Self.tags(ofTask: ReadinessFixture.first, on: board).contains(.blocked))
     }
 
+    @Test("An open task that depends on itself is BLOCKED, and not READY (divergence.md D2)")
+    func selfDependencyOfOpenTaskIsBlocked() throws {
+        var board = ReadinessFixture()
+        try board.addTask(withULID: ReadinessFixture.first, dependingOn: [ReadinessFixture.first])
+        #expect(try Self.tags(ofTask: ReadinessFixture.first, on: board) == [.blocked, .high])
+    }
+
     @Test("A task with no dependencies is not BLOCKED (Rust blocked_no_deps)")
     func noDependenciesIsNotBlocked() throws {
         var board = ReadinessFixture()
@@ -174,6 +181,14 @@ struct VirtualTagsTests {
         var board = ReadinessFixture()
         try board.addTask(withULID: ReadinessFixture.first, fields: ReadinessFixture.fields(hasConflict: true))
         #expect(try Self.tags(ofTask: ReadinessFixture.first, on: board) == [.ready, .conflict, .high])
+    }
+
+    @Test("A tombstone with a conflict block has CONFLICT and DELETED, and no other tag")
+    func conflictTombstoneHasConflictAndDeleted() throws {
+        var board = ReadinessFixture()
+        let fields = ReadinessFixture.fields(isDeleted: true, hasConflict: true)
+        try board.addTask(withULID: ReadinessFixture.first, fields: fields)
+        #expect(try Self.tags(ofTask: ReadinessFixture.first, on: board) == [.conflict, .deleted])
     }
 
     @Test("A task with no conflict block does not have CONFLICT")

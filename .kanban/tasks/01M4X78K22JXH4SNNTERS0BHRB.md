@@ -1,11 +1,27 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m501tgwz4fg7ze6svpnn664a
+  text: 'Research done. Some listed tests exist already from other tasks: cross-board tombstoned dependency (UnresolvedDependsOnTests.tombstonedTargetIsNotUnresolved), missing task on a found board (UnresolvedDependsOnTests.missingTaskOfLoadedBoardIsUnresolved, DependencyTargetWarningTests), nextTask with a cross-board cycle (CrossRepoCycleReadinessTests.nextTaskSkipsTaskInCrossBoardCycle), and readiness of a three-board cycle. Missing: write-path DEPENDENCY_CYCLE across three boards, body-marker cycle through a related board, end-to-end marker readiness, updateTask dropping a cross-board URL from the body, ^<other-board task> on history and changes, R15 for tags/assignees/author, the IntegrationTests two-repo test, the nextTask list, and the three virtual-tag tests. Note for R15: an assignee or author URI of another board gives ACTOR_NOT_FOUND (the not-found code of the actor type); a tag URI gives NOT_FOUND, as for column. Note: a board with one column has that column as the terminal column, so each task there is done and nextTask is null.'
+  timestamp: 2026-10-15T15:10:22.111336+00:00
+- actor: claude-code
+  id: 01m503cv29zzc1btshwermd8e4
+  text: 'Implementation landed. Each new test passed on its first run, so no test showed a bug and no production code changed. Map of tests: nextTask list -> T/Filter/NextTaskTests.swift (tombstoned only dependency, cycle in one board, board not loaded, all blocked, CONFLICT, ULID tie-break, slug tie-break, tombstoned column, one column, #READY/#BLOCKED/^ filters); cross-board nextTask (done, not done, board not found), body-marker cycle, end-to-end marker readiness, dropped cross-board URL, three-board write cycle -> T/CrossRepo/CrossRepoDependencyTests.swift; ^<other-board task> on history and changes -> T/CrossRepo/CrossRepoRefFilterTests.swift; R15 (column, tags, assignees, author) -> T/Mutations/OtherBoardRefTests.swift; virtual tags -> T/Derived/VirtualTagsTests.swift and T/Derived/PriorityTagsTests.swift; two repos side by side -> IntegrationTests/.../CrossRepoDependencyTests.swift with TemporaryGitRepo.withRepos. Existing coverage kept for: cross-board tombstone (UnresolvedDependsOnTests.tombstonedTargetIsNotUnresolved), R3 missing task on a found board (UnresolvedDependsOnTests.missingTaskOfLoadedBoardIsUnresolved), cross-board cycle nextTask (CrossRepoCycleReadinessTests.nextTaskSkipsTaskInCrossBoardCycle). Environment note: `swift test --package-path IntegrationTests` fails in this sandbox, because SwiftPM wants to clone FoundationModelsMetadataRegistry again and the sandbox refuses writes to its `.kanban/` folder. With `--scratch-path` in the session scratchpad the integration suite builds and passes (2 tests). The IntegrationTests/.build checkout was put back as it was.'
+  timestamp: 2026-10-15T15:37:50.921129+00:00
+- actor: claude-code
+  id: 01m503czq6cddw4tdt505tqxfw
+  text: |-
+    ### implement — changed
+    - evidence: 8 files — T/Filter/NextTaskTests.swift, T/Derived/VirtualTagsTests.swift, T/Derived/PriorityTagsTests.swift, T/CrossRepo/CrossRepoDependencyTests.swift (new), T/CrossRepo/CrossRepoRefFilterTests.swift (new), T/Mutations/OtherBoardRefTests.swift (new), IntegrationTests/Tests/FoundationModelsKanbanIntegrationTests/CrossRepoDependencyTests.swift (new), IntegrationTests/.../Support/TemporaryGitRepo.swift. `swift test`: 1500 tests in 117 suites passed, only the accepted mlx "missing creator" warning. Integration suite (scratch path): 2 tests passed.
+    - next: /review
+  timestamp: 2026-10-15T15:37:55.686135+00:00
 depends_on:
 - 01M4X71FVFN9HYJ19VJ71VWV3B
 - 01M4X72R210B06MTDXZ4SXDCKE
-position_column: todo
-position_ordinal: a780
+position_column: doing
+position_ordinal: '80'
 title: Add the missing tests for dependencies, nextTask, and virtual tags
 ---
 ## What
@@ -42,12 +58,12 @@ Tests to add — virtual tags (§3):
 - The priority tags (HIGH, MEDIUM, LOW) on a board with no live column.
 
 ## Acceptance Criteria
-- [ ] Each test in the lists above exists and passes.
+- [x] Each test in the lists above exists and passes.
 
 ## Tests
-- [ ] The tests listed above.
-- [ ] Tests use temporary fixture folders. Never use the `.kanban/` of this repo (it is a Rust board).
-- [ ] `swift test` passes.
+- [x] The tests listed above.
+- [x] Tests use temporary fixture folders. Never use the `.kanban/` of this repo (it is a Rust board).
+- [x] `swift test` passes.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.

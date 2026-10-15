@@ -29,6 +29,26 @@ struct NextTaskTests {
     /// The Rust `next task` project filters, each of which now gives `INVALID_FILTER`.
     static let projectFilters = ["$myproj", "$other", "$task-card-field-polish"]
 
+    /// The slug of a column that a test adds with the same order as the first column. It sorts before
+    /// ``ReadinessFixture/todo`` by slug.
+    static let alpha = "alpha"
+
+    /// The slug of a tombstoned column that a test adds.
+    static let parked = "parked"
+
+    /// The order of ``parked``: after the column ``ReadinessFixture/doing``, so that a live column with this order
+    /// would sort after it.
+    static let parkedOrder = 2
+
+    /// Each filter of a board where the first task depends on the second task, with the task that is next. The first
+    /// task is blocked and the second task is ready. A `^` atom matches the task and each task that depends on it.
+    static let readinessFilterCases: [(filter: String, next: String?)] = [
+        ("#READY", second),
+        ("#BLOCKED", nil),
+        (QueryFixture.sigilRef(of: first), nil),
+        (QueryFixture.sigilRef(of: second), second),
+    ]
+
     /// The columns of three tasks (the first, the second, and the third task), each with the task that is next.
     /// This is the Rust test that moves the tasks to `done` one at a time.
     static let columnCases: [(columns: [String], next: String?)] = [
@@ -156,5 +176,99 @@ struct NextTaskTests {
         try fixture.board.addTask(withULID: Self.first)
         try fixture.board.addTask(withULID: Self.second, assignedTo: [Self.alice])
         #expect(try await fixture.nextTaskULID(withFilter: "@alice") == Self.second)
+    }
+
+    // MARK: - Dependencies
+
+    @Test("A task whose only dependency is a tombstone is next")
+    func tombstonedDependencyDoesNotBlock() async throws {
+        var fixture = TaskQueryFixture()
+        try fixture.board.addTask(withULID: Self.second, fields: ReadinessFixture.fields(isDeleted: true))
+        try fixture.board.addTask(withULID: Self.first, dependingOn: [Self.second])
+        #expect(try await fixture.nextTaskULID() == Self.first)
+    }
+
+    @Test("No task of a dependency cycle in one board is next")
+    func cycleGivesNoNextTask() async throws {
+        var fixture = TaskQueryFixture()
+        try fixture.board.addTask(withULID: Self.first, dependingOn: [Self.second])
+        try fixture.board.addTask(withULID: Self.second, dependingOn: [Self.first])
+        #expect(try await fixture.nextTaskULID() == nil)
+    }
+
+    @Test("A task that depends on a task of a board that is not loaded is not next")
+    func dependencyOnBoardThatIsNotLoadedBlocks() async throws {
+        var fixture = TaskQueryFixture()
+        let uri = try DependencyMarkersTests.uri(ofTask: Self.third, inBoard: DependencyMarkersTests.otherBoardKey)
+        try fixture.board.addTask(withULID: Self.first, dependingOnRemote: [uri])
+        try fixture.board.addTask(withULID: Self.second)
+        #expect(try await fixture.nextTaskULID() == Self.second)
+    }
+
+    @Test("A board where each task is blocked has no next task")
+    func allBlocked() async throws {
+        var fixture = TaskQueryFixture()
+        try fixture.board.addTask(withULID: Self.first, dependingOn: [ReadinessFixture.ghost])
+        try fixture.board.addTask(withULID: Self.second, dependingOn: [Self.first])
+        #expect(try await fixture.nextTaskULID() == nil)
+    }
+
+    @Test("A task with a conflict block can be next")
+    func conflictTaskCanBeNext() async throws {
+        var fixture = TaskQueryFixture()
+        try fixture.board.addTask(withULID: Self.first, fields: ReadinessFixture.fields(hasConflict: true))
+        try fixture.board.addTask(withULID: Self.second)
+        #expect(try await fixture.nextTaskULID() == Self.first)
+    }
+
+    // MARK: - Order
+
+    @Test("Two tasks of one column with the same ordinal sort by ULID, not by the order that they were added")
+    func sameOrdinalSortsByULID() async throws {
+        var fixture = TaskQueryFixture()
+        try fixture.board.addTask(withULID: Self.second)
+        try fixture.board.addTask(withULID: Self.first)
+        #expect(try await fixture.nextTaskULID() == Self.first)
+    }
+
+    @Test("Two columns with the same order sort by slug")
+    func sameColumnOrderSortsBySlug() async throws {
+        var fixture = TaskQueryFixture()
+        fixture.board.addColumn(withSlug: Self.alpha, order: .zero)
+        try fixture.board.addTask(withULID: Self.first)
+        try fixture.board.addTask(withULID: Self.second, inColumn: Self.alpha)
+        #expect(try await fixture.nextTaskULID() == Self.second)
+    }
+
+    @Test("A task in a tombstoned column shows in the first column, so it comes before a task of a later column")
+    func taskOfTombstonedColumnIsInFirstColumn() async throws {
+        var fixture = TaskQueryFixture()
+        fixture.board.addColumn(withSlug: Self.parked, order: Self.parkedOrder, isDeleted: true)
+        try fixture.board.addTask(withULID: Self.first, inColumn: ReadinessFixture.doing)
+        try fixture.board.addTask(withULID: Self.second, inColumn: Self.parked)
+        #expect(try await fixture.nextTaskULID() == Self.second)
+    }
+
+    @Test("A board with one column has no next task, because that column is the terminal column")
+    func oneColumnBoardHasNoNextTask() async throws {
+        var fixture = TaskQueryFixture()
+        for (order, slug) in ReadinessFixture.defaultColumns.enumerated().dropFirst() {
+            fixture.board.addColumn(withSlug: slug, order: order, isDeleted: true)
+        }
+        try fixture.board.addTask(withULID: Self.first)
+        #expect(try await fixture.nextTaskULID() == nil)
+    }
+
+    // MARK: - Readiness filters
+
+    @Test(
+        "The filters #READY, #BLOCKED, and ^ give the next task of the tasks that they match",
+        arguments: readinessFilterCases
+    )
+    func readinessFilter(filter: String, next: String?) async throws {
+        var fixture = TaskQueryFixture()
+        try fixture.board.addTask(withULID: Self.first, dependingOn: [Self.second])
+        try fixture.board.addTask(withULID: Self.second)
+        #expect(try await fixture.nextTaskULID(withFilter: filter) == next)
     }
 }

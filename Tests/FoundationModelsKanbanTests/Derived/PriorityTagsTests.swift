@@ -101,6 +101,20 @@ struct PriorityTagsTests {
         #expect(try Self.priority(ofTask: Self.tasks[1], on: board) == [.medium])
     }
 
+    @Test("On a board with no live column, no task is done, and the open tasks rank by ULID")
+    func boardWithNoLiveColumnRanksByULID() throws {
+        var board = ReadinessFixture()
+        for (order, slug) in ReadinessFixture.defaultColumns.enumerated() {
+            board.addColumn(withSlug: slug, order: order, isDeleted: true)
+        }
+        let texts = Self.tasks.prefix(Self.movedBoardSize)
+        for text in texts.reversed() {
+            try board.addTask(withULID: text, inColumn: ReadinessFixture.done)
+        }
+        let found = try texts.flatMap { text in try Self.priority(ofTask: text, on: board) }
+        #expect(found == [.high, .medium, .low])
+    }
+
     @Test("A task that becomes done loses its priority tag, and a task that opens again gets it back")
     func doneTaskLosesPriority() throws {
         var board = try Self.board(withOpenTasks: Self.movedBoardSize)

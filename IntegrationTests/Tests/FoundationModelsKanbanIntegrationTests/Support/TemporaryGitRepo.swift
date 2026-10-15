@@ -1,12 +1,13 @@
 import Foundation
 import Testing
 
-/// Makes a new git repo in a temporary directory for one test, and removes it after the test.
+/// Makes new git repos in a temporary directory for one test, and removes them after the test.
 ///
-/// The repo has no commit and no `origin` remote when `body` starts. The repo has a local identity of the author, and
-/// no commit signatures. The engine makes an empty first commit when it reads the key of the board. Thus the key of
-/// the board is `local/<root commit>`, and a `KanbanGraph` on the repo gives an empty board with the name of the repo
-/// directory.
+/// Each repo has one empty root commit and no `origin` remote when `body` starts. The message of the root commit is
+/// the name of the repo directory. Thus each repo has a different root commit, also when two repos are made in the
+/// same second with the same author, and the key of each board, `local/<root commit>`, is different. The repo has a
+/// local identity of the author, and no commit signatures. A `KanbanGraph` on the repo gives an empty board with the
+/// name of the repo directory.
 enum TemporaryGitRepo {
     /// The shared folder of the temporary repos of the integration tests.
     private static let parent = FileManager.default.temporaryDirectory.appending(
@@ -26,19 +27,22 @@ enum TemporaryGitRepo {
     /// The git command that sets one value of the local config of the repo.
     private static let configCommand = "config"
 
-    /// The name of the author of the first commit that the engine makes.
+    /// The name of the author of the root commit.
     private static let userName = "Integration Tests"
 
-    /// The email of the author of the first commit that the engine makes.
+    /// The email of the author of the root commit.
     private static let userEmail = "integration-tests@example.invalid"
 
     /// The local config of each new repo: the name and the email of the author, and no commit signatures. Thus the
-    /// engine can make the first commit also on a machine with no global git identity and no signing key.
+    /// root commit can be made also on a machine with no global git identity and no signing key.
     private static let identityConfig = [
         ("user.name", userName),
         ("user.email", userEmail),
         ("commit.gpgsign", "false"),
     ]
+
+    /// The git arguments that make the empty root commit, before the message. The message follows the last argument.
+    private static let rootCommitArguments = ["commit", "--quiet", "--allow-empty", "--message"]
 
     /// The exit status of a git command that succeeds.
     private static let successStatus: Int32 = 0
@@ -59,22 +63,57 @@ enum TemporaryGitRepo {
     ///   - body: The test code. It gets the root directory of the repo.
     /// - Returns: The value that `body` returns.
     /// - Throws: An error from `FileManager` when a directory cannot be made, an error from `Process` when git cannot
-    ///   start, an `ExpectationFailedError` when `git init` or `git config` fails, or the error that `body` throws.
+    ///   start, an `ExpectationFailedError` when `git init`, `git config`, or `git commit` fails, or the error that
+    ///   `body` throws.
     static func withRepo<Value>(
         named name: String,
         _ body: (URL) async throws -> Value
+    ) async throws -> Value {
+        try await withRepos(named: [name]) { roots in
+            try await body(roots[0])
+        }
+    }
+
+    /// Makes new git repos side by side in one folder, gives their root directories to `body`, and then removes the
+    /// repos.
+    ///
+    /// The repos are siblings, so the scan of each engine finds the boards of the other repos as related boards. Each
+    /// repo has its own root commit and no `origin` remote, so the key of each board is `local/<root commit>`, and no
+    /// two boards have the same key.
+    ///
+    /// - Parameters:
+    ///   - names: The names of the repo directories. Each name must be different.
+    ///   - body: The test code. It gets the root directory of each repo, in the order of `names`.
+    /// - Returns: The value that `body` returns.
+    /// - Throws: The errors of ``withRepo(named:_:)``.
+    static func withRepos<Value>(
+        named names: [String],
+        _ body: ([URL]) async throws -> Value
     ) async throws -> Value {
         let container = parent.appending(path: UUID().uuidString, directoryHint: .isDirectory)
         defer {
             try? FileManager.default.removeItem(at: container)
         }
-        let root = container.appending(path: name, directoryHint: .isDirectory)
+        let roots = names.map { name in container.appending(path: name, directoryHint: .isDirectory) }
+        for root in roots {
+            try await makeRepo(at: root)
+        }
+        return try await body(roots)
+    }
+
+    /// Makes one new git repo with the local identity of ``identityConfig``, and with an empty root commit whose
+    /// message is the name of the repo directory.
+    ///
+    /// - Parameter root: The root directory of the new repo.
+    /// - Throws: An error from `FileManager` when the directory cannot be made, an error from `Process` when git
+    ///   cannot start, or an `ExpectationFailedError` when `git init`, `git config`, or `git commit` fails.
+    private static func makeRepo(at root: URL) async throws {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try await runGit(initArguments, in: root)
         for (key, value) in identityConfig {
             try await runGit([configCommand, key, value], in: root)
         }
-        return try await body(root)
+        try await runGit(rootCommitArguments + [root.lastPathComponent], in: root)
     }
 
     /// Runs one git command in a directory, and requires that it succeeds.

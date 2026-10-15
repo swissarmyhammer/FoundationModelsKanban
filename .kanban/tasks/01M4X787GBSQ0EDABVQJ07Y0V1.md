@@ -33,8 +33,17 @@ comments:
     - evidence: `swift test` 1477 tests / 114 suites passed. Files: Sources/FoundationModelsKanban/Events/{Event.swift, EventLog.swift, EventLogWriter.swift, Loader.swift, TransactionCheck.swift (new)}, Sources/FoundationModelsKanban/Observe/LiveGraph.swift, Sources/FoundationModelsKanban/Tool/Commit.swift; Tests: Events/{EventTests.swift, TransactionCheckTests.swift (new)}, Tool/{CommitCrashSafetyTests.swift (new), CommitRollbackTests.swift}, Observe/LiveGraphApplyTests.swift
     - next: /review
   timestamp: 2026-10-15T14:53:54.061220+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m501gxdhgq9wwrwrkfyzgfsr
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 12 files
+    - test: green — swift test, 1477 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: b4e699d
+    - review: clean — none
+  timestamp: 2026-10-15T15:05:07.249688+00:00
+position_column: done
+position_ordinal: ff8480
 title: Make transactions on many files crash safe with fsync and a file count
 ---
 ## What
