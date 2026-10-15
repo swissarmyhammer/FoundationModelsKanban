@@ -835,6 +835,21 @@ public actor KanbanGraph {
             .board(reference, try await loadBoard(named: reference, current: current))
         case .allCopies:
             .listing(try await loadEachCopy(around: current.directory))
+        case .loadedCopies(let key):
+            .loadedCopies(key, try await loadedCopies(withKey: key))
+        }
+    }
+
+    /// Gives each copy with a key that the table of the host has loaded, and records each one as a board of this view
+    /// (plan.md §6.5, many boards; divergence.md X5). The list has no load of a board that the host did not load.
+    ///
+    /// - Parameter key: The key, with the host in lowercase.
+    /// - Returns: The copies: ``BoardResolution/current`` for the board of the working directory, else the copy at the
+    ///   root directory of its engine. A board that cannot load is ``BoardResolution/unreadable(_:)``.
+    /// - Throws: The error of a load when the task is cancelled.
+    private func loadedCopies(withKey key: String) async throws -> [BoardResolution] {
+        try await host.loadedCopies(withKey: key).concurrentMap { copy in
+            try await self.loadRelatedBoard(copy)
         }
     }
 
@@ -1001,6 +1016,9 @@ private enum BoardAnswer: Sendable {
     /// The list of `Query.boards`, in scan order.
     case listing([ListedCopy])
 
+    /// The copies with a key that the table of the host has loaded, by the key.
+    case loadedCopies(String, [BoardResolution])
+
     /// Records the answer in the related boards of a run.
     ///
     /// - Parameter related: The related boards that get the answer.
@@ -1010,6 +1028,8 @@ private enum BoardAnswer: Sendable {
             related.record(resolution, forBoard: reference)
         case .listing(let copies):
             related.record(listing: copies)
+        case .loadedCopies(let key, let copies):
+            related.record(loadedCopies: copies, ofKey: key)
         }
     }
 }

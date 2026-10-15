@@ -307,6 +307,23 @@ public actor KanbanHost {
         }
     }
 
+    /// Gives the copy of each loaded board with a key, for `undo` and `redo` of a transaction that changed a board with
+    /// that key (plan.md §6.5, many boards; divergence.md X5). Each worktree of a repo has its own board with the same
+    /// key, so one key can give more than one copy. A board that is still loading is not in the list.
+    ///
+    /// - Parameter key: The key, with the host in lowercase.
+    /// - Returns: The copies, in the sort order of the path of their root directory.
+    func loadedCopies(withKey key: String) async -> [BoardCopy] {
+        var copies: [BoardCopy] = []
+        for engine in loadedEngines {
+            let boardKey = await engine.session.key
+            if boardKey.description == key {
+                copies.append(BoardCopy(directory: engine.root, key: boardKey))
+            }
+        }
+        return copies.sorted { lhs, rhs in lhs.directory.canonicalPath < rhs.directory.canonicalPath }
+    }
+
     /// The engine of each loaded board.
     private var loadedEngines: [BoardEngine] {
         engines.values.compactMap { slot in

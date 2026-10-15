@@ -22,13 +22,18 @@ struct CrossRepoUndoTests {
 
     // MARK: - Helpers
 
-    /// Runs one call that adds one task to the current board and one task to the related board.
+    /// Runs one call that adds one task to the current board and one task to a related board.
     ///
-    /// - Parameter graph: The engine of the current repo.
+    /// - Parameters:
+    ///   - graph: The engine of the current repo.
+    ///   - reference: The board ref of the related board, or `nil` for the key of the related repo.
     /// - Returns: The full URI of each new task.
     /// - Throws: An error when the response has no id for a field.
-    static func addTaskToEachBoard(on graph: KanbanGraph) async throws -> (app: String, lib: String) {
-        let libInput = CrossRepoWriteTests.boardField(try CrossRepoWriteTests.libKey())
+    static func addTaskToEachBoard(
+        on graph: KanbanGraph,
+        relatedBoard reference: String? = nil
+    ) async throws -> (app: String, lib: String) {
+        let libInput = CrossRepoWriteTests.boardField(try reference ?? CrossRepoWriteTests.libKey())
         let mutation = AddUpdateTaskTests.mutation(
             of: "\(appField): " + AddUpdateTaskTests.addTask(with: ""),
             "\(libField): " + AddUpdateTaskTests.addTask(with: libInput)

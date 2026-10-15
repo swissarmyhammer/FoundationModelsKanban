@@ -308,6 +308,32 @@ actor BoardStore {
         [.current] + related.loadedSessions.map { board in relatedTarget(of: board.session, atPath: board.path) }
     }
 
+    /// Gives each copy with a key that the table of the host has loaded, as the targets of a mutation field: the
+    /// copies that `undo` and `redo` look in for a board of a transaction (plan.md §6.5, many boards; divergence.md
+    /// X5).
+    ///
+    /// - Parameter key: The key, with the host in lowercase.
+    /// - Returns: The copies, or `nil` when the engine did not read the table for the key yet. The store then records
+    ///   the request, and the call runs again after the read. A copy that cannot be read is not in the list.
+    func loadedTargets(withKey key: String) -> [MutationTarget]? {
+        guard let copies = related.loadedCopies(ofKey: key) else {
+            requests.insert(.loadedCopies(key: key))
+            return nil
+        }
+        return copies.compactMap { resolution in
+            switch resolution {
+            case .current:
+                .current
+            case .copy(let copy):
+                related.session(of: copy).map { session in
+                    relatedTarget(of: session, atPath: copy.directory.canonicalPath)
+                }
+            case .notFound, .notARepo, .unreadable:
+                nil
+            }
+        }
+    }
+
     /// Gives the working copy of a board of a mutation field as the run sees it now.
     ///
     /// - Parameter target: The board.
@@ -323,7 +349,7 @@ actor BoardStore {
     ///
     /// - Parameter target: The board.
     /// - Returns: The key.
-    private func key(of target: MutationTarget) -> String {
+    func key(of target: MutationTarget) -> String {
         switch target {
         case .current: boardKey
         case .related(let board): board.session.key.description
@@ -430,6 +456,15 @@ enum MutationTarget {
 
     /// A related board, with its working copy in the run.
     case related(RelatedWork)
+
+    /// The canonical path of the repo directory of a related board, or `nil` for the current board. Two targets with
+    /// the same value are the same board.
+    var relatedPath: String? {
+        switch self {
+        case .current: nil
+        case .related(let board): board.path
+        }
+    }
 }
 
 /// The context of each resolver of the kanban schemas.

@@ -162,6 +162,18 @@ struct KanbanErrorTests {
         )
     }
 
+    @Test("NOT_FOUND for a board of a transaction names the board key and tells how to name a copy by its path")
+    func transactionBoardNotLoadedMessage() {
+        let error = KanbanError.transactionBoardNotLoaded(transaction: "01KTXN0001", board: "github.com/o/lib")
+        #expect(error.code == "NOT_FOUND")
+        #expect(
+            error.message
+                == "Transaction \"01KTXN0001\" also changed the board \"github.com/o/lib\", and no loaded copy of "
+                + "that board has its changes, so the call wrote nothing on any board. Name the copy by its path, "
+                + "for example undo(txn: \"01KTXN0001\", boards: [\"/path/to/copy\"]), and then send the call again."
+        )
+    }
+
     @Test("AMBIGUOUS_ID gives the matching short ids")
     func ambiguousIDMessage() {
         let error = KanbanError.ambiguousID(reference: "01KT6SA", matches: Self.ambiguousMatches)

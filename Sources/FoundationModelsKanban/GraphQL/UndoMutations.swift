@@ -37,6 +37,13 @@ private struct UndoInput: Decodable, Sendable {
     /// current board and the loaded related boards (plan.md §6.5, scope). The engine loads a board that this field
     /// names.
     let board: String?
+
+    /// The copies of the other boards of the transaction that the field can also reverse: board refs, for example the
+    /// path of a second worktree of a repo (divergence.md S8). The `boards` value of the events holds only the key of
+    /// each other board, and each worktree has its own board with the same key, so a path is the way to name one
+    /// copy. The engine loads each board that this list names, and the field reverses the transaction in each named
+    /// copy that holds events of it. `nil` names no copy.
+    let boards: [String]?
 }
 
 // MARK: - Resolvers
@@ -46,8 +53,9 @@ extension KanbanResolver {
     ///
     /// - Parameters:
     ///   - context: The context of the call.
-    ///   - arguments: The transaction, the force flag, and the board. The `input` argument is optional, because
-    ///     ``UndoInput`` has no required field (plan.md §4.2). No `input` gives the newest target and no force.
+    ///   - arguments: The transaction, the force flag, the board, and the named copies. The `input` argument is
+    ///     optional, because ``UndoInput`` has no required field (plan.md §4.2). No `input` gives the newest target
+    ///     and no force.
     /// - Returns: The change that the undo wrote. The GraphQL field is nullable, so that an error gives `null` for this
     ///   field only, and the other fields of the call keep their data.
     /// - Throws: An error of ``BoardStore/reverse(_:with:at:)``.
@@ -62,8 +70,8 @@ extension KanbanResolver {
     ///
     /// - Parameters:
     ///   - context: The context of the call.
-    ///   - arguments: The transaction, the force flag, and the board. The `input` argument is optional, the same as
-    ///     for `undo`.
+    ///   - arguments: The transaction, the force flag, the board, and the named copies. The `input` argument is
+    ///     optional, the same as for `undo`.
     /// - Returns: The change that the redo wrote. The GraphQL field is nullable, so that an error gives `null` for this
     ///   field only, and the other fields of the call keep their data.
     /// - Throws: An error of ``BoardStore/reverse(_:with:at:)``.
@@ -83,19 +91,22 @@ extension BoardStore {
     /// field wrote (plan.md §6.5, many boards).
     ///
     /// The field searches the board that the input names, else the current board and the loaded related boards. A
-    /// transaction that spans boards names the other boards in `boards`. The field reverses the transaction in each of
-    /// these boards, or in no board when one of them fails. Each board obeys the rules of
+    /// transaction that spans boards names the keys of the other boards in `boards`. The field finds each copy of
+    /// those boards that holds events of the transaction (divergence.md X5), and it reverses the transaction in each
+    /// of these boards, or in no board when one of them fails or cannot be reached. Each board obeys the rules of
     /// ``runMutation(named:on:at:_:)``.
     ///
     /// - Parameters:
     ///   - direction: `undo` or `redo`.
-    ///   - input: The transaction, the force flag, and the board, or `nil`.
+    ///   - input: The transaction, the force flag, the board, and the named copies, or `nil`.
     ///   - time: The time of the change.
     /// - Returns: The change of the patches that the field kept, with the updates of each board, or `nil` when the
     ///   engine did not load a board yet. The store then records the request, and the call runs again after the load.
     /// - Throws: ``KanbanError/nothingToUndo`` when no searched board has a target, or the inverse changes nothing.
-    ///   ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the `board` field or
-    ///   for a board of the transaction. ``KanbanError/undoConflict(transaction:laterTransactions:)`` when a later
+    ///   ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the `board` field, for
+    ///   a ref of the `boards` field, or for a board of the transaction that no copy reaches.
+    ///   ``KanbanError/transactionBoardNotLoaded(transaction:board:)`` when no loaded copy of a board of the
+    ///   transaction holds its events. ``KanbanError/undoConflict(transaction:laterTransactions:)`` when a later
     ///   transaction conflicts and the call does not force. An error of a graph rule (plan.md §3.3). An
     ///   ``EventError`` when a patch breaks a rule of the log.
     fileprivate func reverse(
@@ -103,11 +114,13 @@ extension BoardStore {
         with input: UndoInput?,
         at time: DateTime
     ) throws -> Change? {
-        guard let searched = try searchedBoards(namedBy: input?.board) else {
+        let searched = try searchedBoards(namedBy: input?.board)
+        let named = try targets(namedBy: input?.boards ?? [])
+        guard let searched, let named else {
             return nil
         }
         let found = try newestTarget(of: direction, named: input?.txn?.text, in: searched)
-        guard let boards = try boards(of: found.txn, foundIn: found.board) else {
+        guard let boards = try boards(of: found.txn, foundIn: found.board, among: named) else {
             return nil
         }
         let (actor, isForced) = (sessionActor, input?.force == true)
@@ -181,23 +194,84 @@ extension BoardStore {
         }
     }
 
-    /// Gives each board that a transaction changed: the board where the field found it, and each board that its
-    /// `boards` value names (plan.md §5.1, §6.5).
+    /// Gives the boards that the `boards` field of a reverse field names (divergence.md S8).
+    ///
+    /// - Parameter references: The board refs of the `boards` field.
+    /// - Returns: The boards, in the order of the refs, or `nil` when the engine did not load a board yet.
+    /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for a ref. Each
+    ///   other error of ``target(of:)``, unchanged.
+    private func targets(namedBy references: [String]) throws(KanbanError) -> [MutationTarget]? {
+        let targets = try references.map { reference throws(KanbanError) in try target(of: .named(reference)) }
+        let loaded = targets.compactMap(\.self)
+        return loaded.count == targets.count ? loaded : nil
+    }
+
+    /// Gives each board that a transaction changed: the board where the field found it, and each copy of a board that
+    /// its `boards` value names and that holds events of the transaction (plan.md §5.1, §6.5; divergence.md X5).
     ///
     /// - Parameters:
     ///   - txn: The transaction.
     ///   - home: The board whose log has the transaction.
-    /// - Returns: The boards, `home` first. `nil` when the engine did not load a board yet.
-    /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for a key.
-    private func boards(of txn: ULID, foundIn home: MutationTarget) throws(KanbanError) -> [MutationTarget]? {
+    ///   - named: The boards that the `boards` field of the input names.
+    /// - Returns: The boards, `home` first, each one time. `nil` when the engine did not load a board yet.
+    /// - Throws: An error of ``copies(ofKey:holding:among:)`` for a key that no copy reaches.
+    private func boards(
+        of txn: ULID,
+        foundIn home: MutationTarget,
+        among named: [MutationTarget]
+    ) throws(KanbanError) -> [MutationTarget]? {
         let events = workingCopy(of: home).liveEvents.filter { event in event.txn == txn }
         let keys = events.lazy.compactMap(\.boards).first ?? []
-        let others = try keys.map { key throws(KanbanError) in try target(of: .named(key)) }
-        let loaded = others.compactMap(\.self)
-        guard loaded.count == others.count else {
+        let found = try keys.map { key throws(KanbanError) in
+            try copies(ofKey: key, holding: txn, among: named)
+        }
+        let reached = found.compactMap(\.self)
+        guard reached.count == found.count else {
             return nil
         }
-        return [home] + loaded
+        var seen: Set<String?> = []
+        return ([home] + reached.joined()).filter { board in seen.insert(board.relatedPath).inserted }
+    }
+
+    /// Gives each copy of one board of a transaction that holds events of the transaction (divergence.md X5). The
+    /// copies to look in are the copy that the key names in the scan, each copy with the key that the table of the
+    /// host has loaded, and each board of the `boards` field with the key. The `boards` value of an event holds the
+    /// key only, and each worktree of a repo has its own board with the same key.
+    ///
+    /// - Parameters:
+    ///   - storedKey: The key of the board, as the `boards` value of the events holds it.
+    ///   - txn: The transaction.
+    ///   - named: The boards that the `boards` field of the input names.
+    /// - Returns: The copies, or `nil` when the engine did not load a copy yet.
+    /// - Throws: ``KanbanError/transactionBoardNotLoaded(transaction:board:)`` when no copy holds events of the
+    ///   transaction. ``KanbanError/boardNotFound(reference:searchRoots:)`` instead when also the scan finds no board
+    ///   for the key. Each other error of ``target(of:)``, unchanged.
+    private func copies(
+        ofKey storedKey: String,
+        holding txn: ULID,
+        among named: [MutationTarget]
+    ) throws(KanbanError) -> [MutationTarget]? {
+        let key = BoardKey.normalizedText(of: storedKey)
+        var missing = KanbanError.transactionBoardNotLoaded(transaction: txn.ulidString, board: key)
+        let scanned: [MutationTarget]?
+        do throws(KanbanError) {
+            scanned = try target(of: .named(key)).map { board in [board] }
+        } catch .boardNotFound(let reference, let searchRoots) {
+            missing = .boardNotFound(reference: reference, searchRoots: searchRoots)
+            scanned = []
+        }
+        let loaded = loadedTargets(withKey: key)
+        guard let scanned, let loaded else {
+            return nil
+        }
+        let candidates = scanned + loaded + named.filter { board in self.key(of: board) == key }
+        let holding = candidates.filter { board in
+            workingCopy(of: board).liveEvents.contains { event in event.txn == txn }
+        }
+        guard !holding.isEmpty else {
+            throw missing
+        }
+        return holding
     }
 
     /// Makes the change that a reverse field gives: the change of its first board, with the updates of the other
@@ -325,6 +399,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 InputField("txn", at: \.txn)
                 InputField("force", at: \.force)
                 InputField("board", at: \.board)
+                InputField("boards", at: \.boards)
             }
         }
         .addMutation {

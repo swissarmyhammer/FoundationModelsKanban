@@ -101,10 +101,19 @@ comments:
     - evidence: 3 files — Sources/FoundationModelsKanban/Tool/BoardEngine.swift (shared BoardWatch init(of:heldWeaklyBy:sendingBatchesTo:), engine makeWatch deleted, batchDidArrive receiver), Sources/FoundationModelsKanban/Tool/KanbanHost.swift (host makeWatch deleted; makeFolderWatch and makeUnloadableWatch call the shared init), Tests/FoundationModelsKanbanTests/Tool/BoardWatchTests.swift (new, 2 tests). swift test: 1285 passed, 0 failed; only the accepted SwiftPM "missing creator" warning.
     - next: /test, then /review
   timestamp: 2026-10-15T01:28:17.202182+00:00
+- actor: claude-code
+  id: 01m4yk9xbrsg9b79r7jc2hqbep
+  text: |-
+    ### finish iteration 4 — clean
+    - implement: changed — 3 files (1 finding fixed: one shared BoardWatch initializer)
+    - test: green — swift test, 1285 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: d071566
+    - review: clean — none
+  timestamp: 2026-10-15T01:37:23.320724+00:00
 depends_on:
 - 01M4X6XKP0Y832GDRHQ1MG22VF
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: f080
 title: Put a board that a call reached by a path into the key index
 ---
 ## What

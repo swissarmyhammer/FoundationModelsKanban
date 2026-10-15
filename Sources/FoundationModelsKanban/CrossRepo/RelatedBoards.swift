@@ -15,6 +15,11 @@ enum BoardRequest: Hashable, Sendable {
 
     /// Each copy of the current scan index of the host, for `Query.boards`.
     case allCopies
+
+    /// Each copy with a key that the table of the host has loaded, for `undo` and `redo` of a transaction that
+    /// changed a board with that key (plan.md §6.5, many boards; divergence.md X5). Each worktree of a repo has its
+    /// own board with the same key, so the key alone does not tell which copy the transaction changed.
+    case loadedCopies(key: String)
 }
 
 /// What the related boards of a run know of the target of a cross-board dependency (divergence.md Q3). The write
@@ -138,6 +143,9 @@ struct RelatedBoards: Sendable {
     /// The list of `Query.boards`, or `nil` until the engine scans for it.
     private var listing: [ListedCopy]?
 
+    /// The copies that the table of the host has loaded, by the key that the run asked for.
+    private var keyCopies: [String: [BoardResolution]] = [:]
+
     /// The loaded related boards as the reads of the run see them, by the canonical path of their repo directory.
     private var boards: [String: BoardSnapshot] = [:]
 
@@ -212,6 +220,7 @@ struct RelatedBoards: Sendable {
         related.listing = listing?.map { listed in
             ListedCopy(board: recenter(listed.board), isEnabled: listed.isEnabled)
         }
+        related.keyCopies = keyCopies.mapValues { copies in copies.map(recenter) }
         return related
     }
 
@@ -275,6 +284,15 @@ struct RelatedBoards: Sendable {
     /// an empty list.
     var copies: [ListedCopy]? {
         listing ?? (canLoad ? nil : [])
+    }
+
+    /// Gives the copies with a key that the table of the host has loaded (plan.md §6.5, many boards).
+    ///
+    /// - Parameter key: The key, with the host in lowercase.
+    /// - Returns: The copies, or `nil` when the engine did not read the table for the key yet. A value that cannot
+    ///   load gives an empty list.
+    func loadedCopies(ofKey key: String) -> [BoardResolution]? {
+        keyCopies[key] ?? (canLoad ? nil : [])
     }
 
     /// Gives the loaded board of a resolved board ref.
@@ -379,27 +397,26 @@ struct RelatedBoards: Sendable {
     /// Tells if the value answers each of some requests.
     ///
     /// - Parameter requests: The requests.
-    /// - Returns: `true` when each board ref has a resolution and a found board is loaded, and the list of
-    ///   `Query.boards` is there when a request asks for it.
+    /// - Returns: `true` when each board ref has a resolution and a found board is loaded, the list of
+    ///   `Query.boards` is there when a request asks for it, and the loaded copies of each asked key are there.
     func satisfies(_ requests: Set<BoardRequest>) -> Bool {
         requests.allSatisfy { request in
             switch request {
             case .board(let reference):
-                isAnswered(reference)
+                resolution(ofBoard: reference).map(isLoaded) ?? false
             case .allCopies:
                 copies != nil
+            case .loadedCopies(let key):
+                loadedCopies(ofKey: key)?.allSatisfy(isLoaded) ?? false
             }
         }
     }
 
-    /// Tells if the value answers a board ref: the ref has a resolution, and the board of a copy is loaded.
+    /// Tells if a read of a resolved board needs no load: the board of a copy is loaded.
     ///
-    /// - Parameter reference: The board ref.
-    /// - Returns: `true` when a read of the ref needs no load.
-    private func isAnswered(_ reference: String) -> Bool {
-        guard let resolution = resolution(ofBoard: reference) else {
-            return false
-        }
+    /// - Parameter resolution: The board.
+    /// - Returns: `true` when the board is not a copy, or when the copy is loaded.
+    private func isLoaded(_ resolution: BoardResolution) -> Bool {
         guard case .copy = resolution else {
             return true
         }
@@ -442,6 +459,15 @@ struct RelatedBoards: Sendable {
     /// - Parameter copies: The copies, in scan order.
     mutating func record(listing copies: [ListedCopy]) {
         listing = copies
+    }
+
+    /// Records the copies with a key that the table of the host has loaded.
+    ///
+    /// - Parameters:
+    ///   - copies: The copies.
+    ///   - key: The key, with the host in lowercase.
+    mutating func record(loadedCopies copies: [BoardResolution], ofKey key: String) {
+        keyCopies[key] = copies
     }
 
     /// Records the loaded related boards and the places of the scan.

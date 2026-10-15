@@ -18,6 +18,11 @@ enum KanbanError: Error, Hashable, Sendable {
     /// the scan looked in, in scan order.
     case boardNotFound(reference: String, searchRoots: [String])
 
+    /// `NOT_FOUND`: `undo` or `redo` of a transaction cannot reach a board that the transaction changed: no loaded
+    /// copy of the board has the events of the transaction (plan.md §6.5, many boards; divergence.md X5, S8). The
+    /// call writes nothing on any board. The transaction is its ULID, and the board is the key of that board.
+    case transactionBoardNotLoaded(transaction: String, board: String)
+
     /// `NOT_A_REPO`: the folder is not in a git repo, so it has no board (divergence.md §16). The path is the path of
     /// the folder.
     case notARepo(path: String)
@@ -129,7 +134,7 @@ extension KanbanError {
     var code: String {
         switch self {
         case .invalidVariables: "INVALID_VARIABLES"
-        case .notFound, .boardNotFound: "NOT_FOUND"
+        case .notFound, .boardNotFound, .transactionBoardNotLoaded: "NOT_FOUND"
         case .notARepo: "NOT_A_REPO"
         case .incompatibleBoard: "INCOMPATIBLE_BOARD"
         case .ambiguousID, .sharedShortID: "AMBIGUOUS_ID"
@@ -167,6 +172,10 @@ extension KanbanError {
             "No board has the reference \"\(reference)\". The scan looked for git repos in: "
                 + "\(searchRoots.joined(separator: Self.listSeparator)). Use a board key, a repo directory name, "
                 + "or a repo path from these places, and then send the call again."
+        case .transactionBoardNotLoaded(let transaction, let board):
+            "Transaction \"\(transaction)\" also changed the board \"\(board)\", and no loaded copy of that board has "
+                + "its changes, so the call wrote nothing on any board. Name the copy by its path, for example "
+                + "undo(txn: \"\(transaction)\", boards: [\"/path/to/copy\"]), and then send the call again."
         case .notARepo(let path):
             "The kanban needs a git repo. `\(path)` is not in a git repo."
         case .incompatibleBoard(let directory):
