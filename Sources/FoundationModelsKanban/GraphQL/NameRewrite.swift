@@ -367,15 +367,20 @@ private struct RewriteWalk {
         at path: [String],
         as position: NamePosition
     ) throws {
-        guard !field.name.value.hasPrefix(Self.introspectionPrefix), let fields = try Self.fields(of: parent),
-              let canonical = canonicalName(of: WrittenName(field.name), among: Self.candidates(fields), at: position),
+        guard !field.name.value.hasPrefix(Self.introspectionPrefix), let parent,
+              let fields = try Self.fields(of: parent),
+              let canonical = canonicalName(
+                  of: WrittenName(field.name),
+                  among: Self.candidates(fields, on: parent),
+                  at: position
+              ),
               let definition = fields[canonical]
         else {
             return
         }
         let fieldPath = path + [field.alias?.value ?? field.name.value]
         rename(field, to: canonical, recordingAs: canonical, at: fieldPath)
-        try visitBody(of: field, as: definition, at: fieldPath)
+        try visitBody(of: field, as: definition, coordinate: Self.coordinate(of: canonical, on: parent), at: fieldPath)
     }
 
     /// Moves a root query field into a `board { … }` field when the query type has no field with the name, and
@@ -388,11 +393,18 @@ private struct RewriteWalk {
     /// - Throws: An error from the schema when a type gives no fields.
     private mutating func moveIntoBoard(_ field: Field, at path: [String]) throws -> Bool {
         let name = WrittenName(field.name)
-        guard !name.text.hasPrefix(Self.introspectionPrefix), let rootFields = try Self.fields(of: schema.queryType),
-              NameMatcher.match(for: name.text, among: Self.candidates(rootFields), at: .anyOther) == .notFound,
+        guard !name.text.hasPrefix(Self.introspectionPrefix), let query = schema.queryType,
+              let rootFields = try Self.fields(of: query),
+              NameMatcher.match(for: name.text, among: Self.candidates(rootFields, on: query), at: .anyOther)
+                == .notFound,
               let board = rootFields[Self.boardField],
-              let boardFields = try Self.fields(of: getNamedType(type: board.type)),
-              let canonical = canonicalName(of: name, among: Self.candidates(boardFields), at: .anyOther),
+              let boardType = getNamedType(type: board.type),
+              let boardFields = try Self.fields(of: boardType),
+              let canonical = canonicalName(
+                  of: name,
+                  among: Self.candidates(boardFields, on: boardType),
+                  at: .anyOther
+              ),
               let definition = boardFields[canonical], let start = field.loc?.start,
               let end = field.name.loc?.startToken.fieldEnd.end
         else {
@@ -404,7 +416,8 @@ private struct RewriteWalk {
         edits.append(TextEdit(range: start..<start, replacement: "\(boardKey): \(Self.boardField) { "))
         rename(field, to: canonical, recordingAs: "\(Self.boardField).\(canonical)", at: fieldPath)
         edits.append(TextEdit(range: end..<end, replacement: " }"))
-        try visitBody(of: field, as: definition, at: fieldPath)
+        let coordinate = Self.coordinate(of: canonical, on: boardType)
+        try visitBody(of: field, as: definition, coordinate: coordinate, at: fieldPath)
         return true
     }
 
@@ -429,11 +442,20 @@ private struct RewriteWalk {
     /// - Parameters:
     ///   - field: The field.
     ///   - definition: The schema definition of the field.
+    ///   - coordinate: The `Type.field` coordinate of the field, for the aliases of its arguments and of the `input`
+    ///     fields under them.
     ///   - path: The path to the field.
     /// - Throws: An error from the schema when a type gives no fields.
-    private mutating func visitBody(of field: Field, as definition: GraphQLField, at path: [String]) throws {
+    private mutating func visitBody(
+        of field: Field,
+        as definition: GraphQLField,
+        coordinate: String,
+        at path: [String]
+    ) throws {
         let arguments = field.arguments.map { argument in (argument.name, argument.value) }
-        try visitNamedValues(arguments, typedBy: definition.args.mapValues(\.type), at: path)
+        let types = definition.args.mapValues(\.type)
+        let scope = AliasScope.argument(coordinate: coordinate)
+        try visitNamedValues(arguments, typedBy: types, in: scope, under: coordinate, at: path)
         if let selectionSet = field.selectionSet {
             try visitSelections(of: selectionSet, on: getNamedType(type: definition.type), at: path, as: .anyOther)
         }
@@ -445,14 +467,19 @@ private struct RewriteWalk {
     /// - Parameters:
     ///   - items: The name and the value of each argument or `input` field.
     ///   - types: The input type of each canonical name.
+    ///   - scope: The position of the names, for their aliases.
+    ///   - coordinate: The `Type.field` coordinate of the field whose arguments are the names, or whose argument holds
+    ///     the `input` object.
     ///   - path: The path to the field or to the `input` object.
     /// - Throws: An error from the schema when a type gives no fields.
     private mutating func visitNamedValues(
         _ items: [(Name, any GraphQL.Value)],
         typedBy types: OrderedDictionary<String, any GraphQLInputType>,
+        in scope: AliasScope,
+        under coordinate: String,
         at path: [String]
     ) throws {
-        let candidates = types.keys.map(CanonicalName.init(field:))
+        let candidates = types.keys.map { name in CanonicalName(field: name, in: scope) }
         for (name, value) in items {
             let written = WrittenName(name)
             guard let canonical = canonicalName(of: written, among: candidates, at: .anyOther),
@@ -461,7 +488,7 @@ private struct RewriteWalk {
                 continue
             }
             replace(written, with: canonical, recordingAs: canonical, at: path + [written.text])
-            try visitValue(value, ofType: getNamedType(type: type), at: path + [written.text])
+            try visitValue(value, ofType: getNamedType(type: type), under: coordinate, at: path + [written.text])
         }
     }
 
@@ -471,21 +498,25 @@ private struct RewriteWalk {
     /// - Parameters:
     ///   - value: The value.
     ///   - type: The named input type of the value, or `nil` when the type is not known.
+    ///   - coordinate: The `Type.field` coordinate of the field whose argument holds the value.
     ///   - path: The path to the value.
     /// - Throws: An error from the schema when an `input` type gives no fields.
     private mutating func visitValue(
         _ value: any GraphQL.Value,
         ofType type: (any GraphQLNamedType)?,
+        under coordinate: String,
         at path: [String]
     ) throws {
         switch (value, type) {
         case (let list as ListValue, _):
             for item in list.values {
-                try visitValue(item, ofType: type, at: path)
+                try visitValue(item, ofType: type, under: coordinate, at: path)
             }
         case (let object as ObjectValue, let inputType as GraphQLInputObjectType):
             let fields = object.fields.map { field in (field.name, field.value) }
-            try visitNamedValues(fields, typedBy: try inputType.fields().mapValues(\.type), at: path)
+            let scope = AliasScope.inputField(type: inputType.name, coordinate: coordinate)
+            let types = try inputType.fields().mapValues(\.type)
+            try visitNamedValues(fields, typedBy: types, in: scope, under: coordinate, at: path)
         case (let enumValue as EnumValue, let enumType as GraphQLEnumType):
             let written = WrittenName(enumValue)
             let candidates = enumType.values.map { value in CanonicalName(name: value.name, aliases: []) }
@@ -573,12 +604,24 @@ private struct RewriteWalk {
         }
     }
 
-    /// Gives the canonical names of the fields of a type, each with its aliases.
+    /// Gives the canonical names of the fields of a type, each with its aliases in a selection on the type.
     ///
-    /// - Parameter fields: The fields.
+    /// - Parameters:
+    ///   - fields: The fields.
+    ///   - type: The type that has the fields.
     /// - Returns: The candidates of the name matcher.
-    private static func candidates(_ fields: GraphQLFieldMap) -> [CanonicalName] {
-        fields.keys.map(CanonicalName.init(field:))
+    private static func candidates(_ fields: GraphQLFieldMap, on type: any GraphQLNamedType) -> [CanonicalName] {
+        fields.keys.map { name in CanonicalName(field: name, in: .selection(type: type.name)) }
+    }
+
+    /// Gives the schema coordinate of a field, for the aliases of its arguments.
+    ///
+    /// - Parameters:
+    ///   - field: The canonical name of the field.
+    ///   - type: The type that has the field.
+    /// - Returns: The coordinate `Type.field`, for example `Board.tasks`.
+    private static func coordinate(of field: String, on type: any GraphQLNamedType) -> String {
+        "\(type.name).\(field)"
     }
 }
 

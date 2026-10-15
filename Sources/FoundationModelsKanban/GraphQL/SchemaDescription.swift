@@ -122,4 +122,18 @@ enum SchemaDescription {
         The new list of the tasks that this task depends on. It replaces the old list, and removes from the body the \
         task URLs that the list drops. A short ref names a task of the board of this task. \(crossBoardDependency)
         """
+
+    /// The `column` field of `UpdateTaskInput` (divergence.md E5).
+    static let updateTaskColumn = """
+        The column to move the task to, in the same change. The task goes to the end of the column. A slug that no \
+        column has makes the column, the same as moveTask.
+        """
+
+    // MARK: - Comment inputs
+
+    /// The `task` field of `UpdateCommentInput` and `CommentReferenceInput` (divergence.md E5, K16).
+    static let commentTask = """
+        The task of the comment. The comment id alone names the comment. When this task is not the task of the \
+        comment, the call gives NOT_FOUND and changes nothing.
+        """
 }

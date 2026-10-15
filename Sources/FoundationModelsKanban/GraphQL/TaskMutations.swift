@@ -7,7 +7,8 @@ extension MutationName {
     /// The mutation that makes a task.
     static let addTask = "addTask"
 
-    /// The mutation that changes the title, the body, the assignees, the tags, or the dependencies of a task.
+    /// The mutation that changes the title, the body, the assignees, the tags, or the dependencies of a task, and can
+    /// move the task to the end of a column.
     static let updateTask = "updateTask"
 }
 
@@ -62,6 +63,10 @@ private struct UpdateTaskInput: Decodable, Sendable {
 
     /// The new dependencies of the task.
     let dependsOn: FieldUpdate<[NodeID]>
+
+    /// The column to move the task to, at the end of the column, or `nil` for no move (divergence.md E5): a full
+    /// URI, the slug, or a name. A slug that no column has makes a new column, the same as `moveTask`.
+    let column: NodeID?
 }
 
 // MARK: - Change
@@ -159,7 +164,8 @@ extension KanbanResolver {
                 resolvingWith: resolver,
                 at: time
             )
-            let values = [PropertyName.title: input.title.map(PatchValue.string)]
+            let place = try work.place(of: ref, movingTo: input.column, resolvingWith: resolver, at: time)
+            let values = place.merging([PropertyName.title: input.title.map(PatchValue.string)]) { _, title in title }
             let change = TaskChange(values: values, body: input.body, edges: edges)
             let warnings = try work.write(change, toTask: ref, inBoard: resolver.boardKey, at: time)
             return TaskWrite(ref: ref, warnings: warnings)
@@ -296,6 +302,32 @@ extension WorkingCopy {
             PropertyName.dependsOn: try dependsOn.map(resolver.dependencyRefs(for:)),
         ]
         return lists.compactMapValues { list in list }
+    }
+
+    /// Gives the `column` and the `ordinal` updates of an `updateTask` field that moves the task (divergence.md E5).
+    /// The task goes to the end of the column, in the patch of the field. The column follows the rule of `moveTask`.
+    ///
+    /// - Parameters:
+    ///   - task: The local ref of the task.
+    ///   - column: The column that the input names, or `nil` for no move.
+    ///   - resolver: The resolver of the forgiving refs of the board.
+    ///   - time: The time of the change.
+    /// - Returns: The updates of the column and the ordinal, or no update when the input names no column.
+    /// - Throws: The errors of ``columnRef(forMoveTo:resolvingWith:at:)``.
+    fileprivate mutating func place(
+        of task: LocalRef,
+        movingTo column: NodeID?,
+        resolvingWith resolver: RefResolver,
+        at time: DateTime
+    ) throws -> [String: FieldUpdate<PatchValue>] {
+        guard let column else {
+            return [:]
+        }
+        let ref = try columnRef(forMoveTo: column, resolvingWith: resolver, at: time)
+        return [
+            PropertyName.column: .changed(.ref(.local(ref))),
+            PropertyName.ordinal: .changed(.string(graph.nextOrdinal(inColumn: ref, excluding: task).value)),
+        ]
     }
 
     /// Writes the task patch of a field, and checks the dependency rule (plan.md §3.3, rule 6).
@@ -572,6 +604,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 InputField("assignees", at: \.assignees.value)
                 InputField("tags", at: \.tags.value)
                 InputField("dependsOn", at: \.dependsOn.value).description(SchemaDescription.updateTaskDependsOn)
+                InputField("column", at: \.column).description(SchemaDescription.updateTaskColumn)
             }
         }
         .addMutation {

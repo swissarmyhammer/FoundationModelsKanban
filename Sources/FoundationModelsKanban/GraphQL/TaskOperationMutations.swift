@@ -388,7 +388,7 @@ extension WorkingCopy {
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when a URI names no live column, or the slug names a
     ///   tombstone. ``KanbanError/invalidSlug(name:)`` when the name gives an empty slug.
     ///   ``KanbanError/reservedSlug(type:)`` when a new column would get the slug ``Slug/reservedForBoard``.
-    fileprivate mutating func columnRef(
+    mutating func columnRef(
         forMoveTo id: NodeID,
         resolvingWith resolver: RefResolver,
         at time: DateTime

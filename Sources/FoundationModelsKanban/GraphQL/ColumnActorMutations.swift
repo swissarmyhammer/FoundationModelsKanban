@@ -121,8 +121,8 @@ private struct UpdateActorInput: Decodable, Sendable {
 }
 
 /// The `input` object of a mutation that names one node and has no other field: the delete and the undelete
-/// mutations (plan.md §4.2). ``SchemaBuilder/addColumnActorMutations()`` adds its `input` type, and the comment
-/// mutations use it too.
+/// mutations of columns, actors, tasks, and tags (plan.md §4.2). ``SchemaBuilder/addColumnActorMutations()`` adds its
+/// `input` type. The comment mutations use `CommentReferenceInput`, which can also name the task of the comment.
 struct NodeReferenceInput: Codable, Sendable {
     /// The node: a full URI or a short form (plan.md §3.2).
     let id: NodeID
@@ -327,8 +327,32 @@ extension KanbanResolver {
         _ arguments: InputArguments<NodeReferenceInput>
     ) async throws -> Object? {
         let id = arguments.input.id
-        return try await context.changeNode(named: operation, on: .holding(id)) { work, resolver, time in
-            let ref = try resolver.nodeRef(for: id, ofType: type, includingTombstones: !isDeleted)
+        return try await changeDeleted(to: isDeleted, as: operation, context: context, holding: id) { resolver in
+            try resolver.nodeRef(for: id, ofType: type, includingTombstones: !isDeleted)
+        }
+    }
+
+    /// Writes a `delete` patch on the node that a resolve gives: `true` makes a tombstone, `false` makes a tombstone
+    /// live again. The rules are the rules of ``changeDeleted(to:ofType:as:context:_:)``.
+    ///
+    /// - Parameters:
+    ///   - isDeleted: `true` for a delete, `false` for an undelete.
+    ///   - operation: The name of the public mutation.
+    ///   - context: The context of the call.
+    ///   - id: The node ref that the input gives. It names the board of the field.
+    ///   - resolve: Gives the local ref of the node from the resolver of the forgiving refs of the board.
+    /// - Returns: The node after the change.
+    /// - Throws: The error of `resolve`. ``KanbanError/columnNotEmpty(column:liveTaskCount:)`` when a deleted column
+    ///   shows live tasks. ``KanbanError/dependencyCycle(path:)`` when an undeleted task closes a `dependsOn` cycle.
+    func changeDeleted<Object: SlotNodeObject>(
+        to isDeleted: Bool,
+        as operation: String,
+        context: KanbanContext,
+        holding id: NodeID,
+        resolving resolve: @escaping @Sendable (RefResolver) throws -> LocalRef
+    ) async throws -> Object? {
+        try await context.changeNode(named: operation, on: .holding(id)) { work, resolver, time in
+            let ref = try resolve(resolver)
             try work.setDeleted(isDeleted, of: ref, inBoard: resolver.boardKey, at: time)
             return ref
         }

@@ -1060,35 +1060,6 @@ enum GraphQLTypeName {
     static let progress = "Progress"
 }
 
-/// The aliases of the fields, the arguments, and the `input` fields of the schemas: the other names that the agent can
-/// write for each name (plan.md §4.5, step 5).
-///
-/// The schema has one name for each field, and introspection shows only that name. The forgiving name rewrite reads
-/// this table, so that the Swift code stays the one source of the names (plan.md §1). A key is a GraphQL name of the
-/// schemas above, and its aliases apply at each position where the schema has the name.
-enum GraphQLFieldAliases {
-    /// The aliases of each name. The old names `description` (Board, Tag, Task) and `text` (Comment) are aliases of
-    /// `body` (plan.md §12, item 19). A key must be a name that the schema has: `label` is an alias of `tags`, because
-    /// no field, argument, or `input` field has the name `tag`.
-    static let byName: [String: [String]] = [
-        "body": ["description", "desc", "text", "content"],
-        "column": ["status"],
-        "assignees": ["assignee"],
-        "id": ["task_id"],
-        "tags": ["labels", "label"],
-    ]
-}
-
-extension CanonicalName {
-    /// Makes the canonical name of a field, an argument, or an `input` field, with its aliases from
-    /// ``GraphQLFieldAliases``.
-    ///
-    /// - Parameter name: The GraphQL name, for example `body`.
-    init(field name: String) {
-        self.init(name: name, aliases: GraphQLFieldAliases.byName[name] ?? [])
-    }
-}
-
 /// A step that adds fields to the builder of the public schema before the build, and gives the builder back. A test
 /// gives a step that adds a test field, for example a field that adds a warning (plan.md §4.4).
 typealias SchemaExtension =

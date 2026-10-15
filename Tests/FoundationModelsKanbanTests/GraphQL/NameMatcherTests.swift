@@ -13,22 +13,24 @@ struct NameMatcherTests {
         "updateColumn", "deleteColumn", "undeleteColumn", "addActor", "updateActor", "deleteActor", "undeleteActor",
         "addTag", "updateTag", "deleteTag", "undeleteTag", "renameTag", "addComment", "updateComment",
         "deleteComment", "undeleteComment",
-    ].map { CanonicalName(field: $0) }
+    ].map { CanonicalName(field: $0, in: .selection(type: "Mutation")) }
 
     /// The fields of the `Task` type, with their aliases.
     static let taskFields = [
         "id", "body", "created", "updated", "deleted", "shortId", "title", "column", "ordinal", "assignees", "tags",
         "dependsOn", "blockedBy", "ready", "virtualTags", "progress", "comments", "started", "completed",
-    ].map { CanonicalName(field: $0) }
+    ].map { CanonicalName(field: $0, in: .selection(type: "Task")) }
 
     /// The fields of the `Board` type. It has `task` and `tasks`, which differ by one letter.
     static let boardFields = [
         "id", "body", "created", "updated", "deleted", "key", "name", "columns", "actors", "tags", "task", "tasks",
         "summary",
-    ].map { CanonicalName(field: $0) }
+    ].map { CanonicalName(field: $0, in: .selection(type: "Board")) }
 
     /// The fields of the `input` object of `moveTask`.
-    static let moveTaskInputFields = ["id", "column", "ordinal", "before", "after"].map { CanonicalName(field: $0) }
+    static let moveTaskInputFields = ["id", "column", "ordinal", "before", "after"].map { name in
+        CanonicalName(field: name, in: .inputField(type: "MoveTaskInput", coordinate: "Mutation.moveTask"))
+    }
 
     /// Gives the match of a top-level mutation name.
     ///
