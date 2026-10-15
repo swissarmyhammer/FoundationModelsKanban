@@ -285,7 +285,25 @@ struct KanbanGraphTests {
         try #require(object(of: response)["data"] as? [String: Any])
     }
 
+    /// Gives one named object of the `data` object of a response, for example the `board` object. Each suite that
+    /// reads a named object of the `data` object of a response calls it.
+    ///
+    /// - Parameters:
+    ///   - key: The name of the object in the `data` object, for example `board` or `addTask`.
+    ///   - response: The response JSON text.
+    /// - Returns: The named object.
+    /// - Throws: An error that shows the response when the `data` object has no object with this name.
+    static func object(named key: String, in response: String) throws -> [String: Any] {
+        try #require(data(of: response)[key] as? [String: Any], "\(response)")
+    }
+
     // MARK: - Tests
+
+    @Test("object(named:in:) gives the named object of the data object of a response")
+    func objectNamedGivesDataObject() throws {
+        let board = try Self.object(named: "board", in: #"{"data":{"board":{"name":"app"}}}"#)
+        #expect(board["name"] as? String == "app")
+    }
 
     @Test("A query on fixture logs returns the expected JSON with sorted keys")
     func queryOnFixtureLogs() async throws {

@@ -202,7 +202,7 @@ struct SubscriptionTests {
     /// - Throws: An error when the response has no transaction.
     static func latestTxn(on graph: KanbanGraph) async throws -> String {
         let response = try await KanbanGraphTests.execute(latestTxnQuery, on: graph)
-        let board = try #require(KanbanGraphTests.data(of: response)["board"] as? [String: Any], "\(response)")
+        let board = try KanbanGraphTests.object(named: "board", in: response)
         let history = try #require(board["history"] as? [[String: Any]], "\(response)")
         return try #require(history.first?["txn"] as? String, "\(response)")
     }

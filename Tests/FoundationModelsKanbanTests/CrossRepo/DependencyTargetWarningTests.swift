@@ -42,17 +42,6 @@ struct DependencyTargetWarningTests {
         try await run(AddUpdateTaskTests.addTask(with: input, selecting: selection), in: repos)
     }
 
-    /// Gives the fields of the task of a mutation field in a response.
-    ///
-    /// - Parameters:
-    ///   - name: The name of the mutation field.
-    ///   - response: The response JSON text.
-    /// - Returns: The fields of the task.
-    /// - Throws: An error when the response has no task for the field.
-    static func task(of name: String, in response: String) throws -> [String: Any] {
-        try #require(KanbanGraphTests.data(of: response)[name] as? [String: Any], "\(response)")
-    }
-
     /// Checks that a response has one warning with a code, and that its message names a URI.
     ///
     /// - Parameters:
@@ -87,7 +76,7 @@ struct DependencyTargetWarningTests {
         )
         UnresolvedDependsOnTests.expectBlocked(
             onlyByUnresolved: [missing],
-            in: try Self.task(of: MutationName.addTask, in: response)
+            in: try KanbanGraphTests.object(named: MutationName.addTask, in: response)
         )
         try Self.expectWarning(coded: DependencyWarnings.taskNotFoundCode, naming: missing, in: response)
     }
@@ -99,7 +88,7 @@ struct DependencyTargetWarningTests {
         let response = try await Self.addTask(with: #"body: "Needs \#(missing)""#, in: dependency.repos)
         UnresolvedDependsOnTests.expectBlocked(
             onlyByUnresolved: [missing],
-            in: try Self.task(of: MutationName.addTask, in: response)
+            in: try KanbanGraphTests.object(named: MutationName.addTask, in: response)
         )
         try Self.expectWarning(coded: DependencyWarnings.taskNotFoundCode, naming: missing, in: response)
     }
@@ -116,7 +105,7 @@ struct DependencyTargetWarningTests {
         let response = try await Self.run(update, in: dependency.repos)
         UnresolvedDependsOnTests.expectBlocked(
             onlyByUnresolved: [missing],
-            in: try Self.task(of: MutationName.updateTask, in: response)
+            in: try KanbanGraphTests.object(named: MutationName.updateTask, in: response)
         )
         try Self.expectWarning(coded: DependencyWarnings.taskNotFoundCode, naming: missing, in: response)
     }
@@ -133,7 +122,7 @@ struct DependencyTargetWarningTests {
         )
         UnresolvedDependsOnTests.expectBlocked(
             onlyByUnresolved: [target],
-            in: try Self.task(of: MutationName.addTask, in: response)
+            in: try KanbanGraphTests.object(named: MutationName.addTask, in: response)
         )
         try Self.expectWarning(coded: DependencyWarnings.boardNotFoundCode, naming: target, in: response)
     }
@@ -146,7 +135,7 @@ struct DependencyTargetWarningTests {
         let input = "dependsOn: \(AddUpdateTaskTests.list(of: [dependency.target])), "
             + #"body: "Also \#(dependency.target)""#
         let response = try await Self.addTask(with: input, in: dependency.repos)
-        let task = try Self.task(of: MutationName.addTask, in: response)
+        let task = try KanbanGraphTests.object(named: MutationName.addTask, in: response)
         #expect(UnresolvedDependsOnTests.blockerIDs(in: task) == [dependency.target], "\(response)")
         #expect(task["unresolvedDependsOn"] as? [String] == [], "\(response)")
         #expect(try KanbanGraphTests.object(of: response)["extensions"] == nil, "\(response)")

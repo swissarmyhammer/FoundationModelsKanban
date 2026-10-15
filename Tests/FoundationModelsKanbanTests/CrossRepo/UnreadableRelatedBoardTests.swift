@@ -151,7 +151,7 @@ struct UnreadableRelatedBoardTests {
         let app = try GitGraphFixture.makeGraph(at: dependency.repos.app)
         let response = try await KanbanGraphTests.execute(KanbanGraphTests.nameQuery, on: app)
         await app.close()
-        let board = try #require(KanbanGraphTests.data(of: response)["board"] as? [String: Any], "\(response)")
+        let board = try KanbanGraphTests.object(named: "board", in: response)
         #expect(board["name"] as? String == dependency.repos.app.lastPathComponent)
         try Self.expectUnreadableWarning(in: response, for: dependency.repos)
     }
@@ -177,7 +177,7 @@ struct UnreadableRelatedBoardTests {
         let query = try CrossRepoReadTests.query(of: dependency.task, selecting: Self.readySelection)
         let response = try await KanbanGraphTests.execute(query, on: app)
         await app.close()
-        let board = try #require(KanbanGraphTests.data(of: response)["board"] as? [String: Any], "\(response)")
+        let board = try KanbanGraphTests.object(named: "board", in: response)
         let task = try #require(board["task"] as? [String: Any], "\(response)")
         #expect(task["ready"] as? Bool == false)
         try Self.expectUnreadableWarning(in: response, for: dependency.repos)

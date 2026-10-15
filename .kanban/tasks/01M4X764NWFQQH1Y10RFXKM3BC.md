@@ -59,6 +59,24 @@ comments:
     - What did not work: the `replace_all` flag of the files edit op replaced only the first match. For the bulk rename, each match needed its own edit.
     - next: /review
   timestamp: 2026-10-15T12:17:34.486725+00:00
+- actor: claude-code
+  id: 01m4zrvbt6xdn90ctx5gpefnde
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 29 files (3 findings fixed; findings 1 and 2 share one cause, fixed by one generic isLive helper)
+    - test: green — swift test, 1442 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: d002ede
+    - review: findings — Tests/FoundationModelsKanbanTests/CrossRepo/UnreadableRelatedBoardTests.swift:154, Tests/FoundationModelsKanbanTests/CrossRepo/UnresolvedDependsOnTests.swift:29
+  timestamp: 2026-10-15T12:33:32.486364+00:00
+- actor: claude-code
+  id: 01m4zsg9xg9sgzs8k23fav1pbc
+  text: |-
+    ### implement — changed
+    - evidence: I added `KanbanGraphTests.object(named:in:)` in Tool/KanbanGraphTests.swift. It wraps `data(of:)` and `#require`, and shows the response when the object is missing. A new test calls it (`objectNamedGivesDataObject`). RED was a build failure because the helper did not exist. Each inline lookup of a named object of the `data` object now calls the helper: UnreadableRelatedBoardTests (2 sites), UnresolvedDependsOnTests, CrossRepoTransferTests (2), CrossRepoReadTests, SubscriptionTests, ReadmeExamplesTests (3), VariableRewriteTests, QueryResolverTests, RemovedParameterTests (2), SharedShortIDTests (2), ListInStringTests, AddUpdateTaskTests, ColumnActorTests, AgentPlanPostTests, PortabilityTests, SchemaDescriptionTests, and KanbanToolTests (2). I removed `DependencyTargetWarningTests.task(of:in:)`, because it only passed through to the same lookup. Its 5 callers now call the shared helper. `swift test`: 1443 tests in 111 suites pass. The only compiler warning is the accepted "missing creator" warning.
+    - Not changed, because they are a different shape: CodeModeTests.dataField reads a parsed `Any?` value and gives an optional. ResponseWarningsTests reads a String value, not an object. ScanCacheTests.hasBoard tests for presence, and a missing board is a valid result there. RemovedParameterTests uses an `is [String: Any]` expectation, not an extraction.
+    - What did not work: the `replace_all` flag of the files edit op again replaced only the first match. Each call site needed its own edit.
+    - next: /review
+  timestamp: 2026-10-15T12:44:58.672159+00:00
 position_column: doing
 position_ordinal: '80'
 title: Add back avatar, model, summary counts, percent, and virtual tag color and description
@@ -100,3 +118,13 @@ Add back these fields from the Rust kanban:
 - [x] `Sources/FoundationModelsKanban/Derived/Summary.swift:83` `duplication/duplication` — The new Graph.isLiveActor(at:) body repeats the body of the existing Graph.isLiveTask(at:) almost word for word. Only the node type differs (ActorNode instead of TaskNode). The two copies can drift apart, so a later change to the liveness rule could fix one and miss the other. Make one shared liveness helper that takes the node type as a generic parameter, for example `func isLive<N: NodeState>(at slot: Int, as type: N.Type) -> Bool`, and have isLiveActor call it with ActorNode.self. Do not edit Readiness.swift:323 in this change. Report the switch of isLiveTask to the shared helper as a separate task.
   - Note for a person to review: this change did not obey the clause "Do not edit Readiness.swift:323 in this change". Finding 1 has the same cause, and it tells `isLiveTask` to call the shared helper. That needs the edit in Readiness.swift. So `isLiveTask` now calls `Graph.isLive(_:at:)` in this change, and no separate task was made, because no work is left for one. A person can review this choice.
 - [x] `Tests/FoundationModelsKanbanTests/GraphQL/RustFieldTests.swift:79` `reuse/reuse` — The new `data(of:)` helper repeats an existing helper with the same signature and body. Two copies of this helper must now be kept in step, and a fix to one will not reach the other. Move the helper to one shared place in the test support files, such as a `KanbanGraphTests` or `ColumnActorTests` extension, and call it from both suites. Remove the copy in RustFieldTests.swift.
+
+## Review Findings (2026-10-15 07:21)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 29 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/UnreadableRelatedBoardTests.swift:154` `reuse/reuse` — The line repeats the inline lookup of a named board object from a response. The same lookup is written inline at CrossRepoTransferTests.swift:111 and UnresolvedDependsOnTests.swift:29, so one canonical helper is not used. Add one shared helper in KanbanGraphTests, for example `static func object(named key: String, in response: String) throws -> [String: Any]`, that wraps `data(of:)` and `#require`. Call it from all these sites.
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/UnresolvedDependsOnTests.swift:29` `reuse/reuse` — The board-object extraction is written inline again. It matches the same extraction at CrossRepoTransferTests.swift:111 and UnreadableRelatedBoardTests.swift:154, so the lookup logic exists in three places. Move the `board` lookup into one shared helper, and have `fields(of:on:)` and the other sites call it.

@@ -196,10 +196,9 @@ struct KanbanToolTests {
     func exampleQueryRuns() async throws {
         #expect(try Self.makeTool(inRepoAt: TemporaryDirectory().url).description.contains(KanbanTool.exampleQuery))
         let response = try await Self.call(query: KanbanTool.exampleQuery, variables: nil)
-        let object = try KanbanGraphTests.object(of: response)
-        let board = try #require((object["data"] as? [String: Any])?["board"] as? [String: Any])
+        let board = try KanbanGraphTests.object(named: "board", in: response)
         #expect(board["name"] as? String == KanbanGraphTests.boardName)
-        #expect(object["errors"] == nil)
+        #expect(try KanbanGraphTests.object(of: response)["errors"] == nil)
     }
 
     @Test("The description tells that dependsOn takes the full kanban:// URI of a task on a different board")
@@ -219,12 +218,11 @@ struct KanbanToolTests {
     func historyExampleRuns() async throws {
         #expect(try Self.makeTool(inRepoAt: TemporaryDirectory().url).description.contains(KanbanTool.historyExample))
         let response = try await Self.call(query: KanbanTool.historyExample, variables: nil)
-        let object = try KanbanGraphTests.object(of: response)
-        let board = try #require((object["data"] as? [String: Any])?["board"] as? [String: Any])
+        let board = try KanbanGraphTests.object(named: "board", in: response)
         let history = try #require(board["history"] as? [[String: Any]], "\(response)")
         let updates = history.flatMap { change in change["updates"] as? [[String: Any]] ?? [] }
         #expect(!updates.isEmpty)
         #expect(updates.allSatisfy { update in update["type"] as? String == NodeType.task.rawValue })
-        #expect(object["errors"] == nil)
+        #expect(try KanbanGraphTests.object(of: response)["errors"] == nil)
     }
 }

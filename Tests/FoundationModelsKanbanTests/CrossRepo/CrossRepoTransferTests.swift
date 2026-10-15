@@ -97,7 +97,7 @@ struct CrossRepoTransferTests {
     static func task(_ task: String, selecting selection: String, on graph: KanbanGraph) async throws -> [String: Any] {
         let query = #"{ node(id: "\#(task)") { ... on Task \#(selection) } }"#
         let response = try await KanbanGraphTests.execute(query, on: graph)
-        return try #require(KanbanGraphTests.data(of: response)["node"] as? [String: Any], "\(response)")
+        return try KanbanGraphTests.object(named: "node", in: response)
     }
 
     /// Reads the tag names of the related board.
@@ -108,7 +108,7 @@ struct CrossRepoTransferTests {
     static func libTagNames(on graph: KanbanGraph) async throws -> [String] {
         let query = #"{ board(id: "\#(try CrossRepoWriteTests.libKey())") { \#(tagNamesSelection) } }"#
         let response = try await KanbanGraphTests.execute(query, on: graph)
-        let board = try #require(KanbanGraphTests.data(of: response)["board"] as? [String: Any], "\(response)")
+        let board = try KanbanGraphTests.object(named: "board", in: response)
         return try names(in: board["tags"])
     }
 

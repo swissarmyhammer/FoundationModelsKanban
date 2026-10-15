@@ -148,8 +148,7 @@ struct AgentPlanPostTests {
         @discardableResult
         func addTask(titled title: String) async throws -> String {
             let response = try await call(AgentPlanPostTests.addTask(titled: title))
-            let data = try #require(KanbanGraphTests.object(of: response)["data"] as? [String: Any])
-            return try #require((data["addTask"] as? [String: Any])?["id"] as? String)
+            return try #require(KanbanGraphTests.object(named: "addTask", in: response)["id"] as? String)
         }
 
         /// The plans of the posted events, in post order.

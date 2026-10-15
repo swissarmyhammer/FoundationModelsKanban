@@ -188,7 +188,7 @@ struct ReadmeExamplesTests {
         let response = try await KanbanGraphTests.execute(query, on: example.graph)
         await example.graph.close()
         try expectNoErrors(response)
-        let board = try #require(KanbanGraphTests.data(of: response)["board"] as? [String: Any], "\(response)")
+        let board = try KanbanGraphTests.object(named: "board", in: response)
         return (example, board)
     }
 
@@ -263,7 +263,7 @@ struct ReadmeExamplesTests {
         let board = try await ExampleBoard()
         let response = try await Self.addFirstTask(on: board.graph)
         await board.graph.close()
-        let task = try #require(KanbanGraphTests.data(of: response)["addTask"] as? [String: Any], "\(response)")
+        let task = try KanbanGraphTests.object(named: "addTask", in: response)
         #expect(task["title"] as? String == Self.taskTitle)
         #expect(try RepositoryFile.text(at: Self.readmePath).contains(Self.addTaskVariablesText))
         try Self.expectReadmeShows(response)
@@ -339,7 +339,7 @@ struct ReadmeExamplesTests {
         let prefix = try await Self.taskIDPrefix(inBoardAt: board.root)
         let event = try #require(events.first, "the subscription must send one event")
         try Self.expectNoErrors(event)
-        let change = try #require(KanbanGraphTests.data(of: event)["changes"] as? [String: Any], "\(event)")
+        let change = try KanbanGraphTests.object(named: "changes", in: event)
         let updates = change["updates"] as? [[String: Any]] ?? []
         #expect(change["ops"] as? [String] == Self.secondBugOperations)
         #expect(updates.map { update in update["kind"] as? String } == [Self.createdKind])

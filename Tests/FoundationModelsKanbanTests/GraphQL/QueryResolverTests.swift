@@ -144,7 +144,7 @@ struct QueryResolverTests {
         let response = try await QueryFixture().respond(
             to: "{ board { tasks(first: \(Self.pageSize)) { nodes { id } edges { node { id } } } } }"
         )
-        let board = try #require(try KanbanGraphTests.data(of: response)["board"] as? [String: Any])
+        let board = try KanbanGraphTests.object(named: "board", in: response)
         let tasks = try #require(board["tasks"] as? [String: Any])
         let nodes = try #require(tasks["nodes"] as? [[String: String]])
         let edges = try #require(tasks["edges"] as? [[String: [String: String]]])

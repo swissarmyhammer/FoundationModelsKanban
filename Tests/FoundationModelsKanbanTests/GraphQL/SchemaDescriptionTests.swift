@@ -40,9 +40,8 @@ struct SchemaDescriptionTests {
             to: introspectionQuery,
             context: GraphQLEngineTests.makeContext()
         )
-        let data = try #require(try KanbanGraphTests.object(of: response)["data"] as? [String: Any])
-        let task = try #require(data["task"] as? [String: Any])
-        let input = try #require(data["input"] as? [String: Any])
+        let task = try KanbanGraphTests.object(named: "task", in: response)
+        let input = try KanbanGraphTests.object(named: "input", in: response)
         return (
             try descriptions(of: try #require(task["fields"] as? [[String: Any]])),
             try descriptions(of: try #require(input["inputFields"] as? [[String: Any]]))

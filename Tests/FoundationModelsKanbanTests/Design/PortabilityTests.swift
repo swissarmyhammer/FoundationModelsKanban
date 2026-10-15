@@ -110,9 +110,7 @@ extension Design {
         ///   - graph: The engine.
         /// - Returns: The full URI of the node of the field.
         static func id(runningField field: String, named name: String, on graph: KanbanGraph) async throws -> String {
-            let response = try KanbanGraphTests.object(of: try await CommentTests.run(field, on: graph))
-            let data = try #require(response["data"] as? [String: Any])
-            let node = try #require(data[name] as? [String: Any])
+            let node = try KanbanGraphTests.object(named: name, in: try await CommentTests.run(field, on: graph))
             return try #require(node["id"] as? String)
         }
 

@@ -73,7 +73,7 @@ struct CrossRepoReadTests {
     /// - Throws: An error when the response has no board.
     static func board(_ field: String, of reference: String, on graph: KanbanGraph) async throws -> String? {
         let response = try await KanbanGraphTests.execute(#"{ board(id: "\#(reference)") { \#(field) } }"#, on: graph)
-        let board = try #require(KanbanGraphTests.data(of: response)["board"] as? [String: Any], "\(response)")
+        let board = try KanbanGraphTests.object(named: "board", in: response)
         return board[field] as? String
     }
 

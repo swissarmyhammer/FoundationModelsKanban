@@ -648,7 +648,7 @@ struct AddUpdateTaskTests {
         let add = Self.addTask(with: #"dependsOn: ["\#(Self.remoteTask)"]"#, selecting: "{ id ready }")
         let response = try await ColumnActorTests.respond(to: Self.mutation(of: add), onFixtureIn: directory)
         let task = try Self.firstTask(in: response)
-        let added = try #require(KanbanGraphTests.data(of: response)[MutationName.addTask] as? [String: Any])
+        let added = try KanbanGraphTests.object(named: MutationName.addTask, in: response)
         #expect(added["ready"] as? Bool == false, "\(response)")
         try DependencyTargetWarningTests.expectWarning(
             coded: DependencyWarnings.boardNotFoundCode,

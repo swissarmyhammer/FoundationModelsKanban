@@ -90,7 +90,7 @@ struct SharedShortIDTests {
     /// - Returns: The full URI of the node.
     /// - Throws: An error when the response has no `data`, or the field has no `id`.
     static func id(ofField field: String, in response: String) throws -> String? {
-        (try KanbanGraphTests.data(of: response)[field] as? [String: Any])?["id"] as? String
+        try KanbanGraphTests.object(named: field, in: response)["id"] as? String
     }
 
     /// Gives the full URI of a task of the board.
@@ -132,7 +132,7 @@ struct SharedShortIDTests {
     @Test("A query with the shared short id gives the task with the lowest ULID, and gives a warning")
     func queryWithSharedShortIDGivesLowestULID() async throws {
         let response = try await response(to: #"{ board { task(id: "\#(sharedReference)") { id } } }"#)
-        let task = (try KanbanGraphTests.data(of: response)["board"] as? [String: Any])?["task"] as? [String: Any]
+        let task = try KanbanGraphTests.object(named: "board", in: response)["task"] as? [String: Any]
         #expect(task?["id"] as? String == Self.id(of: lowest))
         try expectSharedShortIDWarning(in: response)
     }
