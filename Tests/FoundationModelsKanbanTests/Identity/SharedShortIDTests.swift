@@ -116,8 +116,7 @@ struct SharedShortIDTests {
     @Test("updateTask with the shared short id changes the live task with the lowest ULID, and gives a warning")
     func mutationWithSharedShortIDChangesLowestULID() async throws {
         let field = AddUpdateTaskTests.updateTask(first, with: #"title: "\#(Self.newTitle)""#)
-        let mutation = AddUpdateTaskTests.mutation(of: field)
-        let response = try await KanbanGraphTests.response(to: mutation, inRepoAt: directory.url)
+        let response = try await KanbanGraphTests.mutationResponse(of: field, inRepoAt: directory.url)
         #expect(try Self.id(ofField: MutationName.updateTask, in: response) == Self.id(of: lowest))
         try expectSharedShortIDWarning(in: response)
     }

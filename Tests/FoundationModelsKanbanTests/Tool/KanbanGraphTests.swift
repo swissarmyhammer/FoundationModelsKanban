@@ -186,6 +186,17 @@ struct KanbanGraphTests {
         try await execute(document, on: makeGraph(at: root))
     }
 
+    /// Makes a mutation document from one field, and runs it on a new engine of the board of a repo. Each suite that
+    /// runs one mutation field on a new engine of its fixture board calls it.
+    ///
+    /// - Parameters:
+    ///   - field: The mutation field, with its selection.
+    ///   - root: The root directory of the repo.
+    /// - Returns: The response JSON text.
+    static func mutationResponse(of field: String, inRepoAt root: URL) async throws -> String {
+        try await response(to: AddUpdateTaskTests.mutation(of: field), inRepoAt: root)
+    }
+
     /// Writes one patch as an event to the log of its node. The event ids come from the ULID source.
     ///
     /// - Parameters:

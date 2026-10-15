@@ -166,8 +166,7 @@ struct TitleSlugRefTests {
     @Test("updateTask with a shared title slug changes the task with the lowest ULID, and gives a warning")
     func mutationWithTitleSlugChangesFirstMatch() async throws {
         let field = CommentTests.nodeField("updateTask", naming: Self.sharedSlug, with: #"title: "\#(Self.newTitle)""#)
-        let mutation = AddUpdateTaskTests.mutation(of: field)
-        let response = try await KanbanGraphTests.response(to: mutation, inRepoAt: directory.url)
+        let response = try await KanbanGraphTests.mutationResponse(of: field, inRepoAt: directory.url)
         let updated = try SharedShortIDTests.id(ofField: MutationName.updateTask, in: response)
         #expect(updated == SharedShortIDTests.id(of: first))
         let warnings = try ResponseWarningsTests.warnings(of: response)

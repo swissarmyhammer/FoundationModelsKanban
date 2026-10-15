@@ -54,6 +54,31 @@ comments:
     - evidence: 4 files — Tests/FoundationModelsKanbanTests/GraphQL/SchemaDescriptionTests.swift, Tests/FoundationModelsKanbanTests/Identity/TitleSlugRefTests.swift, Tests/FoundationModelsKanbanTests/Identity/SharedShortIDTests.swift, Tests/FoundationModelsKanbanTests/Tool/KanbanGraphTests.swift. `swift test`: 1459 tests in 112 suites passed. The only warning is the accepted SwiftPM "missing creator" warning. Both review findings are checked.
     - next: /review
   timestamp: 2026-10-15T14:11:55.848618+00:00
+- actor: claude-code
+  id: 01m4zywzvxtv4k22hc3gkxgvzt
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 4 test files (2 findings fixed)
+    - test: green — swift test, 1459 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: a396ec9
+    - review: findings — Tests/FoundationModelsKanbanTests/Identity/SharedShortIDTests.swift:119, Tests/FoundationModelsKanbanTests/Identity/TitleSlugRefTests.swift:169
+  timestamp: 2026-10-15T14:19:17.245557+00:00
+- actor: claude-code
+  id: 01m4zz87qhps8awd4xv52rjxct
+  text: |-
+    Review findings fixed (both duplication/duplication, one cause).
+    - New helper `KanbanGraphTests.mutationResponse(of:inRepoAt:)`, next to `response(to:inRepoAt:)`. It makes a mutation document from one field with `AddUpdateTaskTests.mutation(of:)` and runs it on a new engine of the board of a repo.
+    - SharedShortIDTests.mutationWithSharedShortIDChangesLowestULID and TitleSlugRefTests.mutationWithTitleSlugChangesFirstMatch call the helper. Both copies of the two lines are removed.
+    - Search of all test files: these two were the only places that build a mutation from a field and run it on a new engine through `KanbanGraphTests.response(to:inRepoAt:)`. No call puts `mutation(of:)` and `makeGraph(at:)` together on one line or on two lines. The other `mutation(of:)` + `execute(_, on: graph)` pairs run on a graph that the test already holds and uses again (BoardWatcherTests, RepoBoardTests, AddUpdateTaskTests, VirtualTagNameTests, TaskSearchTests, ListInStringTests). They do not make a new engine, so they are a different pattern, and this change does not touch them.
+    - TDD: RED was the build error "type 'KanbanGraphTests' has no member 'mutationResponse'". GREEN: the two tests pass.
+  timestamp: 2026-10-15T14:25:25.745908+00:00
+- actor: claude-code
+  id: 01m4zz89z4ywv0k73sz3j663s3
+  text: |-
+    ### implement — changed
+    - evidence: 3 files — Tests/FoundationModelsKanbanTests/Tool/KanbanGraphTests.swift, Tests/FoundationModelsKanbanTests/Identity/SharedShortIDTests.swift, Tests/FoundationModelsKanbanTests/Identity/TitleSlugRefTests.swift. `swift test`: 1459 tests in 112 suites passed. The only warning is the accepted SwiftPM "missing creator" warning. Both 09:15 review findings are checked.
+    - next: /review
+  timestamp: 2026-10-15T14:25:28.036013+00:00
 depends_on:
 - 01M4X77PG6CNGC9JZYCN9WJGTY
 position_column: doing
@@ -105,3 +130,13 @@ Decided behavior:
 
 - [x] `Tests/FoundationModelsKanbanTests/GraphQL/SchemaDescriptionTests.swift:207` `reuse/reuse` — `filterArgumentsNameTheRefForms` is a parallel copy of `filterArgumentsNameTheSigils` (lines 196-205). The two tests differ only in the list of strings they check, so the shared check should be a helper that takes the expected strings. Extract a helper such as `assertInputs(named:, description contains each of:)` and call it from both tests with `filterSigils` and `filterRefForms`.
 - [x] `Tests/FoundationModelsKanbanTests/Identity/TitleSlugRefTests.swift:79` `reuse/reuse` — The new `response(to:)` helper reimplements the same helper that already exists in SharedShortIDTests. Both run a document on a new engine of the same board with the same body, so the test suite keeps two copies of one behavior that can drift apart. Move the helper to `KanbanGraphTests` (or a shared test extension) as a single `response(to:directory:)`, and call it from both suites. Or have `TitleSlugRefTests` reuse `SharedShortIDTests.response` directly.
+
+## Review Findings (2026-10-15 09:15)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Tests/FoundationModelsKanbanTests/Identity/SharedShortIDTests.swift:119` `duplication/duplication` — The two lines that build a mutation from a field and run it on a new engine are copied verbatim into TitleSlugRefTests. The copies can drift apart, and a fix to one would not reach the other. Add a helper next to KanbanGraphTests.response, for example `static func mutationResponse(of field: String, inRepoAt root: URL) async throws -> String`, that wraps AddUpdateTaskTests.mutation(of:) and response(to:inRepoAt:). Call it from both tests and delete both copies of the two lines.
+- [x] `Tests/FoundationModelsKanbanTests/Identity/TitleSlugRefTests.swift:169` `duplication/duplication` — The two lines that build a mutation from a field and run it on a new engine are copied verbatim from SharedShortIDTests. The copies can drift apart, and a fix to one would not reach the other. Replace both copies with one shared helper on KanbanGraphTests, for example `mutationResponse(of:inRepoAt:)`, and call it from this test and from SharedShortIDTests.mutationWithSharedShortIDChangesLowestULID.
