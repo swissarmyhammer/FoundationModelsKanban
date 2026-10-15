@@ -135,6 +135,9 @@ enum PriorityMove: Sendable {
     private static let warningAdvice = "A task has no priority field: the place in the column is the priority. "
         + "Use moveTask with before or after to change the place, or filter with #HIGH, #MEDIUM, or #LOW."
 
+    /// The end of the warning of an ordinal that a priority move overrode: what the agent can do in its place.
+    private static let ordinalIgnoredAdvice = "Give a priority value or an ordinal, not both."
+
     /// Gives the move of a priority value by the fixed table. The case of the value does not matter.
     ///
     /// - Parameter value: The priority value of the input.
@@ -156,10 +159,7 @@ enum PriorityMove: Sendable {
     /// - Parameter value: The priority value of the input. The warning quotes its text.
     /// - Returns: The warning, for example "The priority value `high` moved the task to the top of its column. …".
     func warning(for value: PriorityValue) -> ResponseWarning {
-        ResponseWarning(
-            message: "The priority value `\(value.text)` \(effect) \(Self.warningAdvice)",
-            code: Self.warningCode
-        )
+        warning(opening: "The", for: value, advice: Self.warningAdvice, code: Self.warningCode)
     }
 
     /// Gives the warning of an explicit ordinal that the move overrode.
@@ -170,11 +170,30 @@ enum PriorityMove: Sendable {
     /// - Returns: The warning, for example "The ordinal `8180` was ignored: the priority value `high` moved the task to
     ///   the top of its column. …".
     func ordinalWarning(ignoring ordinal: String, for value: PriorityValue) -> ResponseWarning {
-        ResponseWarning(
-            message: "The ordinal `\(ordinal)` was ignored: the priority value `\(value.text)` \(effect) "
-                + "Give a priority value or an ordinal, not both.",
+        warning(
+            opening: "The ordinal `\(ordinal)` was ignored: the",
+            for: value,
+            advice: Self.ordinalIgnoredAdvice,
             code: Self.ordinalIgnoredCode
         )
+    }
+
+    /// Builds a warning of the move. Each warning has the one sentence shape
+    /// "<opening> priority value `<text>` <effect> <advice>".
+    ///
+    /// - Parameters:
+    ///   - opening: The words before "priority value", for example "The".
+    ///   - value: The priority value of the input. The warning quotes its text.
+    ///   - advice: The end of the message, after the effect of the move.
+    ///   - code: The code of the warning in `extensions.warnings`.
+    /// - Returns: The warning.
+    private func warning(
+        opening: String,
+        for value: PriorityValue,
+        advice: String,
+        code: String
+    ) -> ResponseWarning {
+        ResponseWarning(message: "\(opening) priority value `\(value.text)` \(effect) \(advice)", code: code)
     }
 }
 

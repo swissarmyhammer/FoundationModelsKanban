@@ -55,6 +55,30 @@ comments:
     - evidence: 3 files — Sources/FoundationModelsKanban/GraphQL/PriorityInput.swift, Sources/FoundationModelsKanban/GraphQL/TaskMutations.swift, Tests/FoundationModelsKanbanTests/Mutations/PriorityInputTests.swift; `swift test` 1374 tests in 109 suites passed, 0 failures; only the accepted SwiftPM "missing creator" warning; both Review Findings checked
     - next: /review
   timestamp: 2026-10-15T07:16:39.844879+00:00
+- actor: claude-code
+  id: 01m4z6ya6tnd1dde7rnn30fhny
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 3 files (2 findings fixed)
+    - test: green — swift test, 1374 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 497599c
+    - review: findings — Sources/FoundationModelsKanban/GraphQL/PriorityInput.swift:172
+  timestamp: 2026-10-15T07:20:34.778302+00:00
+- actor: claude-code
+  id: 01m4z7336y00nc1ka2fqpj3y93
+  text: |-
+    Review finding fixed (reuse/reuse at PriorityInput.swift ordinalWarning).
+    - New private builder `PriorityMove.warning(opening:for:advice:code:)` makes the one sentence shape "<opening> priority value `<text>` <effect> <advice>" and the ResponseWarning. `warning(for:)` and `ordinalWarning(ignoring:for:)` are now thin calls to it.
+    - The tail of the ordinal warning is now the named constant `ordinalIgnoredAdvice`, the same as `warningAdvice`. No other ResponseWarning construction stays in PriorityInput.swift.
+    - The message texts did not change. This is a refactor: the existing PriorityInputTests check both exact messages and both codes, and they pass.
+  timestamp: 2026-10-15T07:23:11.454394+00:00
+- actor: claude-code
+  id: 01m4z734hh4z9hqa0ssvsvf2v6
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Sources/FoundationModelsKanban/GraphQL/PriorityInput.swift; `swift test --filter PriorityInputTests` 10 tests passed; full `swift test` 1374 tests in 109 suites passed, 0 failures; only the accepted SwiftPM "missing creator" warning; all Review Findings checked
+    - next: /review
+  timestamp: 2026-10-15T07:23:12.817261+00:00
 depends_on:
 - 01M4X6X6PS5P524DW45RBSSWN2
 position_column: doing
@@ -98,3 +122,12 @@ Decided behavior: accept `priority`, `prio`, and `urgent` on task inputs. Use th
 
 - [x] `Sources/FoundationModelsKanban/GraphQL/PriorityInput.swift:62` `code-hygiene/disallowed-constructs-swift` — no_direct_standard_out_logs: Do not commit print(…), debugPrint(…), dump(…) or _printChanges(), which write to standard out in release. Log to a dedicated logging system, or silence one debug-only line with // swiftlint:disable:next no_direct_standard_out_logs and the reason after it.
 - [x] `Sources/FoundationModelsKanban/GraphQL/TaskMutations.swift:133` `completeness/public-output-contract` — In addTask, when the input has a priority that moves the task (for example high, which goes to the top) and also an explicit ordinal, the move wins and the explicit ordinal is dropped without any warning. The priority warning only describes the move, so the caller never learns that its ordinal was ignored. Either add a warning when both an explicit ordinal and a moving priority value are present, saying which one was used, or reject the combination as ambiguous. Add a test that sends priority high together with ordinal and asserts the chosen behaviour.
+
+## Review Findings (2026-10-15 02:18)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Sources/FoundationModelsKanban/GraphQL/PriorityInput.swift:172` `reuse/reuse` — ordinalWarning builds a ResponseWarning from the same sentence shape as warning(for:) at line 158, with its own copy of the effect text and code wiring. A parameterized warning builder would keep one canonical message format, so a later wording change does not need two edits. Extend warning(for:) with an optional ordinal parameter, or add one private builder that takes the message tail and the code. Keep the two public entry points as thin calls to it.
