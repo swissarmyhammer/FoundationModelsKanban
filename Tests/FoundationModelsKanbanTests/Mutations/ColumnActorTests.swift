@@ -12,8 +12,8 @@ import ULID
 /// tests of `column/add.rs`, `column/delete.rs`, and `actor/add.rs`. Each test uses the fixture logs of
 /// ``KanbanGraphTests``: the board, the column `todo` with order 0, and one task in `todo`.
 ///
-/// One rule is different from Rust: `addActor(ensure: true)` on an actor that exists writes nothing. The Rust code
-/// updated a changed name or color.
+/// `addActor(ensure: true)` on an actor that exists keeps the Rust rule (divergence.md Q16): it updates the name, the
+/// color, and the avatar when they are different, and makes a deleted actor live again.
 @Suite("Column and actor mutations", .watcherBudget)
 struct ColumnActorTests {
     /// The slug of the column that a test adds.
@@ -88,6 +88,14 @@ struct ColumnActorTests {
 
     /// The ids that name the actor ``aliceSlug`` in an `addActor` input: the slug, and the full URI of the actor.
     private static let aliceIDs = [aliceSlug, id(of: alice)]
+
+    /// Each field that `addActor(ensure: true)` updates on the actor ``aliceSlug`` when the value is different
+    /// (divergence.md Q16), with a value that is different from the value of ``addAlice``.
+    private static let ensureChanges = [
+        (PropertyName.name, renamedAlice),
+        (PropertyName.color, green),
+        (PropertyName.avatar, RustFieldTests.catAvatar),
+    ]
 
     /// The full URI of the column ``qaSlug`` in a board that is not the fixture board.
     private static let otherBoardQA = NodeURI(
@@ -507,15 +515,43 @@ struct ColumnActorTests {
     }
 
     @Test(
-        "addActor with ensure, and the slug or the URI of an actor that exists, returns the actor and writes nothing",
+        "addActor with ensure and the same values, by the slug or the URI of the actor, returns it and writes nothing",
         arguments: aliceIDs
     )
     func addActorEnsureExisting(id: String) async throws {
         let directory = try TemporaryDirectory()
-        let mutation = #"mutation { addActor(input: { id: "\#(id)", name: "\#(Self.renamedAlice)", "#
-            + "ensure: true }) { name } }"
+        let mutation = #"mutation { addActor(input: { id: "\#(id)", name: "\#(Self.aliceName)", "#
+            + #"color: "\#(Self.red)", ensure: true }) { name color } }"#
         let response = try await Self.respondWritingNothing(to: mutation, after: Self.addAlice, in: directory)
-        #expect(response == #"{"data":{"addActor":{"name":"\#(Self.aliceName)"}}}"#)
+        #expect(response == #"{"data":{"addActor":{"color":"\#(Self.red)","name":"\#(Self.aliceName)"}}}"#)
+    }
+
+    @Test(
+        "addActor with ensure on an actor that exists writes a set of only the field that is different",
+        arguments: ensureChanges
+    )
+    func addActorEnsureUpdatesChangedField(property: String, value: String) async throws {
+        let directory = try TemporaryDirectory()
+        let graph = try Self.makeFixtureGraph(in: directory).graph
+        _ = try await KanbanGraphTests.execute(Self.addAlice, on: graph)
+        let mutation = #"mutation { addActor(input: { id: "\#(Self.aliceSlug)", \#(property): "\#(value)", "#
+            + "ensure: true }) { \(property) } }"
+        let response = try await KanbanGraphTests.execute(mutation, on: graph)
+        #expect(response == #"{"data":{"addActor":{"\#(property)":"\#(value)"}}}"#)
+        let expected = try PatchInput(node: Self.alice, set: [property: .json(.string(value))])
+        #expect(try Self.patches(of: Self.alice, in: directory).last == expected)
+    }
+
+    @Test("addActor with ensure on a deleted actor makes the actor live again")
+    func addActorEnsureUndeletes() async throws {
+        let directory = try TemporaryDirectory()
+        let graph = try Self.makeFixtureGraph(in: directory).graph
+        _ = try await KanbanGraphTests.execute(Self.addAlice, on: graph)
+        _ = try await KanbanGraphTests.execute("mutation { deleteActor(\(Self.aliceReference)) { id } }", on: graph)
+        let mutation = #"mutation { addActor(input: { id: "\#(Self.aliceSlug)", ensure: true }) { name deleted } }"#
+        let response = try await KanbanGraphTests.execute(mutation, on: graph)
+        #expect(response == #"{"data":{"addActor":{"deleted":null,"name":"\#(Self.aliceName)"}}}"#)
+        #expect(try Self.lastPatch(of: Self.alice, isDelete: false, in: directory))
     }
 
     @Test("addActor with ensure on an actor that does not exist makes the actor")

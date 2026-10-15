@@ -14,12 +14,13 @@ import ULID
 /// tests are the delete tests here, because a delete makes a tombstone (plan.md §12, item 21). Each test uses the
 /// fixture logs of ``KanbanGraphTests``: the board, the column `todo` with order 0, and one task in `todo`.
 ///
-/// Four rules are different from Rust. A `before` or `after` ref that names no task gives `NOT_FOUND`; the Rust code
-/// put the task at the end of the column. A neighbor in a different column still puts the task at the end of the
-/// column, the same as Rust. A `moveTask` input with more than one place field gives `CONFLICTING_PLACEMENT`; the Rust
-/// code used the first field. `tagTask` and `untagTask` with an empty list write nothing; the Rust code gave an error,
-/// but the error catalog has no code for it, and the field returns the task. `tagTask` adds an edge and does not
-/// change the body; the Rust code wrote a `#tag` marker (plan.md §6.1).
+/// A `before` or `after` ref that names no task puts the task at the end of the column, the same as Rust, and the
+/// response gets a warning that names the ref (divergence.md P1). A neighbor in a different column also puts the task
+/// at the end of the column, the same as Rust. Three rules are different from Rust. A `moveTask` input with more than
+/// one place field gives `CONFLICTING_PLACEMENT`; the Rust code used the first field. `tagTask` and `untagTask` with an
+/// empty list write nothing; the Rust code gave an error, but the error catalog has no code for it, and the field
+/// returns the task (divergence.md Q16). `tagTask` adds an edge and does not change the body; the Rust code wrote a
+/// `#tag` marker (plan.md §6.1).
 @Suite("Task operation mutations", .watcherBudget)
 struct TaskOperationTests {
     /// The slug of the fixture column.
@@ -94,6 +95,9 @@ struct TaskOperationTests {
 
     /// The `after` place field of a `moveTask` input.
     private static let afterField = "after"
+
+    /// A `before` or `after` ref that names no task: a short id that no task has.
+    private static let unknownNeighbor = "zzzzzzz"
 
     /// The second sentence of the message of `CONFLICTING_PLACEMENT`: the same text for each set of place fields.
     private static let conflictingPlacementCorrection = "Give only one of ordinal, before, and after, or give none of "
@@ -498,13 +502,21 @@ struct TaskOperationTests {
         #expect(error == .invalidOrdinal(ordinal: invalid))
     }
 
-    @Test("moveTask with a neighbor that names no task gives NOT_FOUND and writes nothing")
-    func moveTaskUnknownNeighbor() async throws {
-        let unknown = AddUpdateTaskTests.unknownTask
-        let input = Self.moveInput(placing: Self.neighbor("before", naming: unknown))
-        let move = try Self.fixtureField("moveTask", with: input)
-        let error = try await CommentTests.failure(of: move, in: try TemporaryDirectory())
-        #expect(error == .notFound(type: .task, reference: unknown))
+    @Test(
+        "moveTask with a neighbor that names no task puts the task at the end of the column, with a warning",
+        arguments: [beforeField, afterField]
+    )
+    func moveTaskUnknownNeighborAppends(side: String) async throws {
+        let tasks = try await Self.threeTasks(in: try TemporaryDirectory())
+        let input = Self.moveInput(placing: Self.neighbor(side, naming: Self.unknownNeighbor))
+        let move = Self.taskField("moveTask", of: tasks.first, with: input)
+        let response = try await CommentTests.run(move, on: tasks.graph)
+        try DependencyTargetWarningTests.expectWarning(
+            coded: Placement.neighborNotFoundWarningCode,
+            naming: Self.unknownNeighbor,
+            in: response
+        )
+        #expect(try await Self.listedTasks(on: tasks.graph) == [tasks.second, tasks.third, tasks.first])
     }
 
     @Test(

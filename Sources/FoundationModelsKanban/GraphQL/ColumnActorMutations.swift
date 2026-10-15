@@ -98,8 +98,9 @@ private struct AddActorInput: Codable, Sendable {
     /// The Markdown body of the actor: the full text, or `nil` for no body.
     let body: String?
 
-    /// `true` to return the actor that has the id, and write nothing, when the board has that actor. Else that actor
-    /// gives `DUPLICATE_ID`.
+    /// `true` to return the actor that has the id when the board has that actor, live or tombstoned. The call makes a
+    /// tombstoned actor live again, and writes each given name, color, and avatar that is different (divergence.md
+    /// Q16). Else that actor gives `DUPLICATE_ID`.
     let ensure: Bool?
 
     /// The board of the actor: a board key, a repo directory name, or a path, or `nil` for the current board
@@ -236,7 +237,8 @@ extension KanbanResolver {
     ///   - context: The context of the call.
     ///   - arguments: The new actor. The `input` argument is optional, because ``AddActorInput`` has no required field
     ///     (plan.md §4.2). A call with no `input` gives no id and no name.
-    /// - Returns: The actor. With `ensure`, the actor that the board has, with no change.
+    /// - Returns: The actor. With `ensure`, the actor that the board has, live, with each given name, color, and avatar
+    ///   (``WorkingCopy/ensureActor(_:matching:at:)``).
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when the id is a URI that does not name an actor of the
     ///   board. ``KanbanError/invalidSlug(name:)`` when the id gives an empty slug, or when the input gives no id and
     ///   no name. ``KanbanError/reservedSlug(type:)`` when the board has no actor with the slug, and the id gives the
@@ -252,6 +254,7 @@ extension KanbanResolver {
             let slug = try resolver.slug(ofNewNode: input?.id, named: input?.name ?? "", ofType: .actor)
             let ref = LocalRef.actor(slug: slug.value)
             if input?.ensure == true, work.graph.hasNode(ref) {
+                try work.ensureActor(ref, matching: input, at: time)
                 return ref
             }
             let values = [String: PatchValue](
@@ -511,6 +514,33 @@ extension WorkingCopy {
         if makesTaskLive {
             try checkNoCycle(throughTask: ref, inBoard: key)
         }
+    }
+
+    /// Makes an actor that the graph has match the input of `addActor(ensure: true)`, the same as Rust (divergence.md
+    /// Q16). A tombstoned actor gets a `delete: false` patch, so that it is live again. Then each of the name, the
+    /// color, and the avatar that the input gives gets a `set` when it is different. A field that the input does not
+    /// give does not change, and a patch that changes nothing is not written.
+    ///
+    /// - Parameters:
+    ///   - ref: The local ref of the actor.
+    ///   - input: The input of `addActor`, or `nil` when the call gives no `input`.
+    ///   - time: The time of the change.
+    /// - Throws: An ``EventError`` when a patch breaks a rule of the log.
+    fileprivate mutating func ensureActor(
+        _ ref: LocalRef,
+        matching input: AddActorInput?,
+        at time: DateTime
+    ) throws(EventError) {
+        try apply(PatchInput(node: ref, delete: false), at: time)
+        let given = [
+            PropertyName.name: input?.name,
+            PropertyName.color: input?.color,
+            PropertyName.avatar: input?.avatar,
+        ]
+        let values: [String: FieldUpdate<PatchValue>] = given.mapValues { value in
+            value.map(PatchValue.string).map(FieldUpdate.changed) ?? .unchanged
+        }
+        try updateNode(ref, updating: values, body: .unchanged, at: time)
     }
 
     /// Checks that a column shows no live task, so that a delete can make it a tombstone (plan.md §3.3, rule 5). The

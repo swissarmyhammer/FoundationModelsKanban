@@ -77,8 +77,17 @@ comments:
     - What did not work: the `replace_all` flag of the files edit op again replaced only the first match. Each call site needed its own edit.
     - next: /review
   timestamp: 2026-10-15T12:44:58.672159+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4zv3e3v8xx93jbth5tx9vz6
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — 19 test files (2 findings fixed with one shared helper)
+    - test: green — swift test, 1443 passed, 0 failed, 0 skipped (first run starved at load ~200; failing suites passed alone; rerun green); IntegrationTests 2 passed
+    - commit: f4ad726
+    - review: clean — none (review sha HEAD~1..HEAD: 0 findings, 0 confirmed, 0 refuted; 19 files reviewed; all prior findings checked; task moved to done)
+  timestamp: 2026-10-15T13:12:54.139084+00:00
+position_column: done
+position_ordinal: ff8180
 title: Add back avatar, model, summary counts, percent, and virtual tag color and description
 ---
 ## What

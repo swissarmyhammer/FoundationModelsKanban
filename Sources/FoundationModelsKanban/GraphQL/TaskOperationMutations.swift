@@ -67,8 +67,8 @@ private struct TagTaskInput: Decodable, Sendable {
     let tags: [String]
 }
 
-/// The side of a neighbor task where a moved task goes.
-private enum NeighborSide {
+/// The side of a neighbor task where a moved task goes. The raw value is the name of the place field of the input.
+private enum NeighborSide: String {
     /// Before the neighbor.
     case before
 
@@ -80,6 +80,10 @@ private enum NeighborSide {
 /// (plan.md §4.2, §6, "moveTask"). A value holds one place, so an input with more than one place field cannot make a
 /// value.
 enum Placement: Decodable, Sendable {
+    /// The code of the warning for a `before` or `after` ref that names no task, in `extensions.warnings`
+    /// (divergence.md P1).
+    static let neighborNotFoundWarningCode = "NEIGHBOR_NOT_FOUND"
+
     /// The keys of the place fields of the input.
     private enum CodingKeys: String, CodingKey {
         /// The key of the ordinal.
@@ -98,11 +102,26 @@ enum Placement: Decodable, Sendable {
     /// At an ordinal, as the input writes it.
     case ordinal(String)
 
-    /// Before a neighbor task. A neighbor that is not in the column puts the task at the end.
+    /// Before a neighbor task. A neighbor that is not in the column puts the task at the end. A ref that names no task
+    /// also puts the task at the end, with a warning (divergence.md P1).
     case before(NodeID)
 
-    /// After a neighbor task. A neighbor that is not in the column puts the task at the end.
+    /// After a neighbor task. A neighbor that is not in the column puts the task at the end. A ref that names no task
+    /// also puts the task at the end, with a warning (divergence.md P1).
     case after(NodeID)
+
+    /// Gives the warning for a `before` or `after` ref that names no task: the call put the task at the end of the
+    /// column (divergence.md P1).
+    ///
+    /// - Parameters:
+    ///   - neighbor: The neighbor ref as the input writes it. The warning quotes it.
+    ///   - side: The place field of the ref.
+    /// - Returns: The warning, for example "The before ref `zzzzzzz` names no task. …".
+    fileprivate static func neighborNotFoundWarning(for neighbor: NodeID, on side: NeighborSide) -> ResponseWarning {
+        let message = "The \(side.rawValue) ref `\(neighbor.text)` names no task. The call put the task at the end of "
+            + "the column. Send the id of a task in the column to put the task next to that task."
+        return ResponseWarning(message: message, code: neighborNotFoundWarningCode)
+    }
 
     /// Reads the place fields of the input object of a move.
     ///
@@ -131,15 +150,16 @@ extension KanbanResolver {
     /// §6). A column slug that no column has gets a column `set` patch first. No column keeps the column where the
     /// task shows now. A `board` field that names a different board moves the task to that board
     /// (``KanbanContext/transferTask(_:as:)``, divergence.md Q21); a `board` field that names the board of the task
-    /// moves the task in its board.
+    /// moves the task in its board. A `before` or `after` ref that names no live task puts the task at the end of the
+    /// column, with a warning (divergence.md P1).
     ///
     /// - Parameters:
     ///   - context: The context of the call.
     ///   - arguments: The task, the column, the place in the column, and the board.
     /// - Returns: The task after the move: the new task on the other board for a move to a different board. The
     ///   GraphQL field is nullable, so that an error gives `null` for this field only.
-    /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live task has the id, a neighbor names no live
-    ///   task, or the column is a tombstone. ``KanbanError/invalidOrdinal(ordinal:)`` and
+    /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live task has the id, or the column is a
+    ///   tombstone. ``KanbanError/invalidOrdinal(ordinal:)`` and
     ///   ``KanbanError/invalidSlug(name:)``. ``KanbanError/reservedSlug(type:)`` when a new column would get the slug
     ///   ``Slug/reservedForBoard``. ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board
     ///   for the `board` field. The errors of ``BoardStore/isBoard(_:holdingTask:)`` and of
@@ -490,8 +510,9 @@ extension Graph {
     ///   - task: The local ref of the moved task. The column order does not count this task.
     ///   - resolver: The resolver of the forgiving refs of the board, for a neighbor.
     /// - Returns: The ordinal.
-    /// - Throws: ``KanbanError/invalidOrdinal(ordinal:)`` when the ordinal is not a valid fractional index.
-    ///   ``KanbanError/notFound(type:reference:)`` when a neighbor names no live task.
+    /// - Throws: ``KanbanError/invalidOrdinal(ordinal:)`` when the ordinal is not a valid fractional index. The errors
+    ///   of ``ordinal(besideRef:on:inColumn:moving:resolvingWith:)`` for a neighbor. A neighbor that names no live task
+    ///   gives no error.
     func ordinal(
         placing placement: Placement,
         inColumn column: LocalRef,
@@ -504,11 +525,38 @@ extension Graph {
         case .ordinal(let text):
             return try Ordinal(parsing: text)
         case .before(let neighbor):
-            let ref = try resolver.nodeRef(for: neighbor, ofType: .task)
-            return ordinal(beside: ref, on: .before, inColumn: column, moving: task)
+            return try ordinal(besideRef: neighbor, on: .before, inColumn: column, moving: task, resolvingWith: resolver)
         case .after(let neighbor):
+            return try ordinal(besideRef: neighbor, on: .after, inColumn: column, moving: task, resolvingWith: resolver)
+        }
+    }
+
+    /// Gives the ordinal of a task that a move puts next to the neighbor task of a `before` or `after` ref. A ref that
+    /// names no live task puts the task at the end of the column, the same as Rust, and adds a warning that names the
+    /// ref to the response (divergence.md P1).
+    ///
+    /// - Parameters:
+    ///   - neighbor: The neighbor ref as the input writes it.
+    ///   - side: The side of the neighbor where the task goes.
+    ///   - column: The local ref of the column.
+    ///   - task: The local ref of the moved task. The column order does not count this task.
+    ///   - resolver: The resolver of the forgiving refs of the board.
+    /// - Returns: The ordinal.
+    /// - Throws: The errors of ``RefResolver/nodeRef(for:ofType:includingTombstones:)`` other than
+    ///   ``KanbanError/notFound(type:reference:)``, for example ``KanbanError/ambiguousID(reference:matches:)``.
+    private func ordinal(
+        besideRef neighbor: NodeID,
+        on side: NeighborSide,
+        inColumn column: LocalRef,
+        moving task: LocalRef,
+        resolvingWith resolver: RefResolver
+    ) throws(KanbanError) -> Ordinal {
+        do {
             let ref = try resolver.nodeRef(for: neighbor, ofType: .task)
-            return ordinal(beside: ref, on: .after, inColumn: column, moving: task)
+            return ordinal(beside: ref, on: side, inColumn: column, moving: task)
+        } catch .notFound {
+            ResolverWarnings.current?.add(Placement.neighborNotFoundWarning(for: neighbor, on: side))
+            return nextOrdinal(inColumn: column, excluding: task)
         }
     }
 
