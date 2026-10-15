@@ -185,7 +185,7 @@ struct NodeInverse: Sendable {
     /// - Returns: `true` when the patch conflicts.
     func conflicts(with patch: PatchInput) -> Bool {
         guard patch.node == node else {
-            return makesTombstone && patch.makesEdge(to: node)
+            return makesTombstone && patch.makesEdge(to: .local(node))
         }
         return !patch.propertyNames.isDisjoint(with: parts.propertyNames)
             || !patch.setMembers.isDisjoint(with: parts.setMembers)
@@ -230,10 +230,10 @@ extension PatchInput {
 
     /// Tells if the patch makes an edge to a node: a `set` of a ref, or an `add` of a member.
     ///
-    /// - Parameter target: The local ref of the node.
+    /// - Parameter ref: The stored ref of the node, as the log of the patch holds it: a local ref for a node of the
+    ///   same board, else the full URI of the node.
     /// - Returns: `true` when a ref of the patch names the node.
-    fileprivate func makesEdge(to target: LocalRef) -> Bool {
-        let ref = StoredRef.local(target)
-        return set.values.contains(.ref(ref)) || add.values.contains { members in members.contains(ref) }
+    func makesEdge(to ref: StoredRef) -> Bool {
+        set.values.contains(.ref(ref)) || add.values.contains { members in members.contains(ref) }
     }
 }

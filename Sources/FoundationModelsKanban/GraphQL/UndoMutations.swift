@@ -107,8 +107,9 @@ extension BoardStore {
     ///   a ref of the `boards` field, or for a board of the transaction that no copy reaches.
     ///   ``KanbanError/transactionBoardNotLoaded(transaction:board:)`` when no loaded copy of a board of the
     ///   transaction holds its events. ``KanbanError/undoConflict(transaction:laterTransactions:)`` when a later
-    ///   transaction conflicts and the call does not force. An error of a graph rule (plan.md §3.3). An
-    ///   ``EventError`` when a patch breaks a rule of the log.
+    ///   transaction conflicts and the call does not force: also a later transaction of a different loaded board that
+    ///   refers to a node that the undo makes a tombstone (divergence.md X6). An error of a graph rule (plan.md §3.3).
+    ///   An ``EventError`` when a patch breaks a rule of the log.
     fileprivate func reverse(
         _ direction: ReverseDirection,
         with input: UndoInput?,
@@ -124,9 +125,10 @@ extension BoardStore {
             return nil
         }
         let (actor, isForced) = (sessionActor, input?.force == true)
+        let references = isForced ? [] : try laterReferences(to: found.txn, tombstonedIn: boards)
         let changes = try runField(as: direction.operation, inEach: boards) { work, key in
             try work.applyMutationRules(actingAs: actor, at: time) { work in
-                try work.reverse(found.txn, forcing: isForced, inBoard: key, at: time)
+                try work.reverse(found.txn, forcing: isForced, alsoConflictingWith: references, inBoard: key, at: time)
             }
         }
         .filter { board in !board.events.isEmpty }
@@ -229,8 +231,53 @@ extension BoardStore {
         guard reached.count == found.count else {
             return nil
         }
+        return eachOnce([home] + reached.joined())
+    }
+
+    /// Gives each board of a list one time.
+    ///
+    /// - Parameter boards: The boards. The same board can be in the list more than one time.
+    /// - Returns: The boards, in the order of their first place in the list.
+    private func eachOnce(_ boards: [MutationTarget]) -> [MutationTarget] {
         var seen: Set<String?> = []
-        return ([home] + reached.joined()).filter { board in seen.insert(board.relatedPath).inserted }
+        return boards.filter { board in seen.insert(board.relatedPath).inserted }
+    }
+
+    /// Lists the later transactions of each loaded board that refer to a node of a different board that the undo of
+    /// a transaction makes a tombstone (plan.md §6.5, conflict; divergence.md X6 and R13). Each one is a conflict,
+    /// the same as a later edge in the board of the node.
+    ///
+    /// The boards to read are the current board, each loaded related board, and each board of the transaction. A
+    /// board reads only the nodes of the other boards: the check in one board finds a later edge to a node of the
+    /// board itself (``UndoLog/conflicts(with:of:readingBodiesWith:)``).
+    ///
+    /// - Parameters:
+    ///   - txn: The transaction that the undo reverses.
+    ///   - boards: The boards that the transaction changed.
+    /// - Returns: The later transactions, in the order of the boards, and in the order of their ULIDs in each board.
+    /// - Throws: An ``EventError`` from ``UndoLog/inverses(of:)``. A valid log gives no error.
+    private func laterReferences(to txn: ULID, tombstonedIn boards: [MutationTarget]) throws -> [ULID] {
+        let tombstoned = try boards.flatMap { board in try tombstonedURIs(of: txn, in: board) }
+        return eachOnce(loadedTargets + boards).flatMap { board in
+            let key = BoardKey.normalizedText(of: self.key(of: board))
+            let others = Set(tombstoned.filter { uri in uri.boardKey != key })
+            return UndoLog(of: workingCopy(of: board).liveEvents).references(to: others, after: txn)
+        }
+    }
+
+    /// Gives the full URI of each node that the undo of a transaction makes a tombstone in one board: each node that
+    /// the transaction made, or made live again.
+    ///
+    /// - Parameters:
+    ///   - txn: The transaction that the undo reverses.
+    ///   - board: A board that the transaction changed.
+    /// - Returns: The URIs, with the key of the board.
+    /// - Throws: An ``EventError`` from ``UndoLog/inverses(of:)``. A valid log gives no error.
+    private func tombstonedURIs(of txn: ULID, in board: MutationTarget) throws(EventError) -> [NodeURI] {
+        let key = BoardKey.normalizedText(of: key(of: board))
+        return try UndoLog(of: workingCopy(of: board).liveEvents).inverses(of: txn)
+            .filter(\.makesTombstone)
+            .map { inverse in NodeURI(boardKey: key, ref: inverse.node) }
     }
 
     /// Gives each copy of one board of a transaction that holds events of the transaction (divergence.md X5). The
@@ -321,13 +368,17 @@ extension WorkingCopy {
     /// - Parameters:
     ///   - target: The transaction to reverse. The log of the board has it.
     ///   - isForced: `true` to write the inverse also when a later transaction conflicts with it.
+    ///   - otherBoardConflicts: The later transactions of other boards that conflict with the undo: each one refers
+    ///     to a node that the undo makes a tombstone (divergence.md X6). The list is empty when the field forces.
     ///   - key: The current key of the board.
     ///   - time: The time of the change.
-    /// - Throws: ``KanbanError/undoConflict(transaction:laterTransactions:)`` when a later transaction conflicts and
-    ///   the field does not force. An error of a graph rule. An ``EventError`` when a patch breaks a rule of the log.
+    /// - Throws: ``KanbanError/undoConflict(transaction:laterTransactions:)`` when a later transaction of this board or
+    ///   of `otherBoardConflicts` conflicts and the field does not force. The error lists each one time, in the order
+    ///   of their ULIDs. An error of a graph rule. An ``EventError`` when a patch breaks a rule of the log.
     fileprivate mutating func reverse(
         _ target: ULID,
         forcing isForced: Bool,
+        alsoConflictingWith otherBoardConflicts: [ULID],
         inBoard key: String,
         at time: DateTime
     ) throws {
@@ -336,10 +387,10 @@ extension WorkingCopy {
         if !isForced {
             let graph = graph
             let later = log.conflicts(with: inverses, of: target) { ref in graph.body(of: ref) }
-            guard later.isEmpty else {
+            guard later.isEmpty, otherBoardConflicts.isEmpty else {
                 throw KanbanError.undoConflict(
                     transaction: target.ulidString,
-                    laterTransactions: later.map(\.ulidString)
+                    laterTransactions: Set(later + otherBoardConflicts).sorted().map(\.ulidString)
                 )
             }
         }

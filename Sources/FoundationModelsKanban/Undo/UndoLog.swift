@@ -229,13 +229,84 @@ struct UndoLog: Sendable {
             .map(\.node)
         )
         return transactions.filter { transaction in
-            transaction.txn > txn && !undoneState.isUndone(txn: transaction.txn)
-                && !(transaction.undoes.map { target in target > txn } ?? false)
+            isLaterChange(transaction, than: txn)
                 && transaction.events.contains { event in
                     blockedBodies.contains(event.patch.node) && event.patch.edit != nil
                         || inverses.contains { inverse in inverse.conflicts(with: event.patch) }
                 }
         }
         .map(\.txn)
+    }
+
+    /// Lists the later transactions of this log that refer to a node of a different board that an undo makes a
+    /// tombstone (plan.md §6.5, conflict; divergence.md X6). A transaction refers to the node when a patch makes an
+    /// edge to the full URI of the node (``PatchInput/makesEdge(to:)``), or when it edits the body of a task so that
+    /// the body gets a dependency marker of the URI (``DependencyMarkers``).
+    ///
+    /// A later transaction counts by the same rule as in ``conflicts(with:of:readingBodiesWith:)``.
+    ///
+    /// - Parameters:
+    ///   - uris: The full URIs of the nodes that the undo makes a tombstone. Each URI names a different board, so
+    ///     this log stores a ref to it as a ``StoredRef/remote(_:)`` ref.
+    ///   - txn: The transaction that the undo reverses.
+    /// - Returns: The later transactions that refer to a node, in the order of their ULIDs.
+    func references(to uris: Set<NodeURI>, after txn: ULID) -> [ULID] {
+        guard !uris.isEmpty else {
+            return []
+        }
+        let refs = uris.map(StoredRef.remote)
+        return transactions.indices.filter { index in
+            let transaction = transactions[index]
+            return isLaterChange(transaction, than: txn)
+                && (transaction.events.contains { event in refs.contains(where: event.patch.makesEdge(to:)) }
+                    || addsMarker(of: uris, inTransactionAt: index))
+        }
+        .map { index in transactions[index].txn }
+    }
+
+    /// Tells if a transaction counts as a later change for the undo of a transaction: it comes after the target, it
+    /// is not undone, and it is not an undo or a redo of a transaction after the target. Such a pair cancels a later
+    /// change.
+    ///
+    /// - Parameters:
+    ///   - transaction: A transaction of the log.
+    ///   - txn: The transaction that the undo reverses.
+    /// - Returns: `true` when the transaction counts.
+    private func isLaterChange(_ transaction: Transaction, than txn: ULID) -> Bool {
+        transaction.txn > txn && !undoneState.isUndone(txn: transaction.txn)
+            && !(transaction.undoes.map { target in target > txn } ?? false)
+    }
+
+    /// Tells if a transaction edits the body of a task so that the body gets a dependency marker of a URI that it did
+    /// not have just before the transaction.
+    ///
+    /// - Parameters:
+    ///   - uris: The full URIs to look for.
+    ///   - index: The index of the transaction in ``transactions``.
+    /// - Returns: `true` when the body of a task has a marker of a URI just after the transaction, and not just before.
+    private func addsMarker(of uris: Set<NodeURI>, inTransactionAt index: Int) -> Bool {
+        let transaction = transactions[index]
+        let editedTasks = OrderedSet(
+            transaction.events.filter { event in event.patch.edit != nil && event.patch.node.nodeType == .task }
+                .map(\.patch.node)
+        )
+        let earlier = transactions[..<index].flatMap(\.events)
+        return editedTasks.contains { task in
+            let earlierEvents = events(of: task, in: earlier)
+            let before = markerURIs(inBodyAfter: earlierEvents, of: task)
+            let after = markerURIs(inBodyAfter: earlierEvents + events(of: task, in: transaction.events), of: task)
+            return !after.subtracting(before).isDisjoint(with: uris)
+        }
+    }
+
+    /// Gives the URIs of the dependency markers in the body of a task after some of its events.
+    ///
+    /// - Parameters:
+    ///   - events: The events of the task.
+    ///   - task: The local ref of the task.
+    /// - Returns: The URIs, or no URI when there is no event.
+    private func markerURIs(inBodyAfter events: [Event], of task: LocalRef) -> Set<NodeURI> {
+        let body = NodeSnapshot(folding: events, for: task)?.body ?? ""
+        return Set(DependencyMarkers.all(in: body).map(\.uri))
     }
 }
