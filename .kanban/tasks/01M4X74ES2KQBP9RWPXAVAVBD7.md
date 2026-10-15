@@ -29,6 +29,32 @@ comments:
     - evidence: 3 files — Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift, Sources/FoundationModelsKanban/GraphQL/Schema.swift, Tests/FoundationModelsKanbanTests/GraphQL/VariableRewriteTests.swift (new). `swift test`: 1333 tests in 106 suites passed; the only warning is the accepted SwiftPM "missing creator" warning.
     - next: /review
   timestamp: 2026-10-15T04:26:42.927689+00:00
+- actor: claude-code
+  id: 01m4yxbtz7qwhbkwfembxzfsjw
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 3 files
+    - test: green — swift test, 1333 passed, 0 failed, 0 skipped; IntegrationTests 2 passed (live Qwen variables test included)
+    - commit: 5453a05
+    - review: findings — Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift:657
+  timestamp: 2026-10-15T04:33:12.167629+00:00
+- actor: claude-code
+  id: 01m4yxkdejp4k9jpkfb0y8d7fn
+  text: |-
+    Finding NameRewrite.swift:657 (duplication) is fixed in the whole file.
+    - New private struct `InputNames` in S/GraphQL/NameRewrite.swift holds `types` (the input type of each canonical name) and `candidates` (the CanonicalName of each name with its aliases). `init(types:in:)` makes the candidates from the types and an AliasScope. `init(fieldsOf:under:)` takes a GraphQLInputObjectType and a coordinate, and gives the field types and the candidates with the `.inputField` scope.
+    - `visitValue` and `rewrittenFields` call `InputNames(fieldsOf:under:)`. The copied lines are gone.
+    - The same cause was also in `visitBody` + `visitNamedValues`: the arguments of a field mapped types to candidates in `visitNamedValues`. `visitBody` now makes `InputNames(types:in: .argument(...))`, and `visitNamedValues(_:among:under:at:)` takes the `InputNames` and no longer computes candidates. Now one place maps types to candidates.
+    - No change in behavior. This is a refactor, so the existing NameRewrite, AliasTable, and VariableRewrite tests cover it. No new test.
+    - swift test: 1333 tests in 106 suites passed. The only compiler warning is the accepted SwiftPM "missing creator" warning.
+  timestamp: 2026-10-15T04:37:20.466081+00:00
+- actor: claude-code
+  id: 01m4yxkf7b8w6rc874rbfym1tc
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift (new InputNames helper; visitBody, visitNamedValues, visitValue, rewrittenFields use it). swift test: 1333 tests in 106 suites passed, 0 failed; only the accepted SwiftPM "missing creator" warning.
+    - next: /review
+  timestamp: 2026-10-15T04:37:22.283847+00:00
 depends_on:
 - 01M4X7471GDT9W0J6PWBQTQ6H3
 position_column: doing
@@ -58,3 +84,12 @@ Decided behavior:
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-14 23:29)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift:657` `duplication/duplication` — The new `rewrittenFields` repeats the input-object setup that already exists in `visitValue`. It computes the field types with `fields().mapValues(\.type)`, builds the `AliasScope.inputField` scope, and maps the keys to `CanonicalName` candidates. Copies of this logic drift apart: a change to alias scope or candidate rules must be made in both places. Extract one helper that takes a `GraphQLInputObjectType` and a coordinate and returns the field types and the candidate names. Call it from `visitValue` and from `rewrittenFields`, and delete the copied lines at 657-659.

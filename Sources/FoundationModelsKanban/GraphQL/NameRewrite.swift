@@ -278,6 +278,39 @@ private struct VariableUse {
     let node: Variable
 }
 
+/// The valid names at one position: the arguments of a field, or the fields of an `input` object. Each name has its
+/// input type and its candidate for the name matcher.
+private struct InputNames {
+    /// The input type of each canonical name.
+    let types: OrderedDictionary<String, any GraphQLInputType>
+
+    /// The candidates of the name matcher: each canonical name with its aliases at the position.
+    let candidates: [CanonicalName]
+
+    /// Makes the names of a position from the input type of each canonical name.
+    ///
+    /// - Parameters:
+    ///   - types: The input type of each canonical name.
+    ///   - scope: The position of the names, for their aliases.
+    init(types: OrderedDictionary<String, any GraphQLInputType>, in scope: AliasScope) {
+        self.types = types
+        candidates = types.keys.map { name in CanonicalName(field: name, in: scope) }
+    }
+
+    /// Makes the names of the fields of an `input` type, with the aliases of the fields under one field coordinate.
+    ///
+    /// - Parameters:
+    ///   - type: The `input` type.
+    ///   - coordinate: The `Type.field` coordinate of the field whose argument holds the `input` object.
+    /// - Throws: An error from the schema when the `input` type gives no fields.
+    init(fieldsOf type: GraphQLInputObjectType, under coordinate: String) throws {
+        self.init(
+            types: try type.fields().mapValues(\.type),
+            in: .inputField(type: type.name, coordinate: coordinate)
+        )
+    }
+}
+
 /// The state of one walk over a document: the text edits and the changes that it found.
 private struct RewriteWalk {
     /// The name of the root query field that holds the fields of a board.
@@ -499,9 +532,8 @@ private struct RewriteWalk {
         at path: [String]
     ) throws {
         let arguments = field.arguments.map { argument in (argument.name, argument.value) }
-        let types = definition.args.mapValues(\.type)
-        let scope = AliasScope.argument(coordinate: coordinate)
-        try visitNamedValues(arguments, typedBy: types, in: scope, under: coordinate, at: path)
+        let names = InputNames(types: definition.args.mapValues(\.type), in: .argument(coordinate: coordinate))
+        try visitNamedValues(arguments, among: names, under: coordinate, at: path)
         if let selectionSet = field.selectionSet {
             try visitSelections(of: selectionSet, on: getNamedType(type: definition.type), at: path, as: .anyOther)
         }
@@ -512,24 +544,21 @@ private struct RewriteWalk {
     ///
     /// - Parameters:
     ///   - items: The name and the value of each argument or `input` field.
-    ///   - types: The input type of each canonical name.
-    ///   - scope: The position of the names, for their aliases.
+    ///   - names: The valid names, with the input type and the candidate of each.
     ///   - coordinate: The `Type.field` coordinate of the field whose arguments are the names, or whose argument holds
     ///     the `input` object.
     ///   - path: The path to the field or to the `input` object.
     /// - Throws: An error from the schema when a type gives no fields.
     private mutating func visitNamedValues(
         _ items: [(Name, any GraphQL.Value)],
-        typedBy types: OrderedDictionary<String, any GraphQLInputType>,
-        in scope: AliasScope,
+        among names: InputNames,
         under coordinate: String,
         at path: [String]
     ) throws {
-        let candidates = types.keys.map { name in CanonicalName(field: name, in: scope) }
         for (name, value) in items {
             let written = WrittenName(name)
-            guard let canonical = canonicalName(of: written, among: candidates, at: .anyOther),
-                  let type = types[canonical]
+            guard let canonical = canonicalName(of: written, among: names.candidates, at: .anyOther),
+                  let type = names.types[canonical]
             else {
                 continue
             }
@@ -560,9 +589,8 @@ private struct RewriteWalk {
             }
         case (let object as ObjectValue, let inputType as GraphQLInputObjectType):
             let fields = object.fields.map { field in (field.name, field.value) }
-            let scope = AliasScope.inputField(type: inputType.name, coordinate: coordinate)
-            let types = try inputType.fields().mapValues(\.type)
-            try visitNamedValues(fields, typedBy: types, in: scope, under: coordinate, at: path)
+            let names = try InputNames(fieldsOf: inputType, under: coordinate)
+            try visitNamedValues(fields, among: names, under: coordinate, at: path)
         case (let enumValue as EnumValue, let enumType as GraphQLEnumType):
             let written = WrittenName(enumValue)
             let candidates = enumType.values.map { value in CanonicalName(name: value.name, aliases: []) }
@@ -654,11 +682,9 @@ private struct RewriteWalk {
         at path: [String],
         readAt use: VariableUse
     ) throws -> OrderedDictionary<String, Map> {
-        let types = try type.fields().mapValues(\.type)
-        let scope = AliasScope.inputField(type: type.name, coordinate: use.coordinate)
-        let candidates = types.keys.map { name in CanonicalName(field: name, in: scope) }
+        let names = try InputNames(fieldsOf: type, under: use.coordinate)
         let canonicals = fields.keys.map { key in
-            canonicalName(of: WrittenName(key: key, of: use.node), among: candidates, at: .anyOther) ?? key
+            canonicalName(of: WrittenName(key: key, of: use.node), among: names.candidates, at: .anyOther) ?? key
         }
         let targets = canonicals.indices.map { index in
             let canonical = canonicals[index]
@@ -670,7 +696,7 @@ private struct RewriteWalk {
             if target != field.key {
                 rewrites.append(NameRewrite(from: field.key, to: target, path: fieldPath))
             }
-            let fieldType = getNamedType(type: types[target])
+            let fieldType = getNamedType(type: names.types[target])
             return (target, try rewrittenValue(field.value, ofType: fieldType, at: fieldPath, readAt: use))
         }
         return OrderedDictionary(uniqueKeysWithValues: rewritten)
