@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsExtras
+import Logging
 
 /// The host of the kanban boards of one process: one engine for each board, and one session view for each working
 /// directory (divergence.md §16).
@@ -250,9 +251,10 @@ public actor KanbanHost {
             let watch = try makeUnloadableWatch(of: root, identity)
             unloadableBoards[identity] = UnloadableBoard(error: error, watch: watch)
         } catch {
-            Log.kanban.warning(
+            Self.logWatchFailure(
                 "The host cannot watch a board that could not load, so each call loads the board again",
-                metadata: ["path": "\(root.path)", "error": "\(error)"]
+                path: root.path,
+                error: error
             )
         }
     }
@@ -270,8 +272,8 @@ public actor KanbanHost {
         of root: URL,
         _ identity: FolderIdentity
     ) throws(BoardWatcherError) -> BoardWatch {
-        BoardWatch(of: try BoardWatcher.started(onBoardAt: root)) { [weak self] _ in
-            await self?.unloadableBoardDidChange(identity, at: root)
+        makeWatch(of: try BoardWatcher.started(onBoardAt: root)) { host, _ in
+            await host.unloadableBoardDidChange(identity, at: root)
         }
     }
 
@@ -384,9 +386,10 @@ public actor KanbanHost {
             do {
                 placeWatches[place.canonicalPath] = try makePlaceWatch(of: place)
             } catch {
-                Log.kanban.warning(
+                Self.logWatchFailure(
                     "The host cannot watch a scan place, so a board ref that names no board scans again",
-                    metadata: ["path": "\(place.path)", "error": "\(error)"]
+                    path: place.path,
+                    error: error
                 )
             }
         }
@@ -400,8 +403,8 @@ public actor KanbanHost {
     /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when the watcher cannot start.
     private func makePlaceWatch(of place: URL) throws(BoardWatcherError) -> BoardWatch {
         let watched = WatchedPlace(watching: place)
-        return BoardWatch(of: try StartedWatcher(watching: place)) { [weak self] paths in
-            await self?.placeDidChange(watched, in: paths)
+        return try makeFolderWatch(of: place) { host, paths in
+            await host.placeDidChange(watched, in: paths)
         }
     }
 
@@ -456,9 +459,10 @@ public actor KanbanHost {
         do {
             pathCopies[path] = PathCopy(copy: copy, watch: try makePathCopyWatch(of: copy.directory))
         } catch {
-            Log.kanban.warning(
+            Self.logWatchFailure(
                 "The host cannot watch a board that a call reached by a path, so a ref with its key does not find it",
-                metadata: ["path": "\(copy.directory.path)", "error": "\(error)"]
+                path: copy.directory.path,
+                error: error
             )
         }
     }
@@ -474,8 +478,8 @@ public actor KanbanHost {
         let parent = directory.deletingLastPathComponent()
         let watched = WatchedPlace(watching: parent)
         let path = directory.canonicalPath
-        return BoardWatch(of: try StartedWatcher(watching: parent)) { [weak self] paths in
-            await self?.pathCopyFolderDidChange(path, in: watched, at: paths)
+        return try makeFolderWatch(of: parent) { host, paths in
+            await host.pathCopyFolderDidChange(path, in: watched, at: paths)
         }
     }
 
@@ -511,6 +515,52 @@ public actor KanbanHost {
         return pathCopies.sorted { lhs, rhs in lhs.key < rhs.key }.lazy.map(\.value.copy).first { copy in
             copy.key.description == key && FileManager.default.fileExists(atPath: copy.directory.path)
         }
+    }
+
+    // MARK: - File watches
+
+    /// Starts a file watcher on one folder, and makes its watch, as ``makeWatch(of:sendingBatchesTo:)`` does.
+    ///
+    /// - Parameters:
+    ///   - folder: The folder to watch.
+    ///   - receive: Gets the host and the changed paths of each batch.
+    /// - Returns: The watch.
+    /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when the watcher cannot start.
+    private func makeFolderWatch(
+        of folder: URL,
+        sendingBatchesTo receive: @escaping @Sendable (KanbanHost, [URL]) async -> Void
+    ) throws(BoardWatcherError) -> BoardWatch {
+        makeWatch(of: try StartedWatcher(watching: folder), sendingBatchesTo: receive)
+    }
+
+    /// Makes the watch of a started watcher: the watcher, and a task that gives each of its batches to a receiver of
+    /// the host. The task holds the host weakly, so the watcher does not keep the host alive. After the host is gone,
+    /// the task gives no batch.
+    ///
+    /// - Parameters:
+    ///   - started: The started watcher and its directory.
+    ///   - receive: Gets the host and the changed paths of each batch.
+    /// - Returns: The watch.
+    private func makeWatch(
+        of started: StartedWatcher,
+        sendingBatchesTo receive: @escaping @Sendable (KanbanHost, [URL]) async -> Void
+    ) -> BoardWatch {
+        BoardWatch(of: started) { [weak self] paths in
+            guard let self else {
+                return
+            }
+            await receive(self, paths)
+        }
+    }
+
+    /// Records with swift-log that a file watcher of the host cannot start.
+    ///
+    /// - Parameters:
+    ///   - message: What the host cannot do, and the result of the failure.
+    ///   - path: The path of the folder that the watcher was to watch.
+    ///   - error: The error of the start.
+    private static func logWatchFailure(_ message: Logger.Message, path: String, error: any Error) {
+        Log.kanban.warning(message, metadata: ["path": "\(path)", "error": "\(error)"])
     }
 
     // MARK: - Views

@@ -309,11 +309,12 @@ final class ScanRecorder: BoardScanObserver {
         changeSink.yield(change)
     }
 
-    /// Records a change that made the host forget a board that a call reached by a path.
+    /// Records a change that made the host forget a board that a call reached by a path, in the same stream as a
+    /// change of a scan place.
     ///
     /// - Parameter change: The change.
     func pathCopyDidChange(_ change: ScanChange) {
-        changeSink.yield(change)
+        scanPlaceDidChange(change)
     }
 
     /// Waits until the host saw a change, and the effect of the change shows. The file watcher can tell a change that
