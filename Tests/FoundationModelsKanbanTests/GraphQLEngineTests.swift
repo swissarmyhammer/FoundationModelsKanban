@@ -19,12 +19,18 @@ struct GraphQLEngineTests {
 
     /// Makes a context with a fixture board and a fixed clock, so that each
     /// response is deterministic.
-    static func makeContext() throws -> KanbanContext {
+    ///
+    /// - Parameter related: The related boards that the run reads. The
+    ///   default reads no related board.
+    /// - Returns: The context.
+    /// - Throws: An error when a fixture time is not valid.
+    static func makeContext(reading related: RelatedBoards = .unavailable) throws -> KanbanContext {
         let created = try DateTime(rfc3339: createdText)
         let now = try DateTime(rfc3339: clockText)
         var graph = Graph()
         graph.update(with: .board(BoardNode(fields: NodeFields(created: created, updated: created), name: "Kanban")))
-        return CommitTests.callContext(of: BoardStore.fixture(of: graph, inBoard: boardKey), timedBy: { now })
+        let store = BoardStore.fixture(of: graph, inBoard: boardKey, reading: related)
+        return CommitTests.callContext(of: store, timedBy: { now })
     }
 
     @Test("A query runs end to end and returns the expected JSON")

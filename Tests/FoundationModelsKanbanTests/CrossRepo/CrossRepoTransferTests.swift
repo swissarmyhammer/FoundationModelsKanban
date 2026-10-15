@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import ULID
 
 @testable import FoundationModelsKanban
 
@@ -33,25 +34,28 @@ struct CrossRepoTransferTests {
     /// The selection of the name of each tag of a board.
     static let tagNamesSelection = "tags { name }"
 
+    /// The mutations that write a task to a board that the `board` field names.
+    static let transferOperations = [MutationName.moveTask, MutationName.copyTask]
+
+    /// The `board` field that names a board that no scan finds.
+    static let missingBoard = CrossRepoWriteTests.boardField(CrossRepoReadTests.missingKey)
+
+    /// The `extensions.code` of a node or a board that a ref does not name.
+    static let notFoundCode = "NOT_FOUND"
+
     // MARK: - Helpers
 
-    /// Gives the mutation field that moves or copies a task.
+    /// Runs a mutation field on a fixture board whose related boards can load but are not loaded yet, so that each
+    /// board ref of the field waits for a load. No engine runs the load, so the response is the response of that run.
     ///
-    /// - Parameters:
-    ///   - operation: `moveTask` or `copyTask`.
-    ///   - task: The full URI of the task.
-    ///   - input: The other fields of the input, for example a `board` field.
-    /// - Returns: The field, with the `id` selection.
-    static func field(_ operation: String, of task: String, with input: String) -> String {
-        #"\#(operation)(input: { id: "\#(task)", \#(input) }) { id }"#
-    }
-
-    /// Gives the `column` field of an input.
-    ///
-    /// - Parameter slug: The slug of the column.
-    /// - Returns: The `input` field.
-    static func columnField(_ slug: String) -> String {
-        #"column: "\#(slug)""#
+    /// - Parameter field: The mutation field, with its selection.
+    /// - Returns: The response JSON text.
+    /// - Throws: An error when the context cannot be made, or the response cannot be encoded.
+    static func respondBeforeLoad(to field: String) async throws -> String {
+        try await PublicSchema().respond(
+            to: AddUpdateTaskTests.mutation(of: field),
+            context: GraphQLEngineTests.makeContext(reading: .loadable)
+        )
     }
 
     /// Moves or copies a task with one call, and expects that the response has no error.
@@ -69,7 +73,7 @@ struct CrossRepoTransferTests {
         with input: String,
         on graph: KanbanGraph
     ) async throws -> String {
-        let response = try await CommentTests.run(field(operation, of: task, with: input), on: graph)
+        let response = try await CommentTests.run(CommentTests.nodeField(operation, naming: task, with: input), on: graph)
         #expect(try CrossRepoWriteTests.hasNoErrors(response), "\(response)")
         return try CrossRepoUndoTests.id(of: operation, in: NameRewriteTests.data(of: response))
     }
@@ -185,7 +189,7 @@ struct CrossRepoTransferTests {
         let app = try GitGraphFixture.makeGraph(at: repos.app)
         let old = try await CrossRepoFixture.addTask(with: "", on: app)
         let board = CrossRepoWriteTests.boardField(try CrossRepoWriteTests.appKey())
-        let input = board + ", " + Self.columnField(Self.doingSlug)
+        let input = board + ", " + TaskOperationTests.moveInput(to: Self.doingSlug)
         let moved = try await Self.transfer(MutationName.moveTask, old, with: input, on: app)
         let task = try await Self.task(old, selecting: "{ deleted column { id } }", on: app)
         await app.close()
@@ -208,6 +212,21 @@ struct CrossRepoTransferTests {
         #expect(try Self.dependencyIDs(of: task) == [target])
         #expect((task["unresolvedDependsOn"] as? [String])?.isEmpty == true)
         #expect(task["ready"] as? Bool == false)
+    }
+
+    @Test("A move to the board of a dependency stores that dependency as a local ref, and it still resolves")
+    func dependencyOnTargetBoardBecomesLocal() async throws {
+        let repos = try await CrossRepoFixture.SideBySide.make()
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
+        let target = try await CrossRepoFixture.addTask(with: try Self.libBoard(), on: app)
+        let old = try await CrossRepoFixture.addTask(dependingOn: target, on: app)
+        let moved = try await Self.transfer(MutationName.moveTask, old, with: try Self.libBoard(), on: app)
+        let task = try await Self.task(moved, selecting: "{ dependsOn { id } }", on: app)
+        await app.close()
+        let added = try #require(try CrossRepoWriteTests.events(ofTask: moved, inRepoAt: repos.lib).first).patch.add
+        let local = LocalRef.task(try AddUpdateTaskTests.firstTask(in: target))
+        #expect(added[PropertyName.dependsOn] == [.local(local)])
+        #expect(try Self.dependencyIDs(of: task) == [target])
     }
 
     @Test("A task on the old board that depended on the moved task ignores the tombstone, and is ready")
@@ -260,7 +279,7 @@ struct CrossRepoTransferTests {
         let repos = try await CrossRepoFixture.SideBySide.make()
         let app = try GitGraphFixture.makeGraph(at: repos.app)
         let old = try await CrossRepoFixture.addTask(with: "", on: app)
-        let input = try Self.libBoard() + ", " + Self.columnField(Self.doingSlug)
+        let input = try Self.libBoard() + ", " + TaskOperationTests.moveInput(to: Self.doingSlug)
         let copy = try await Self.transfer(MutationName.copyTask, old, with: input, on: app)
         let task = try await Self.task(copy, selecting: "{ column { id } }", on: app)
         await app.close()
@@ -273,7 +292,8 @@ struct CrossRepoTransferTests {
         let repos = try await CrossRepoFixture.SideBySide.make()
         let app = try GitGraphFixture.makeGraph(at: repos.app)
         let old = try await CrossRepoFixture.addTask(with: "", on: app)
-        let copy = try await Self.transfer(MutationName.copyTask, old, with: Self.columnField(Self.todoSlug), on: app)
+        let input = TaskOperationTests.moveInput(to: Self.todoSlug)
+        let copy = try await Self.transfer(MutationName.copyTask, old, with: input, on: app)
         let task = try await Self.task(copy, selecting: "{ title }", on: app)
         await app.close()
         #expect(copy != old)
@@ -350,6 +370,77 @@ struct CrossRepoTransferTests {
         #expect(added[PropertyName.assignees] == [.remote(actor)])
     }
 
+    // MARK: - Errors
+
+    @Test(
+        "A move or a copy to a board that the scan cannot find gives NOT_FOUND for the board",
+        arguments: transferOperations
+    )
+    func missingTargetBoardGivesNotFound(operation: String) async throws {
+        let repos = try await CrossRepoFixture.SideBySide.make()
+        let first = try GitGraphFixture.makeGraph(at: repos.app)
+        let old = try await CrossRepoFixture.addTask(with: "", on: first)
+        await first.close()
+        let field = CommentTests.nodeField(operation, naming: old, with: Self.missingBoard)
+        let expected = KanbanError.boardNotFound(
+            reference: CrossRepoReadTests.missingKey,
+            searchRoots: [repos.sandbox.root.path]
+        )
+        try await CrossRepoWriteTests.expectFailure(
+            of: field,
+            named: operation,
+            in: repos,
+            giving: expected,
+            coded: Self.notFoundCode
+        )
+    }
+
+    @Test("A move or a copy of a task that no board has gives NOT_FOUND for the task", arguments: transferOperations)
+    func missingTaskGivesNotFound(operation: String) async throws {
+        let repos = try await CrossRepoFixture.SideBySide.make()
+        let missing = NodeURI(boardKey: try CrossRepoWriteTests.appKey(), ref: .task(ULID())).description
+        let field = CommentTests.nodeField(operation, naming: missing, with: try Self.libBoard())
+        try await CrossRepoWriteTests.expectFailure(
+            of: field,
+            named: operation,
+            in: repos,
+            giving: .notFound(type: .task, reference: missing),
+            coded: Self.notFoundCode
+        )
+    }
+
+    @Test(
+        "A move or a copy to a board that the engine did not load gives NOT_FOUND for the board, not a null",
+        arguments: transferOperations
+    )
+    func unloadedTargetBoardGivesNotFound(operation: String) async throws {
+        let field = CommentTests.nodeField(
+            operation,
+            naming: AddUpdateTaskTests.sigilRef(of: ULID()),
+            with: Self.missingBoard
+        )
+        let response = try await Self.respondBeforeLoad(to: field)
+        let expected = KanbanError.boardNotFound(reference: CrossRepoReadTests.missingKey, searchRoots: [])
+        try ErrorCoverageTests.expectFailure(of: operation, in: response, giving: expected, coded: Self.notFoundCode)
+    }
+
+    @Test(
+        "A move of a task of a board that the engine did not load gives NOT_FOUND for the task, not a null",
+        arguments: ["", missingBoard]
+    )
+    func unloadedTaskBoardGivesNotFound(board: String) async throws {
+        let missing = NodeURI(boardKey: CrossRepoReadTests.missingKey, ref: .task(ULID())).description
+        let response = try await Self.respondBeforeLoad(
+            to: CommentTests.nodeField(MutationName.moveTask, naming: missing, with: board)
+        )
+        try ErrorCoverageTests.expectFailure(
+            of: MutationName.moveTask,
+            in: response,
+            giving: .notFound(type: .task, reference: missing),
+            coded: Self.notFoundCode
+        )
+    }
+
     // MARK: - Incompatible board
 
     @Test("A move to a related Rust board gives INCOMPATIBLE_BOARD and writes nothing")
@@ -362,7 +453,7 @@ struct CrossRepoTransferTests {
         let before = try Design.PortabilityTests.logTexts(inRepoAt: repos.app)
         let app = try GitGraphFixture.makeGraph(at: repos.app, mintingFrom: GitGraphFixture.secondEngineIDs)
         let response = try await CommentTests.run(
-            Self.field(MutationName.moveTask, of: old, with: try Self.libBoard()),
+            CommentTests.nodeField(MutationName.moveTask, naming: old, with: try Self.libBoard()),
             on: app
         )
         await app.close()

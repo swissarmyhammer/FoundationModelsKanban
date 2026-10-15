@@ -32,6 +32,29 @@ comments:
     - evidence: `swift test` 1407 tests in 110 suites passed, 0 failures, only the accepted SwiftPM "missing creator" warning. Files: S/GraphQL/TaskTransferMutations.swift (new), S/GraphQL/TaskOperationMutations.swift, S/GraphQL/TaskMutations.swift, S/GraphQL/Schema.swift, S/GraphQL/SchemaDescription.swift, S/GraphQL/FieldAliases.swift, Tests/.../CrossRepo/CrossRepoTransferTests.swift (new), Tests/.../Mutations/TaskOperationTests.swift.
     - next: /review
   timestamp: 2026-10-15T09:39:11.306529+00:00
+- actor: claude-code
+  id: 01m4zfh32sj1qghtdh0knhnx14
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 8 files
+    - test: green — swift test, 1407 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: ce587ff
+    - review: findings — Sources/FoundationModelsKanban/GraphQL/TaskOperationMutations.swift:154, Sources/FoundationModelsKanban/GraphQL/TaskTransferMutations.swift:206, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoTransferTests.swift:45
+  timestamp: 2026-10-15T09:50:38.681847+00:00
+- actor: claude-code
+  id: 01m4zgacgzmprm69f0e5z17v4q
+  text: |-
+    Review findings of 2026-10-15 04:43 fixed. Notes for the next agent:
+    - Finding 1 (silent nil): a nil target means "the engine did not load the board yet; the store records a request and runReading (Tool/Commit.swift) runs the call again". The run loop reads store.requests, not the response, so a throw on that first run is safe: the run after the load replaces the response. New BoardStore.loadedTarget(of:holding:) in S/GraphQL/Schema.swift throws notFound(type, id) for a `.holding` board and boardNotFound(reference, searchRoots) for a `.named` board when target(of:) gives nil. isBoard now gives Bool, transfer gives TransferredTask (not optional), moveTask has no `return nil`, and changeTask (same file, same cause) throws notFound when changeNode gives nil. The GraphQL fields stay `TaskObject?` so the schema nullability does not change.
+    - Discovery: the default fixture store reads RelatedBoards.unavailable, which resolves each unknown ref at once to not-found. To reach the "not loaded yet" path a test needs RelatedBoards.loadable. BoardStore.fixture(of:inBoard:reading:) and GraphQLEngineTests.makeContext(reading:) now take that value (default .unavailable).
+    - Tests (TDD): unloadedTargetBoardGivesNotFound and unloadedTaskBoardGivesNotFound were RED (response had no errors), then GREEN. missingTargetBoardGivesNotFound and missingTaskGivesNotFound (real repos) passed at once: that path already threw.
+    - Finding 2: dependencyOnTargetBoardBecomesLocal passed at once (existing behavior). Mutation check: with the `.remote` branch of StoredRef.carried changed to `return self`, the test failed with the full URI; the line is restored.
+    - Finding 3: the `field` helper is gone; the suite uses CommentTests.nodeField (the builder that TaskOperationTests.taskField wraps; taskField takes a ULID, the suite has full URIs). The same cause in the file, the `columnField` helper, is replaced by TaskOperationTests.moveInput(to:).
+
+    ### implement — changed
+    - evidence: `swift test` 1412 tests in 110 suites passed, 0 failures, only the accepted SwiftPM "missing creator" warning. Files: S/GraphQL/Schema.swift, S/GraphQL/TaskTransferMutations.swift, S/GraphQL/TaskOperationMutations.swift, Tests/.../CrossRepo/CrossRepoTransferTests.swift, Tests/.../GraphQL/QueryFixture.swift, Tests/.../GraphQLEngineTests.swift.
+    - next: /review
+  timestamp: 2026-10-15T10:04:27.551472+00:00
 depends_on:
 - 01M4X6ZBTA66TCPVYM41QR0ACD
 position_column: doing
@@ -69,3 +92,14 @@ Decided behavior:
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-15 04:43)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 8 file(s) reviewed, 8 not reviewed.
+
+> 8 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 8 file(s)
+
+- [x] `Sources/FoundationModelsKanban/GraphQL/TaskOperationMutations.swift:154` `completeness/public-output-contract` — When the board of the task cannot be read, moveTask returns nil with no error. The GraphQL field is nullable, so the caller gets null and no error code. The resolver doc says it throws notFound when no live task has the id, and that an error gives null for this field only. The silent nil hides the error that the doc says must be raised. Throw the matching error instead of returning nil. Use `KanbanError.notFound(type: .task, reference: ...)` when the task is missing, and `KanbanError.boardNotFound(reference:searchRoots:)` when the named board is missing. Add a test that moves a task to an unknown board and asserts the error code, and one that moves a missing task and asserts notFound.
+- [x] `Sources/FoundationModelsKanban/GraphQL/TaskTransferMutations.swift:206` `completeness/inverse-operation-coverage` — `StoredRef.carried(from:to:)` has two directions. The local-to-full-URI direction (line 204) is exercised by `dependenciesResolveAfterMove`. The remote-to-local direction (line 206), where a full URI that names the target board becomes a local ref, has no test in the reviewed files. A regression there would leave a dependency on the target board stored as a full URI on that board. Add one test in CrossRepoTransferTests: on the lib board, add a task that depends on a task in the app board, then move or copy the app task to lib and assert that the new task's `dependsOn` edge to the old lib-board task is now a local ref, so it resolves without a board prefix.
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoTransferTests.swift:45` `reuse/reuse` — The new `field` helper builds a mutation call with an `input` argument and an `id` selection. This repeats the shape of the existing `taskField` helper, which takes the operation, task, input, and a selection. The copy is a near-match that was not extended. Call `TaskOperationTests.taskField(operation, of: task, with: input, selecting: "{ id }")`, or move a shared field builder to a common test helper and use it from both suites. Remove the duplicate `field` body.

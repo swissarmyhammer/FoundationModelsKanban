@@ -259,6 +259,29 @@ actor BoardStore {
         }
     }
 
+    /// Finds the board that a mutation field writes to, the same as ``target(of:)``, for a field that must not give
+    /// `null` with no error. When the engine did not load the board yet, the store records the request and this
+    /// function throws. The call then runs again after the load, and the response of that run replaces this error.
+    ///
+    /// - Parameters:
+    ///   - board: The board of the field.
+    ///   - type: The type of the node that a `holding` board names, for the error of a board that is not loaded.
+    /// - Returns: The board.
+    /// - Throws: The errors of ``target(of:)``. When the engine did not load the board:
+    ///   ``KanbanError/notFound(type:reference:)`` with `type` and the node ref for a `holding` board, and
+    ///   ``KanbanError/boardNotFound(reference:searchRoots:)`` for a `named` board.
+    func loadedTarget(of board: MutationBoard, holding type: PatchNodeType) throws(KanbanError) -> MutationTarget {
+        if let target = try target(of: board) {
+            return target
+        }
+        switch board {
+        case .holding(let id, _):
+            throw .notFound(type: type, reference: id.text)
+        case .named(let reference):
+            throw .boardNotFound(reference: reference ?? boardKey, searchRoots: related.searchRoots.map(\.path))
+        }
+    }
+
     /// Each related board that the run reached and that cannot be read (divergence.md Q7). The response of the run
     /// has one warning for each of them.
     var unreadableBoards: [UnreadableBoard] {

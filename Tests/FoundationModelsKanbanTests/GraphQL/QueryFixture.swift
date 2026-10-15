@@ -172,8 +172,13 @@ extension BoardStore {
     /// - Parameters:
     ///   - graph: The fixture graph.
     ///   - key: The current key of the board.
+    ///   - related: The related boards that the run reads. The default reads no related board.
     /// - Returns: The store.
-    static func fixture(of graph: Graph, inBoard key: String) -> BoardStore {
+    static func fixture(
+        of graph: Graph,
+        inBoard key: String,
+        reading related: RelatedBoards = .unavailable
+    ) -> BoardStore {
         let stamp = EventStamp(
             actingAs: ReplayTests.actor,
             mintingFrom: FixedULIDSource(at: ReplayTests.date(atStep: .zero)),
@@ -182,7 +187,8 @@ extension BoardStore {
         return BoardStore(
             working: WorkingCopy(graph: graph, events: [], stamp: stamp, after: nil),
             boardKey: key,
-            actingAs: KanbanGraphTests.sessionActor
+            actingAs: KanbanGraphTests.sessionActor,
+            reading: related
         )
     }
 }

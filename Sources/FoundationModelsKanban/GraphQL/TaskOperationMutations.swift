@@ -142,20 +142,17 @@ extension KanbanResolver {
     ///   task, or the column is a tombstone. ``KanbanError/invalidOrdinal(ordinal:)`` and
     ///   ``KanbanError/invalidSlug(name:)``. ``KanbanError/reservedSlug(type:)`` when a new column would get the slug
     ///   ``Slug/reservedForBoard``. ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board
-    ///   for the `board` field. The errors of ``KanbanContext/transferTask(_:as:)``. The decode of the input throws
+    ///   for the `board` field. The errors of ``BoardStore/isBoard(_:holdingTask:)`` and of
+    ///   ``KanbanContext/transferTask(_:as:)``, so that a board that the engine did not load yet gives an error, not a
+    ///   `null` with no error. The decode of the input throws
     ///   ``KanbanError/conflictingPlacement(fields:)`` before this resolver runs, so that the field writes nothing.
     fileprivate func moveTask(
         context: KanbanContext,
         arguments: InputArguments<MoveTaskInput>
     ) async throws -> TaskObject? {
         let fields = arguments.input.fields
-        if let board = fields.board {
-            guard let isSameBoard = try await context.store.isBoard(board, holdingTask: fields.id) else {
-                return nil
-            }
-            guard isSameBoard else {
-                return try await context.transferTask(fields, as: .move)
-            }
+        if let board = fields.board, try await !context.store.isBoard(board, holdingTask: fields.id) {
+            return try await context.transferTask(fields, as: .move)
         }
         return try await context.changeTask(fields.id, named: MutationName.moveTask) { work, resolver, ref, time in
             let column = try work.columnRef(forMoveOf: ref, to: fields.column, resolvingWith: resolver, at: time)
@@ -333,17 +330,23 @@ extension KanbanContext {
     ///   - body: Makes and applies the patches of the field. It gets the working copy, a resolver of the forgiving
     ///     refs of the working graph, the local ref of the task, and the time.
     /// - Returns: The task object.
-    /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live task has the id, or the error of the body.
+    /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live task has the id, or the engine did not load
+    ///   the board of the task yet, so that the field never gives `null` with no error. The store then records the
+    ///   request, and the call runs again after the load. The error of the body.
     fileprivate func changeTask(
         _ id: NodeID,
         named operation: String,
         _ body: sending (inout WorkingCopy, RefResolver, LocalRef, DateTime) throws -> Void
-    ) async throws -> TaskObject? {
-        try await changeNode(named: operation, on: .holding(id)) { work, resolver, time in
+    ) async throws -> TaskObject {
+        let task: TaskObject? = try await changeNode(named: operation, on: .holding(id)) { work, resolver, time in
             let ref = try resolver.nodeRef(for: id, ofType: .task)
             try body(&work, resolver, ref, time)
             return ref
         }
+        guard let task else {
+            throw KanbanError.notFound(type: .task, reference: id.text)
+        }
+        return task
     }
 }
 

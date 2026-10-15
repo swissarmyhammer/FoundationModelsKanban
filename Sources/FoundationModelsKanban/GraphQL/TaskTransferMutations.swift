@@ -237,12 +237,10 @@ extension KanbanContext {
     /// - Parameters:
     ///   - fields: The task, the column, the place in the column, and the board.
     ///   - kind: A move or a copy.
-    /// - Returns: The new task, or `nil` when the engine did not load a board yet.
+    /// - Returns: The new task.
     /// - Throws: The errors of ``BoardStore/transfer(_:as:at:)``.
     func transferTask(_ fields: TaskPlacementFields, as kind: TaskTransferKind) async throws -> TaskObject? {
-        guard let transferred = try await store.transfer(fields, as: kind, at: clock()) else {
-            return nil
-        }
+        let transferred = try await store.transfer(fields, as: kind, at: clock())
         await warnings.add(contentsOf: transferred.warnings)
         return transferred.view.object(of: transferred.ref)
     }
@@ -256,14 +254,13 @@ extension BoardStore {
     /// - Parameters:
     ///   - reference: The board ref.
     ///   - id: The task: a full URI or a short form.
-    /// - Returns: `true` when the ref names the board of the task, or `nil` when the engine did not load a board yet.
-    ///   The store then records the request, and the call runs again after the load.
-    /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for a ref. Each
-    ///   other error of ``target(of:)``.
-    func isBoard(_ reference: String, holdingTask id: NodeID) throws(KanbanError) -> Bool? {
-        guard let source = try target(of: .holding(id)), let destination = try target(of: .named(reference)) else {
-            return nil
-        }
+    /// - Returns: `true` when the ref names the board of the task.
+    /// - Throws: The errors of ``loadedTarget(of:holding:)``: ``KanbanError/notFound(type:reference:)`` when the
+    ///   engine did not load the board of the task yet, and ``KanbanError/boardNotFound(reference:searchRoots:)`` when
+    ///   the scan finds no board for the ref, or the engine did not load it yet.
+    func isBoard(_ reference: String, holdingTask id: NodeID) throws(KanbanError) -> Bool {
+        let source = try loadedTarget(of: .holding(id), holding: .task)
+        let destination = try loadedTarget(of: .named(reference), holding: .task)
         return source.relatedPath == destination.relatedPath
     }
 
@@ -283,22 +280,21 @@ extension BoardStore {
     ///   - fields: The task, the column, the place in the column, and the target board.
     ///   - kind: A move or a copy.
     ///   - time: The time of the change.
-    /// - Returns: The new task, or `nil` when the engine did not load a board yet. The store then records the
-    ///   request, and the call runs again after the load.
-    /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live task has the id, a neighbor names no live
-    ///   task, or the column is a tombstone. ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds
-    ///   no board for the `board` field. ``KanbanError/dependencyCycle(path:)`` when the new task closes a cycle. The
-    ///   errors of a tag or a column that the field makes, or an ``EventError`` when a patch breaks a rule of the log.
+    /// - Returns: The new task.
+    /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live task has the id, the engine did not load the
+    ///   board of the task yet, a neighbor names no live task, or the column is a tombstone.
+    ///   ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the `board` field, or
+    ///   the engine did not load it yet (``loadedTarget(of:holding:)``). ``KanbanError/dependencyCycle(path:)`` when
+    ///   the new task closes a cycle. The errors of a tag or a column that the field makes, or an ``EventError`` when
+    ///   a patch breaks a rule of the log.
     func transfer(
         _ fields: TaskPlacementFields,
         as kind: TaskTransferKind,
         at time: DateTime
-    ) throws -> TransferredTask? {
-        guard let source = try target(of: .holding(fields.id)),
-            let destination = try target(of: fields.board.map(MutationBoard.named) ?? .holding(fields.id))
-        else {
-            return nil
-        }
+    ) throws -> TransferredTask {
+        let source = try loadedTarget(of: .holding(fields.id), holding: .task)
+        let destinationBoard = fields.board.map(MutationBoard.named) ?? .holding(fields.id)
+        let destination = try loadedTarget(of: destinationBoard, holding: .task)
         let sourceKey = key(of: source)
         let sourceGraph = workingCopy(of: source).graph
         let ref = try RefResolver(graph: sourceGraph, boardKey: sourceKey).nodeRef(for: fields.id, ofType: .task)
