@@ -35,7 +35,7 @@ struct CrossRepoCycleTests {
     ///   board shows as its full URI.
     /// - Throws: An error when the URI of the task holds no ULID.
     static func cycle(from task: String, through other: String) throws -> KanbanError {
-        let start = AddUpdateTaskTests.sigilRef(of: try AddUpdateTaskTests.firstTask(in: task))
+        let start = try AddUpdateTaskTests.firstTaskRef(in: task)
         return .dependencyCycle(path: [start, other, start])
     }
 

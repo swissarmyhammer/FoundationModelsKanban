@@ -222,6 +222,15 @@ struct AddUpdateTaskTests {
         try #require(try taskULIDs(in: response).first)
     }
 
+    /// Gives the `^` short id ref of the first task URI in a response.
+    ///
+    /// - Parameter response: The response JSON text, or the full URI of a task.
+    /// - Returns: The ref, for example `^ajv8v4t`.
+    /// - Throws: An error when the text holds no task URI.
+    static func firstTaskRef(in response: String) throws -> String {
+        sigilRef(of: try firstTask(in: response))
+    }
+
     /// Gives the ULID of the fixture task. The fixture logs are deterministic, so a write to a new directory gives
     /// the same ULID as the fixture of each test.
     ///

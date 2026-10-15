@@ -30,6 +30,36 @@ comments:
     - evidence: `swift test` — 1326 tests in 105 suites passed; build has only the accepted SwiftPM "missing creator" warning. New tests: Tests/FoundationModelsKanbanTests/GraphQL/AliasTableTests.swift, Tests/FoundationModelsKanbanTests/GraphQL/AliasExecutionTests.swift.
     - next: /review
   timestamp: 2026-10-15T03:50:03.139840+00:00
+- actor: claude-code
+  id: 01m4yvevemfjam427jhbjeaprq
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 11 files
+    - test: green — swift test, 1326 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: a42625a
+    - review: findings — Tests/FoundationModelsKanbanTests/GraphQL/AliasExecutionTests.swift:134, Tests/FoundationModelsKanbanTests/GraphQL/AliasExecutionTests.swift:215, Tests/FoundationModelsKanbanTests/GraphQL/AliasExecutionTests.swift:228, Tests/FoundationModelsKanbanTests/GraphQL/AliasExecutionTests.swift:266
+  timestamp: 2026-10-15T03:59:53.812459+00:00
+- actor: claude-code
+  id: 01m4yvnk0zy5vjv7phthfrvp73
+  text: |-
+    Picked up the 4 review findings. Research:
+    - The copies of the response-to-ref helper are `AliasExecutionTests.taskRef(in:)`, `UndeleteCycleTests.sigilRef(of:)` (String form), and the inline `AddUpdateTaskTests.sigilRef(of: try AddUpdateTaskTests.firstTask(in:))` in `CrossRepoCycleTests.cycle(from:through:)`. Plan: add one `AddUpdateTaskTests.firstTaskRef(in:)` beside `firstTask(in:)`, call it from each suite, and remove the per-suite wrappers.
+    - `Board.task(id:)` gives NOT_FOUND for a tombstone (`view.task(for:)` without tombstones). `Task.comments` lists live comments only. `Board.columns` lists live columns. The three delete tests re-query through these and compare the error message and code with `KanbanError.notFound(...)`.
+  timestamp: 2026-10-15T04:03:34.559426+00:00
+- actor: claude-code
+  id: 01m4yvwz67nnztnr0bb36eecye
+  text: |-
+    Review findings fixed.
+    - Reuse: new `AddUpdateTaskTests.firstTaskRef(in:)` beside `firstTask(in:)`. Removed `AliasExecutionTests.taskRef(in:)` and `UndeleteCycleTests.sigilRef(of:)` (both only wrapped it), and the inline copy in `CrossRepoCycleTests.cycle(from:through:)` now calls it.
+    - deleteTask test: re-runs the same `board { task(task:) }` query and expects exactly one error equal to `KanbanError.notFound(type: .task, reference: <ref>)` (message and code).
+    - deleteColumn test: `Review` is listed in `board { columns { name } }` before the delete and not listed after it. The column query is now one `columns(on:)` helper that `columnNames(on:)` and `taskIDs(inColumnNamed:on:)` share.
+    - deleteComment test: `Task.comments` holds 1 comment before the delete and 0 after it.
+    - Note on TDD: these are test-only changes over behavior that already works, so the new assertions passed on the first run. Each one checks a state before the delete (live) and after it (gone), so a delete that does nothing fails the after-check.
+
+    ### implement — changed
+    - evidence: `swift test` — 1326 tests in 105 suites passed, 0 failed; only the accepted SwiftPM "missing creator" warning. Files: Tests/FoundationModelsKanbanTests/GraphQL/AliasExecutionTests.swift, Tests/FoundationModelsKanbanTests/Mutations/AddUpdateTaskTests.swift, Tests/FoundationModelsKanbanTests/Undo/UndeleteCycleTests.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoCycleTests.swift
+    - next: /review
+  timestamp: 2026-10-15T04:07:36.391718+00:00
 position_column: doing
 position_ordinal: '80'
 title: Add alias tables for each input type and the synonym table, and forgive the Rust names
@@ -90,3 +120,15 @@ Note: `variables` rewrite (Q8) is a separate task that uses these tables.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-14 22:53)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 11 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Tests/FoundationModelsKanbanTests/GraphQL/AliasExecutionTests.swift:134` `reuse/reuse` — The new `taskRef(in:)` helper is a near-copy of the `taskRef` helpers in other test suites. Each one pulls the first task out of a response and turns it into a `^` ref. Several copies of this helper can drift apart. Use one shared response-to-ref helper, for example on `AddUpdateTaskTests`, and call it from each suite. Remove the per-suite copies that only wrap it.
+- [x] `Tests/FoundationModelsKanbanTests/GraphQL/AliasExecutionTests.swift:215` `test-integrity/no-test-cheating` — The test is named 'deleteTask with task deletes it', but its only check is that the `deleted` field is a non-nil string. The test never reads the board again to confirm the task is gone, so it passes whether or not the delete worked. After the delete, run the same `board { task(id:) }` query used at the top of the test and expect that the task is not live (for example, NOT_FOUND or a tombstone). Keep the existing check of the response field.
+- [x] `Tests/FoundationModelsKanbanTests/GraphQL/AliasExecutionTests.swift:228` `test-integrity/no-test-cheating` — The test is named 'deleteColumn with column deletes the column', but it only checks that the `deleted` field is non-nil. It never confirms that the column `doing` is gone from the board. Query `board { columns { name } }` after the delete and expect that the column named `Review` (or the slug `doing`) is no longer listed. Keep the field check as well.
+- [x] `Tests/FoundationModelsKanbanTests/GraphQL/AliasExecutionTests.swift:266` `test-integrity/no-test-cheating` — The test is named 'deleteComment ... change the comment', but the only check on the delete is that the `deleted` field is non-nil. It does not show that the comment is removed, so a delete that does nothing would still pass. After the delete, query the task's comments (or the comment by its ref) and expect that the comment is tombstoned or absent. Keep the field check.

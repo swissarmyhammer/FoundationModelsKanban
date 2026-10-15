@@ -55,7 +55,7 @@ struct AliasExecutionTests {
     /// The body of a comment that a test adds.
     private static let commentBody = "x"
 
-    /// The query that gives the ids of the tasks of each column, in the order of the column.
+    /// The query that gives the name of each live column and the ids of its tasks, in the order of the board.
     private static let columnOrderQuery = "{ board { columns { name tasks { id } } } }"
 
     // MARK: - Helpers
@@ -127,14 +127,6 @@ struct AliasExecutionTests {
         return value
     }
 
-    /// Gives the `^` ref of the first task in a response.
-    ///
-    /// - Parameter response: The response JSON text.
-    /// - Returns: The ref.
-    private static func taskRef(in response: String) throws -> String {
-        AddUpdateTaskTests.sigilRef(of: try AddUpdateTaskTests.firstTask(in: response))
-    }
-
     /// Gives the `^` ref of the first comment in a response.
     ///
     /// - Parameter response: The response JSON text.
@@ -144,6 +136,23 @@ struct AliasExecutionTests {
         return AddUpdateTaskTests.sigilRef(of: try #require(ULID(ulidString: String(match.output.1))))
     }
 
+    /// Gives the live columns of the board, each with its name and the ids of its tasks, in the order of the board.
+    ///
+    /// - Parameter graph: The engine.
+    /// - Returns: The column objects of the response.
+    private static func columns(on graph: KanbanGraph) async throws -> [[String: Any]] {
+        let response = try await KanbanGraphTests.execute(columnOrderQuery, on: graph)
+        return try #require(try value(at: "board", "columns", in: response) as? [[String: Any]])
+    }
+
+    /// Gives the names of the live columns of the board, in the order of the board.
+    ///
+    /// - Parameter graph: The engine.
+    /// - Returns: The names.
+    private static func columnNames(on graph: KanbanGraph) async throws -> [String] {
+        try await columns(on: graph).compactMap { column in column["name"] as? String }
+    }
+
     /// Gives the ids of the tasks of a column, in the order of the column.
     ///
     /// - Parameters:
@@ -151,11 +160,34 @@ struct AliasExecutionTests {
     ///   - graph: The engine.
     /// - Returns: The full ids of the tasks.
     private static func taskIDs(inColumnNamed name: String, on graph: KanbanGraph) async throws -> [String] {
-        let response = try await KanbanGraphTests.execute(columnOrderQuery, on: graph)
-        let columns = try #require(try value(at: "board", "columns", in: response) as? [[String: Any]])
-        let column = try #require(columns.first { column in column["name"] as? String == name })
+        let boardColumns = try await columns(on: graph)
+        let column = try #require(boardColumns.first { column in column["name"] as? String == name })
         let tasks = try #require(column["tasks"] as? [[String: Any]])
         return tasks.compactMap { task in task["id"] as? String }
+    }
+
+    /// Gives the number of live comments of a task of the fixture board.
+    ///
+    /// - Parameters:
+    ///   - ref: The `^` ref of the task.
+    ///   - graph: The engine.
+    /// - Returns: The number of comments that `Task.comments` lists.
+    private static func commentCount(ofTask ref: String, on graph: KanbanGraph) async throws -> Int {
+        let query = #"{ board { task(id: "\#(ref)") { comments { id } } } }"#
+        let response = try await KanbanGraphTests.execute(query, on: graph)
+        return try #require(try value(at: "board", "task", "comments", in: response) as? [Any]).count
+    }
+
+    /// Expects that a response has exactly one error, and that the error is the given ``KanbanError``.
+    ///
+    /// - Parameters:
+    ///   - expected: The error that the response must give: its message and its `extensions.code`.
+    ///   - response: The response JSON text.
+    /// - Throws: An error when the response has no `errors` list.
+    private static func expectError(_ expected: KanbanError, in response: String) throws {
+        let errors = try NameRewriteTests.errors(of: response)
+        #expect(errors.map { error in error["message"] as? String } == [expected.message], "\(response)")
+        #expect(errors.map(ErrorCoverageTests.code(of:)) == [expected.code], "\(response)")
     }
 
     /// Gives the full id of a task of the fixture board from its `^` ref.
@@ -194,7 +226,7 @@ struct AliasExecutionTests {
             let second = try #require(try Self.text(at: "addTask", "id", in: added))
             let todo = KanbanGraphTests.todoName
             #expect(try await Self.taskIDs(inColumnNamed: todo, on: fixture.graph) == [first, second])
-            let moved = #"task: "\#(try Self.taskRef(in: added))", col: "todo""#
+            let moved = #"task: "\#(try AddUpdateTaskTests.firstTaskRef(in: added))", col: "todo""#
             let before = #"moveTask(input: { \#(moved), before_id: "\#(fixture.task)" }) { id }"#
             _ = try Self.value(at: "moveTask", in: try await Self.run(before, on: fixture.graph))
             #expect(try await Self.taskIDs(inColumnNamed: todo, on: fixture.graph) == [second, first])
@@ -213,6 +245,8 @@ struct AliasExecutionTests {
             let delete = #"deleteTask(input: { task: "\#(fixture.task)" }) { deleted }"#
             let deleted = try await Self.run(delete, on: fixture.graph)
             #expect(try Self.text(at: "deleteTask", "deleted", in: deleted) != nil)
+            let reread = try await KanbanGraphTests.execute(query, on: fixture.graph)
+            try Self.expectError(.notFound(type: .task, reference: fixture.task), in: reread)
         }
     }
 
@@ -223,9 +257,11 @@ struct AliasExecutionTests {
             let update = "updateColumn(input: { \(input) }) { name }"
             let updated = try await Self.run(Self.addDoing, update, on: fixture.graph)
             #expect(try Self.text(at: "updateColumn", "name", in: updated) == Self.reviewName)
+            #expect(try await Self.columnNames(on: fixture.graph).contains(Self.reviewName))
             let delete = #"deleteColumn(input: { column: "\#(Self.doingSlug)" }) { deleted }"#
             let deleted = try await Self.run(delete, on: fixture.graph)
             #expect(try Self.text(at: "deleteColumn", "deleted", in: deleted) != nil)
+            #expect(try await Self.columnNames(on: fixture.graph).contains(Self.reviewName) == false)
         }
     }
 
@@ -262,8 +298,10 @@ struct AliasExecutionTests {
             let update = #"updateComment(input: { \#(input), body: "\#(CommentTests.editedBody)" }) { body }"#
             let updated = try await Self.run(update, on: fixture.graph)
             #expect(try Self.text(at: "updateComment", "body", in: updated) == CommentTests.editedBody)
+            #expect(try await Self.commentCount(ofTask: fixture.task, on: fixture.graph) == 1)
             let deleted = try await Self.run("deleteComment(input: { \(input) }) { deleted }", on: fixture.graph)
             #expect(try Self.text(at: "deleteComment", "deleted", in: deleted) != nil)
+            #expect(try await Self.commentCount(ofTask: fixture.task, on: fixture.graph) == 0)
         }
     }
 

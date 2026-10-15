@@ -72,15 +72,6 @@ struct UndeleteCycleTests {
         return OneBoardExample(directory: directory, graph: graph, example: example)
     }
 
-    /// Gives the short id ref of a task of the current board.
-    ///
-    /// - Parameter task: The full URI of the task.
-    /// - Returns: The ref, for example `^ajv8v4t`.
-    /// - Throws: An error when the URI holds no ULID.
-    static func sigilRef(of task: String) throws -> String {
-        AddUpdateTaskTests.sigilRef(of: try AddUpdateTaskTests.firstTask(in: task))
-    }
-
     /// Gives the error of the cycle B → C → A → B that the check through B finds.
     ///
     /// - Parameters:
@@ -89,7 +80,8 @@ struct UndeleteCycleTests {
     /// - Returns: The error.
     /// - Throws: An error when the URI of a task holds no ULID.
     static func cycle(of example: Example, showingC cText: String) throws -> KanbanError {
-        let (a, b) = (try sigilRef(of: example.a), try sigilRef(of: example.b))
+        let a = try AddUpdateTaskTests.firstTaskRef(in: example.a)
+        let b = try AddUpdateTaskTests.firstTaskRef(in: example.b)
         return .dependencyCycle(path: [b, cText, a, b])
     }
 
@@ -107,7 +99,7 @@ struct UndeleteCycleTests {
         try ErrorCoverageTests.expectFailure(
             of: name,
             in: try await CommentTests.run(field(made.example), on: made.graph),
-            giving: try cycle(of: made.example, showingC: try sigilRef(of: made.example.c)),
+            giving: try cycle(of: made.example, showingC: try AddUpdateTaskTests.firstTaskRef(in: made.example.c)),
             coded: "DEPENDENCY_CYCLE"
         )
         #expect(try Design.PortabilityTests.logTexts(inRepoAt: root) == before)
