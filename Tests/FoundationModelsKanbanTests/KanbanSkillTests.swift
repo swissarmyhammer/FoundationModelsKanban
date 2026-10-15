@@ -17,7 +17,7 @@ private let skillSuiteMinutes = 1
 ///   ```` ```json ```` block with the result of the script. The tests run each script in skill order, on one board in
 ///   a temporary git repo with no remote, and compare each result with its block.
 /// - When `../skills` is next to this repo, a test checks that its skill file is the same text as the copy. When the
-///   file is not there, the test has no file to compare, and it passes.
+///   file is not there, a condition trait disables the test, and the test report shows it as skipped.
 @Suite("Kanban skill: the examples run against the Swift tool", .watcherBudget, .timeLimit(.minutes(skillSuiteMinutes)))
 struct KanbanSkillTests {
     /// The copy of the skill in this repo, relative to the repository root.
@@ -253,13 +253,17 @@ struct KanbanSkillTests {
         #expect(examples.filter { example in example.result == nil }.map(\.script) == [])
     }
 
-    @Test("The skill file of ../skills, when it is there, is the same text as the copy in this repo")
+    @Test(
+        "The skill file of ../skills is the same text as the copy in this repo",
+        .enabled(
+            if: FileManager.default.fileExists(atPath: KanbanSkillTests.skillsRepoFile.path),
+            "the ../skills repo is not next to this repo, so there is no skill file to compare"
+        )
+    )
     func copyIsSkillsRepoFile() throws {
-        let path = Self.skillsRepoFile.path
         let copy = try Self.skillText()
-        let skillsRepoText = FileManager.default.fileExists(atPath: path)
-            ? try String(contentsOf: Self.skillsRepoFile, encoding: .utf8) : nil
-        #expect(skillsRepoText.map { text in text == copy } ?? true, "\(path) must be the same as \(Self.skillPath)")
+        let skillsRepoText = try String(contentsOf: Self.skillsRepoFile, encoding: .utf8)
+        #expect(skillsRepoText == copy, "\(Self.skillsRepoFile.path) must be the same as \(Self.skillPath)")
     }
 
     // MARK: - The examples

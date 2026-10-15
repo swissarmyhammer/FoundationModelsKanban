@@ -47,6 +47,55 @@ comments:
     - evidence: local commit of Documentation/kanban/SKILL.md, KanbanSkillTests.swift, RepositoryFile.swift, ReadmeExamplesTests.swift, CodeModeTests.swift, and the changed .kanban/tasks files. Package.resolved and .kanban/mcp.17281.log are not staged.
     - next: review
   timestamp: 2026-10-15T22:58:19.431616+00:00
+- actor: claude-code
+  id: 01m50x329za3h15vn0f1f57x35
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (03cf3c4). Counts: 1 finding, 1 confirmed, 0 refuted. Tests/FoundationModelsKanbanTests/KanbanSkillTests.swift:262 `test-integrity/no-test-cheating`.
+    - No validator matched Documentation/kanban/SKILL.md. Thus the reviewer checked the acceptance criteria by hand. The skill has no `{"op": ...}` call. The skill names BLOCKING on one line only, and that line says that `#BLOCKING` is an ordinary tag. Each `js` block has a `json` result block after it, and KanbanSkillTests runs each block. The text is in STE. The copy is byte-equal to ../skills/skills/kanban/SKILL.md (c6e735e).
+    - next: Correct the finding in copyIsSkillsRepoFile. When the ../skills file is not there, the test must show as skipped, not as passed. Also correct the type doc comment that says "it passes" for a missing file. Then run `/review` again.
+  timestamp: 2026-10-15T23:06:53.631178+00:00
+- actor: claude-code
+  id: 01m50x3ht0nynsfjkdyx0e0phs
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — ../skills c6e735e (skills/kanban/SKILL.md); Documentation/kanban/SKILL.md copy, KanbanSkillTests.swift, test helpers
+    - test: green — swift test, 1539 passed, 0 skipped; IntegrationTests 3 passed
+    - commit: 03cf3c4
+    - review: findings — Tests/FoundationModelsKanbanTests/KanbanSkillTests.swift:262
+  timestamp: 2026-10-15T23:07:09.504874+00:00
+- actor: claude-code
+  id: 01m50xgyan16jepx13532pb757
+  text: |-
+    Finding fix landed (test-integrity/no-test-cheating, copyIsSkillsRepoFile).
+    - The test now has the condition trait `.enabled(if: FileManager.default.fileExists(atPath: KanbanSkillTests.skillsRepoFile.path), "the ../skills repo is not next to this repo, so there is no skill file to compare")`. The body reads the ../skills file and does an exact `#expect(skillsRepoText == copy, ...)`. The `?? true` fallback is gone. The test name no longer says "when it is there", because the trait now gives that condition.
+    - The type doc comment now says: when the file is not there, a condition trait disables the test, and the test report shows it as skipped.
+    - The trait uses `KanbanSkillTests.skillsRepoFile` (not `Self.`) in the attribute. A private static member compiles there, because the @Test macro expands inside the type.
+    - Check of the skip path: I changed the condition for one run to a path that does not exist. The report showed `Test "The skill file of ../skills is the same text as the copy in this repo" skipped: "the ../skills repo is not next to this repo, so there is no skill file to compare"`. Then I put back the correct path. I did not touch ../skills.
+    - I did not change CI: CI does not check out the skills repo.
+    - Validators: I read the swift and test-integrity rule bodies of the dump in full. The dump file is 750k characters. I did not read the generic rule bodies and the per-language tool details again in this pass.
+  timestamp: 2026-10-15T23:14:28.309191+00:00
+- actor: claude-code
+  id: 01m50xh0q3anss4nvy71s7tr8y
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsKanbanTests/KanbanSkillTests.swift (condition trait on copyIsSkillsRepoFile, exact assertion, type doc comment). The Review Findings item is now `- [x]`. `swift test --filter KanbanSkillTests`: 9 of 9 pass, 0 skipped (the ../skills file is on this machine). One run with a temporary absent path showed the test as skipped with its reason. Full `swift test`: 1539 tests in 122 suites pass, 0 failed, 0 skipped. Only the accepted SwiftPM "missing creator" warning. No time limit failure.
+    - next: /review. Do not stage Package.resolved or .kanban/mcp.17281.log.
+  timestamp: 2026-10-15T23:14:30.755212+00:00
+- actor: claude-code
+  id: 01m50xp82hrwba2tga7ygek9j8
+  text: |-
+    ### test — green
+    - evidence: swift build — Build complete, only the allowed SwiftPM "missing creator" warning. swift test (full, one run) — 1539 tests in 122 suites passed, 0 failures, 0 skipped, 0 issues. The test "The skill file of ../skills is the same text as the copy in this repo" ran and passed (the condition trait did not disable it). Suite "Kanban skill: the examples run against the Swift tool" passed.
+    - next: review or commit.
+  timestamp: 2026-10-15T23:17:22.129530+00:00
+- actor: claude-code
+  id: 01m50xpt85mrk8gmt26zdwt9qq
+  text: |-
+    ### commit — changed
+    - evidence: One local commit "fix(skill): address review findings for the skill doc test (^xa1whj1)". Files: Tests/FoundationModelsKanbanTests/KanbanSkillTests.swift and the task files in .kanban/tasks/. Not staged: Package.resolved, .kanban/mcp.17281.log. No push.
+    - next: /review.
+  timestamp: 2026-10-15T23:17:40.741547+00:00
 depends_on:
 - 01M4X6X6PS5P524DW45RBSSWN2
 - 01M4X71FVFN9HYJ19VJ71VWV3B
@@ -101,3 +150,15 @@ Each example in the skill must run against the Swift tool. Add a doc test in thi
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-15 17:58)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `Documentation/kanban/SKILL.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsKanbanTests/KanbanSkillTests.swift:262` `test-integrity/no-test-cheating` — The copyIsSkillsRepoFile test passes without any check when the ../skills file is absent. The expression `skillsRepoText.map { ... } ?? true` returns true for a nil file, so the test asserts nothing on any machine that lacks the sibling repo, such as CI. The test then reads as coverage but proves nothing in that environment. Make the sibling-repo check a separate test that is skipped with a clear, visible condition, for example `.enabled(if: FileManager.default.fileExists(atPath: path))`, so the report shows it as skipped rather than passed. Or have CI check out the skills repo so that the test always runs. Do not return true for a missing file inside the assertion.
