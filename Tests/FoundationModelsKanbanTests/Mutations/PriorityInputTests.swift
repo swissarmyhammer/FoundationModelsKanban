@@ -76,6 +76,9 @@ struct PriorityInputTests {
     /// The code of the warning of a priority value.
     static let warningCode = "PRIORITY_IS_POSITION"
 
+    /// The code of the warning of an ordinal that a priority move overrode.
+    static let ordinalIgnoredCode = "ORDINAL_IGNORED"
+
     /// The end of each warning of a priority value, after the sentence that tells the move.
     private static let warningTail = " A task has no priority field: the place in the column is the priority. "
         + "Use moveTask with before or after to change the place, or filter with #HIGH, #MEDIUM, or #LOW."
@@ -237,6 +240,49 @@ struct PriorityInputTests {
         let response = try await CommentTests.run(update, on: tasks.graph)
         try Self.expectPriorityWarning(in: response, forValue: "high", giving: .toTop)
         #expect(try await Self.boardOrder(on: tasks.graph) == [tasks.third, tasks.first, tasks.second])
+    }
+
+    // MARK: - Priority and ordinal
+
+    @Test("addTask with priority high and an ordinal goes to the top and warns that the ordinal is ignored")
+    func addTaskHighWithOrdinalWarnsOrdinalIgnored() async throws {
+        let directory = try TemporaryDirectory()
+        let fixture = try ColumnActorTests.makeFixtureGraph(in: directory)
+        let ordinal = Ordinal(after: .first).value
+        let add = AddUpdateTaskTests.addTask(with: #"priority: "high", ordinal: "\#(ordinal)""#)
+        let response = try await CommentTests.run(add, on: fixture.graph)
+        #expect(try KanbanGraphTests.object(of: response)["errors"] == nil, "\(response)")
+        let warnings = try ResponseWarningsTests.warnings(of: response)
+        let ordinalWarning = "The ordinal `\(ordinal)` was ignored: the priority value `high` moved the task to "
+            + "the top of its column. Give a priority value or an ordinal, not both."
+        #expect(warnings.map(\.message) == [Self.warning(forValue: "high", giving: .toTop), ordinalWarning])
+        #expect(warnings.map(\.code) == [Self.warningCode, Self.ordinalIgnoredCode])
+        let added = try AddUpdateTaskTests.firstTask(in: response)
+        #expect(try await Self.boardOrder(on: fixture.graph) == [added, fixture.task])
+    }
+
+    @Test("addTask with priority medium and an ordinal keeps the ordinal and gives only the priority warning")
+    func addTaskMediumWithOrdinalKeepsOrdinal() async throws {
+        let directory = try TemporaryDirectory()
+        let fixture = try ColumnActorTests.makeFixtureGraph(in: directory)
+        let ordinal = Ordinal(before: .first).value
+        let add = AddUpdateTaskTests.addTask(with: #"priority: "medium", ordinal: "\#(ordinal)""#)
+        let response = try await CommentTests.run(add, on: fixture.graph)
+        try Self.expectPriorityWarning(in: response, forValue: "medium", giving: .stay)
+        let added = try AddUpdateTaskTests.firstTask(in: response)
+        #expect(try await Self.boardOrder(on: fixture.graph) == [added, fixture.task])
+    }
+
+    // MARK: - Other literals
+
+    @Test("A list literal makes no move, and the warning quotes the list in its compact JSON form")
+    func listLiteralMakesNoMove() async throws {
+        let directory = try TemporaryDirectory()
+        let tasks = try await Self.threeTasks(in: directory)
+        let update = AddUpdateTaskTests.updateTask(tasks.second, with: #"priority: ["high"]"#)
+        let response = try await CommentTests.run(update, on: tasks.graph)
+        try Self.expectPriorityWarning(in: response, forValue: #"["high"]"#, giving: .stay)
+        #expect(try await Self.boardOrder(on: tasks.graph) == [tasks.first, tasks.second, tasks.third])
     }
 
     // MARK: - Variables

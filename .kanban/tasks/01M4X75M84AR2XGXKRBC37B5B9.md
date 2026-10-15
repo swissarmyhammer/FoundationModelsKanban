@@ -30,6 +30,31 @@ comments:
     - evidence: 7 files — Sources/FoundationModelsKanban/GraphQL/PriorityInput.swift (new), Sources/FoundationModelsKanban/GraphQL/TaskMutations.swift, Sources/FoundationModelsKanban/GraphQL/Scalars.swift, Sources/FoundationModelsKanban/GraphQL/FieldAliases.swift, Sources/FoundationModelsKanban/GraphQL/SchemaDescription.swift, Tests/FoundationModelsKanbanTests/Mutations/PriorityInputTests.swift (new); `swift test` 1371 tests passed, 0 failures
     - next: /review
   timestamp: 2026-10-15T06:45:16.835549+00:00
+- actor: claude-code
+  id: 01m4z69e5hj6jxfeg8y39tpp40
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 6 files
+    - test: green — swift test, 1371 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 2f695eb
+    - review: findings — Sources/FoundationModelsKanban/GraphQL/PriorityInput.swift:62, Sources/FoundationModelsKanban/GraphQL/TaskMutations.swift:133
+  timestamp: 2026-10-15T07:09:10.705611+00:00
+- actor: claude-code
+  id: 01m4z6q2nzzq3g7pn5877hacja
+  text: |-
+    Review findings fixed (2 of 2).
+    - Finding 1 (no_direct_standard_out_logs at PriorityInput.swift): the call was `print(ast:)`, the GraphQL AST printer. The swiftlint regex reads the identifier `print`, so a module prefix does not help. Now parseLiteral (it can throw now) gives a list, an object, or a null literal through `valueFromASTUntyped` and the compact JSON form of `Map.description`, for example `["high"]`. No `print`, `debugPrint`, `dump`, or `_printChanges` stays in PriorityInput.swift or TaskMutations.swift.
+    - What did not work: the slice of `literal.loc` from the source body. The parse gives a list a location whose end is before its start (NameRewrite.Token.valueEnd says the same), and `prefix` with a negative length crashed the test process. Do not use `loc.end` for a list or an object.
+    - Finding 2 (public-output-contract at TaskMutations.swift addTask): the user wants the call to be forgiving, so the call is not refused. The priority move still wins. `PriorityValue.warnings(of:overriding:)` adds a second warning, code ORDINAL_IGNORED: "The ordinal `X` was ignored: the priority value `high` moved the task to the top of its column. Give a priority value or an ordinal, not both." A value that makes no move (for example medium) keeps the ordinal and gives no second warning.
+    - Tests (PriorityInputTests): addTaskHighWithOrdinalWarnsOrdinalIgnored (RED first: only one warning came back), addTaskMediumWithOrdinalKeepsOrdinal, and listLiteralMakesNoMove. The last two are guard tests for the behavior that did not change, so they passed before and after the change.
+  timestamp: 2026-10-15T07:16:37.695953+00:00
+- actor: claude-code
+  id: 01m4z6q4s490v60nd8v4e4gays
+  text: |-
+    ### implement — changed
+    - evidence: 3 files — Sources/FoundationModelsKanban/GraphQL/PriorityInput.swift, Sources/FoundationModelsKanban/GraphQL/TaskMutations.swift, Tests/FoundationModelsKanbanTests/Mutations/PriorityInputTests.swift; `swift test` 1374 tests in 109 suites passed, 0 failures; only the accepted SwiftPM "missing creator" warning; both Review Findings checked
+    - next: /review
+  timestamp: 2026-10-15T07:16:39.844879+00:00
 depends_on:
 - 01M4X6X6PS5P524DW45RBSSWN2
 position_column: doing
@@ -63,3 +88,13 @@ Decided behavior: accept `priority`, `prio`, and `urgent` on task inputs. Use th
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-15 01:48)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 6 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsKanban/GraphQL/PriorityInput.swift:62` `code-hygiene/disallowed-constructs-swift` — no_direct_standard_out_logs: Do not commit print(…), debugPrint(…), dump(…) or _printChanges(), which write to standard out in release. Log to a dedicated logging system, or silence one debug-only line with // swiftlint:disable:next no_direct_standard_out_logs and the reason after it.
+- [x] `Sources/FoundationModelsKanban/GraphQL/TaskMutations.swift:133` `completeness/public-output-contract` — In addTask, when the input has a priority that moves the task (for example high, which goes to the top) and also an explicit ordinal, the move wins and the explicit ordinal is dropped without any warning. The priority warning only describes the move, so the caller never learns that its ordinal was ignored. Either add a warning when both an explicit ordinal and a moving priority value are present, saying which one was used, or reject the combination as ambiguous. Add a test that sends priority high together with ordinal and asserts the chosen behaviour.

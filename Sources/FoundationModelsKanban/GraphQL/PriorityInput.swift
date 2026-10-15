@@ -50,16 +50,18 @@ extension PriorityValue {
     /// - Parameters:
     ///   - literal: The literal value in the document, for example `"high"`, `high`, `true`, or `5`.
     ///   - coders: The coders of the schema. The scalar does not use them.
-    /// - Returns: The text of the value, as a string.
+    /// - Returns: The text of the value, as a string. A list, an object, or `null` gives the compact JSON form of its
+    ///   value, for example `["high"]`.
+    /// - Throws: A `GraphQLError` when a number in a list or an object literal is not a valid number.
     @Sendable
-    static func parseLiteral(_ literal: GraphQL.Value, coders _: Coders) -> Map {
+    static func parseLiteral(_ literal: GraphQL.Value, coders _: Coders) throws -> Map {
         let text = switch literal {
         case let value as StringValue: value.value
         case let value as EnumValue: value.value
         case let value as IntValue: value.value
         case let value as FloatValue: value.value
         case let value as BooleanValue: String(value.value)
-        default: print(ast: literal)
+        default: text(of: try valueFromASTUntyped(valueAST: literal))
         }
         return .string(text)
     }
@@ -69,12 +71,25 @@ extension PriorityValue {
         PriorityMove(of: self)
     }
 
-    /// Gives the warning of the priority value of an input.
+    /// Gives the warnings of the priority value of an input.
     ///
-    /// - Parameter value: The priority value of the input, or `nil` when the input has none.
-    /// - Returns: One warning that tells the move of the value, or no warning when the input has no priority value.
-    static func warnings(of value: PriorityValue?) -> [ResponseWarning] {
-        value.map { value in [value.move.warning(for: value)] } ?? []
+    /// A value that moves the task wins over an explicit ordinal of the same input: the move gives the place of the
+    /// task, and a second warning tells that the call ignored the ordinal.
+    ///
+    /// - Parameters:
+    ///   - value: The priority value of the input, or `nil` when the input has none.
+    ///   - ordinal: The explicit ordinal of the input, or `nil` when the input has none.
+    /// - Returns: One warning that tells the move of the value, then a warning for an ordinal that the move overrode,
+    ///   or no warning when the input has no priority value.
+    static func warnings(of value: PriorityValue?, overriding ordinal: String? = nil) -> [ResponseWarning] {
+        guard let value else {
+            return []
+        }
+        let move = value.move
+        guard move != .stay, let ordinal else {
+            return [move.warning(for: value)]
+        }
+        return [move.warning(for: value), move.ordinalWarning(ignoring: ordinal, for: value)]
     }
 
     /// Gives the text of a value from the variables.
@@ -104,6 +119,9 @@ enum PriorityMove: Sendable {
 
     /// The code of the warning of a priority value, in `extensions.warnings`.
     static let warningCode = "PRIORITY_IS_POSITION"
+
+    /// The code of the warning of an explicit ordinal that a priority move overrode, in `extensions.warnings`.
+    static let ordinalIgnoredCode = "ORDINAL_IGNORED"
 
     /// The fixed table of the values, in lowercase. A value that is not in the table, for example a bare number,
     /// makes no move.
@@ -141,6 +159,21 @@ enum PriorityMove: Sendable {
         ResponseWarning(
             message: "The priority value `\(value.text)` \(effect) \(Self.warningAdvice)",
             code: Self.warningCode
+        )
+    }
+
+    /// Gives the warning of an explicit ordinal that the move overrode.
+    ///
+    /// - Parameters:
+    ///   - ordinal: The explicit ordinal of the input. The warning quotes it.
+    ///   - value: The priority value of the input. The warning quotes its text.
+    /// - Returns: The warning, for example "The ordinal `8180` was ignored: the priority value `high` moved the task to
+    ///   the top of its column. …".
+    func ordinalWarning(ignoring ordinal: String, for value: PriorityValue) -> ResponseWarning {
+        ResponseWarning(
+            message: "The ordinal `\(ordinal)` was ignored: the priority value `\(value.text)` \(effect) "
+                + "Give a priority value or an ordinal, not both.",
+            code: Self.ordinalIgnoredCode
         )
     }
 }

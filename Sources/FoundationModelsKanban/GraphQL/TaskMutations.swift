@@ -44,7 +44,8 @@ private struct AddTaskInput: Decodable, Sendable {
     let board: String?
 
     /// The priority value, or `nil` for none (divergence.md P2 and K15). It is not stored: it puts the new task at
-    /// the top or at the end of its column, and gives a warning.
+    /// the top or at the end of its column, and gives a warning. A value that moves the task wins over ``ordinal``,
+    /// and a second warning tells that the call ignored the ordinal.
     let priority: PriorityValue?
 }
 
@@ -97,7 +98,7 @@ private struct TaskWrite: Sendable {
     /// The local ref of the task.
     let ref: LocalRef
 
-    /// The warnings of the cross-board dependencies that the field wrote (``DependencyWarnings``), then the warning of
+    /// The warnings of the cross-board dependencies that the field wrote (``DependencyWarnings``), then the warnings of
     /// the priority value of the input (``PriorityMove``).
     let warnings: [ResponseWarning]
 }
@@ -148,7 +149,8 @@ extension KanbanResolver {
             let body = input.body.map(FieldUpdate.changed) ?? .unchanged
             let change = TaskChange(values: values, body: body, edges: edges)
             let warnings = try work.write(change, toTask: ref, inBoard: resolver.boardKey, at: time)
-            return TaskWrite(ref: ref, warnings: warnings + PriorityValue.warnings(of: input.priority))
+            let priorityWarnings = PriorityValue.warnings(of: input.priority, overriding: input.ordinal)
+            return TaskWrite(ref: ref, warnings: warnings + priorityWarnings)
         }
     }
 
