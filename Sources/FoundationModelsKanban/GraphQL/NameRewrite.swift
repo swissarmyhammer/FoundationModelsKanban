@@ -667,7 +667,9 @@ private struct RewriteWalk {
     ///
     /// The candidates and the aliases are the same as for an `input` object in the text of the document. A key whose
     /// canonical name is also a key of the object, or the canonical name of an earlier key, keeps the name that the
-    /// caller wrote, so that the engine reports it as for two fields with one name in the text.
+    /// caller wrote, so that the engine reports it as for two fields with one name in the text. The canonical name
+    /// gives the type of the value of each key, also of a key that keeps its written name, so that the keys in the
+    /// value get their canonical names.
     ///
     /// - Parameters:
     ///   - fields: The fields of the object, as the caller wrote them.
@@ -691,12 +693,13 @@ private struct RewriteWalk {
             let isTaken = fields[canonical] != nil || canonicals[..<index].contains(canonical)
             return isTaken ? fields.keys[index] : canonical
         }
-        let rewritten = try zip(fields, targets).map { field, target in
+        let rewritten = try zip(fields, zip(canonicals, targets)).map { field, keyNames in
+            let (canonical, target) = keyNames
             let fieldPath = path + [field.key]
             if target != field.key {
                 rewrites.append(NameRewrite(from: field.key, to: target, path: fieldPath))
             }
-            let fieldType = getNamedType(type: names.types[target])
+            let fieldType = getNamedType(type: names.types[canonical])
             return (target, try rewrittenValue(field.value, ofType: fieldType, at: fieldPath, readAt: use))
         }
         return OrderedDictionary(uniqueKeysWithValues: rewritten)

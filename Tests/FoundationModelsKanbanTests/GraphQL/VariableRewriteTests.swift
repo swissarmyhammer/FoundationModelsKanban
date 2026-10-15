@@ -134,6 +134,15 @@ struct VariableRewriteTests {
         #expect(rewritten.variables == ["items": [["title": Self.value, "steps": [["body": Self.value]]]]])
     }
 
+    @Test("A key that keeps the name that the caller wrote still gets the canonical keys in its nested value")
+    func takenKeyRewritesItsNestedValue() throws {
+        let document = "query($items: [ItemInput]) { add(items: $items) }"
+        let item: Map = ["steps": [["body": Self.value]], "Steps": [["notes": Self.value]]]
+        let rewritten = try Self.rewritten(from: document, variables: ["items": [item]], in: Self.nestedListSchema())
+        let expected: Map = ["steps": [["body": Self.value]], "Steps": [["body": Self.value]]]
+        #expect(rewritten.variables == ["items": [expected]])
+    }
+
     // MARK: - Through execute
 
     @Test("addTask with an input variable with name, labels, and depends adds the task with its title and tags")

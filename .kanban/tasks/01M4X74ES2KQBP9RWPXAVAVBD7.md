@@ -55,6 +55,32 @@ comments:
     - evidence: 1 file — Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift (new InputNames helper; visitBody, visitNamedValues, visitValue, rewrittenFields use it). swift test: 1333 tests in 106 suites passed, 0 failed; only the accepted SwiftPM "missing creator" warning.
     - next: /review
   timestamp: 2026-10-15T04:37:22.283847+00:00
+- actor: claude-code
+  id: 01m4yxzf4bnfnkb2ajg1v2wnyx
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 1 file (1 finding fixed)
+    - test: green — swift test, 1333 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 7b1924e
+    - review: findings — Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift:699
+  timestamp: 2026-10-15T04:43:55.403245+00:00
+- actor: claude-code
+  id: 01m4yy7abg63gmgz427q6z2rfw
+  text: |-
+    Finding NameRewrite.swift:699 (completeness/invariant-propagation) is fixed.
+    - `rewrittenFields` now looks up the value type by the canonical name, not by the written `target`: it zips `fields` with `(canonicals, targets)` and calls `names.types[canonical]`. A key that keeps its written name (isTaken) now keeps its type, so the keys in its nested value get their canonical names. The doc comment of `rewrittenFields` tells this.
+    - The same cause is not in other places in the file: `visitNamedValues`, `visit(_ field:)`, and `moveIntoBoard` already look up by the canonical name. When no name matches, the canonical is the key (the `?? key` fallback), so that lookup is also correct.
+    - TDD: new test `VariableRewriteTests.takenKeyRewritesItsNestedValue` (nested list schema; `{"steps": [{"body"}], "Steps": [{"notes"}]}`). RED: `notes` stayed under the taken key `Steps`. GREEN after the fix: `Steps: [{"body"}]`.
+    - A taken key with a nested enum or a nested variable cannot be made in the `variables` form: an enum in a variable is a string (the card names keys only), and a variable value has no nested variables. So the test uses a nested input object, which is the third case that the finding names.
+    - swift test: 1334 tests in 106 suites passed, 0 failed. The only compiler warning is the accepted SwiftPM "missing creator" warning.
+  timestamp: 2026-10-15T04:48:12.656976+00:00
+- actor: claude-code
+  id: 01m4yy7c8nh05d98kenp44e8sb
+  text: |-
+    ### implement — changed
+    - evidence: 2 files — Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift (type lookup by canonical name in rewrittenFields), Tests/FoundationModelsKanbanTests/GraphQL/VariableRewriteTests.swift (takenKeyRewritesItsNestedValue). swift test: 1334 passed, 0 failed; only the accepted SwiftPM "missing creator" warning.
+    - next: /review
+  timestamp: 2026-10-15T04:48:14.613239+00:00
 depends_on:
 - 01M4X7471GDT9W0J6PWBQTQ6H3
 position_column: doing
@@ -93,3 +119,12 @@ Decided behavior:
 > - `.kanban/ (from .reviewignore)` — 4 file(s)
 
 - [x] `Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift:657` `duplication/duplication` — The new `rewrittenFields` repeats the input-object setup that already exists in `visitValue`. It computes the field types with `fields().mapValues(\.type)`, builds the `AliasScope.inputField` scope, and maps the keys to `CanonicalName` candidates. Copies of this logic drift apart: a change to alias scope or candidate rules must be made in both places. Extract one helper that takes a `GraphQLInputObjectType` and a coordinate and returns the field types and the candidate names. Call it from `visitValue` and from `rewrittenFields`, and delete the copied lines at 657-659.
+
+## Review Findings (2026-10-14 23:40)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 1 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift:699` `completeness/invariant-propagation` — The value type lookup uses `target`, not the canonical name. When a key is kept as written (`isTaken`, line 692), `names.types[target]` is nil, so `getNamedType` returns nil and the nested value is visited with no type. Its nested variables, enum values, and input-object keys are then not rewritten. The canonical name is the one that should select the type, as in lines 687 and 560-561. Look up the type by the canonical name, `names.types[canonicals[index]]`, so the value keeps its type whichever name is kept. Add a test with a taken key that carries a nested variable or enum, so the nested rewrite is locked in. Note that the engine already reports the duplicate-field error on this path, so the practical impact is limited to the error's detail and to the nested rewrite not running.
