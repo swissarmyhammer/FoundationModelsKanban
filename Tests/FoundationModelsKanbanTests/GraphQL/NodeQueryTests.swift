@@ -185,6 +185,15 @@ struct NodeQueryTests {
         #expect(response == Self.expectedTypeAndID(of: node))
     }
 
+    @Test(
+        "node(id:) returns each node type that has a local id by its stored local ref type/id (divergence.md R18)",
+        arguments: nodeCases.filter { node in node.ref.contains(LocalRef.separator) }
+    )
+    func nodeByStoredLocalRef(node: NodeCase) async throws {
+        let response = try await Self.typeAndID(of: node.ref, in: QueryFixture())
+        #expect(response == Self.expectedTypeAndID(of: node))
+    }
+
     @Test("node(id:) gives the fields of the node type through an inline fragment")
     func nodeGivesTheFieldsOfItsType() async throws {
         let response = try await QueryFixture().respond(

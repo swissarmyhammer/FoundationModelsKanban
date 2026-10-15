@@ -107,6 +107,26 @@ struct AddUpdateTaskTests {
         PropertyName.ordinal: .string(nextOrdinal.value),
     ]
 
+    /// A form of a ref to a task of this board that is not a short form.
+    enum LocalTaskRefForm: CaseIterable, Sendable {
+        /// The full URI of the task, with the key of this board.
+        case uri
+
+        /// The stored local form `task/<ULID>`, as the log stores it (divergence.md R18).
+        case storedLocalRef
+
+        /// Gives the ref of a task in this form.
+        ///
+        /// - Parameter task: The ULID of the task.
+        /// - Returns: The ref text.
+        func reference(to task: ULID) -> String {
+            switch self {
+            case .uri: AddUpdateTaskTests.id(of: task)
+            case .storedLocalRef: LocalRef.task(task).description
+            }
+        }
+    }
+
     // MARK: - Helpers
 
     /// Makes a mutation document from its fields.
@@ -583,11 +603,14 @@ struct AddUpdateTaskTests {
 
     // MARK: - addTask dependencies
 
-    @Test("addTask with a dependsOn URI of this board stores a local ref, and the task is blocked")
-    func addTaskDependsOnLocalTask() async throws {
+    @Test(
+        "addTask with a dependsOn URI or stored local ref of this board stores a local ref, and the task is blocked",
+        arguments: LocalTaskRefForm.allCases
+    )
+    func addTaskDependsOnLocalTask(form: LocalTaskRefForm) async throws {
         let directory = try TemporaryDirectory()
         let fixture = try ColumnActorTests.makeFixtureGraph(in: directory)
-        let input = #"dependsOn: ["\#(Self.id(of: fixture.task))"]"#
+        let input = #"dependsOn: ["\#(form.reference(to: fixture.task))"]"#
         let add = Self.addTask(with: input, selecting: "{ id ready blockedBy { id } }")
         let mutation = Self.mutation(of: Self.doneColumn, add)
         let response = try await KanbanGraphTests.execute(mutation, on: fixture.graph)

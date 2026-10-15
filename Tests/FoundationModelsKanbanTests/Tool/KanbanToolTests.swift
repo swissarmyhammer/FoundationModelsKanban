@@ -209,6 +209,12 @@ struct KanbanToolTests {
         #expect(description.contains(SchemaDescriptionTests.uriScheme))
     }
 
+    @Test("The description tells that a ref can be the stored local form type/id (divergence.md R18)")
+    func descriptionNamesTheStoredLocalForm() throws {
+        let description = try Self.makeTool(inRepoAt: TemporaryDirectory().url).description
+        #expect(description.contains(KanbanTool.storedLocalRefExample))
+    }
+
     @Test("The history example of the description runs, and its filter keeps only the task updates")
     func historyExampleRuns() async throws {
         #expect(try Self.makeTool(inRepoAt: TemporaryDirectory().url).description.contains(KanbanTool.historyExample))

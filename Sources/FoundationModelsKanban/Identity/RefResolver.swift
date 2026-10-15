@@ -13,6 +13,10 @@ import Foundation
 /// - For a tag: the slug, or a tag name that gives the slug (``TagName``). The resolve then follows the rename
 ///   redirect (plan.md §6.2), so a ref to an old slug gives the tag at the end of the rename chain.
 /// - For the board: the key of the board. The host of the key ignores case (``BoardKey/normalizedText(of:)``).
+/// - The stored local form `<type>/<id>` that the log stores (``LocalRef``, divergence.md R18), for example
+///   `task/01K6Z3…`, `column/todo`, or `tag/bug`. It names a node of this board, the same as a URI with the key of
+///   this board, and the `<id>` part takes each form above of that type, for example `task/^short`. A type that is
+///   not the expected type gives `NOT_FOUND`, the same as a URI of a different type.
 ///
 /// A ref names only a live node, unless the caller asks for tombstones (the undelete mutations do). A ref that names
 /// no node gives ``KanbanError/notFound(type:reference:)``. A URI that does not parse also gives that error, because
@@ -72,15 +76,18 @@ struct RefResolver: Sendable {
     ///
     /// A full URI gets the same checks as in ``storedRef(for:ofType:acceptingRemote:includingTombstones:)``: the URI
     /// must parse, name a node of the expected type, and have the key of this board. Then the URI gives its local id.
-    /// The graph does not need the node, so that the mutation can make it. A short form stays as the caller wrote it.
-    /// The caller applies its slug rule to the result.
+    /// The stored local form `<type>/<id>` must name the expected type, and gives its `<id>` part. The graph does not
+    /// need the node, so that the mutation can make it. A short form stays as the caller wrote it. The caller applies
+    /// its slug rule to the result.
     ///
     /// - Parameters:
-    ///   - reference: The id as the caller wrote it. White space at the two ends of a URI is ignored.
+    ///   - reference: The id as the caller wrote it. White space at the two ends of a URI or of a stored local form
+    ///     is ignored.
     ///   - type: The node type that the mutation makes.
-    /// - Returns: The local id of the URI, or the reference when it is not a URI.
-    /// - Throws: ``KanbanError/notFound(type:reference:)`` when the URI does not parse, names a node of a different
-    ///   type, or has the key of a different board.
+    /// - Returns: The local id of the URI, the `<id>` part of the stored local form, or the reference when it is a
+    ///   short form.
+    /// - Throws: ``KanbanError/notFound(type:reference:)`` when the URI does not parse, the URI or the stored local
+    ///   form names a node of a different type, or the URI has the key of a different board.
     func newNodeKey(for reference: String, ofType type: PatchNodeType) throws(KanbanError) -> String {
         let lookup = Lookup(reference: reference, type: type, includesTombstones: false)
         switch try target(of: reference, in: lookup) {
@@ -95,8 +102,8 @@ struct RefResolver: Sendable {
 
     /// Finds the node of any type that a forgiving ref names in this board, live or tombstoned (plan.md §3.3, rule 3).
     ///
-    /// A full URI names the type of its node. A short form tries the node types of ``shortFormTypes`` in order, and
-    /// the first type with a match gives the node.
+    /// A full URI and the stored local form `<type>/<id>` name the type of their node. A short form tries the node
+    /// types of ``shortFormTypes`` in order, and the first type with a match gives the node.
     ///
     /// - Parameter reference: The ref as the caller wrote it. White space at the two ends is ignored.
     /// - Returns: The local ref of the node, or `nil` when no node has the ref, the URI does not parse, or the URI
@@ -207,12 +214,44 @@ extension RefResolver {
         /// The text of a full `kanban://` URI.
         case uri(String)
 
+        /// The stored local form `<type>/<id>`, as the log stores a ref to a node of the same board (``LocalRef``,
+        /// divergence.md R18): the node type, and the `<id>` part as a short form of that type.
+        case localRef(type: PatchNodeType, key: String)
+
         /// Sorts a ref by its form.
         ///
         /// - Parameter reference: The ref as the caller wrote it.
         init(_ reference: String) {
             let text = reference.trimmingCharacters(in: .whitespacesAndNewlines)
-            self = NodeURI.hasScheme(atStartOf: text) ? .uri(text) : .shortForm(text)
+            if NodeURI.hasScheme(atStartOf: text) {
+                self = .uri(text)
+            } else if let (type, key) = Self.localRefParts(of: text) {
+                self = .localRef(type: type, key: key)
+            } else {
+                self = .shortForm(text)
+            }
+        }
+
+        /// Splits the stored local form `<type>/<id>` at its first ``LocalRef/separator``.
+        ///
+        /// The type segment ignores case (``PatchNodeType/init(pathSegment:)``). The `<id>` part is all the text after
+        /// the first separator, without white space at the two ends. A board key does not start with a node type (its
+        /// first segment is a host or ``BoardKey/localHost``), so a board key stays a short form. The bare text
+        /// `board` has no separator, so it also stays a short form, and a mutation that makes a column, an actor, or a
+        /// tag with that id still gives the reserved slug error.
+        ///
+        /// - Parameter text: The ref without white space at the two ends.
+        /// - Returns: The node type and the `<id>` part, or `nil` when the text has no separator or the text before
+        ///   the first separator is not a node type.
+        private static func localRefParts(of text: String) -> (type: PatchNodeType, key: String)? {
+            guard
+                let separatorIndex = text.firstIndex(of: LocalRef.separator),
+                let type = PatchNodeType(pathSegment: String(text[..<separatorIndex]))
+            else {
+                return nil
+            }
+            let key = text[text.index(after: separatorIndex)...].trimmingCharacters(in: .whitespacesAndNewlines)
+            return (type, key)
         }
     }
 
@@ -221,17 +260,19 @@ extension RefResolver {
         /// A short form, without white space at the two ends.
         case shortForm(String)
 
-        /// A URI with the key of this board, by the short form and the node type of its node.
+        /// A URI with the key of this board, or the stored local form `<type>/<id>`, by the short form and the node
+        /// type of its node.
         case sameBoard(key: String, type: PatchNodeType)
 
         /// A URI with the key of a different board.
         case otherBoard(NodeURI)
 
-        /// Tells if the target can name a node of a type. A short form can name a node of each type. A URI names a
-        /// node of the type in the URI only.
+        /// Tells if the target can name a node of a type. A short form can name a node of each type. A URI or a
+        /// stored local form names a node of its own type only.
         ///
         /// - Parameter type: The node type that the caller expects.
-        /// - Returns: `true` when the target is a short form, or a URI that names a node of the type.
+        /// - Returns: `true` when the target is a short form, or a URI or a stored local form that names a node of the
+        ///   type.
         func canName(_ type: PatchNodeType) -> Bool {
             switch self {
             case .shortForm:
@@ -244,8 +285,11 @@ extension RefResolver {
         }
     }
 
-    /// Sorts a ref into a short form, a URI of this board, or a URI of a different board. This is the only parse of
+    /// Sorts a ref into a short form, a node of this board, or a URI of a different board. This is the only parse of
     /// a URI and the only check of its board key in the resolver.
+    ///
+    /// The stored local form `<type>/<id>` names a node of this board, the same as a URI with the key of this board.
+    /// It never names a node of a different board.
     ///
     /// - Parameter reference: The ref as the caller wrote it. White space at the two ends is ignored.
     /// - Returns: The target of the ref, or `nil` when the ref is a URI that does not parse. The graph does not need
@@ -254,6 +298,8 @@ extension RefResolver {
         switch RefText(reference) {
         case .shortForm(let key):
             return .shortForm(key)
+        case .localRef(let type, let key):
+            return .sameBoard(key: key, type: type)
         case .uri(let text):
             guard let uri = try? NodeURI(parsing: text) else {
                 return nil
@@ -265,14 +311,14 @@ extension RefResolver {
         }
     }
 
-    /// Sorts a ref of the expected type into a short form, a URI of this board, or a URI of a different board.
+    /// Sorts a ref of the expected type into a short form, a node of this board, or a URI of a different board.
     ///
     /// - Parameters:
     ///   - reference: The ref as the caller wrote it. White space at the two ends is ignored.
     ///   - lookup: The resolve.
     /// - Returns: The target of the ref. The graph does not need the node.
-    /// - Throws: ``KanbanError/notFound(type:reference:)`` when the ref is a URI that does not parse, or a URI that
-    ///   names a node of a different type.
+    /// - Throws: ``KanbanError/notFound(type:reference:)`` when the ref is a URI that does not parse, or a URI or a
+    ///   stored local form that names a node of a different type.
     private func target(of reference: String, in lookup: Lookup) throws(KanbanError) -> RefTarget {
         guard let target = target(of: reference), target.canName(lookup.type) else {
             throw lookup.notFound

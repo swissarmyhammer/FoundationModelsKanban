@@ -23,12 +23,17 @@ public struct KanbanTool: Tool {
         { board { history(filter: "~task", first: 5) { txn ops updates { id type kind } } } }
         """
 
+    /// The example of the stored local ref form `<type>/<id>` in the description (divergence.md R18). The log stores
+    /// each ref to a node of the same board in this form, and the resolver accepts it as a ref.
+    static let storedLocalRefExample = "column/todo"
+
     /// The name of the tool.
     public let name = "kanban"
 
     /// The short description of the tool: its purpose, the root fields, one example query, one example of the
-    /// history filter, the dependencies between repos (divergence.md R17), the warnings, and the board place. The
-    /// description does not hold the schema. The agent learns the schema with introspection (plan.md §12 item 10).
+    /// history filter, the dependencies between repos (divergence.md R17), the ref forms (divergence.md R18), the
+    /// warnings, and the board place. The description does not hold the schema. The agent learns the schema with
+    /// introspection (plan.md §12 item 10).
     public let description = """
         Reads and changes the kanban task graph of this repo with GraphQL. Send one GraphQL document in query. \
         The root query fields are board, boards, node, and nodes. Mutations, for example addTask and moveTask, \
@@ -37,8 +42,9 @@ public struct KanbanTool: Tool {
         To see the changes, query board history. Its filter keeps the updates whose node matches: ~task for a node \
         type, ^id for one node. Example: \(KanbanTool.historyExample) \
         A task can depend on a task in a different repo: put the full \(SchemaDescription.taskURIForm) URI in \
-        dependsOn, or put that task URL in the body. A short ref, for example ^short, names a node of the board \
-        that the call changes: the current board, or the board that the board field or a full id URI names. \
+        dependsOn, or put that task URL in the body. A short ref, for example ^short, or the stored form type/id, \
+        for example \(KanbanTool.storedLocalRefExample) or task/^short, names a node of the board that the call \
+        changes: the current board, or the board that the board field or a full id URI names. \
         Task.unresolvedDependsOn shows each dependency that no loaded board has. Read the warnings in \
         extensions.warnings. The board is in .kanban at the top of a git worktree. A folder that is not in a git \
         repo gives NOT_A_REPO. A .kanban folder of the old Rust kanban gives INCOMPATIBLE_BOARD.

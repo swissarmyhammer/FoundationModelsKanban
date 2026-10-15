@@ -322,4 +322,76 @@ struct RefResolverTests {
             try Self.resolve(key, as: .board)
         }
     }
+
+    // MARK: - Stored local form
+
+    @Test(
+        "The stored local form task/<id> takes each short form of a task (divergence.md R18)",
+        arguments: [
+            "task/\(target)",
+            "task/\(targetShortID)",
+            "task/\(ShortID.sigil)\(targetShortID)",
+            "task/01kt6s",
+            "Task/\(target.lowercased())",
+            " task/\(targetShortID) ",
+        ]
+    )
+    func storedLocalFormResolvesToTask(reference: String) throws {
+        #expect(try Self.resolve(reference, as: .task) == Self.storedRef(ofTask: Self.target))
+    }
+
+    @Test("The stored local form of a column, an actor, a tag, a comment, and the board resolves")
+    func storedLocalFormResolvesEachType() throws {
+        let comment = ReadinessFixture.firstComment
+        let commentRef = StoredRef.local(.comment(try DependencyMarkersTests.ulid(of: comment)))
+        let doing = StoredRef.local(.column(slug: ReadinessFixture.doing))
+        #expect(try Self.resolve("column/\(ReadinessFixture.doing)", as: .column) == doing)
+        #expect(try Self.resolve("column/Doing", as: .column) == doing)
+        #expect(try Self.resolve("actor/Claude Code", as: .actor) == .local(.actor(slug: ReadinessFixture.author)))
+        #expect(try Self.resolve("tag/\(Self.spacedTag)", as: .tag) == .local(.tag(slug: Self.spacedTag)))
+        #expect(try Self.resolve("tag/\(Self.renamedTag)", as: .tag) == .local(.tag(slug: Self.renameTarget)))
+        #expect(try Self.resolve("comment/\(ShortID(ofULIDString: comment).value)", as: .comment) == commentRef)
+        #expect(try Self.resolve("board/\(NodeURITests.mixedCaseKey)", as: .board) == .local(.board))
+    }
+
+    @Test(
+        "A stored local form of a different node type gives NOT_FOUND",
+        arguments: [
+            ("column/\(ReadinessFixture.doing)", PatchNodeType.task),
+            ("task/\(target)", PatchNodeType.column),
+            ("tag/\(spacedTag)", PatchNodeType.actor),
+        ]
+    )
+    func storedLocalFormOfOtherTypeGivesNotFound(reference: String, type: PatchNodeType) {
+        #expect(throws: Self.notFound(reference, as: type)) {
+            try Self.resolve(reference, as: type, acceptingRemote: true)
+        }
+    }
+
+    @Test("A stored local form names a node of this board only, also when the caller accepts cross-board refs")
+    func storedLocalFormStaysInThisBoard() {
+        let reference = "task/\(ReadinessFixture.ghost)"
+        #expect(throws: Self.notFound(reference, as: .task)) {
+            try Self.resolve(reference, as: .task, acceptingRemote: true)
+        }
+    }
+
+    @Test("A stored local form resolves to its node when the ref has no expected type")
+    func storedLocalFormResolvesWithNoType() throws {
+        let resolver = try Self.resolver()
+        let task = LocalRef.task(try DependencyMarkersTests.ulid(of: Self.target))
+        #expect(try resolver.anyLocalRef(for: "task/\(Self.targetShortID)") == task)
+        let doing = LocalRef.column(slug: ReadinessFixture.doing)
+        #expect(try resolver.anyLocalRef(for: "column/\(ReadinessFixture.doing)") == doing)
+        #expect(try resolver.anyLocalRef(for: "column/\(Self.target)") == nil)
+    }
+
+    @Test("The stored local form of a new node gives its local id, and a different node type gives NOT_FOUND")
+    func storedLocalFormOfNewNode() throws {
+        let resolver = try Self.resolver()
+        #expect(try resolver.newNodeKey(for: "tag/New Tag", ofType: .tag) == "New Tag")
+        #expect(throws: Self.notFound("column/backlog", as: .tag)) {
+            try resolver.newNodeKey(for: "column/backlog", ofType: .tag)
+        }
+    }
 }
