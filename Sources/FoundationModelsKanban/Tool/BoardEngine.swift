@@ -199,18 +199,17 @@ actor BoardEngine {
         guard case .unwatched = watchState else {
             return
         }
-        watchState = .watching(makeWatch(of: started))
+        watchState = .watching(BoardWatch(of: started, heldWeaklyBy: self, sendingBatchesTo: Self.batchDidArrive))
     }
 
-    /// Makes the watch of a started watcher: the watcher, and a task that gives each of its batches to
-    /// ``receive(_:)``. The task holds the engine weakly.
+    /// Gives one batch of the watcher of an engine to ``receive(_:)``. It is the receiver of each watch of an engine,
+    /// for ``BoardWatch/init(of:heldWeaklyBy:sendingBatchesTo:)``.
     ///
-    /// - Parameter started: The started watcher and its directory.
-    /// - Returns: The watch.
-    private func makeWatch(of started: StartedWatcher) -> BoardWatch {
-        BoardWatch(of: started) { [weak self] paths in
-            await self?.receive(paths)
-        }
+    /// - Parameters:
+    ///   - engine: The engine.
+    ///   - paths: The changed paths of the batch.
+    private static func batchDidArrive(in engine: BoardEngine, changing paths: [URL]) async {
+        await engine.receive(paths)
     }
 
     /// Gives one batch of the watcher to the serial gate (plan.md §5.6, batch). A batch that cannot apply is recorded
@@ -325,7 +324,11 @@ actor BoardEngine {
         else {
             return nil
         }
-        let moved = makeWatch(of: try StartedWatcher(watching: boardDirectory))
+        let moved = BoardWatch(
+            of: try StartedWatcher(watching: boardDirectory),
+            heldWeaklyBy: self,
+            sendingBatchesTo: Self.batchDidArrive
+        )
         await watch.watcher.stop()
         return moved
     }
@@ -502,18 +505,27 @@ struct BoardWatch: Sendable {
 }
 
 extension BoardWatch {
-    /// Makes the watch of a started watcher: the watcher, and a task that gives each of its batches to a receiver.
-    /// The task ends when the batches of the watcher end. A receiver that holds its owner weakly does not keep the
-    /// owner alive.
+    /// Makes the watch of a started watcher for its owner: the watcher, and a task that gives each of its batches to a
+    /// receiver, with the owner. This is the only place that wires a watcher to its owner: the engine of a board, or
+    /// the host. The task holds the owner weakly, so the watcher does not keep the owner alive. After the owner is
+    /// gone, the task gives no batch. The task ends when the batches of the watcher end.
     ///
     /// - Parameters:
     ///   - started: The started watcher and its directory.
-    ///   - receive: Gets the changed paths of each batch.
-    init(of started: StartedWatcher, sendingBatchesTo receive: @escaping @Sendable ([URL]) async -> Void) {
+    ///   - owner: The owner of the watch.
+    ///   - receive: Gets the owner and the changed paths of each batch.
+    init<Owner: AnyObject & Sendable>(
+        of started: StartedWatcher,
+        heldWeaklyBy owner: Owner,
+        sendingBatchesTo receive: @escaping @Sendable (Owner, [URL]) async -> Void
+    ) {
         let batches = started.watcher.batches
-        let consumer = Task {
+        let consumer = Task { [weak owner] in
             for await paths in batches {
-                await receive(paths)
+                guard let owner else {
+                    continue
+                }
+                await receive(owner, paths)
             }
         }
         self.init(watcher: started.watcher, directory: started.directory, consumer: consumer)

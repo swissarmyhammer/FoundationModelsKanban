@@ -272,7 +272,7 @@ public actor KanbanHost {
         of root: URL,
         _ identity: FolderIdentity
     ) throws(BoardWatcherError) -> BoardWatch {
-        makeWatch(of: try BoardWatcher.started(onBoardAt: root)) { host, _ in
+        BoardWatch(of: try BoardWatcher.started(onBoardAt: root), heldWeaklyBy: self) { host, _ in
             await host.unloadableBoardDidChange(identity, at: root)
         }
     }
@@ -519,7 +519,8 @@ public actor KanbanHost {
 
     // MARK: - File watches
 
-    /// Starts a file watcher on one folder, and makes its watch, as ``makeWatch(of:sendingBatchesTo:)`` does.
+    /// Starts a file watcher on one folder, and makes its watch with
+    /// ``BoardWatch/init(of:heldWeaklyBy:sendingBatchesTo:)``. The watch holds the host weakly.
     ///
     /// - Parameters:
     ///   - folder: The folder to watch.
@@ -530,27 +531,7 @@ public actor KanbanHost {
         of folder: URL,
         sendingBatchesTo receive: @escaping @Sendable (KanbanHost, [URL]) async -> Void
     ) throws(BoardWatcherError) -> BoardWatch {
-        makeWatch(of: try StartedWatcher(watching: folder), sendingBatchesTo: receive)
-    }
-
-    /// Makes the watch of a started watcher: the watcher, and a task that gives each of its batches to a receiver of
-    /// the host. The task holds the host weakly, so the watcher does not keep the host alive. After the host is gone,
-    /// the task gives no batch.
-    ///
-    /// - Parameters:
-    ///   - started: The started watcher and its directory.
-    ///   - receive: Gets the host and the changed paths of each batch.
-    /// - Returns: The watch.
-    private func makeWatch(
-        of started: StartedWatcher,
-        sendingBatchesTo receive: @escaping @Sendable (KanbanHost, [URL]) async -> Void
-    ) -> BoardWatch {
-        BoardWatch(of: started) { [weak self] paths in
-            guard let self else {
-                return
-            }
-            await receive(self, paths)
-        }
+        BoardWatch(of: try StartedWatcher(watching: folder), heldWeaklyBy: self, sendingBatchesTo: receive)
     }
 
     /// Records with swift-log that a file watcher of the host cannot start.

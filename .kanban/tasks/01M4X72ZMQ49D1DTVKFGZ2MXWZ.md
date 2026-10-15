@@ -77,6 +77,30 @@ comments:
     - evidence: 2 files — Sources/FoundationModelsKanban/Tool/KanbanHost.swift (logWatchFailure, makeFolderWatch, makeWatch; 3 catch blocks and 3 watch makers use them), Tests/FoundationModelsKanbanTests/CrossRepo/ScanCacheTests.swift (pathCopyDidChange calls scanPlaceDidChange). swift test: 1283 passed, 0 failed; only the accepted SwiftPM "missing creator" warning.
     - next: /test, then /review
   timestamp: 2026-10-15T01:13:14.407959+00:00
+- actor: claude-code
+  id: 01m4yj9a2na4eerbh5p0g1cr17
+  text: |-
+    ### finish iteration 3 — findings
+    - implement: changed — 2 files (3 findings fixed)
+    - test: green — swift test, 1283 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 6077664
+    - review: findings — Sources/FoundationModelsKanban/Tool/KanbanHost.swift:544
+  timestamp: 2026-10-15T01:19:34.997405+00:00
+- actor: claude-code
+  id: 01m4yjs591y1dnqcgqz1e82hdn
+  text: |-
+    Fixed the finding of 2026-10-14 20:17 (KanbanHost.swift:544 `reuse/reuse`). Now there is ONE implementation of the weak-owner batch wiring: the new generic initializer `BoardWatch.init<Owner: AnyObject & Sendable>(of:heldWeaklyBy:sendingBatchesTo:)` in BoardEngine.swift. It replaces the old `BoardWatch.init(of:sendingBatchesTo:)`, which had no other caller. The task captures the owner weakly; a batch that arrives after the owner is gone is skipped (`continue`), the same as the deleted host copy did.
+    Deleted copies: `KanbanHost.makeWatch(of:sendingBatchesTo:)` and `BoardEngine.makeWatch(of:)`. Callers now: KanbanHost.makeFolderWatch and KanbanHost.makeUnloadableWatch call the initializer with `heldWeaklyBy: self`. BoardEngine.consume and BoardEngine.movedWatch call it with `sendingBatchesTo: Self.batchDidArrive`, a private static receiver that forwards to the instance `receive(_:)`. Thus the engine does not repeat a closure at its two call sites. I gave the static receiver a different name from `receive(_:)` on purpose, because `Self.receive` would also name the unapplied instance method.
+    TDD: the new BoardWatchTests (Tests/FoundationModelsKanbanTests/Tool/BoardWatchTests.swift, 2 tests) failed first: the initializer did not exist, so the build failed. The 2 tests: a batch reaches the receiver with the owner, and the watch does not keep the owner alive. After the change, the 2 tests pass.
+    Verification: `swift build --build-tests` gives only the accepted SwiftPM "missing creator" warning. One `swift test --skip-build` run: 1285 tests in 100 suites passed.
+  timestamp: 2026-10-15T01:28:14.369154+00:00
+- actor: claude-code
+  id: 01m4yjs81j280qpxpwyf9rnws3
+  text: |-
+    ### implement — changed
+    - evidence: 3 files — Sources/FoundationModelsKanban/Tool/BoardEngine.swift (shared BoardWatch init(of:heldWeaklyBy:sendingBatchesTo:), engine makeWatch deleted, batchDidArrive receiver), Sources/FoundationModelsKanban/Tool/KanbanHost.swift (host makeWatch deleted; makeFolderWatch and makeUnloadableWatch call the shared init), Tests/FoundationModelsKanbanTests/Tool/BoardWatchTests.swift (new, 2 tests). swift test: 1285 passed, 0 failed; only the accepted SwiftPM "missing creator" warning.
+    - next: /test, then /review
+  timestamp: 2026-10-15T01:28:17.202182+00:00
 depends_on:
 - 01M4X6XKP0Y832GDRHQ1MG22VF
 position_column: doing
@@ -125,3 +149,12 @@ Change: when a call reaches a board by a path, add that board (its key and its w
 - [x] `Sources/FoundationModelsKanban/Tool/KanbanHost.swift:459` `duplication/duplication` — The new catch block in recordPathCopy repeats the watch-failure logging of two earlier blocks in the same file. Each block logs a fixed message with the same path and error metadata when a file watcher cannot start. The three copies differ only by the message text and the path value, so a change to the logging format must be made in three places. Extract a private helper, for example `logWatchFailure(_ message: String, path: String, error: any Error)`, that calls Log.kanban.warning with the shared metadata. Call it from the three catch blocks, passing each one's message and path. This is low severity: the blocks are short, so only apply it if the helper also serves the makePathCopyWatch extraction suggested earlier.
 - [x] `Sources/FoundationModelsKanban/Tool/KanbanHost.swift:477` `duplication/duplication` — makePathCopyWatch repeats the wiring of makePlaceWatch (KanbanHost.swift:403): it starts a StartedWatcher on a folder, wraps it in a BoardWatch, and passes a weak-self closure that forwards each batch to a handler. Only the watched value and the handler differ. The same logic now lives in two places, so a fix to the watch wiring must be made twice. Extract one private helper, for example `makeFolderWatch(of folder: URL, onBatch: @escaping @Sendable ([URL]) async -> Void) throws(BoardWatcherError) -> BoardWatch`, that builds the StartedWatcher and BoardWatch. Call it from makePlaceWatch and makePathCopyWatch, passing each one's closure. Leave BoardEngine.swift unchanged.
 - [x] `Tests/FoundationModelsKanbanTests/CrossRepo/ScanCacheTests.swift:315` `reuse/reuse` — ScanRecorder.pathCopyDidChange(_:) has the same body as scanPlaceDidChange(_:): it yields the change to changeSink. The new method reimplements an existing method of the same class instead of calling it. Have pathCopyDidChange call scanPlaceDidChange(change), or make both delegate to one private record(_:) helper. The two protocol requirements can share one implementation.
+
+## Review Findings (2026-10-14 20:17)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 2 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Sources/FoundationModelsKanban/Tool/KanbanHost.swift:544` `reuse/reuse` — The new `KanbanHost.makeWatch(of:sendingBatchesTo:)` reimplements the same capability as `BoardEngine.makeWatch`: it wraps a started watcher in `BoardWatch` with a weak-self task that forwards each batch to a receiver. Two copies of this weak-self batch-forwarding logic will drift apart, and a fix to one will not reach the other. Make the host's `makeWatch` the single implementation, or move it to a shared free function or `BoardWatch` initializer that both `KanbanHost` and `BoardEngine` call. Delete the copy that is left over.
