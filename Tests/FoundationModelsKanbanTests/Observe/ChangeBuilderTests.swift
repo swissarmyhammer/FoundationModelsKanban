@@ -97,8 +97,12 @@ struct ChangeBuilderTests {
     /// The new body of the fixture task in the `updateTask` case: one checked item.
     static let checkedBody = #"- [x] read the grammar\n"#
 
-    /// The fields of a task whose value is one node, a list of nodes, or an object. A query selects these sub fields,
-    /// so that the response has the same values as a field change.
+    /// The name of the task field that lists the full URI of each dependency that no loaded board has.
+    static let unresolvedField = "unresolvedDependsOn"
+
+    /// The fields of a task whose value is one node, a list, or an object, with the selection of each one. A query
+    /// selects these sub fields, so that the response has the same values as a field change. A list of IDs has no
+    /// sub fields, so its selection is the field name.
     static let selections = [
         "column": "column { id }",
         "task": "task { id }",
@@ -107,12 +111,15 @@ struct ChangeBuilderTests {
         "tags": "tags { id }",
         "dependsOn": "dependsOn { id }",
         "blockedBy": "blockedBy { id }",
+        unresolvedField: unresolvedField,
         "progress": "progress { completed fraction percent total }",
         "summary": "summary { blocked done percent ready total totalActors }",
     ]
 
     /// The fields whose value is a list: a field change gives `added` and `removed`.
-    static let listFields: Set<String> = ["assignees", "tags", "dependsOn", "blockedBy", "virtualTags"]
+    static let listFields: Set<String> = [
+        "assignees", "tags", "dependsOn", "blockedBy", unresolvedField, "virtualTags",
+    ]
 
     /// The name of the removed Task field `blocks`: no field change has this name.
     static let removedBlocksField = "blocks"
@@ -309,6 +316,25 @@ struct ChangeBuilderTests {
         changing: [(.task, .updated), (.tag, .created), (.tag, .created)]
     )
 
+    /// The full URI of a task that the fixture board does not have.
+    static let missingTaskURI = NodeURI(boardKey: boardKey, ref: .task(ULID())).description
+
+    /// The case that gives the fixture task a body marker to ``missingTaskURI``: a dependency that cannot resolve.
+    static let addMissingDependency = MutationCase(
+        "updateTask with a body marker to a missing task",
+        running: addMissingDependencyField,
+        changing: [(.task, .updated)]
+    )
+
+    /// The case that replaces the body marker to ``missingTaskURI`` of the fixture task with a body that has no
+    /// marker.
+    static let removeMissingDependency = MutationCase(
+        "updateTask that removes a body marker to a missing task",
+        after: [addMissingDependencyField],
+        running: { refs in AddUpdateTaskTests.updateTask(refs.task, with: #"body: "\#(checkedBody)""#) },
+        changing: [(.task, .updated)]
+    )
+
     // MARK: - Fields
 
     /// Makes the `assignTask` field that assigns `alice` to the fixture task.
@@ -385,6 +411,15 @@ struct ChangeBuilderTests {
     @Sendable
     static func deleteCommentField(_ refs: CaseRefs) -> String {
         CommentTests.nodeField(MutationName.deleteComment, naming: refs.comment)
+    }
+
+    /// Makes the `updateTask` field that gives the fixture task a body marker to ``missingTaskURI``.
+    ///
+    /// - Parameter refs: The refs of the case.
+    /// - Returns: The field.
+    @Sendable
+    static func addMissingDependencyField(_ refs: CaseRefs) -> String {
+        AddUpdateTaskTests.updateTask(refs.task, with: #"body: "Needs \#(missingTaskURI)""#)
     }
 
     /// Makes a `moveTask` field of the fixture task.
@@ -767,6 +802,50 @@ struct ChangeBuilderTests {
             Self.idValue(of: .tag(slug: slug))
         }
         #expect(try Self.field(named: "tags", in: task).added == sorted)
+    }
+
+    /// Records a case, and expects that the update of the fixture task has the `unresolvedDependsOn` field change
+    /// with the given URIs, and that each field change equals the values of a query.
+    ///
+    /// - Parameters:
+    ///   - mutationCase: The case. Its transaction patches the fixture task.
+    ///   - added: The URIs that the transaction adds to `unresolvedDependsOn`.
+    ///   - removed: The URIs that the transaction removes from `unresolvedDependsOn`.
+    static func expectUnresolvedChange(
+        of mutationCase: MutationCase,
+        adding added: [String],
+        removing removed: [String]
+    ) async throws {
+        let recorded = try await record(mutationCase)
+        let task = try #require(updates(of: recorded, ofPatchedNodes: true).first { update in update.type == .task })
+        let expected = FieldChange(
+            name: unresolvedField,
+            before: nil,
+            after: nil,
+            added: added.map(Map.string),
+            removed: removed.map(Map.string),
+            diff: nil
+        )
+        #expect(try field(named: unresolvedField, in: task) == expected)
+        try await expectFieldsEqualQueries(of: recorded)
+    }
+
+    @Test("A dependency on a missing task gives an unresolvedDependsOn field change that adds the URI")
+    func missingDependencyAddsUnresolvedURI() async throws {
+        try await Self.expectUnresolvedChange(
+            of: Self.addMissingDependency,
+            adding: [Self.missingTaskURI],
+            removing: []
+        )
+    }
+
+    @Test("Removing a dependency on a missing task gives an unresolvedDependsOn field change that removes the URI")
+    func removedMissingDependencyRemovesUnresolvedURI() async throws {
+        try await Self.expectUnresolvedChange(
+            of: Self.removeMissingDependency,
+            adding: [],
+            removing: [Self.missingTaskURI]
+        )
     }
 
     // MARK: - Batches of transactions

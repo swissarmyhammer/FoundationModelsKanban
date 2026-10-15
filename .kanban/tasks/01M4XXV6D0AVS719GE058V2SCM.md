@@ -58,11 +58,20 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsKanbanTests/CrossRepo/PathRefCacheTests.swift (2 new tests, 2 helpers, 3 constants). Both review findings checked. `swift test`: 1512 passed, 0 failed. New task ^0nkvw6d for the stale related engine of the session view.
     - next: /review
   timestamp: 2026-10-15T17:47:45.970782+00:00
+- actor: claude-code
+  id: 01m50bash980cfxdfc8ff5sfsy
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 test file (2 findings fixed; no code change needed)
+    - test: green — swift test, 1512 passed, 0 failed, 0 skipped; IntegrationTests 3 passed
+    - commit: bea7ae3
+    - review: clean — none
+  timestamp: 2026-10-15T17:56:32.425485+00:00
 depends_on:
 - 01M4X707X79HZ4TJARR3PRJNB4
 - 01M4X72ZMQ49D1DTVKFGZ2MXWZ
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ff8780
 title: Keep the result of a path board ref in memory, so a repeated path ref runs no git
 ---
 ## What

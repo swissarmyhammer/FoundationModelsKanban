@@ -413,7 +413,8 @@ extension TagObject {
 
 extension TaskObject {
     /// The values of the public fields of the task: the stored fields, the read-time `tags` and `dependsOn`
-    /// (plan.md §6.1), and the derived fields (plan.md §5.3 step 4).
+    /// (plan.md §6.1), the URIs of the dependencies that cannot resolve (divergence.md Q2), and the derived fields
+    /// (plan.md §5.3 step 4).
     var trackedFields: TrackedFields {
         nodeFields(adding: [
             ("title", .single(Map(title))),
@@ -423,6 +424,7 @@ extension TaskObject {
             ("tags", .ids(of: tags)),
             ("dependsOn", .ids(of: dependsOn)),
             ("blockedBy", .ids(of: blockedBy)),
+            ("unresolvedDependsOn", .list(unresolvedDependsOn.map { id in Map(id.text) })),
             ("ready", .single(Map(ready))),
             ("virtualTags", .list(virtualTags.map { tag in Map(tag) })),
             ("progress", .single(progress.jsonValue)),
