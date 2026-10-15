@@ -32,6 +32,33 @@ comments:
 
     Next: /review
   timestamp: 2026-10-15T11:54:01.044621+00:00
+- actor: claude-code
+  id: 01m4zq9pxf80yqv8jr749ajzjd
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 22 files
+    - test: green — swift test, 1439 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: a578709
+    - review: findings — Sources/FoundationModelsKanban/Derived/Summary.swift:82, Sources/FoundationModelsKanban/Derived/Summary.swift:83, Tests/FoundationModelsKanbanTests/GraphQL/RustFieldTests.swift:79
+  timestamp: 2026-10-15T12:06:25.455142+00:00
+- actor: claude-code
+  id: 01m4zqkm87341hbz29tc6vrswp
+  text: |-
+    Picked up the review findings (2026-10-15 06:58). Research:
+    - The liveness rule `node(at:as:)?.fields.isDeleted == false` was in three places: `isLiveTask` (Readiness.swift), `isLiveActor` (Summary.swift), and `liveTagSlot` (TagMarkers.swift). Two more places did the same check by local ref through `node(for:)?.state.fields.isDeleted == false`: the column check of a transfer (TaskTransferMutations.swift) and the session actor check (Commit.swift).
+    - Plan: one generic helper `Graph.isLive(_:at:)` in Model/Graph.swift beside `node(at:as:)`, plus `Graph.isLive(_:for:)` for a local ref. Each liveness check calls it.
+    - `NameRewriteTests.data(of:)` was already the shared helper of 19 suites, and `RustFieldTests.data(of:)` was a copy. Plan: move the helper to `KanbanGraphTests` beside `object(of:)`, remove both old copies, and change each caller. `RustFieldTests.respond(to:onFixtureIn:)` was only a pass-through to `ColumnActorTests.respond`, so it goes too.
+    - Checks that use the node value after the tombstone check (ColumnOrder, AgentPlan, BrokenMergeDisplay, and so on) are a different shape. They are not changed.
+  timestamp: 2026-10-15T12:11:50.407551+00:00
+- actor: claude-code
+  id: 01m4zqy48pm16nrtbwq7p77kjm
+  text: |-
+    ### implement — changed
+    - evidence: I added `Graph.isLive(_:at:)` and `Graph.isLive(_:for:)` in Model/Graph.swift. `isLiveTask` (Readiness.swift), `isLiveActor` (Summary.swift), `liveTagSlot` (TagMarkers.swift), the transfer column check (TaskTransferMutations.swift), and the session actor check (Commit.swift) now call these helpers. I moved `data(of:)` to KanbanGraphTests.swift. I removed the copies in NameRewriteTests.swift and RustFieldTests.swift, and the `respond` pass-through in RustFieldTests.swift. The callers in 19 test files now use `KanbanGraphTests.data(of:)`. There are 3 new liveness tests in GraphTests.swift. RED was a build failure because `isLive` did not exist. After the change, `swift test` passes: 1442 tests in 111 suites, with no compiler warnings.
+    - Finding 2: I checked it off. Its clause "Do not edit Readiness.swift:323 in this change" was not obeyed, because finding 1 needs that edit (`isLiveTask` calls the shared helper). I made no separate task, because no work is left for one. A person can review this choice. A note on the card says the same.
+    - What did not work: the `replace_all` flag of the files edit op replaced only the first match. For the bulk rename, each match needed its own edit.
+    - next: /review
+  timestamp: 2026-10-15T12:17:34.486725+00:00
 position_column: doing
 position_ordinal: '80'
 title: Add back avatar, model, summary counts, percent, and virtual tag color and description
@@ -61,3 +88,15 @@ Add back these fields from the Rust kanban:
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-15 06:58)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 20 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsKanban/Derived/Summary.swift:82` `reuse/reuse` — `Graph.isLiveActor(at:)` repeats the body of `Graph.isLiveTask(at:)`, which is a near-match that was not generalized. Both check that a slot holds a node of one type that is not a tombstone. A second parallel copy means the tombstone rule now lives in two places and can diverge. Generalize the pair into one helper, for example `func isLive<Node: NodeState>(_ type: Node.Type, at slot: Int) -> Bool`, and have `isLiveTask`, `isLiveActor`, and the TagMarkers check call it. The per-type calls stay one line each.
+- [x] `Sources/FoundationModelsKanban/Derived/Summary.swift:83` `duplication/duplication` — The new Graph.isLiveActor(at:) body repeats the body of the existing Graph.isLiveTask(at:) almost word for word. Only the node type differs (ActorNode instead of TaskNode). The two copies can drift apart, so a later change to the liveness rule could fix one and miss the other. Make one shared liveness helper that takes the node type as a generic parameter, for example `func isLive<N: NodeState>(at slot: Int, as type: N.Type) -> Bool`, and have isLiveActor call it with ActorNode.self. Do not edit Readiness.swift:323 in this change. Report the switch of isLiveTask to the shared helper as a separate task.
+  - Note for a person to review: this change did not obey the clause "Do not edit Readiness.swift:323 in this change". Finding 1 has the same cause, and it tells `isLiveTask` to call the shared helper. That needs the edit in Readiness.swift. So `isLiveTask` now calls `Graph.isLive(_:at:)` in this change, and no separate task was made, because no work is left for one. A person can review this choice.
+- [x] `Tests/FoundationModelsKanbanTests/GraphQL/RustFieldTests.swift:79` `reuse/reuse` — The new `data(of:)` helper repeats an existing helper with the same signature and body. Two copies of this helper must now be kept in step, and a fix to one will not reach the other. Move the helper to one shared place in the test support files, such as a `KanbanGraphTests` or `ColumnActorTests` extension, and call it from both suites. Remove the copy in RustFieldTests.swift.

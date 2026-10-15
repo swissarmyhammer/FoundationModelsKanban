@@ -154,7 +154,7 @@ struct VariableRewriteTests {
         let input: Map = ["name": .string(Self.title), "labels": [.string(Self.tag)], "depends": []]
         let response = try await KanbanGraphTests.execute(document, variables: [variable: input], on: fixture.graph)
         #expect(try KanbanGraphTests.object(of: response)["errors"] == nil, "\(response)")
-        let task = try #require(try NameRewriteTests.data(of: response)["addTask"] as? [String: Any], "\(response)")
+        let task = try #require(try KanbanGraphTests.data(of: response)["addTask"] as? [String: Any], "\(response)")
         #expect(task["title"] as? String == Self.title)
         #expect(task["tags"] as? [[String: String]] == [["name": Self.tag]])
         withExtendedLifetime(directory) {}

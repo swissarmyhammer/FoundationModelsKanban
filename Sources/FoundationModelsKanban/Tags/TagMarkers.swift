@@ -279,7 +279,7 @@ extension Graph {
     ///   ends with no tag.
     private func liveTagSlot(redirectedFrom slot: Int) -> Int? {
         guard let target = renameTarget(ofTagAt: slot),
-            node(at: target, as: TagNode.self)?.fields.isDeleted == false
+            isLive(TagNode.self, at: target)
         else {
             return nil
         }

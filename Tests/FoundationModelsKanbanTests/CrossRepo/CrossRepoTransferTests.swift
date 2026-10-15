@@ -75,7 +75,7 @@ struct CrossRepoTransferTests {
     ) async throws -> String {
         let response = try await CommentTests.run(CommentTests.nodeField(operation, naming: task, with: input), on: graph)
         #expect(try CrossRepoWriteTests.hasNoErrors(response), "\(response)")
-        return try CrossRepoUndoTests.id(of: operation, in: NameRewriteTests.data(of: response))
+        return try CrossRepoUndoTests.id(of: operation, in: KanbanGraphTests.data(of: response))
     }
 
     /// The `board` field that names the related repo.
@@ -97,7 +97,7 @@ struct CrossRepoTransferTests {
     static func task(_ task: String, selecting selection: String, on graph: KanbanGraph) async throws -> [String: Any] {
         let query = #"{ node(id: "\#(task)") { ... on Task \#(selection) } }"#
         let response = try await KanbanGraphTests.execute(query, on: graph)
-        return try #require(NameRewriteTests.data(of: response)["node"] as? [String: Any], "\(response)")
+        return try #require(KanbanGraphTests.data(of: response)["node"] as? [String: Any], "\(response)")
     }
 
     /// Reads the tag names of the related board.
@@ -108,7 +108,7 @@ struct CrossRepoTransferTests {
     static func libTagNames(on graph: KanbanGraph) async throws -> [String] {
         let query = #"{ board(id: "\#(try CrossRepoWriteTests.libKey())") { \#(tagNamesSelection) } }"#
         let response = try await KanbanGraphTests.execute(query, on: graph)
-        let board = try #require(NameRewriteTests.data(of: response)["board"] as? [String: Any], "\(response)")
+        let board = try #require(KanbanGraphTests.data(of: response)["board"] as? [String: Any], "\(response)")
         return try names(in: board["tags"])
     }
 
@@ -334,7 +334,7 @@ struct CrossRepoTransferTests {
         let response = try await CommentTests.run("\(MutationName.copyTask)(input: { \(input) }) { id }", on: app)
         await app.close()
         #expect(try CrossRepoWriteTests.hasNoErrors(response), "\(response)")
-        let copy = try CrossRepoUndoTests.id(of: MutationName.copyTask, in: NameRewriteTests.data(of: response))
+        let copy = try CrossRepoUndoTests.id(of: MutationName.copyTask, in: KanbanGraphTests.data(of: response))
         #expect(try Self.boardKey(of: copy) == CrossRepoWriteTests.libKey())
     }
 

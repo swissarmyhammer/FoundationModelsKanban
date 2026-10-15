@@ -241,7 +241,7 @@ struct ColumnActorTests {
         inField field: String,
         of response: String
     ) throws {
-        let node = try #require(NameRewriteTests.data(of: response)[field] as? [String: Any], "\(response)")
+        let node = try #require(KanbanGraphTests.data(of: response)[field] as? [String: Any], "\(response)")
         #expect(node[property] as? String == value, "\(response)")
         try DependencyTargetWarningTests.expectWarning(
             coded: IgnoredNull.warningCode,

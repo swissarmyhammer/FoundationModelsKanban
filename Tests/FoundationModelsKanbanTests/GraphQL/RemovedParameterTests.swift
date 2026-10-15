@@ -146,7 +146,7 @@ struct RemovedParameterTests {
     ) async throws -> [String] {
         let query = #"{ __type(name: "\#(type)") { inputFields { name } fields { name args { name } } } }"#
         let response = try await KanbanGraphTests.execute(query, on: graph)
-        let described = try #require(try NameRewriteTests.data(of: response)["__type"] as? [String: Any])
+        let described = try #require(try KanbanGraphTests.data(of: response)["__type"] as? [String: Any])
         guard let field else {
             let entries = (described["inputFields"] as? [[String: Any]]) ?? (described["fields"] as? [[String: Any]])
             return try #require(entries).compactMap { entry in entry["name"] as? String }
@@ -191,7 +191,7 @@ struct RemovedParameterTests {
         try await Self.withFixture { graph in
             let response = try await KanbanGraphTests.execute(removed.document, on: graph)
             #expect(try KanbanGraphTests.object(of: response)["errors"] == nil, "\(response)")
-            #expect(try NameRewriteTests.data(of: response)[removed.resultKey] is [String: Any], "\(response)")
+            #expect(try KanbanGraphTests.data(of: response)[removed.resultKey] is [String: Any], "\(response)")
             let warnings = try ResponseWarningsTests.warnings(of: response)
             #expect(warnings.map(\.message) == [removed.warning], "\(response)")
             #expect(warnings.map(\.code) == [Self.warningCode], "\(response)")
@@ -204,7 +204,7 @@ struct RemovedParameterTests {
             let document = "mutation ($input: AddTaskInput!) { addTask(input: $input) { title } }"
             let input: Map = ["title": "x", "due": "2026-01-01"]
             let response = try await KanbanGraphTests.execute(document, variables: ["input": input], on: graph)
-            let added = try NameRewriteTests.data(of: response)["addTask"] as? [String: Any]
+            let added = try KanbanGraphTests.data(of: response)["addTask"] as? [String: Any]
             #expect(added?["title"] as? String == "x", "\(response)")
             let warnings = try ResponseWarningsTests.warnings(of: response)
             #expect(warnings.map(\.message) == ["`due`" + Self.noDateText], "\(response)")

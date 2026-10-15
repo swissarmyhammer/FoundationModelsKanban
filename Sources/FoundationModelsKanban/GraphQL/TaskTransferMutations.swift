@@ -398,7 +398,7 @@ extension WorkingCopy {
         if let id {
             return try columnRef(forMoveTo: id, resolvingWith: resolver, at: time)
         }
-        if let column = copy.column, graph.node(for: column)?.state.fields.isDeleted == false {
+        if let column = copy.column, graph.isLive(ColumnNode.self, for: column) {
             return column
         }
         return try graph.columnRef(atSlot: ColumnOrder(of: graph).first)

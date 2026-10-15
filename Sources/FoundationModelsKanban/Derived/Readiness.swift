@@ -322,7 +322,7 @@ extension Graph {
     /// - Parameter slot: A slot that this graph gave.
     /// - Returns: `true` when the slot holds a task that is not a tombstone.
     func isLiveTask(at slot: Int) -> Bool {
-        node(at: slot, as: TaskNode.self)?.fields.isDeleted == false
+        isLive(TaskNode.self, at: slot)
     }
 
     /// Gives the dependencies of a task, without the dependencies on tombstoned nodes (plan.md §3.3, rule 3).

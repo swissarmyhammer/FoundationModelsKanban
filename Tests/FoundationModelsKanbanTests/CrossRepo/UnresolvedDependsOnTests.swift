@@ -26,7 +26,7 @@ struct UnresolvedDependsOnTests {
     static func fields(of task: String, on graph: KanbanGraph) async throws -> [String: Any] {
         let query = try CrossRepoReadTests.query(of: task, selecting: selection)
         let response = try await KanbanGraphTests.execute(query, on: graph)
-        let board = try #require(NameRewriteTests.data(of: response)["board"] as? [String: Any], "\(response)")
+        let board = try #require(KanbanGraphTests.data(of: response)["board"] as? [String: Any], "\(response)")
         return try #require(board["task"] as? [String: Any], "\(response)")
     }
 

@@ -172,7 +172,7 @@ struct WorkingCopy: Sendable {
         self.stamp = stamp
         self.stamp.advance(past: largest)
         largestLiveID = largest
-        let isKnown = graph.node(for: stamp.actor)?.state.fields.isDeleted == false
+        let isKnown = graph.isLive(ActorNode.self, for: stamp.actor)
         knownSessionActor = isKnown ? stamp.actor : nil
     }
 

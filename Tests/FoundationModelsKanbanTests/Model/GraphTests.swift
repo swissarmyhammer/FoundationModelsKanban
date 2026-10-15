@@ -17,6 +17,9 @@ struct GraphTests {
     /// The fields of a test node after a change to its body.
     static let changedFields = NodeFields(body: "changed", created: time, updated: time)
 
+    /// The fields of a test node that is a tombstone.
+    static let tombstoneFields = NodeFields(created: time, updated: time, deleted: time)
+
     /// The ULID text of the test task.
     static let taskULID = "01KT6R6HR3KJT6JVNDRAJV8V4T"
 
@@ -121,6 +124,36 @@ struct GraphTests {
         let columnSlot = graph.update(with: .column(Self.column))
         graph.remove(nodeAt: Self.columnRef)
         #expect(graph.node(at: columnSlot, as: ColumnNode.self) == nil)
+    }
+
+    // MARK: - Liveness
+
+    @Test("A slot is live for a node type when it holds a node of that type that is not a tombstone")
+    func liveSlotHoldsLiveNodeOfType() {
+        var graph = Graph()
+        let columnSlot = graph.update(with: .column(Self.column))
+        let actorSlot = graph.update(with: .actor(Self.actor))
+        #expect(graph.isLive(ColumnNode.self, at: columnSlot))
+        #expect(graph.isLive(ActorNode.self, at: actorSlot))
+        #expect(!graph.isLive(TaskNode.self, at: columnSlot))
+    }
+
+    @Test("A slot is not live when it holds a tombstone or its node was removed")
+    func tombstoneAndRemovedSlotAreNotLive() {
+        var graph = Graph()
+        let actorSlot = graph.update(with: .actor(ActorNode(slug: Self.actor.slug, fields: Self.tombstoneFields)))
+        let columnSlot = graph.update(with: .column(Self.column))
+        graph.remove(nodeAt: Self.columnRef)
+        #expect(!graph.isLive(ActorNode.self, at: actorSlot))
+        #expect(!graph.isLive(ColumnNode.self, at: columnSlot))
+    }
+
+    @Test("A ref is live when the graph has a live node of the type for it, and not live when the graph lacks the ref")
+    func refLivenessFollowsItsSlot() {
+        var graph = Graph()
+        graph.update(with: .column(Self.column))
+        #expect(graph.isLive(ColumnNode.self, for: Self.columnRef))
+        #expect(!graph.isLive(ActorNode.self, for: .actor(slug: Self.actor.slug)))
     }
 
     // MARK: - Join
@@ -283,8 +316,7 @@ struct GraphTests {
 
     @Test("A node with a deleted time is a tombstone, and a node without one is not")
     func deletedTimeMakesTombstone() {
-        let tombstone = NodeFields(created: Self.time, updated: Self.time, deleted: Self.time)
-        #expect(tombstone.isDeleted)
+        #expect(Self.tombstoneFields.isDeleted)
         #expect(!Self.fields.isDeleted)
     }
 

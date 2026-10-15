@@ -62,7 +62,7 @@ struct ErrorCoverageTests {
         giving expected: KanbanError,
         coded code: String
     ) throws {
-        #expect(try NameRewriteTests.data(of: response)[field] is NSNull)
+        #expect(try KanbanGraphTests.data(of: response)[field] is NSNull)
         let errors = try NameRewriteTests.errors(of: response)
         #expect(errors.count == 1)
         let error = try #require(errors.first)
@@ -251,7 +251,7 @@ struct ErrorCoverageTests {
         let deleteTodo = try Self.deleteTodoField()
         let mutation = AddUpdateTaskTests.mutation(of: ColumnActorTests.addQA, deleteTodo.field)
         let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
-        let added = try NameRewriteTests.data(of: response)["addColumn"] as? [String: String]
+        let added = try KanbanGraphTests.data(of: response)["addColumn"] as? [String: String]
         #expect(added == ["id": ColumnActorTests.id(of: ColumnActorTests.qaColumn)])
         let expected = deleteTodo.expected
         try Self.expectFailure(of: "deleteColumn", in: response, giving: expected, coded: "COLUMN_NOT_EMPTY")

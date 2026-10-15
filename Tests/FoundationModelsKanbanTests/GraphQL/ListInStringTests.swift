@@ -122,7 +122,7 @@ struct ListInStringTests {
         field: String,
         key: String
     ) throws -> [String] {
-        let result = try #require(try NameRewriteTests.data(of: response)[mutation] as? [String: Any], "\(response)")
+        let result = try #require(try KanbanGraphTests.data(of: response)[mutation] as? [String: Any], "\(response)")
         let items = try #require(result[field] as? [[String: Any]], "\(response)")
         return items.compactMap { item in item[key] as? String }.sorted()
     }

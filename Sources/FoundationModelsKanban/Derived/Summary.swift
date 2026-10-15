@@ -80,6 +80,6 @@ extension Graph {
     /// - Parameter slot: A slot that this graph gave.
     /// - Returns: `true` when the slot holds an actor that is not a tombstone.
     func isLiveActor(at slot: Int) -> Bool {
-        node(at: slot, as: ActorNode.self)?.fields.isDeleted == false
+        isLive(ActorNode.self, at: slot)
     }
 }

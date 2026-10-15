@@ -61,25 +61,6 @@ struct RustFieldTests {
 
     // MARK: - Helpers
 
-    /// Runs one document on a new engine of the fixture repo.
-    ///
-    /// - Parameters:
-    ///   - document: The GraphQL document.
-    ///   - directory: The temporary repo directory.
-    /// - Returns: The response JSON text.
-    static func respond(to document: String, onFixtureIn directory: TemporaryDirectory) async throws -> String {
-        try await ColumnActorTests.respond(to: document, onFixtureIn: directory)
-    }
-
-    /// Reads the `data` object of a response.
-    ///
-    /// - Parameter response: The response JSON text.
-    /// - Returns: The `data` object.
-    /// - Throws: An error when the response has no `data` object.
-    static func data(of response: String) throws -> [String: Any] {
-        try #require(try KanbanGraphTests.object(of: response)["data"] as? [String: Any])
-    }
-
     /// Gives the description of each field of an object type or an `input` type of the public schema.
     ///
     /// - Parameter name: The name of the type.
@@ -105,7 +86,10 @@ struct RustFieldTests {
     @Test("addActor with an id and an avatar stores the avatar, and Actor.avatar reads it")
     func addActorStoresAvatar() async throws {
         let directory = try TemporaryDirectory()
-        let response = try await Self.respond(to: "mutation { \(Self.addActorField) }", onFixtureIn: directory)
+        let response = try await ColumnActorTests.respond(
+            to: "mutation { \(Self.addActorField) }",
+            onFixtureIn: directory
+        )
         let actor = #"{"avatar":"\#(Self.robotAvatar)","id":"\#(ColumnActorTests.id(of: Self.actor))","#
             + #""name":"\#(Self.actorSlug)"}"#
         #expect(response == #"{"data":{"addActor":\#(actor)}}"#)
@@ -119,7 +103,7 @@ struct RustFieldTests {
     @Test("A new engine reads the avatar that addActor wrote")
     func newEngineReadsAvatar() async throws {
         let directory = try TemporaryDirectory()
-        _ = try await Self.respond(to: "mutation { \(Self.addActorField) }", onFixtureIn: directory)
+        _ = try await ColumnActorTests.respond(to: "mutation { \(Self.addActorField) }", onFixtureIn: directory)
         let fresh = try KanbanGraphTests.makeGraph(at: directory.url)
         let query = #"{ node(id: "\#(ColumnActorTests.id(of: Self.actor))") { ... on Actor { avatar } } }"#
         let response = try await KanbanGraphTests.execute(query, on: fresh)
@@ -133,7 +117,7 @@ struct RustFieldTests {
             + "{ avatar }"
         let clear = #"second: updateActor(input: { id: "\#(Self.actorSlug)", avatar: null }) { avatar name }"#
         let mutation = "mutation { \(Self.addActorField) \(change) \(clear) }"
-        let response = try await Self.respond(to: mutation, onFixtureIn: directory)
+        let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
         let changed = #""first":{"avatar":"\#(Self.catAvatar)"}"#
         let cleared = #""second":{"avatar":null,"name":"\#(Self.actorSlug)"}"#
         #expect(response.hasSuffix(#"\#(changed),\#(cleared)}}"#))
@@ -145,7 +129,7 @@ struct RustFieldTests {
     func actorWithNoAvatarHasNull() async throws {
         let directory = try TemporaryDirectory()
         let mutation = #"mutation { addActor(input: { name: "Bob" }) { avatar } }"#
-        let response = try await Self.respond(to: mutation, onFixtureIn: directory)
+        let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
         #expect(response == #"{"data":{"addActor":{"avatar":null}}}"#)
     }
 
@@ -164,7 +148,7 @@ struct RustFieldTests {
         let directory = try TemporaryDirectory()
         let mutation = #"mutation { addActor(input: { id: "\#(Self.actorSlug)", image: "\#(Self.robotAvatar)" }) "#
             + "{ avatar } }"
-        let response = try await Self.respond(to: mutation, onFixtureIn: directory)
+        let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
         #expect(response.contains(#"{"addActor":{"avatar":"\#(Self.robotAvatar)"}}"#))
     }
 
@@ -174,7 +158,7 @@ struct RustFieldTests {
     func initBoardStoresModel() async throws {
         let directory = try TemporaryDirectory()
         let mutation = #"mutation { initBoard(input: { model: "\#(Self.haiku)" }) { model } }"#
-        let response = try await Self.respond(to: mutation, onFixtureIn: directory)
+        let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
         #expect(response == #"{"data":{"initBoard":{"model":"\#(Self.haiku)"}}}"#)
         let expected = try PatchInput(node: .board, set: [PropertyName.model: .json(.string(Self.haiku))])
         #expect(try ColumnActorTests.patches(of: .board, in: directory).last == expected)
@@ -184,7 +168,7 @@ struct RustFieldTests {
     func newEngineReadsModel() async throws {
         let directory = try TemporaryDirectory()
         let mutation = #"mutation { updateBoard(input: { model: "\#(Self.opus)" }) { model } }"#
-        _ = try await Self.respond(to: mutation, onFixtureIn: directory)
+        _ = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
         let fresh = try KanbanGraphTests.makeGraph(at: directory.url)
         let response = try await KanbanGraphTests.execute("{ board { model } }", on: fresh)
         #expect(response == #"{"data":{"board":{"model":"\#(Self.opus)"}}}"#)
@@ -196,7 +180,7 @@ struct RustFieldTests {
         let mutation = #"mutation { first: updateBoard { model } "#
             + #"second: updateBoard(input: { model: "\#(Self.haiku)" }) { model } "#
             + "third: updateBoard(input: { model: null }) { model } }"
-        let response = try await Self.respond(to: mutation, onFixtureIn: directory)
+        let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
         let expected = #"{"first":{"model":null},"second":{"model":"\#(Self.haiku)"},"third":{"model":null}}"#
         #expect(response == #"{"data":\#(expected)}"#)
         let unset = try PatchInput(node: .board, unset: [PropertyName.model])
@@ -219,7 +203,7 @@ struct RustFieldTests {
     func columnGivesTaskAndReadyCounts() async throws {
         let directory = try TemporaryDirectory()
         let query = "{ board { columns { taskCount readyCount } } }"
-        let response = try await Self.respond(to: query, onFixtureIn: directory)
+        let response = try await ColumnActorTests.respond(to: query, onFixtureIn: directory)
         #expect(response == #"{"data":{"board":{"columns":[{"readyCount":1,"taskCount":1}]}}}"#)
     }
 
@@ -230,7 +214,7 @@ struct RustFieldTests {
         let update = AddUpdateTaskTests.updateTask(task, with: #"body: "\#(Self.halfDoneBody)""#)
         _ = try await KanbanGraphTests.execute(AddUpdateTaskTests.mutation(of: update), on: graph)
         let query = "{ board { tasks { nodes { progress { fraction percent } } } } }"
-        let data = try Self.data(of: try await KanbanGraphTests.execute(query, on: graph))
+        let data = try KanbanGraphTests.data(of: try await KanbanGraphTests.execute(query, on: graph))
         let board = try #require(data["board"] as? [String: Any])
         let tasks = try #require(board["tasks"] as? [String: Any])
         let node = try #require((tasks["nodes"] as? [[String: Any]])?.first)
@@ -246,7 +230,7 @@ struct RustFieldTests {
     func boardGivesVirtualTagMetadata() async throws {
         let directory = try TemporaryDirectory()
         let query = "{ board { virtualTags { name color description } } }"
-        let data = try Self.data(of: try await Self.respond(to: query, onFixtureIn: directory))
+        let data = try KanbanGraphTests.data(of: try await ColumnActorTests.respond(to: query, onFixtureIn: directory))
         let board = try #require(data["board"] as? [String: Any])
         let tags = try #require(board["virtualTags"] as? [[String: String]])
         let expected = VirtualTag.allCases.map { tag in
@@ -267,7 +251,7 @@ struct RustFieldTests {
         _ = try await KanbanGraphTests.execute("mutation { \(Self.addActorField) }", on: graph)
         _ = try await KanbanGraphTests.execute("mutation { \(field) }", on: graph)
         let query = "{ board { history { updates { fields { name after } } } } }"
-        let data = try Self.data(of: try await KanbanGraphTests.execute(query, on: graph))
+        let data = try KanbanGraphTests.data(of: try await KanbanGraphTests.execute(query, on: graph))
         let board = try #require(data["board"] as? [String: Any])
         let changes = try #require(board["history"] as? [[String: Any]])
         let updates = changes.compactMap { change in change["updates"] as? [[String: Any]] }.joined()

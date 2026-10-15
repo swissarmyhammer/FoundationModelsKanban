@@ -173,7 +173,7 @@ struct PathBoardKeyTests {
             of: "\(Self.currentField): " + AddUpdateTaskTests.addTask(with: ""),
             "\(Self.outsideField): " + AddUpdateTaskTests.addTask(with: CrossRepoWriteTests.boardField(outside.path))
         )
-        let data = try NameRewriteTests.data(of: try await KanbanGraphTests.execute(mutation, on: graph))
+        let data = try KanbanGraphTests.data(of: try await KanbanGraphTests.execute(mutation, on: graph))
         let current = try CrossRepoUndoTests.id(of: Self.currentField, in: data)
         let other = try CrossRepoUndoTests.id(of: Self.outsideField, in: data)
         try await CrossRepoUndoTests.runWithNoErrors(CrossRepoUndoTests.undoField, on: graph)

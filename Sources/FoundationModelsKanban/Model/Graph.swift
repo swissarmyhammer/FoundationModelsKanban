@@ -49,6 +49,29 @@ struct Graph: Equatable, Sendable {
         node(at: slot)?.state as? State
     }
 
+    /// Tells if a slot holds a live node of one node type: a node of that type that is not a tombstone.
+    ///
+    /// This is the one tombstone rule for each liveness check, for example of a task, an actor, or a tag.
+    ///
+    /// - Parameters:
+    ///   - type: The node type to check, for example `TaskNode.self`.
+    ///   - slot: A slot that this graph gave.
+    /// - Returns: `true` when the slot holds a node of the type that is not a tombstone.
+    func isLive<State: NodeState>(_ type: State.Type, at slot: Int) -> Bool {
+        node(at: slot, as: type)?.fields.isDeleted == false
+    }
+
+    /// Tells if the graph has a live node of one node type for a local ref.
+    ///
+    /// - Parameters:
+    ///   - type: The node type to check, for example `ActorNode.self`.
+    ///   - ref: The local ref of the node.
+    /// - Returns: `true` when the slot of the ref holds a node of the type that is not a tombstone. `false` when the
+    ///   graph never had the ref.
+    func isLive<State: NodeState>(_ type: State.Type, for ref: LocalRef) -> Bool {
+        slot(for: ref).map { slot in isLive(type, at: slot) } ?? false
+    }
+
     /// Each slot that this graph gave, in slot order. A slot whose node was removed is also in the range.
     var allSlots: Range<Int> {
         nodes.indices

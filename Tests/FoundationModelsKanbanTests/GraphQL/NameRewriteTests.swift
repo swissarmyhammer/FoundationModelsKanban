@@ -80,16 +80,7 @@ struct NameRewriteTests {
         let mutation = AddUpdateTaskTests.mutation(of: addTaskField(named: name))
         let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
         let patch = try AddUpdateTaskTests.lastPatch(of: AddUpdateTaskTests.firstTask(in: response), in: directory)
-        return (try data(of: response).keys.sorted(), patch)
-    }
-
-    /// Gives the `data` object of a response.
-    ///
-    /// - Parameter response: The response JSON text.
-    /// - Returns: The `data` object.
-    /// - Throws: An error when the response has no `data` object.
-    static func data(of response: String) throws -> [String: Any] {
-        try #require(KanbanGraphTests.object(of: response)["data"] as? [String: Any])
+        return (try KanbanGraphTests.data(of: response).keys.sorted(), patch)
     }
 
     /// Gives the `errors` list of a response.
@@ -126,8 +117,8 @@ struct NameRewriteTests {
         searchingWith search: TaskSearch = TaskSearch(embeddingWith: nil)
     ) async throws -> [String: Any] {
         let fixture = try QueryFixture()
-        let actual = try await data(of: fixture.respond(to: document, searchingWith: search))
-        var expected = try await data(of: fixture.respond(to: reference, searchingWith: search))
+        let actual = try await KanbanGraphTests.data(of: fixture.respond(to: document, searchingWith: search))
+        var expected = try await KanbanGraphTests.data(of: fixture.respond(to: reference, searchingWith: search))
         if let key {
             expected = try #require(expected[key] as? [String: Any])
         }
@@ -383,7 +374,7 @@ struct NameRewriteTests {
 
     @Test("{ getBoard { name } } gives the name of the board under getBoard")
     func getBoardGivesBoard() async throws {
-        let data = try await Self.data(of: QueryFixture().respond(to: "{ getBoard { name } }"))
+        let data = try await KanbanGraphTests.data(of: QueryFixture().respond(to: "{ getBoard { name } }"))
         #expect(data as? [String: [String: String]] == ["getBoard": ["name": QueryFixture.boardName]])
     }
 
@@ -431,7 +422,7 @@ struct NameRewriteTests {
             to: #"{ tasks(filter: "\#(Self.invalidFilter)") { totalCount } }"#
         )
         #expect(try Self.errors(of: response).first?["path"] as? [String] == ["tasks"])
-        #expect(try Self.data(of: response) as? [String: NSNull] == ["tasks": NSNull()])
+        #expect(try KanbanGraphTests.data(of: response) as? [String: NSNull] == ["tasks": NSNull()])
     }
 
     // MARK: - Ties and no match

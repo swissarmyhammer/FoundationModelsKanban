@@ -38,7 +38,7 @@ struct CrossRepoUndoTests {
             of: "\(appField): " + AddUpdateTaskTests.addTask(with: ""),
             "\(libField): " + AddUpdateTaskTests.addTask(with: libInput)
         )
-        let data = try NameRewriteTests.data(of: try await KanbanGraphTests.execute(mutation, on: graph))
+        let data = try KanbanGraphTests.data(of: try await KanbanGraphTests.execute(mutation, on: graph))
         return (try id(of: appField, in: data), try id(of: libField, in: data))
     }
 

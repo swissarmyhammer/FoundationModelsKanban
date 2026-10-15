@@ -157,7 +157,7 @@ struct ScanCacheTests {
     /// - Throws: An error when the call cannot run.
     static func hasBoard(of key: String, on graph: KanbanGraph) async throws -> Bool {
         let response = try await KanbanGraphTests.execute(#"{ board(id: "\#(key)") { path } }"#, on: graph)
-        return try NameRewriteTests.data(of: response)["board"] as? [String: Any] != nil
+        return try KanbanGraphTests.data(of: response)["board"] as? [String: Any] != nil
     }
 
     /// Makes a host whose git reads come from a key reader, and whose scans a recorder records.

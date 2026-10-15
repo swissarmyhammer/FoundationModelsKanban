@@ -276,6 +276,15 @@ struct KanbanGraphTests {
         try #require(JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any])
     }
 
+    /// Gives the `data` object of a response. Each suite that reads the `data` object of a response calls it.
+    ///
+    /// - Parameter response: The response JSON text.
+    /// - Returns: The `data` object.
+    /// - Throws: An error when the response has no `data` object.
+    static func data(of response: String) throws -> [String: Any] {
+        try #require(object(of: response)["data"] as? [String: Any])
+    }
+
     // MARK: - Tests
 
     @Test("A query on fixture logs returns the expected JSON with sorted keys")

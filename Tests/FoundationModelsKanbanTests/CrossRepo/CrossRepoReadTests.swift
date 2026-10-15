@@ -73,7 +73,7 @@ struct CrossRepoReadTests {
     /// - Throws: An error when the response has no board.
     static func board(_ field: String, of reference: String, on graph: KanbanGraph) async throws -> String? {
         let response = try await KanbanGraphTests.execute(#"{ board(id: "\#(reference)") { \#(field) } }"#, on: graph)
-        let board = try #require(NameRewriteTests.data(of: response)["board"] as? [String: Any], "\(response)")
+        let board = try #require(KanbanGraphTests.data(of: response)["board"] as? [String: Any], "\(response)")
         return board[field] as? String
     }
 
@@ -86,7 +86,7 @@ struct CrossRepoReadTests {
     /// - Throws: An error when the response has no list.
     static func boardPaths(with arguments: String = "", on graph: KanbanGraph) async throws -> [String] {
         let response = try await KanbanGraphTests.execute("{ boards\(arguments) { path } }", on: graph)
-        let boards = try #require(NameRewriteTests.data(of: response)["boards"] as? [[String: Any]], "\(response)")
+        let boards = try #require(KanbanGraphTests.data(of: response)["boards"] as? [[String: Any]], "\(response)")
         return boards.compactMap { board in board["path"] as? String }
     }
 

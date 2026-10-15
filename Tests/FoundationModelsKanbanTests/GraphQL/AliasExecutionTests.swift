@@ -120,7 +120,7 @@ struct AliasExecutionTests {
     /// - Throws: An error when the response has no value at the path.
     private static func value(atPath keys: [String], in response: String) throws -> Any {
         #expect(try KanbanGraphTests.object(of: response)["errors"] == nil, "\(response)")
-        var value: Any = try NameRewriteTests.data(of: response)
+        var value: Any = try KanbanGraphTests.data(of: response)
         for key in keys {
             value = try #require((value as? [String: Any])?[key], "\(response)")
         }

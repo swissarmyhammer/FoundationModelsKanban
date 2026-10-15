@@ -50,7 +50,7 @@ struct DependencyTargetWarningTests {
     /// - Returns: The fields of the task.
     /// - Throws: An error when the response has no task for the field.
     static func task(of name: String, in response: String) throws -> [String: Any] {
-        try #require(NameRewriteTests.data(of: response)[name] as? [String: Any], "\(response)")
+        try #require(KanbanGraphTests.data(of: response)[name] as? [String: Any], "\(response)")
     }
 
     /// Checks that a response has one warning with a code, and that its message names a URI.
