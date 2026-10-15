@@ -432,6 +432,23 @@ struct TagMutationTests {
         #expect(try Self.lastPatch(of: Self.bugTag, in: directory) == PatchInput(node: Self.bugTag, edit: edit))
     }
 
+    @Test("updateTag with a null name keeps the name, writes nothing, and gives a NULL_IGNORED warning")
+    func updateTagNullNameKeepsName() async throws {
+        let directory = try TemporaryDirectory()
+        let update = Self.bugField("updateTag", with: "name: null", selecting: "{ name }")
+        let response = try await ColumnActorTests.respondWritingNothing(
+            to: AddUpdateTaskTests.mutation(of: update),
+            after: Self.addBug,
+            in: directory
+        )
+        try ColumnActorTests.expectIgnoredNull(
+            of: PropertyName.name,
+            keeping: Self.bug,
+            inField: MutationName.updateTag,
+            of: response
+        )
+    }
+
     @Test("updateTag with a slug that a rename redirects changes the rename target")
     func updateTagFollowsRedirect() async throws {
         let directory = try TemporaryDirectory()

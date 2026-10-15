@@ -50,12 +50,12 @@ private struct AddTaskInput: Decodable, Sendable {
 }
 
 /// The `input` object of `updateTask` (plan.md §4.2). A field that is not set does not change, and `null` clears the
-/// field. A list replaces the list.
+/// field. A list replaces the list. The `title` is required, so `null` does not change it (``IgnoredNull``).
 private struct UpdateTaskInput: Decodable, Sendable {
     /// The task: a full URI or a short form (plan.md §3.2).
     let id: NodeID
 
-    /// The new title of the task.
+    /// The new title of the task. `null` gives no change and a warning (``IgnoredNull``).
     let title: FieldUpdate<String>
 
     /// The new Markdown body of the task: the full text. The mutation writes the diff from the current body.
@@ -171,7 +171,7 @@ extension KanbanResolver {
     ) async throws -> TaskObject? {
         let input = arguments.input
         let board = MutationBoard.holding(input.id)
-        return try await context.changeTask(named: MutationName.updateTask, on: board) { work, resolver, time in
+        let task = try await context.changeTask(named: MutationName.updateTask, on: board) { work, resolver, time in
             let ref = try resolver.nodeRef(for: input.id, ofType: .task)
             let edges = try work.edges(
                 assignees: input.assignees.value(clearingTo: []),
@@ -187,11 +187,14 @@ extension KanbanResolver {
                 resolvingWith: resolver,
                 at: time
             )
-            let values = place.merging([PropertyName.title: input.title.map(PatchValue.string)]) { _, title in title }
+            let title = input.title.ignoringNull.map(PatchValue.string)
+            let values = place.merging([PropertyName.title: title]) { _, title in title }
             let change = TaskChange(values: values, body: input.body, edges: edges)
             let warnings = try work.write(change, toTask: ref, inBoard: resolver.boardKey, at: time)
             return TaskWrite(ref: ref, warnings: warnings + PriorityValue.warnings(of: input.priority))
         }
+        await context.warnIfNull(input.title, forField: PropertyName.title, of: MutationName.updateTask)
+        return task
     }
 }
 

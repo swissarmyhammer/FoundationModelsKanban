@@ -65,12 +65,12 @@ private struct AddColumnInput: Codable, Sendable {
 }
 
 /// The `input` object of `updateColumn` (plan.md §4.2). A field that is not set does not change, and `null` clears
-/// the field.
+/// the field. The `name` is required, so `null` does not change it (``IgnoredNull``).
 private struct UpdateColumnInput: Decodable, Sendable {
     /// The column: a full URI or the slug (plan.md §3.2).
     let id: NodeID
 
-    /// The new name of the column.
+    /// The new name of the column. `null` gives no change and a warning (``IgnoredNull``).
     let name: FieldUpdate<String>
 
     /// The new sort key of the column.
@@ -105,12 +105,12 @@ private struct AddActorInput: Codable, Sendable {
 }
 
 /// The `input` object of `updateActor` (plan.md §4.2). A field that is not set does not change, and `null` clears
-/// the field.
+/// the field. The `name` is required, so `null` does not change it (``IgnoredNull``).
 private struct UpdateActorInput: Decodable, Sendable {
     /// The actor: a full URI or the slug (plan.md §3.2).
     let id: NodeID
 
-    /// The new name of the actor.
+    /// The new name of the actor. `null` gives no change and a warning (``IgnoredNull``).
     let name: FieldUpdate<String>
 
     /// The new color of the actor.
@@ -173,15 +173,20 @@ extension KanbanResolver {
     ) async throws -> ColumnObject? {
         let input = arguments.input
         let board = MutationBoard.holding(input.id)
-        return try await context.changeNode(named: MutationName.updateColumn, on: board) { work, resolver, time in
+        let column: ColumnObject? = try await context.changeNode(
+            named: MutationName.updateColumn,
+            on: board
+        ) { work, resolver, time in
             let ref = try resolver.nodeRef(for: input.id, ofType: .column)
             let values = [
-                PropertyName.name: input.name.map(PatchValue.string),
+                PropertyName.name: input.name.ignoringNull.map(PatchValue.string),
                 PropertyName.order: input.order.map(PatchValue.integer),
             ]
             try work.updateNode(ref, updating: values, body: input.body, at: time)
             return ref
         }
+        await context.warnIfNull(input.name, forField: PropertyName.name, of: MutationName.updateColumn)
+        return column
     }
 
     /// Resolves `Mutation.deleteColumn`: makes the column a tombstone (plan.md §3.3).
@@ -266,15 +271,20 @@ extension KanbanResolver {
     ) async throws -> ActorObject? {
         let input = arguments.input
         let board = MutationBoard.holding(input.id)
-        return try await context.changeNode(named: MutationName.updateActor, on: board) { work, resolver, time in
+        let actor: ActorObject? = try await context.changeNode(
+            named: MutationName.updateActor,
+            on: board
+        ) { work, resolver, time in
             let ref = try resolver.nodeRef(for: input.id, ofType: .actor)
             let values = [
-                PropertyName.name: input.name.map(PatchValue.string),
+                PropertyName.name: input.name.ignoringNull.map(PatchValue.string),
                 PropertyName.color: input.color.map(PatchValue.string),
             ]
             try work.updateNode(ref, updating: values, body: input.body, at: time)
             return ref
         }
+        await context.warnIfNull(input.name, forField: PropertyName.name, of: MutationName.updateActor)
+        return actor
     }
 
     /// Resolves `Mutation.deleteActor`: makes the actor a tombstone (plan.md §3.3).

@@ -20,7 +20,8 @@ enum MutationName {
 ///
 /// A field that the input does not have does not change. A field with the value `null` is cleared. A field with a
 /// value gets the value. A `Decodable` type that holds this type reads the three forms with
-/// ``Swift/KeyedDecodingContainer/decode(_:forKey:)``.
+/// ``Swift/KeyedDecodingContainer/decode(_:forKey:)``. A required text field does not clear on `null`: its mutation
+/// writes ``ignoringNull`` (``IgnoredNull``).
 enum FieldUpdate<Value> {
     /// The input does not have the field, so the field does not change.
     case unchanged
@@ -434,7 +435,7 @@ extension PatchInput {
 
 extension FieldUpdate {
     /// `true` when the input gives `null`, so that the field is cleared.
-    fileprivate var isCleared: Bool {
+    var isCleared: Bool {
         guard case .cleared = self else {
             return false
         }

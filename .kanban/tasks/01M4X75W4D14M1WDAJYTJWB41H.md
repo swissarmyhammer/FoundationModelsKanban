@@ -23,8 +23,17 @@ comments:
     - evidence: 6 files — Sources/FoundationModelsKanban/Identity/RefResolver.swift, Sources/FoundationModelsKanban/Tool/KanbanTool.swift, Tests/FoundationModelsKanbanTests/Identity/RefResolverTests.swift, Tests/FoundationModelsKanbanTests/GraphQL/NodeQueryTests.swift, Tests/FoundationModelsKanbanTests/Mutations/AddUpdateTaskTests.swift, Tests/FoundationModelsKanbanTests/Tool/KanbanToolTests.swift. `swift test`: 1382 tests in 109 suites passed, 0 failures; only the accepted SwiftPM "missing creator" warning.
     - next: /review
   timestamp: 2026-10-15T07:35:17.071772+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4z82cp0xcp3stdg2a9k2ww2
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 6 files
+    - test: green — swift test, 1382 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 19829cd
+    - review: clean — none (review sha HEAD~1..HEAD: 0 findings, 0 confirmed, 3 refuted, 14 attempted, 0 failed; 6 .kanban/ files skipped by .reviewignore)
+  timestamp: 2026-10-15T07:40:16.960527+00:00
+position_column: done
+position_ordinal: fa80
 title: Accept the stored local ref form type/id in the public resolver
 ---
 ## What

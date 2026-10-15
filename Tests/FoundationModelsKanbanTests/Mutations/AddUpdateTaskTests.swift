@@ -686,15 +686,40 @@ struct AddUpdateTaskTests {
         #expect(response == #"{"data":{"updateTask":{"title":"\#(KanbanGraphTests.taskTitle)"}}}"#)
     }
 
-    @Test("updateTask with a null title writes an unset of the title")
-    func updateTaskNullTitle() async throws {
+    @Test("updateTask with a null title keeps the title, writes nothing, and gives a NULL_IGNORED warning")
+    func updateTaskNullTitleKeepsTitle() async throws {
+        let directory = try TemporaryDirectory()
+        let update = Self.updateTask(try Self.fixtureTask(), with: "title: null", selecting: "{ title }")
+        let response = try await ColumnActorTests.respondWritingNothing(to: Self.mutation(of: update), in: directory)
+        try ColumnActorTests.expectIgnoredNull(
+            of: PropertyName.title,
+            keeping: KanbanGraphTests.taskTitle,
+            inField: MutationName.updateTask,
+            of: response
+        )
+    }
+
+    @Test("updateTask with a null title and a null body keeps the title and writes the diff to the empty body")
+    func updateTaskNullTitleClearsNullBody() async throws {
         let directory = try TemporaryDirectory()
         let task = try Self.fixtureTask()
-        let update = Self.updateTask(task, with: "title: null", selecting: "{ title }")
-        let response = try await ColumnActorTests.respond(to: Self.mutation(of: update), onFixtureIn: directory)
-        #expect(response == #"{"data":{"updateTask":{"title":""}}}"#)
-        let expected = try PatchInput(node: .task(task), unset: [PropertyName.title])
-        #expect(try Self.lastPatch(of: task, in: directory) == expected)
+        let mutation = Self.bodyMutation(
+            of: "first: " + Self.updateTask(task, with: "body: $body"),
+            "second: " + Self.updateTask(task, with: "title: null, body: null", selecting: "{ title body }")
+        )
+        let response = try await ColumnActorTests.respond(
+            to: mutation,
+            with: Self.bodyVariables,
+            onFixtureIn: directory
+        )
+        try ColumnActorTests.expectIgnoredNull(
+            of: PropertyName.title,
+            keeping: KanbanGraphTests.taskTitle,
+            inField: "second",
+            of: response
+        )
+        let edit = PatchEdit(body: ReplayTests.diff(from: Self.body, to: ""))
+        #expect(try Self.lastPatch(of: task, in: directory) == PatchInput(node: .task(task), edit: edit))
     }
 
     @Test("updateTask with a null or an empty body writes the diff to the empty text", arguments: ["null", #""""#])

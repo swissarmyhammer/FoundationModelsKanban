@@ -44,12 +44,13 @@ private struct AddTagInput: Decodable, Sendable {
 }
 
 /// The `input` object of `updateTag` (plan.md §4.2). A field that is not set does not change, and `null` clears the
-/// field.
+/// field. The `name` is required, so `null` does not change it (``IgnoredNull``).
 private struct UpdateTagInput: Decodable, Sendable {
     /// The tag: a full URI, the slug, or a tag name (plan.md §3.2). A renamed slug names the rename target.
     let id: NodeID
 
-    /// The new name of the tag. The tag name rule applies, and the slug does not change.
+    /// The new name of the tag. The tag name rule applies, and the slug does not change. `null` gives no change and a
+    /// warning (``IgnoredNull``).
     let name: FieldUpdate<String>
 
     /// The new color of the tag.
@@ -125,9 +126,12 @@ extension KanbanResolver {
     ) async throws -> TagObject? {
         let input = arguments.input
         let board = MutationBoard.holding(input.id)
-        return try await context.changeNode(named: MutationName.updateTag, on: board) { work, resolver, time in
+        let tag: TagObject? = try await context.changeNode(
+            named: MutationName.updateTag,
+            on: board
+        ) { work, resolver, time in
             let ref = try resolver.nodeRef(for: input.id, ofType: .tag)
-            let name = try input.name.map { name in try TagName(normalizing: name).name }
+            let name = try input.name.ignoringNull.map { name in try TagName(normalizing: name).name }
             let values = [
                 PropertyName.name: name.map(PatchValue.string),
                 PropertyName.color: input.color.map(PatchValue.string),
@@ -135,6 +139,8 @@ extension KanbanResolver {
             try work.updateNode(ref, updating: values, body: input.body, at: time)
             return ref
         }
+        await context.warnIfNull(input.name, forField: PropertyName.name, of: MutationName.updateTag)
+        return tag
     }
 
     /// Resolves `Mutation.deleteTag`: makes the tag a tombstone (plan.md §3.3). A renamed slug names the rename

@@ -227,6 +227,29 @@ struct ColumnActorTests {
         }
     }
 
+    /// Expects the response of an update field that gives `null` to a required text field (divergence.md Q17): the
+    /// field keeps its value, and the response has one `NULL_IGNORED` warning that names the field.
+    ///
+    /// - Parameters:
+    ///   - property: The name of the required text field, for example `title`.
+    ///   - value: The value that the field keeps.
+    ///   - field: The response key of the mutation field, for example `updateTask`.
+    ///   - response: The response JSON text.
+    static func expectIgnoredNull(
+        of property: String,
+        keeping value: String,
+        inField field: String,
+        of response: String
+    ) throws {
+        let node = try #require(NameRewriteTests.data(of: response)[field] as? [String: Any], "\(response)")
+        #expect(node[property] as? String == value, "\(response)")
+        try DependencyTargetWarningTests.expectWarning(
+            coded: IgnoredNull.warningCode,
+            naming: "`\(property)`",
+            in: response
+        )
+    }
+
     /// Gives the patches of the log of a node in the repo of a temporary directory.
     ///
     /// - Parameters:
@@ -379,14 +402,17 @@ struct ColumnActorTests {
         #expect(response == #"{"data":{"updateColumn":{"name":"\#(KanbanGraphTests.todoName)"}}}"#)
     }
 
-    @Test("updateColumn with a null name writes an unset of the name, and a missing order does not change")
-    func updateColumnNullNameUnsetsName() async throws {
+    @Test("updateColumn with a null name keeps the name, writes nothing, and gives a NULL_IGNORED warning")
+    func updateColumnNullNameKeepsName() async throws {
         let directory = try TemporaryDirectory()
-        let mutation = #"mutation { updateColumn(input: { id: "todo", name: null }) { name order } }"#
-        let response = try await Self.respond(to: mutation, onFixtureIn: directory)
-        #expect(response == #"{"data":{"updateColumn":{"name":"","order":0}}}"#)
-        let expected = try PatchInput(node: KanbanGraphTests.todoColumn, unset: [PropertyName.name])
-        #expect(try Self.patches(of: KanbanGraphTests.todoColumn, in: directory).last == expected)
+        let mutation = #"mutation { updateColumn(input: { id: "todo", name: null }) { name } }"#
+        let response = try await Self.respondWritingNothing(to: mutation, in: directory)
+        try Self.expectIgnoredNull(
+            of: PropertyName.name,
+            keeping: KanbanGraphTests.todoName,
+            inField: MutationName.updateColumn,
+            of: response
+        )
     }
 
     @Test("updateColumn with an id that names no column gives NOT_FOUND and writes nothing")
@@ -537,6 +563,19 @@ struct ColumnActorTests {
         #expect(response.hasSuffix(#""updateActor":{"color":null,"name":"\#(Self.aliceName)"}}}"#))
         let expected = try PatchInput(node: Self.alice, unset: [PropertyName.color])
         #expect(try Self.patches(of: Self.alice, in: directory).last == expected)
+    }
+
+    @Test("updateActor with a null name keeps the name, writes nothing, and gives a NULL_IGNORED warning")
+    func updateActorNullNameKeepsName() async throws {
+        let directory = try TemporaryDirectory()
+        let mutation = #"mutation { updateActor(input: { id: "\#(Self.aliceSlug)", name: null }) { name } }"#
+        let response = try await Self.respondWritingNothing(to: mutation, after: Self.addAlice, in: directory)
+        try Self.expectIgnoredNull(
+            of: PropertyName.name,
+            keeping: Self.aliceName,
+            inField: MutationName.updateActor,
+            of: response
+        )
     }
 
     @Test("deleteActor writes delete true and returns the tombstone")
