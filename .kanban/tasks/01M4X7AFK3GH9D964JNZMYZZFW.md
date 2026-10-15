@@ -58,11 +58,20 @@ comments:
     - evidence: 1 file — Sources/FoundationModelsKanban/Derived/ReadinessCache.swift. Both review findings checked. Filtered tests green (ReadinessCache 6/6; CrossRepo|DependencyTargetWarning 100/100). Full suite had 16 time-limit issues only under load average 152.
     - next: /test (full suite again), then /review
   timestamp: 2026-10-15T16:53:17.715881+00:00
+- actor: claude-code
+  id: 01m5086ypfamak27gkv8n72ewt
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 file (2 findings fixed) plus a whitespace fix in divergence.md
+    - test: green — swift test, 1506 passed, 0 failed, 0 skipped; IntegrationTests 3 passed
+    - commit: 25f4848
+    - review: clean — none (review sha HEAD~1..HEAD: 0 findings, 0 confirmed, 1 refuted; all prior findings checked)
+  timestamp: 2026-10-15T17:02:00.911260+00:00
 depends_on:
 - 01M4X6ZBTA66TCPVYM41QR0ACD
 - 01M4X72R210B06MTDXZ4SXDCKE
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ff8680
 title: Cache readiness so that ready and nextTask do not walk the graph again on each call
 ---
 ## What

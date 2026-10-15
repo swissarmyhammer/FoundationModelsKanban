@@ -176,12 +176,15 @@ struct BoardLocatorTests {
     /// - Returns: The resolution, or `nil` when the ref is not a path to a folder.
     /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the test is cancelled during a git read.
     static func resolveFolder(_ reference: String, around root: URL) async throws(BoardKeyError) -> BoardResolution? {
-        try await BoardLocator.resolution(
-            ofFolderAt: reference,
-            currentRoot: root,
+        guard let folder = BoardLocator.folder(namedBy: reference, currentRoot: root) else {
+            return nil
+        }
+        let board = try await BoardLocator.board(
+            ofFolderAt: folder,
             readingKeysWith: BoardKey.read(fromRepoAt:),
             findingTopsWith: BoardKey.worktreeTop(of:)
         )
+        return board.resolution(currentRoot: root)
     }
 
     /// Makes a git repo at ``outsidePath``, where the scan does not look, and checks that a path ref to the repo or to

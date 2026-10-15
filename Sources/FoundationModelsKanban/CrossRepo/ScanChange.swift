@@ -27,9 +27,9 @@ enum ScanChange: Hashable, Sendable {
 
 // MARK: - Watched place
 
-/// A scan place, or the parent folder of a board that a call reached by a path (divergence.md X4), that a file watcher
-/// watches: the canonical path that keys the place in the host, and the real path that FSEvents gives in its events
-/// (for example `/private/var/…` for `/var/…`).
+/// A scan place, or the parent folder of the repo folder of a path ref (``FolderBoard/watchedRepo(ofFolderAt:)``), that
+/// a file watcher watches: the canonical path that keys the place in the host, and the real path that FSEvents gives in
+/// its events (for example `/private/var/…` for `/var/…`).
 struct WatchedPlace: Hashable, Sendable {
     /// The canonical path of the place: ``Foundation/URL/canonicalPath`` of its folder.
     let path: String
@@ -83,18 +83,6 @@ struct WatchedPlace: Hashable, Sendable {
     /// - Returns: The changes, in the order of their first path.
     func changes(in batch: [URL]) -> [ScanChange] {
         Array(OrderedSet(batch.compactMap { url in change(at: url.path) }))
-    }
-
-    /// Gives the first change of one batch of the file watcher that makes the key of one repo of the place unknown:
-    /// a change of the repo folder, of its `.git` entry, or of its git config, or a change of the place itself (also
-    /// lost events). The scan index forgets the key of a repo on the same changes (``BoardIndex/forgetting(_:)``).
-    ///
-    /// - Parameters:
-    ///   - repo: The canonical path of the repo folder.
-    ///   - batch: The changed paths of the batch.
-    /// - Returns: The change, or `nil` when the batch leaves the key of the repo known.
-    func keyChange(ofRepoAt repo: String, in batch: [URL]) -> ScanChange? {
-        changes(in: batch).first { change in change == .repo(repo) || change == .place(path) }
     }
 
     /// Gives the path components of a path as its text has them. The split reads no file: a standardized URL drops
@@ -267,10 +255,11 @@ extension BoardIndex {
 // MARK: - Observer
 
 /// Gets a call when the host scans the places for repos, when the file watcher of a scan place sees a change, and
-/// when the file watcher of a board that a call reached by a path sees a change of its key.
+/// when the file watcher of a folder that a path ref named sees a change that makes the result of the path ref out of
+/// date.
 ///
-/// A test uses it to count the scans, and to wait until the host saw a change of a scan place or of a board that a
-/// call reached by a path.
+/// A test uses it to count the scans, and to wait until the host saw a change of a scan place or of a folder that a
+/// path ref named.
 protocol BoardScanObserver: Sendable {
     /// Tells that a scan of the places starts.
     ///
@@ -282,10 +271,11 @@ protocol BoardScanObserver: Sendable {
     /// - Parameter change: The change.
     func scanPlaceDidChange(_ change: ScanChange)
 
-    /// Tells that the host saw a change that can change the key of a board that a call reached by a path, after the
-    /// host forgot that board (divergence.md X4).
+    /// Tells that the host saw a change that can change the result of a path ref, after the host forgot what git told
+    /// about the folder of the path ref (divergence.md §16, Gap 1; divergence.md X4).
     ///
-    /// - Parameter change: The change: ``ScanChange/repo(_:)`` of the repo folder of the board, or
-    ///   ``ScanChange/place(_:)`` of its parent folder.
-    func pathCopyDidChange(_ change: ScanChange)
+    /// - Parameter change: The change (``FolderBoard/isExpired(by:ofRepoAt:)``): ``ScanChange/repo(_:)`` of the
+    ///   watched repo folder, ``ScanChange/commits(inRepo:)`` of a repo whose key read failed, or
+    ///   ``ScanChange/place(_:)`` of the parent folder of the watched repo folder.
+    func pathRefDidChange(_ change: ScanChange)
 }

@@ -262,10 +262,16 @@ final class ScanKeyReader: Sendable {
         }
     }
 
-    /// The reader as a ``WorktreeTopReader``: it counts the read, and each folder is the top folder of its worktree.
+    /// The reader as a ``WorktreeTopReader``: it counts the read. Each folder with a `.git` entry is the top folder of
+    /// its worktree, and a folder with no `.git` entry is not in a git repo, the same as `git rev-parse` in a folder
+    /// whose parent folders hold no repo.
     var topReader: WorktreeTopReader {
-        { directory in
+        { directory throws(BoardKeyError) in
             self.calls.withLock { calls in calls += 1 }
+            let gitEntry = directory.appending(path: BoardKey.gitDirectoryName)
+            guard FileManager.default.fileExists(atPath: gitEntry.path) else {
+                throw .notARepo(path: directory.path)
+            }
             return directory
         }
     }
@@ -274,7 +280,7 @@ final class ScanKeyReader: Sendable {
 // MARK: - Scan recorder
 
 /// Records each scan of a host, and gives each change that a file watcher of the host sees: of a scan place, or of a
-/// board that a call reached by a path.
+/// folder that a path ref named.
 final class ScanRecorder: BoardScanObserver {
     /// The number of scans that started, behind a lock, because the scans run on different threads.
     private let starts = Mutex(0)
@@ -309,11 +315,11 @@ final class ScanRecorder: BoardScanObserver {
         changeSink.yield(change)
     }
 
-    /// Records a change that made the host forget a board that a call reached by a path, in the same stream as a
-    /// change of a scan place.
+    /// Records a change that made the host forget what git told about a folder that a path ref named, in the same
+    /// stream as a change of a scan place.
     ///
     /// - Parameter change: The change.
-    func pathCopyDidChange(_ change: ScanChange) {
+    func pathRefDidChange(_ change: ScanChange) {
         scanPlaceDidChange(change)
     }
 

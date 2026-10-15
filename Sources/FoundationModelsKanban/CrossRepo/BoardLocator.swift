@@ -79,30 +79,23 @@ public struct BoardLocator: Sendable {
         return BoardIndex(places: places, copies: copies, unreadable: unreadable)
     }
 
-    /// Finds the board of the folder that a path ref names, also when the scan does not look in that folder (plan.md
-    /// §6.6, board refs). The board of a folder is the board at the top folder of its worktree (divergence.md §16), so
-    /// the path can name a subfolder of a repo. The key comes from the key reader with the rule of the scan.
+    /// Reads with git the board of the folder that a path ref names, also when the scan does not look in that folder
+    /// (plan.md §6.6, board refs). The board of a folder is the board at the top folder of its worktree (divergence.md
+    /// §16), so the folder can be a subfolder of a repo. The key comes from the key reader with the rule of the scan.
     ///
     /// - Parameters:
-    ///   - reference: The board ref. White space at the two ends is ignored.
-    ///   - root: The top folder of the worktree of the current board. A path that starts with `./` or `../` starts
-    ///     from it.
+    ///   - directory: The folder, from ``folder(namedBy:currentRoot:)``.
     ///   - keyReader: Reads the key of the repo of the folder.
     ///   - topReader: Reads the top folder of the worktree of the folder.
-    /// - Returns: The current board for a folder of the current worktree, the copy of the repo of the folder,
-    ///   ``BoardResolution/notARepo(path:)`` when the folder is not in a git repo, or `nil` when the ref is not a
-    ///   path, when no folder has the path, or when the key of the repo cannot be read.
+    /// - Returns: The copy of the repo of the folder, ``FolderBoard/notARepo(path:)`` when the folder is not in a git
+    ///   repo, or ``FolderBoard/unreadableKey(top:)`` when the key of the repo cannot be read.
     /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during a read of git. Each
     ///   other ``BoardKeyError`` of the read of the top folder.
-    static func resolution(
-        ofFolderAt reference: String,
-        currentRoot root: URL,
+    static func board(
+        ofFolderAt directory: URL,
         readingKeysWith keyReader: BoardKeyReader,
         findingTopsWith topReader: WorktreeTopReader
-    ) async throws(BoardKeyError) -> BoardResolution? {
-        guard let directory = existingFolder(atPath: reference, currentRoot: root) else {
-            return nil
-        }
+    ) async throws(BoardKeyError) -> FolderBoard {
         let top: URL
         do throws(BoardKeyError) {
             top = try await topReader(directory)
@@ -110,16 +103,17 @@ public struct BoardLocator: Sendable {
             return .notARepo(path: path)
         }
         let key = try await key(ofRepoAt: top, knownKey: nil, readingKeysWith: keyReader).get()
-        return key.map { key in BoardResolution(of: BoardCopy(directory: top, key: key), currentRoot: root) }
+        return key.map { key in .board(BoardCopy(directory: top, key: key)) } ?? .unreadableKey(top: top)
     }
 
-    /// Gives the folder that a path ref names, when the folder exists.
+    /// Gives the folder that a path ref names, when the folder exists. The lookup runs no `git`.
     ///
     /// - Parameters:
-    ///   - reference: The board ref.
-    ///   - root: The top folder of the worktree of the current board.
+    ///   - reference: The board ref. White space at the two ends is ignored.
+    ///   - root: The top folder of the worktree of the current board. A path that starts with `./` or `../` starts
+    ///     from it.
     /// - Returns: The folder, or `nil` when the ref is not a path, or when no folder has the path.
-    private static func existingFolder(atPath reference: String, currentRoot root: URL) -> URL? {
+    static func folder(namedBy reference: String, currentRoot root: URL) -> URL? {
         var isDirectory: ObjCBool = false
         guard let directory = BoardIndex.directory(ofPath: reference, currentRoot: root),
             FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDirectory),

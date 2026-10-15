@@ -1,6 +1,14 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m5087c5vsqwm6cr8tpmcrs0s
+  text: |-
+    ### finish iteration 1 — stuck
+    - implement: not run. This task asks for a decision by a person: should `Query.boards` stop the whole call when a sibling repo has a Rust `.kanban`, or skip that sibling and give a warning?
+    - next: the user decides. Then record the decision in divergence.md and run /finish on this task again.
+  timestamp: 2026-10-15T17:02:14.715453+00:00
 depends_on:
 - 01M4X6YRT3543TS3S5K6RGZMCJ
 position_column: todo

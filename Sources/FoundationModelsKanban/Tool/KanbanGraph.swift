@@ -882,11 +882,12 @@ public actor KanbanGraph {
 
     /// Finds the board that a board ref names in the index of the scan of the host (plan.md §6.6, index life, board
     /// refs). The first call scans. A path to a folder that the index does not have gives the board at the top folder
-    /// of the worktree of that folder, with no scan (divergence.md §16), and the host records that board, so that a
-    /// later ref with its key resolves to it (divergence.md X4). A later call whose ref names no copy of the index and
-    /// no folder scans again only when a file watcher of a scan place saw a change since the last scan (divergence.md
-    /// §16, Gap 1). A key that no copy of the current index has then gives the first board with that key that a call
-    /// reached by a path. Else the ref is not found, with no scan and no `git`.
+    /// of the worktree of that folder, with no scan (divergence.md §16). The host keeps what git told about that folder
+    /// in memory, so that a later call with the same path ref runs no `git`, and a later ref with the key of its board
+    /// resolves to it (divergence.md §16, Gap 1; divergence.md X4). A later call whose ref names no copy of the index
+    /// and no folder scans again only when a file watcher of a scan place saw a change since the last scan
+    /// (divergence.md §16, Gap 1). A key that no copy of the current index has then gives the first board with that
+    /// key that a call reached by a path. Else the ref is not found, with no scan and no `git`.
     ///
     /// - Parameters:
     ///   - reference: The board ref.
@@ -905,17 +906,10 @@ public actor KanbanGraph {
         if let index = await host.scanIndex(around: current.directory), let found = resolve(index) {
             return found
         }
-        let folder = try await BoardLocator.resolution(
-            ofFolderAt: reference,
-            currentRoot: current.directory,
-            readingKeysWith: host.configuration.keyReader,
-            findingTopsWith: host.configuration.topReader
-        )
-        if let folder {
-            if case .copy(let copy) = folder {
-                await host.recordPathCopy(copy)
-            }
-            return folder
+        if let folder = BoardLocator.folder(namedBy: reference, currentRoot: current.directory),
+            let found = try await host.board(ofFolderAt: folder).resolution(currentRoot: current.directory)
+        {
+            return found
         }
         if let found = resolve(try await host.currentScanIndex(around: current.directory)) {
             return found

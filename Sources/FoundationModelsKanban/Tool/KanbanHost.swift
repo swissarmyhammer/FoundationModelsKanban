@@ -50,11 +50,12 @@ public actor KanbanHost {
     /// the indexes of the place out of date.
     private var placeWatches: [String: BoardWatch] = [:]
 
-    /// The copy of each board that a call reached by a path, and the file watcher that keeps its key current, by the
-    /// canonical path of the top folder of its worktree (divergence.md X4). A later ref with the key of such a board
-    /// resolves to it when the scan index has no copy with the key. A change that the watcher sees of the key of the
-    /// board removes the entry, the same as the scan index forgets the key of a repo.
-    private var pathCopies: [String: PathCopy] = [:]
+    /// What git told about each folder that a path ref named, and the file watcher that keeps it current, by the
+    /// canonical path of the folder (divergence.md §16, Gap 1; divergence.md X4). A later call with the same path ref
+    /// runs no `git`, and a later ref with the key of such a board resolves to it when the scan index has no copy with
+    /// the key. A change that the watcher sees of the repo folder, its `.git` entry, or its git config removes the
+    /// entry, the same as the scan index forgets the key of a repo.
+    private var knownFolders: [String: KnownFolder] = [:]
 
     /// The session views that get the changes of the boards, by their object identity. The host does not keep a view
     /// alive.
@@ -453,74 +454,116 @@ public actor KanbanHost {
         places.map(\.canonicalPath)
     }
 
-    // MARK: - Boards reached by a path
+    // MARK: - Folders that a path ref named
 
-    /// Records the copy of a board that a call reached by a path, so that a later ref with the key of the board
-    /// resolves to it (divergence.md X4). A path can name a folder outside the scan places, and the scan index does not
-    /// have the board of such a folder. A second record of the same folder replaces the copy and keeps the watcher.
+    /// Gives what git tells about the folder that a path ref names: from memory after the first call with the folder,
+    /// so that a later call runs no `git` (divergence.md §16, Gap 1).
     ///
-    /// The first record of a folder starts a file watcher on its parent folder. The host forgets the copy when the
-    /// watcher sees a change of the key of the repo: its folder, its `.git` entry, or its git config, for example a
-    /// new `origin` (``WatchedPlace/keyChange(ofRepoAt:in:)``). Thus a read gets the key from memory and runs no
-    /// `git`, and the next path call reads the key again. A closed host records nothing, because no watcher can keep
-    /// the copy current. When the watcher cannot start, the host records nothing, and it records the failure with
-    /// swift-log.
+    /// The first call reads git with ``BoardLocator/board(ofFolderAt:readingKeysWith:findingTopsWith:)`` and records
+    /// the result with ``recordBoard(_:ofFolderAt:)``. A board that it records also resolves by its key in a later
+    /// ref (``pathCopy(namedBy:)``, divergence.md X4).
     ///
-    /// - Parameter copy: The copy: the top folder of the worktree of the folder, and the key of its board.
-    func recordPathCopy(_ copy: BoardCopy) {
-        let path = copy.directory.canonicalPath
-        guard !isClosed, pathCopies[path] == nil else {
-            pathCopies[path]?.copy = copy
-            return
+    /// - Parameter folder: The folder, from ``BoardLocator/folder(namedBy:currentRoot:)``.
+    /// - Returns: The board of the folder, ``FolderBoard/notARepo(path:)``, or ``FolderBoard/unreadableKey(top:)``.
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during a read of git. Each
+    ///   other ``BoardKeyError`` of the read of the top folder. The host records no result then.
+    func board(ofFolderAt folder: URL) async throws(BoardKeyError) -> FolderBoard {
+        if let known = knownFolders[folder.canonicalPath] {
+            return known.board
         }
-        do {
-            pathCopies[path] = PathCopy(copy: copy, watch: try makePathCopyWatch(of: copy.directory))
-        } catch {
-            Self.logWatchFailure(
-                "The host cannot watch a board that a call reached by a path, so a ref with its key does not find it",
-                path: copy.directory.path,
-                error: error
-            )
-        }
+        let board = try await BoardLocator.board(
+            ofFolderAt: folder,
+            readingKeysWith: configuration.keyReader,
+            findingTopsWith: configuration.topReader
+        )
+        await recordBoard(board, ofFolderAt: folder)
+        return board
     }
 
-    /// Makes the watch of a board that a call reached by a path: a file watcher on the parent folder of the top folder
-    /// of its worktree, and a task that gives each batch to ``pathCopyFolderDidChange(_:in:at:)``. The task holds the
-    /// host weakly.
+    /// Records what git told about a folder that a path ref named. A path can name a folder outside the scan places,
+    /// and the scan index does not have such a folder.
     ///
-    /// - Parameter directory: The top folder of the worktree of the board.
-    /// - Returns: The watch.
-    /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when the watcher cannot start.
-    private func makePathCopyWatch(of directory: URL) throws(BoardWatcherError) -> BoardWatch {
-        let parent = directory.deletingLastPathComponent()
-        let watched = WatchedPlace(watching: parent)
-        let path = directory.canonicalPath
-        return try makeFolderWatch(of: parent) { host, paths in
-            await host.pathCopyFolderDidChange(path, in: watched, at: paths)
-        }
-    }
-
-    /// Forgets a board that a call reached by a path when one batch of its file watcher changes the key of its repo
-    /// (divergence.md X4). The watcher then stops.
+    /// The record starts a file watcher on the parent folder of the watched repo
+    /// (``FolderBoard/watchedRepo(ofFolderAt:)``). The host forgets the record when the watcher sees a change that makes
+    /// it out of date (``FolderBoard/isExpired(by:ofRepoAt:)``): for example a `git init` in the folder, or a new
+    /// `origin`. Thus the next call reads git again. The watcher sees only the watched repo: a new repo in a folder
+    /// between the named folder and the top folder of its worktree, or in a parent folder of a folder that is not in a
+    /// git repo, does not show.
+    ///
+    /// A second record of the same folder with the same watched repo replaces the result and keeps the watcher. A
+    /// record with a different watched repo replaces the watcher too. A closed host records nothing, because no watcher
+    /// can keep the result current. When the watcher cannot start, the host records nothing, and it records the
+    /// failure with swift-log.
     ///
     /// - Parameters:
-    ///   - path: The canonical path of the top folder of the worktree of the board.
-    ///   - parent: The watched parent folder.
+    ///   - board: What git told about the folder.
+    ///   - folder: The folder that the path ref named.
+    private func recordBoard(_ board: FolderBoard, ofFolderAt folder: URL) async {
+        let path = folder.canonicalPath
+        let repo = board.watchedRepo(ofFolderAt: folder)
+        if knownFolders[path]?.repo == repo.canonicalPath {
+            knownFolders[path]?.board = board
+            return
+        }
+        let replaced = knownFolders.removeValue(forKey: path)
+        if !isClosed {
+            do {
+                let watch = try makeKnownFolderWatch(of: path, watchingRepoAt: repo)
+                knownFolders[path] = KnownFolder(board: board, repo: repo.canonicalPath, watch: watch)
+            } catch {
+                Self.logWatchFailure(
+                    "The host cannot watch a folder that a path ref named, so each call with the path ref runs git",
+                    path: repo.path,
+                    error: error
+                )
+            }
+        }
+        await replaced?.watch.end()
+    }
+
+    /// Makes the watch of a folder that a path ref named: a file watcher on the parent folder of its watched repo, and a
+    /// task that gives each batch to ``knownFolderDidChange(_:in:at:)``. The task holds the host weakly.
+    ///
+    /// - Parameters:
+    ///   - path: The canonical path of the folder that the path ref named.
+    ///   - repo: The watched repo folder.
+    /// - Returns: The watch.
+    /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when the watcher cannot start.
+    private func makeKnownFolderWatch(
+        of path: String,
+        watchingRepoAt repo: URL
+    ) throws(BoardWatcherError) -> BoardWatch {
+        let parent = repo.deletingLastPathComponent()
+        let watched = WatchedPlace(watching: parent)
+        return try makeFolderWatch(of: parent) { host, paths in
+            await host.knownFolderDidChange(path, in: watched, at: paths)
+        }
+    }
+
+    /// Forgets what git told about a folder that a path ref named, when one batch of its file watcher makes it out of
+    /// date. The watcher then stops.
+    ///
+    /// - Parameters:
+    ///   - path: The canonical path of the folder that the path ref named.
+    ///   - parent: The watched parent folder of the watched repo.
     ///   - paths: The changed paths of the batch.
-    private func pathCopyFolderDidChange(_ path: String, in parent: WatchedPlace, at paths: [URL]) async {
-        guard let change = parent.keyChange(ofRepoAt: path, in: paths),
-            let forgotten = pathCopies.removeValue(forKey: path)
+    private func knownFolderDidChange(_ path: String, in parent: WatchedPlace, at paths: [URL]) async {
+        guard let known = knownFolders[path],
+            let change = parent.changes(in: paths).first(where: { change in
+                known.board.isExpired(by: change, ofRepoAt: known.repo)
+            })
         else {
             return
         }
-        configuration.scanObserver?.pathCopyDidChange(change)
-        await forgotten.watch.watcher.stop()
+        knownFolders[path] = nil
+        configuration.scanObserver?.pathRefDidChange(change)
+        await known.watch.watcher.stop()
     }
 
     /// Finds the copy that a key ref names among the boards that calls reached by a path (divergence.md X4). Copies
     /// with the same key obey the rule of the scan: the key gives the first copy in a fixed order, here the sort order
-    /// of the canonical path of the folder (plan.md §6.6, many copies of one repo). A copy whose folder is not there
-    /// any more is not a match.
+    /// of the canonical path of the top folder of its worktree (plan.md §6.6, many copies of one repo). A copy whose
+    /// folder is not there any more is not a match.
     ///
     /// - Parameter reference: The board ref: a board key, or the URI of a board. White space at the two ends is
     ///   ignored.
@@ -529,7 +572,10 @@ public actor KanbanHost {
         guard let key = BoardIndex.boardKey(in: reference.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             return nil
         }
-        return pathCopies.sorted { lhs, rhs in lhs.key < rhs.key }.lazy.map(\.value.copy).first { copy in
+        let copies = knownFolders.values.compactMap { known in
+            known.board.copy.map { copy in (path: known.repo, copy: copy) }
+        }
+        return copies.sorted { lhs, rhs in lhs.path < rhs.path }.lazy.map(\.copy).first { copy in
             copy.key.description == key && FileManager.default.fileExists(atPath: copy.directory.path)
         }
     }
@@ -600,19 +646,19 @@ public actor KanbanHost {
 
     // MARK: - Close
 
-    /// Stops the file watcher of each board, of each scan place, of each board that could not load, and of each board
-    /// that a call reached by a path, and ends each subscription. The boards stay in memory, and a board that loads
-    /// later has no watcher. With no watcher on its places, a scan index is not current any more. A board that could
-    /// not load loads again at its next related load. The host forgets each board that a call reached by a path, so a
-    /// ref with its key does not find it, and a path ref still does. The shared host stays open for the life of the
-    /// process; a test closes its own host.
+    /// Stops the file watcher of each board, of each scan place, of each board that could not load, and of each folder
+    /// that a path ref named, and ends each subscription. The boards stay in memory, and a board that loads later has
+    /// no watcher. With no watcher on its places, a scan index is not current any more. A board that could not load
+    /// loads again at its next related load. The host forgets what git told about each folder that a path ref named:
+    /// a ref with the key of such a board does not find it, and each path ref reads git again. The shared host stays
+    /// open for the life of the process; a test closes its own host.
     func close() async {
         isClosed = true
         let watches =
-            Array(placeWatches.values) + unloadableBoards.values.map(\.watch) + pathCopies.values.map(\.watch)
+            Array(placeWatches.values) + unloadableBoards.values.map(\.watch) + knownFolders.values.map(\.watch)
         placeWatches = [:]
         unloadableBoards = [:]
-        pathCopies = [:]
+        knownFolders = [:]
         for watch in watches {
             await watch.end()
         }
@@ -663,7 +709,7 @@ struct HostConfiguration: Sendable {
     let workerObserver: (any LoaderWorkerObserver)?
 
     /// Gets a call when a scan for the related boards starts, when the file watcher of a scan place sees a change,
-    /// and when the host forgets a board that a call reached by a path, or `nil` for no calls.
+    /// and when the host forgets what git told about a folder that a path ref named, or `nil` for no calls.
     let scanObserver: (any BoardScanObserver)?
 
     /// Makes a configuration. Each default is the value of the process: git, the system clock, random ULIDs, and the
@@ -681,7 +727,7 @@ struct HostConfiguration: Sendable {
     ///   - loadObserver: Gets a call when the file load of a board starts and ends, or `nil` for no calls.
     ///   - workerObserver: Gets a call when each worker of a loader reads a file, or `nil` for no calls.
     ///   - scanObserver: Gets a call when a scan starts, when the file watcher of a scan place sees a change, and when
-    ///     the host forgets a board that a call reached by a path, or `nil` for no calls.
+    ///     the host forgets what git told about a folder that a path ref named, or `nil` for no calls.
     init(
         keyReader: @escaping BoardKeyReader = BoardKey.read(fromRepoAt:),
         topReader: @escaping WorktreeTopReader = BoardKey.worktreeTop(of:),
@@ -730,13 +776,16 @@ private struct UnloadableBoard {
     let watch: BoardWatch
 }
 
-/// A board that a call reached by a path (divergence.md X4): its copy, and the file watcher whose change of the key of
-/// the repo makes the host forget the copy.
-private struct PathCopy {
-    /// The copy: the top folder of the worktree, and the key of the board.
-    var copy: BoardCopy
+/// A folder that a path ref named (divergence.md §16, Gap 1; divergence.md X4): what git told about it, and the file
+/// watcher whose change of the watched repo makes the host forget it.
+private struct KnownFolder {
+    /// What git told about the folder.
+    var board: FolderBoard
 
-    /// The file watcher of the parent folder of the top folder of the worktree.
+    /// The canonical path of the watched repo folder (``FolderBoard/watchedRepo(ofFolderAt:)``).
+    let repo: String
+
+    /// The file watcher of the parent folder of the watched repo folder.
     let watch: BoardWatch
 }
 
