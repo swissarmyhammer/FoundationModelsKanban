@@ -25,10 +25,10 @@ struct CrossRepoTransferTests {
     /// The slug of the first default column.
     static let todoSlug = "todo"
 
-    /// The name of an edge tag of the moved task. The target board does not have this tag before the move.
+    /// The name of an edge tag of the moved or copied task. The target board does not have this tag before the call.
     static let edgeTagName = "frontend"
 
-    /// The name of a tag that only a body marker of the moved task names.
+    /// The name of a tag that only a body marker of the moved or copied task names.
     static let markerTagName = "parser"
 
     /// The selection of the name of each tag of a board.
@@ -199,31 +199,37 @@ struct CrossRepoTransferTests {
         #expect(try Self.columnID(of: task) == expected.description)
     }
 
-    @Test("The dependencies of a moved task on the old board still resolve, as full URIs")
-    func dependenciesResolveAfterMove() async throws {
+    @Test(
+        "The dependencies of a moved or copied task on the old board still resolve, as full URIs",
+        arguments: transferOperations
+    )
+    func dependenciesResolveAfterTransfer(operation: String) async throws {
         let repos = try await CrossRepoFixture.SideBySide.make()
         let app = try GitGraphFixture.makeGraph(at: repos.app)
         let target = try await CrossRepoFixture.addTask(with: "", on: app)
         let old = try await CrossRepoFixture.addTask(dependingOn: target, on: app)
-        let moved = try await Self.transfer(MutationName.moveTask, old, with: try Self.libBoard(), on: app)
+        let written = try await Self.transfer(operation, old, with: try Self.libBoard(), on: app)
         let selection = "{ ready unresolvedDependsOn dependsOn { id } }"
-        let task = try await Self.task(moved, selecting: selection, on: app)
+        let task = try await Self.task(written, selecting: selection, on: app)
         await app.close()
         #expect(try Self.dependencyIDs(of: task) == [target])
         #expect((task["unresolvedDependsOn"] as? [String])?.isEmpty == true)
         #expect(task["ready"] as? Bool == false)
     }
 
-    @Test("A move to the board of a dependency stores that dependency as a local ref, and it still resolves")
-    func dependencyOnTargetBoardBecomesLocal() async throws {
+    @Test(
+        "A move or a copy to the board of a dependency stores that dependency as a local ref, and it still resolves",
+        arguments: transferOperations
+    )
+    func dependencyOnTargetBoardBecomesLocal(operation: String) async throws {
         let repos = try await CrossRepoFixture.SideBySide.make()
         let app = try GitGraphFixture.makeGraph(at: repos.app)
         let target = try await CrossRepoFixture.addTask(with: try Self.libBoard(), on: app)
         let old = try await CrossRepoFixture.addTask(dependingOn: target, on: app)
-        let moved = try await Self.transfer(MutationName.moveTask, old, with: try Self.libBoard(), on: app)
-        let task = try await Self.task(moved, selecting: "{ dependsOn { id } }", on: app)
+        let written = try await Self.transfer(operation, old, with: try Self.libBoard(), on: app)
+        let task = try await Self.task(written, selecting: "{ dependsOn { id } }", on: app)
         await app.close()
-        let added = try #require(try CrossRepoWriteTests.events(ofTask: moved, inRepoAt: repos.lib).first).patch.add
+        let added = try #require(try CrossRepoWriteTests.events(ofTask: written, inRepoAt: repos.lib).first).patch.add
         let local = LocalRef.task(try AddUpdateTaskTests.firstTask(in: target))
         #expect(added[PropertyName.dependsOn] == [.local(local)])
         #expect(try Self.dependencyIDs(of: task) == [target])
@@ -274,14 +280,17 @@ struct CrossRepoTransferTests {
         #expect(oldTask["body"] as? String == Self.keptBody)
     }
 
-    @Test("copyTask puts the copy in the column that the input names")
-    func copyGoesToNamedColumn() async throws {
+    @Test(
+        "A move or a copy to a different board puts the new task in the column of that board that the input names",
+        arguments: transferOperations
+    )
+    func transferGoesToNamedColumn(operation: String) async throws {
         let repos = try await CrossRepoFixture.SideBySide.make()
         let app = try GitGraphFixture.makeGraph(at: repos.app)
         let old = try await CrossRepoFixture.addTask(with: "", on: app)
         let input = try Self.libBoard() + ", " + TaskOperationTests.moveInput(to: Self.doingSlug)
-        let copy = try await Self.transfer(MutationName.copyTask, old, with: input, on: app)
-        let task = try await Self.task(copy, selecting: "{ column { id } }", on: app)
+        let written = try await Self.transfer(operation, old, with: input, on: app)
+        let task = try await Self.task(written, selecting: "{ column { id } }", on: app)
         await app.close()
         let expected = NodeURI(boardKey: try CrossRepoWriteTests.libKey(), ref: .column(slug: Self.doingSlug))
         #expect(try Self.columnID(of: task) == expected.description)
@@ -331,41 +340,47 @@ struct CrossRepoTransferTests {
 
     // MARK: - Tags and assignees
 
-    @Test("A move makes each edge tag that the target board does not have")
-    func moveMakesMissingEdgeTag() async throws {
+    @Test("A move or a copy makes each edge tag that the target board does not have", arguments: transferOperations)
+    func transferMakesMissingEdgeTag(operation: String) async throws {
         let repos = try await CrossRepoFixture.SideBySide.make()
         let app = try GitGraphFixture.makeGraph(at: repos.app)
         let tags = "tags: " + AddUpdateTaskTests.list(of: [Self.edgeTagName])
         let old = try await CrossRepoFixture.addTask(with: tags, on: app)
-        let moved = try await Self.transfer(MutationName.moveTask, old, with: try Self.libBoard(), on: app)
-        let task = try await Self.task(moved, selecting: "{ \(Self.tagNamesSelection) }", on: app)
+        let written = try await Self.transfer(operation, old, with: try Self.libBoard(), on: app)
+        let task = try await Self.task(written, selecting: "{ \(Self.tagNamesSelection) }", on: app)
         let boardTags = try await Self.libTagNames(on: app)
         await app.close()
         #expect(boardTags.contains(Self.edgeTagName))
         #expect(try Self.names(in: task["tags"]) == [Self.edgeTagName])
     }
 
-    @Test("A move makes each tag of a body marker that the target board does not have")
-    func moveMakesMissingMarkerTag() async throws {
+    @Test(
+        "A move or a copy makes each tag of a body marker that the target board does not have",
+        arguments: transferOperations
+    )
+    func transferMakesMissingMarkerTag(operation: String) async throws {
         let repos = try await CrossRepoFixture.SideBySide.make()
         let app = try GitGraphFixture.makeGraph(at: repos.app)
         let old = try await CrossRepoFixture.addTask(with: #"body: "Fix the #\#(Self.markerTagName) bug.""#, on: app)
-        _ = try await Self.transfer(MutationName.moveTask, old, with: try Self.libBoard(), on: app)
+        _ = try await Self.transfer(operation, old, with: try Self.libBoard(), on: app)
         let boardTags = try await Self.libTagNames(on: app)
         await app.close()
         #expect(boardTags.contains(Self.markerTagName))
     }
 
-    @Test("A move stores each assignee of the old board as the full URI of the actor on the old board")
-    func moveStoresAssigneeAsOldBoardURI() async throws {
+    @Test(
+        "A move or a copy stores each assignee of the old board as the full URI of the actor on the old board",
+        arguments: transferOperations
+    )
+    func transferStoresAssigneeAsOldBoardURI(operation: String) async throws {
         let repos = try await CrossRepoFixture.SideBySide.make()
         let app = try GitGraphFixture.makeGraph(at: repos.app)
         _ = try await CommentTests.run(#"addActor(input: { name: "\#(AddUpdateTaskTests.alice)" }) { id }"#, on: app)
         let assignees = "assignees: " + AddUpdateTaskTests.list(of: [AddUpdateTaskTests.alice])
         let old = try await CrossRepoFixture.addTask(with: assignees, on: app)
-        let moved = try await Self.transfer(MutationName.moveTask, old, with: try Self.libBoard(), on: app)
+        let written = try await Self.transfer(operation, old, with: try Self.libBoard(), on: app)
         await app.close()
-        let added = try #require(try CrossRepoWriteTests.events(ofTask: moved, inRepoAt: repos.lib).first).patch.add
+        let added = try #require(try CrossRepoWriteTests.events(ofTask: written, inRepoAt: repos.lib).first).patch.add
         let actor = NodeURI(boardKey: try CrossRepoWriteTests.appKey(), ref: .actor(slug: AddUpdateTaskTests.alice))
         #expect(added[PropertyName.assignees] == [.remote(actor)])
     }
@@ -425,16 +440,17 @@ struct CrossRepoTransferTests {
     }
 
     @Test(
-        "A move of a task of a board that the engine did not load gives NOT_FOUND for the task, not a null",
-        arguments: ["", missingBoard]
+        "A move or a copy of a task of a board that the engine did not load gives NOT_FOUND for the task, not a null",
+        arguments: transferOperations,
+        ["", missingBoard]
     )
-    func unloadedTaskBoardGivesNotFound(board: String) async throws {
+    func unloadedTaskBoardGivesNotFound(operation: String, board: String) async throws {
         let missing = NodeURI(boardKey: CrossRepoReadTests.missingKey, ref: .task(ULID())).description
         let response = try await Self.respondBeforeLoad(
-            to: CommentTests.nodeField(MutationName.moveTask, naming: missing, with: board)
+            to: CommentTests.nodeField(operation, naming: missing, with: board)
         )
         try ErrorCoverageTests.expectFailure(
-            of: MutationName.moveTask,
+            of: operation,
             in: response,
             giving: .notFound(type: .task, reference: missing),
             coded: Self.notFoundCode
@@ -443,8 +459,11 @@ struct CrossRepoTransferTests {
 
     // MARK: - Incompatible board
 
-    @Test("A move to a related Rust board gives INCOMPATIBLE_BOARD and writes nothing")
-    func moveToRustBoardWritesNothing() async throws {
+    @Test(
+        "A move or a copy to a related Rust board gives INCOMPATIBLE_BOARD and writes nothing",
+        arguments: transferOperations
+    )
+    func transferToRustBoardWritesNothing(operation: String) async throws {
         let repos = try await CrossRepoFixture.SideBySide.make()
         let first = try GitGraphFixture.makeGraph(at: repos.app)
         let old = try await CrossRepoFixture.addTask(with: "", on: first)
@@ -453,7 +472,7 @@ struct CrossRepoTransferTests {
         let before = try Design.PortabilityTests.logTexts(inRepoAt: repos.app)
         let app = try GitGraphFixture.makeGraph(at: repos.app, mintingFrom: GitGraphFixture.secondEngineIDs)
         let response = try await CommentTests.run(
-            CommentTests.nodeField(MutationName.moveTask, naming: old, with: try Self.libBoard()),
+            CommentTests.nodeField(operation, naming: old, with: try Self.libBoard()),
             on: app
         )
         await app.close()

@@ -55,6 +55,27 @@ comments:
     - evidence: `swift test` 1412 tests in 110 suites passed, 0 failures, only the accepted SwiftPM "missing creator" warning. Files: S/GraphQL/Schema.swift, S/GraphQL/TaskTransferMutations.swift, S/GraphQL/TaskOperationMutations.swift, Tests/.../CrossRepo/CrossRepoTransferTests.swift, Tests/.../GraphQL/QueryFixture.swift, Tests/.../GraphQLEngineTests.swift.
     - next: /review
   timestamp: 2026-10-15T10:04:27.551472+00:00
+- actor: claude-code
+  id: 01m4zgsv6njykzg35cm5pgfnb4
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 6 files (3 findings fixed)
+    - test: green — swift test, 1412 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 4500fe1
+    - review: findings — Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoTransferTests.swift:431
+  timestamp: 2026-10-15T10:12:54.101634+00:00
+- actor: claude-code
+  id: 01m4zh5rfjwy2krwy8mxs1v411
+  text: |-
+    Review finding of 2026-10-15 05:08 fixed (test file only, no production change). Notes for the next agent:
+    - unloadedTaskBoardGivesNotFound now takes `arguments: transferOperations, ["", missingBoard]` (the cartesian form, as TagMutationTests does), and passes the operation to CommentTests.nodeField and ErrorCoverageTests.expectFailure.
+    - Same cause in the rest of the file: each test of behavior that move and copy share ran only moveTask. These tests now run over transferOperations: dependenciesResolveAfterTransfer (was dependenciesResolveAfterMove), dependencyOnTargetBoardBecomesLocal, transferGoesToNamedColumn (was copyGoesToNamedColumn, copy only), transferMakesMissingEdgeTag, transferMakesMissingMarkerTag, transferStoresAssigneeAsOldBoardURI, transferToRustBoardWritesNothing. Move-only tests (tombstone, pointer line, same-board move, dependent ignores tombstone, undo of a move) and copy-only tests (copy keeps old task, copy in own board, undo of a copy, copy aliases) stay single.
+    - TDD: the new cases test behavior that exists, so they passed at once. Mutation check: with `try?` in KanbanResolver.copyTask (an error gives a silent nil), the two new copyTask cases of unloadedTaskBoardGivesNotFound failed ("errors" is nil) and the moveTask cases passed. The mutation is reverted; Sources has no diff.
+
+    ### implement — changed
+    - evidence: `swift test` 1412 tests in 110 suites passed, 0 failures, only the accepted SwiftPM "missing creator" warning. File: Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoTransferTests.swift.
+    - next: /review
+  timestamp: 2026-10-15T10:19:24.530886+00:00
 depends_on:
 - 01M4X6ZBTA66TCPVYM41QR0ACD
 position_column: doing
@@ -103,3 +124,12 @@ Decided behavior:
 - [x] `Sources/FoundationModelsKanban/GraphQL/TaskOperationMutations.swift:154` `completeness/public-output-contract` — When the board of the task cannot be read, moveTask returns nil with no error. The GraphQL field is nullable, so the caller gets null and no error code. The resolver doc says it throws notFound when no live task has the id, and that an error gives null for this field only. The silent nil hides the error that the doc says must be raised. Throw the matching error instead of returning nil. Use `KanbanError.notFound(type: .task, reference: ...)` when the task is missing, and `KanbanError.boardNotFound(reference:searchRoots:)` when the named board is missing. Add a test that moves a task to an unknown board and asserts the error code, and one that moves a missing task and asserts notFound.
 - [x] `Sources/FoundationModelsKanban/GraphQL/TaskTransferMutations.swift:206` `completeness/inverse-operation-coverage` — `StoredRef.carried(from:to:)` has two directions. The local-to-full-URI direction (line 204) is exercised by `dependenciesResolveAfterMove`. The remote-to-local direction (line 206), where a full URI that names the target board becomes a local ref, has no test in the reviewed files. A regression there would leave a dependency on the target board stored as a full URI on that board. Add one test in CrossRepoTransferTests: on the lib board, add a task that depends on a task in the app board, then move or copy the app task to lib and assert that the new task's `dependsOn` edge to the old lib-board task is now a local ref, so it resolves without a board prefix.
 - [x] `Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoTransferTests.swift:45` `reuse/reuse` — The new `field` helper builds a mutation call with an `input` argument and an `id` selection. This repeats the shape of the existing `taskField` helper, which takes the operation, task, input, and a selection. The copy is a near-match that was not extended. Call `TaskOperationTests.taskField(operation, of: task, with: input, selecting: "{ id }")`, or move a shared field builder to a common test helper and use it from both suites. Remove the duplicate `field` body.
+
+## Review Findings (2026-10-15 05:08)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 6 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoTransferTests.swift:431` `completeness/inverse-operation-coverage` — The test unloadedTaskBoardGivesNotFound runs only moveTask. Its sibling tests missingTaskGivesNotFound and missingTargetBoardGivesNotFound run both moveTask and copyTask via transferOperations, so the copyTask path for an unloaded task board is not proven. Parameterize unloadedTaskBoardGivesNotFound over the operation (transferOperations) and pass that operation to CommentTests.nodeField and ErrorCoverageTests.expectFailure, as the sibling tests do.
