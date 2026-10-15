@@ -107,8 +107,8 @@ struct ChangeBuilderTests {
         "tags": "tags { id }",
         "dependsOn": "dependsOn { id }",
         "blockedBy": "blockedBy { id }",
-        "progress": "progress { completed fraction total }",
-        "summary": "summary { blocked done percent ready total }",
+        "progress": "progress { completed fraction percent total }",
+        "summary": "summary { blocked done percent ready total totalActors }",
     ]
 
     /// The fields whose value is a list: a field change gives `added` and `removed`.

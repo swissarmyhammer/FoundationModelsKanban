@@ -14,6 +14,10 @@ struct ActorNode: NodeState {
     /// The color of the actor, or `nil` when the actor has no color.
     var color: String?
 
+    /// The avatar of the actor, for example a URL or an emoji, or `nil` when the actor has no avatar (divergence.md
+    /// Q19).
+    var avatar: String?
+
     /// The local ref of the actor.
     var ref: LocalRef {
         .actor(slug: slug)

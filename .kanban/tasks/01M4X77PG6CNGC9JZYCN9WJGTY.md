@@ -33,8 +33,17 @@ comments:
     - evidence: 17 files — S/Identity/ShortID.swift, S/Identity/RefResolver.swift, S/Filter/FilterEvaluator.swift, S/GraphQL/Errors.swift, S/GraphQL/ResponseWarnings.swift, S/GraphQL/Schema.swift, S/GraphQL/TaskSelection.swift, S/Observe/ChangeFeed.swift, S/Observe/ChangeFilter.swift, S/Observe/ChangeSubscription.swift, T/Identity/ShortIDTests.swift, T/Identity/RefResolverTests.swift, T/Identity/SharedShortIDTests.swift, T/GraphQL/KanbanErrorTests.swift, T/GraphQL/ErrorCoverageTests.swift, T/GraphQL/NodeQueryTests.swift; `swift test` 1415 tests in 110 suites passed, only the accepted "missing creator" warning.
     - next: /review. Follow-up task ^e06wvsf (dead typed throws in the filter chain).
   timestamp: 2026-10-15T10:49:36.647507+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4zkghyxajpzc6cbtce0198v
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 16 files
+    - test: green — swift test, 1415 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: b11af57
+    - review: clean — none
+  timestamp: 2026-10-15T11:00:15.453853+00:00
+position_column: done
+position_ordinal: ff80
 title: Resolve a shared short id to the first match, match all in a filter, and list matches for an ambiguous ULID prefix
 ---
 ## What

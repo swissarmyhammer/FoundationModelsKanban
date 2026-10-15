@@ -71,6 +71,12 @@ enum GraphQLFieldAliases {
     /// The aliases of the priority value of a task input (divergence.md P2 and K15).
     private static let priority = ["prio", "urgent"]
 
+    /// The aliases of the avatar of an actor input (divergence.md Q19).
+    private static let avatar = ["avatarUrl", "image", "imageUrl", "icon", "picture", "photo", "emoji"]
+
+    /// The aliases of the model of a board input (divergence.md Q19).
+    private static let model = ["modelId", "chatModel", "agentModel", "llm"]
+
     /// The aliases of the `id` of an input that names a task.
     private static let taskID = refAliases(ofType: "task")
 
@@ -107,7 +113,9 @@ enum GraphQLFieldAliases {
         "UpdateCommentInput": ["id": commentID, "task": commentTask],
         "CommentReferenceInput": ["id": commentID, "task": commentTask],
         "UpdateColumnInput": ["id": refAliases(ofType: "column")],
-        "UpdateActorInput": ["id": refAliases(ofType: "actor")],
+        "AddActorInput": ["avatar": avatar],
+        "UpdateActorInput": ["id": refAliases(ofType: "actor"), "avatar": avatar],
+        "BoardInput": ["model": model],
         "UpdateTagInput": ["id": refAliases(ofType: "tag")],
         "RenameTagInput": ["from": ["tag", "old", "oldName"], "to": ["name", "new", "newName"]],
         "UndoInput": ["txn": ["transaction", "txnId", "id"]],

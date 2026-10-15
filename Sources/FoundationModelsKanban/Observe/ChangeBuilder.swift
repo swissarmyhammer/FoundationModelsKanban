@@ -325,14 +325,17 @@ extension Map {
 extension BoardSummary {
     /// The summary as the JSON object that `Board.summary` shows, with its keys in sorted order.
     fileprivate var jsonValue: Map {
-        ["blocked": Map(blocked), "done": Map(done), "percent": Map(percent), "ready": Map(ready), "total": Map(total)]
+        [
+            "blocked": Map(blocked), "done": Map(done), "percent": Map(percent), "ready": Map(ready),
+            "total": Map(total), "totalActors": Map(totalActors),
+        ]
     }
 }
 
 extension TaskProgress {
     /// The progress as the JSON object that `Task.progress` shows, with its keys in sorted order.
     fileprivate var jsonValue: Map {
-        ["completed": Map(completed), "fraction": Map(fraction), "total": Map(total)]
+        ["completed": Map(completed), "fraction": Map(fraction), "percent": Map(percent), "total": Map(total)]
     }
 }
 
@@ -377,23 +380,27 @@ extension LabelObject {
 }
 
 extension BoardObject {
-    /// The values of the public fields of the board: `name` and the derived `summary`.
+    /// The values of the public fields of the board: `name`, `model`, and the derived `summary`.
     var trackedFields: TrackedFields {
-        nodeFields(named: name, adding: [("summary", .single(summary.jsonValue))])
+        nodeFields(named: name, adding: [("model", .single(Map(model))), ("summary", .single(summary.jsonValue))])
     }
 }
 
 extension ColumnObject {
-    /// The values of the public fields of the column: `name` and `order`.
+    /// The values of the public fields of the column: `name` and `order`. The derived counts `taskCount` and
+    /// `readyCount` are not in the values: a change of a task gives the update of the task and of the board summary,
+    /// and no update of each column that the task leaves or enters.
     var trackedFields: TrackedFields {
         nodeFields(named: name, adding: [("order", .single(Map(order)))])
     }
 }
 
 extension ActorObject {
-    /// The values of the public fields of the actor: `name` and `color`.
+    /// The values of the public fields of the actor: `name`, `color`, and `avatar`.
     var trackedFields: TrackedFields {
-        labelFields(withColor: Map(color))
+        var fields = labelFields(withColor: Map(color))
+        fields["avatar"] = .single(Map(avatar))
+        return fields
     }
 }
 

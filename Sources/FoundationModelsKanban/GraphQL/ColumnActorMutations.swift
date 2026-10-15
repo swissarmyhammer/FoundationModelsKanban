@@ -19,7 +19,7 @@ extension MutationName {
     /// The mutation that makes an actor.
     static let addActor = "addActor"
 
-    /// The mutation that changes the name, the color, or the body of an actor.
+    /// The mutation that changes the name, the color, the avatar, or the body of an actor.
     static let updateActor = "updateActor"
 
     /// The mutation that makes an actor a tombstone.
@@ -80,17 +80,20 @@ private struct UpdateColumnInput: Decodable, Sendable {
     let body: FieldUpdate<String>
 }
 
-/// The `input` object of `addActor` (plan.md §4.2).
+/// The `input` object of `addActor` (plan.md §4.2). The input must give an id or a name, or both.
 private struct AddActorInput: Codable, Sendable {
     /// The id of the new actor, or `nil` for the slug of ``name``. The id is the slug of this text, or the slug of a
     /// full actor URI of the board (plan.md §3.2).
     let id: NodeID?
 
-    /// The name of the actor.
-    let name: String
+    /// The name of the actor, or `nil` for the slug of ``id`` (divergence.md Q19, `addActor(input: { id: "x" })`).
+    let name: String?
 
     /// The color of the actor, or `nil` for no color.
     let color: String?
+
+    /// The avatar of the actor, for example a URL or an emoji, or `nil` for no avatar (divergence.md Q19).
+    let avatar: String?
 
     /// The Markdown body of the actor: the full text, or `nil` for no body.
     let body: String?
@@ -115,6 +118,9 @@ private struct UpdateActorInput: Decodable, Sendable {
 
     /// The new color of the actor.
     let color: FieldUpdate<String>
+
+    /// The new avatar of the actor (divergence.md Q19).
+    let avatar: FieldUpdate<String>
 
     /// The new Markdown body of the actor: the full text. The mutation writes the diff from the current body.
     let body: FieldUpdate<String>
@@ -223,37 +229,39 @@ extension KanbanResolver {
 // MARK: - Actor resolvers
 
 extension KanbanResolver {
-    /// Resolves `Mutation.addActor`: makes an actor with a `set` of the name and the color, and an `edit` of the body,
-    /// in one patch (plan.md §4.2).
+    /// Resolves `Mutation.addActor`: makes an actor with a `set` of the name, the color, and the avatar, and an `edit`
+    /// of the body, in one patch (plan.md §4.2). An input with no name gives the slug as the name.
     ///
     /// - Parameters:
     ///   - context: The context of the call.
-    ///   - arguments: The new actor.
+    ///   - arguments: The new actor. The `input` argument is optional, because ``AddActorInput`` has no required field
+    ///     (plan.md §4.2). A call with no `input` gives no id and no name.
     /// - Returns: The actor. With `ensure`, the actor that the board has, with no change.
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when the id is a URI that does not name an actor of the
-    ///   board. ``KanbanError/invalidSlug(name:)`` when the id gives an empty slug.
-    ///   ``KanbanError/reservedSlug(type:)`` when the board has no actor with the slug, and the id gives the slug
-    ///   ``Slug/reservedForBoard``.
+    ///   board. ``KanbanError/invalidSlug(name:)`` when the id gives an empty slug, or when the input gives no id and
+    ///   no name. ``KanbanError/reservedSlug(type:)`` when the board has no actor with the slug, and the id gives the
+    ///   slug ``Slug/reservedForBoard``.
     ///   ``KanbanError/duplicateID(type:id:)`` when the board has an actor with the slug and `ensure` is not `true`.
     fileprivate func addActor(
         context: KanbanContext,
-        arguments: InputArguments<AddActorInput>
+        arguments: OptionalInputArguments<AddActorInput>
     ) async throws -> ActorObject? {
         let input = arguments.input
-        let board = MutationBoard.named(input.board)
+        let board = MutationBoard.named(input?.board)
         return try await context.changeNode(named: MutationName.addActor, on: board) { work, resolver, time in
-            let slug = try resolver.slug(ofNewNode: input.id, named: input.name, ofType: .actor)
+            let slug = try resolver.slug(ofNewNode: input?.id, named: input?.name ?? "", ofType: .actor)
             let ref = LocalRef.actor(slug: slug.value)
-            if input.ensure == true, work.graph.hasNode(ref) {
+            if input?.ensure == true, work.graph.hasNode(ref) {
                 return ref
             }
             let values = [String: PatchValue](
                 givenValues: [
-                    PropertyName.name: .string(input.name),
-                    PropertyName.color: input.color.map(PatchValue.string),
+                    PropertyName.name: .string(input?.name ?? slug.value),
+                    PropertyName.color: input?.color.map(PatchValue.string),
+                    PropertyName.avatar: input?.avatar.map(PatchValue.string),
                 ]
             )
-            try work.addNode(ref, setting: values, body: input.body, at: time)
+            try work.addNode(ref, setting: values, body: input?.body, at: time)
             return ref
         }
     }
@@ -279,6 +287,7 @@ extension KanbanResolver {
             let values = [
                 PropertyName.name: input.name.ignoringNull.map(PatchValue.string),
                 PropertyName.color: input.color.map(PatchValue.string),
+                PropertyName.avatar: input.avatar.map(PatchValue.string),
             ]
             try work.updateNode(ref, updating: values, body: input.body, at: time)
             return ref
@@ -641,8 +650,9 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             }
             Input(AddActorInput.self) {
                 InputField("id", at: \.id)
-                InputField("name", at: \.name)
+                InputField("name", at: \.name).description(SchemaDescription.addActorName)
                 InputField("color", at: \.color)
+                InputField("avatar", at: \.avatar).description(SchemaDescription.actorAvatar)
                 InputField("body", at: \.body)
                 InputField("ensure", at: \.ensure)
                 InputField("board", at: \.board).description(SchemaDescription.boardToChange)
@@ -651,6 +661,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 InputField("id", at: \.id)
                 InputField("name", at: \.name.value)
                 InputField("color", at: \.color.value)
+                InputField("avatar", at: \.avatar.value).description(SchemaDescription.actorAvatar)
                 InputField("body", at: \.body.value)
             }
             Input(NodeReferenceInput.self) {

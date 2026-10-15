@@ -12,6 +12,15 @@ struct VirtualTagsTests {
     /// The name of the Rust virtual tag `BLOCKING`, which is not a virtual tag here.
     static let blockingName = "BLOCKING"
 
+    /// The color of the Rust virtual tag `READY`.
+    static let rustReadyColor = "0e8a16"
+
+    /// The color of the Rust virtual tag `BLOCKED`.
+    static let rustBlockedColor = "e36209"
+
+    /// The number of hex digits of a color.
+    static let hexColorLength = 6
+
     /// Gives the virtual tags of one task of a board.
     ///
     /// - Parameters:
@@ -39,6 +48,35 @@ struct VirtualTagsTests {
         #expect(VirtualTag(rawValue: "BLOCKED") == .blocked)
         #expect(VirtualTag(rawValue: "ready") == nil)
         #expect(VirtualTag(rawValue: "NONEXISTENT") == nil)
+    }
+
+    // MARK: - Color and description
+
+    @Test("READY and BLOCKED have the Rust colors (Rust ReadyStrategy and BlockedStrategy)")
+    func readyAndBlockedHaveRustColors() {
+        #expect(VirtualTag.ready.color == Self.rustReadyColor)
+        #expect(VirtualTag.blocked.color == Self.rustBlockedColor)
+    }
+
+    @Test("Each virtual tag has its own color of 6 hex digits with no #")
+    func eachTagHasDistinctHexColor() {
+        let colors = VirtualTag.allCases.map(\.color)
+        #expect(Set(colors).count == VirtualTag.allCases.count)
+        for color in colors {
+            #expect(color.count == Self.hexColorLength, "\(color)")
+            let isHex = color.allSatisfy { character in character.isHexDigit }
+            #expect(isHex, "\(color)")
+        }
+    }
+
+    @Test("Each virtual tag has its own description of one sentence")
+    func eachTagHasDistinctSentence() {
+        let descriptions = VirtualTag.allCases.map(\.explanation)
+        #expect(Set(descriptions).count == VirtualTag.allCases.count)
+        for description in descriptions {
+            #expect(description.hasSuffix("."), "\(description)")
+            #expect(description.filter { character in character == "." }.count == 1, "\(description)")
+        }
     }
 
     // MARK: - Rust: READY

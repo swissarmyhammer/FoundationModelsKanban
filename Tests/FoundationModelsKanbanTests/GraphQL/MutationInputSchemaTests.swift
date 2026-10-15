@@ -14,7 +14,8 @@ struct MutationInputSchemaTests {
 
     /// The mutations whose `input` type has no required field (plan.md §4.2).
     private static let mutationsWithOptionalInput = [
-        MutationName.addTag, MutationName.initBoard, MutationName.redo, MutationName.undo, MutationName.updateBoard,
+        MutationName.addActor, MutationName.addTag, MutationName.initBoard, MutationName.redo, MutationName.undo,
+        MutationName.updateBoard,
     ]
 
     // MARK: - Helpers

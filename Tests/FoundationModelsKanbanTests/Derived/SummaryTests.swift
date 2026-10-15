@@ -39,6 +39,15 @@ struct SummaryTests {
     /// The ULID text of a seventh task: it has no column.
     static let seventh = "01KT70H4E59S1V3X5Y7Z9A1B3C"
 
+    /// The slug of a second live test actor.
+    static let otherActor = "alice"
+
+    /// The slug of a tombstoned test actor.
+    static let deletedActor = "bob"
+
+    /// The number of live actors of the actor test board.
+    static let twoActors = 2
+
     // MARK: - Rust
 
     @Test("A board with no tasks has zero counts and zero percent (Rust test_empty_board)")
@@ -115,5 +124,45 @@ struct SummaryTests {
         var board = ReadinessFixture()
         try board.addTask(withULID: ReadinessFixture.first, inColumn: ReadinessFixture.done)
         #expect(board.readiness.summary.percent == 100)
+    }
+
+    // MARK: - Actors and columns
+
+    @Test("totalActors counts the live actors, and not a tombstoned actor (Rust test_empty_board)")
+    func totalActorsCountsLiveActors() {
+        var board = ReadinessFixture()
+        #expect(board.readiness.summary.totalActors == .zero)
+        board.addActor(withSlug: ReadinessFixture.author)
+        board.addActor(withSlug: Self.otherActor)
+        board.addActor(withSlug: Self.deletedActor, isDeleted: true)
+        #expect(board.readiness.summary.totalActors == Self.twoActors)
+    }
+
+    @Test("Each column counts its live tasks and its ready tasks (Rust test_ready_vs_blocked_counts)")
+    func columnCountsLiveAndReadyTasks() throws {
+        var board = ReadinessFixture()
+        try board.addTask(withULID: ReadinessFixture.first)
+        try board.addTask(withULID: ReadinessFixture.second, dependingOn: [ReadinessFixture.first])
+        try board.addTask(withULID: ReadinessFixture.third, fields: ReadinessFixture.fields(isDeleted: true))
+        try board.addTask(withULID: ReadinessFixture.fourth, inColumn: ReadinessFixture.done)
+        let readiness = board.readiness
+        let todo = try board.slot(ofColumn: ReadinessFixture.todo)
+        let doing = try board.slot(ofColumn: ReadinessFixture.doing)
+        let done = try board.slot(ofColumn: ReadinessFixture.done)
+        #expect(readiness.taskCount(inColumnAt: todo) == Self.twoTasks)
+        #expect(readiness.readyCount(inColumnAt: todo) == 1)
+        #expect(readiness.taskCount(inColumnAt: doing) == .zero)
+        #expect(readiness.readyCount(inColumnAt: doing) == .zero)
+        #expect(readiness.taskCount(inColumnAt: done) == 1)
+        #expect(readiness.readyCount(inColumnAt: done) == 1)
+    }
+
+    @Test("A task with no column counts in the first column, where it shows")
+    func taskWithNoColumnCountsInFirstColumn() throws {
+        var board = ReadinessFixture()
+        try board.addTask(withULID: ReadinessFixture.first, inColumn: nil)
+        let todo = try board.slot(ofColumn: ReadinessFixture.todo)
+        #expect(board.readiness.taskCount(inColumnAt: todo) == 1)
+        #expect(board.readiness.readyCount(inColumnAt: todo) == 1)
     }
 }

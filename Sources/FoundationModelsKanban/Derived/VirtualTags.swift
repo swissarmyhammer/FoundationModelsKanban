@@ -53,6 +53,38 @@ extension VirtualTag {
         }
         self = tag
     }
+
+    /// The display color of the tag: 6 hex digits with no `#`, the same form as the color of a tag
+    /// (divergence.md Q19). `READY` and `BLOCKED` have the colors of the Rust virtual tags. Each other tag has a color
+    /// of the GitHub label palette that no other virtual tag has.
+    var color: String {
+        switch self {
+        case .ready: "0e8a16"
+        case .blocked: "e36209"
+        case .conflict: "b60205"
+        case .deleted: "6a737d"
+        case .done: "5319e7"
+        case .high: "d93f0b"
+        case .medium: "fbca04"
+        case .low: "c5def5"
+        }
+    }
+
+    /// The meaning of the tag in one short sentence: the `description` field of the GraphQL `VirtualTag` type
+    /// (divergence.md Q19). The Swift name is not `description`, so that the tag does not seem to be
+    /// `CustomStringConvertible`.
+    var explanation: String {
+        switch self {
+        case .ready: "The task is open, and each of its dependencies is done."
+        case .blocked: "At least one dependency of the task is not done."
+        case .conflict: "The body of the task has a conflict block from a diff that did not apply."
+        case .deleted: "The task is deleted, and only a filter that names this tag shows it."
+        case .done: "The task is in the terminal column."
+        case .high: "The task is in the first third of the open tasks, in board order."
+        case .medium: "The task is in the second third of the open tasks, in board order."
+        case .low: "The task is in the last third of the open tasks, in board order."
+        }
+    }
 }
 
 extension Readiness {

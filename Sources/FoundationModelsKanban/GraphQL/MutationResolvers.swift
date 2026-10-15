@@ -10,7 +10,7 @@ enum MutationName {
     /// The mutation that makes the board, or changes the given fields of a board that exists.
     static let initBoard = "initBoard"
 
-    /// The mutation that changes the name and the body of the board.
+    /// The mutation that changes the name, the model, and the body of the board.
     static let updateBoard = "updateBoard"
 }
 
@@ -115,6 +115,9 @@ private struct BoardInput: Decodable, Sendable {
     /// The new name of the board.
     let name: FieldUpdate<String>
 
+    /// The new model of the board, for example the chat model `haiku` (divergence.md Q19).
+    let model: FieldUpdate<String>
+
     /// The new Markdown body of the board: the full text. The mutation writes the diff from the current body
     /// (plan.md §5.5).
     let body: FieldUpdate<String>
@@ -189,7 +192,7 @@ extension KanbanResolver {
         try await changeBoard(as: MutationName.initBoard, context: context, arguments: arguments)
     }
 
-    /// Resolves `Mutation.updateBoard`: changes the name and the body of the board.
+    /// Resolves `Mutation.updateBoard`: changes the name, the model, and the body of the board.
     ///
     /// - Parameters:
     ///   - context: The context of the call.
@@ -258,8 +261,9 @@ extension BoardStore {
         }
     }
 
-    /// Changes a board with one patch: `set` or `unset` of the name, and an `edit` diff of the body (plan.md §4.2,
-    /// §5.5). The patch keeps only the parts that change the board, so a field that changes nothing writes nothing.
+    /// Changes a board with one patch: `set` or `unset` of the name and of the model, and an `edit` diff of the body
+    /// (plan.md §4.2, §5.5). The patch keeps only the parts that change the board, so a field that changes nothing
+    /// writes nothing.
     ///
     /// - Parameters:
     ///   - input: The changes and the board. A field that is not set does not change, and `null` clears the field.
@@ -276,7 +280,10 @@ extension BoardStore {
         let changed = try runMutation(named: operation, on: .named(input?.board), at: time) { work, _ in
             let patch = try PatchInput(
                 changing: .board,
-                updating: [PropertyName.name: (input?.name ?? .unchanged).map(PatchValue.string)],
+                updating: [
+                    PropertyName.name: (input?.name ?? .unchanged).map(PatchValue.string),
+                    PropertyName.model: (input?.model ?? .unchanged).map(PatchValue.string),
+                ],
                 body: input?.body ?? .unchanged,
                 from: work.graph.body(of: .board)
             )
@@ -479,6 +486,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
         add {
             Input(BoardInput.self) {
                 InputField("name", at: \.name.value)
+                InputField("model", at: \.model.value).description(SchemaDescription.boardModel)
                 InputField("body", at: \.body.value)
                 InputField("board", at: \.board).description(SchemaDescription.boardToChange)
             }

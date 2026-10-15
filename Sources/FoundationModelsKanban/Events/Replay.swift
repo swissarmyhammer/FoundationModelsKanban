@@ -283,7 +283,11 @@ extension NodeFold {
     private func makeState(taking properties: inout PropertyBag) -> any NodeState {
         switch ref {
         case .board:
-            BoardNode(fields: fields, name: properties.removeName())
+            BoardNode(
+                fields: fields,
+                name: properties.removeName(),
+                model: properties.removeText(forKey: PropertyName.model)
+            )
         case .column(let slug):
             ColumnNode(
                 slug: slug,
@@ -296,7 +300,8 @@ extension NodeFold {
                 slug: slug,
                 fields: fields,
                 name: properties.removeName(),
-                color: properties.removeText(forKey: PropertyName.color)
+                color: properties.removeText(forKey: PropertyName.color),
+                avatar: properties.removeText(forKey: PropertyName.avatar)
             )
         case .tag(let slug):
             TagNode(
@@ -440,6 +445,12 @@ enum PropertyName {
 
     /// The color of an actor or a tag.
     static let color = "color"
+
+    /// The avatar of an actor.
+    static let avatar = "avatar"
+
+    /// The model of the board.
+    static let model = "model"
 
     /// The rename target of a tag.
     static let renamedTo = "renamedTo"

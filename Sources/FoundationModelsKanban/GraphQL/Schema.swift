@@ -747,20 +747,12 @@ struct ColumnObject: SlotNodeObject {
     /// The read view of the graph.
     let view: BoardView
 
+    /// The slot of the column in the graph. The task counts read it. A filter selects the tasks of the column by its
+    /// URL.
+    let slot: Int
+
     /// The state of the column node.
     let state: ColumnNode
-
-    /// Makes the object of a column. A column field does not use the slot: a filter selects the tasks of the column
-    /// by its URL.
-    ///
-    /// - Parameters:
-    ///   - view: The read view of the graph.
-    ///   - slot: The slot of the column. The object does not keep it.
-    ///   - state: The state of the column node.
-    init(view: BoardView, slot _: Int, state: ColumnNode) {
-        self.view = view
-        self.state = state
-    }
 }
 
 /// An actor, as the GraphQL `Actor` type.
@@ -900,7 +892,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
         }
     }
 
-    /// Adds the `Board`, `Column`, `Actor`, `Tag`, and `BoardSummary` types.
+    /// Adds the `Board`, `Column`, `Actor`, `Tag`, `BoardSummary`, and `VirtualTag` types.
     ///
     /// - Returns: This builder, for method chaining.
     private func addBoardTypes() -> Self {
@@ -908,6 +900,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             Self.nodeType(BoardObject.self, as: GraphQLTypeName.board) {
                 Field("key", at: \.key)
                 Field("name", at: \.name)
+                Field("model", at: \.model).description(SchemaDescription.boardModel)
                 Field("columns", at: \.columns)
                 Field("actors", at: \.actors)
                 Field("tags", at: \.tags)
@@ -929,6 +922,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                     Argument("first", at: \.first).defaultValue(TasksArguments.defaultPageSize)
                 }
                 Field("summary", at: \.summary)
+                Field("virtualTags", at: \.virtualTags).description(SchemaDescription.boardVirtualTags)
                 Field("path", at: \.path)
                 Field("history", at: BoardObject.history) {
                     Argument("filter", at: \.filter).description(SchemaDescription.updateFilter)
@@ -939,9 +933,16 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             Self.nodeType(ColumnObject.self, as: GraphQLTypeName.column) {
                 Field("name", at: \.name)
                 Field("order", at: \.order)
+                Field("taskCount", at: \.taskCount).description(SchemaDescription.columnTaskCount)
+                Field("readyCount", at: \.readyCount).description(SchemaDescription.columnReadyCount)
                 Self.taskListField()
             }
-            Self.nodeType(ActorObject.self, as: GraphQLTypeName.actor, fields: Self.labelFields)
+            Self.nodeType(ActorObject.self, as: GraphQLTypeName.actor) {
+                // The explicit `return` turns off the result builder, so the closure gives the array as it is.
+                return Self.labelFields() + [
+                    Field("avatar", at: \.avatar).description(SchemaDescription.actorAvatar),
+                ]
+            }
             Self.nodeType(TagObject.self, as: GraphQLTypeName.tag, fields: Self.labelFields)
             Type(BoardSummary.self) {
                 Field("total", at: \.total)
@@ -949,6 +950,12 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Field("blocked", at: \.blocked)
                 Field("done", at: \.done)
                 Field("percent", at: \.percent)
+                Field("totalActors", at: \.totalActors).description(SchemaDescription.summaryTotalActors)
+            }
+            Type(VirtualTag.self) {
+                Field("name", at: \.rawValue).description(SchemaDescription.virtualTagName)
+                Field("color", at: \.color).description(SchemaDescription.virtualTagColor)
+                Field("description", at: \.explanation).description(SchemaDescription.virtualTagDescription)
             }
         }
     }
@@ -986,6 +993,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Field("total", at: \.total)
                 Field("completed", at: \.completed)
                 Field("fraction", at: \.fraction)
+                Field("percent", at: \.percent).description(SchemaDescription.progressPercent)
             }
             Type(TaskConnection.self) {
                 Field("edges", at: \.edges)

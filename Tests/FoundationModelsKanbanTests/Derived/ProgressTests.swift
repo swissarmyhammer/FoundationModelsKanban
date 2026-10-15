@@ -28,6 +28,15 @@ struct ProgressTests {
     /// The progress of a body with no checklist item.
     static let noProgress = TaskProgress(total: .zero, completed: .zero)
 
+    /// The percent of ``mixedBody``: two of four items are checked.
+    static let halfPercent = 50.0
+
+    /// The number of checklist lines of a body whose percent is not a whole number when one line is checked.
+    static let threeItems = 3
+
+    /// The number of percent units in a whole.
+    static let percentScale = 100.0
+
     // MARK: - Rust
 
     @Test("An empty body has no checklist items (Rust test_parse_checklist_counts, test_task_progress_no_field)")
@@ -81,5 +90,24 @@ struct ProgressTests {
     @Test("A line with a CRLF line break counts")
     func crlfLineCounts() {
         #expect(TaskProgress(of: "- [x] one\r\n- [ ] two\r\n") == Self.pairProgress)
+    }
+
+    // MARK: - Percent
+
+    @Test("The percent of half the checklist is 50 (Rust parse_body_progress_derivation)")
+    func percentOfHalfChecklist() {
+        #expect(TaskProgress(of: Self.mixedBody).percent == Self.halfPercent)
+    }
+
+    @Test("The percent is the fraction times 100, not rounded")
+    func percentIsFractionTimesHundred() {
+        let progress = TaskProgress(total: Self.threeItems, completed: 1)
+        #expect(progress.percent == progress.fraction * Self.percentScale)
+        #expect(progress.percent != progress.percent.rounded())
+    }
+
+    @Test("A body with no checklist has a percent of zero")
+    func noChecklistHasZeroPercent() {
+        #expect(Self.noProgress.percent == .zero)
     }
 }

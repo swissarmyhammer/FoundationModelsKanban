@@ -117,6 +117,58 @@ enum SchemaDescription {
         a live task that is not done, with each dependency done. Null when no task is ready.
         """
 
+    /// The `Board.model` field and the `model` field of `BoardInput` (divergence.md Q19).
+    static let boardModel = """
+        The model of the board as text, for example the chat model haiku. Null when no call set it. The board does \
+        not check the text.
+        """
+
+    /// The `Board.virtualTags` field (divergence.md Q19).
+    static let boardVirtualTags = """
+        Each virtual tag, with its name, color, and description. A virtual tag is not stored: the board calculates \
+        it for each task. See Task.virtualTags.
+        """
+
+    /// The `BoardSummary.totalActors` field (divergence.md Q19).
+    static let summaryTotalActors = "The number of live actors of the board."
+
+    /// The `Column.taskCount` field (divergence.md Q19).
+    static let columnTaskCount = """
+        The number of live tasks in the column. A task whose column is not a live column counts in the first column.
+        """
+
+    /// The `Column.readyCount` field (divergence.md Q19).
+    static let columnReadyCount = """
+        The number of live tasks in the column that no dependency stops. A done task can be ready, the same as \
+        Task.ready.
+        """
+
+    // MARK: - Virtual tag fields
+
+    /// The `VirtualTag.name` field.
+    static let virtualTagName = """
+        The name of the virtual tag, for example \(VirtualTag.ready.rawValue). A filter atom #name matches it.
+        """
+
+    /// The `VirtualTag.color` field.
+    static let virtualTagColor = "The display color of the virtual tag: 6 hex digits with no #."
+
+    /// The `VirtualTag.description` field.
+    static let virtualTagDescription = "The meaning of the virtual tag in one sentence."
+
+    // MARK: - Actor and progress fields
+
+    /// The `Actor.avatar` field and the `avatar` field of `AddActorInput` and `UpdateActorInput` (divergence.md Q19).
+    static let actorAvatar = """
+        The avatar of the actor as text, for example a URL or an emoji. Null when the actor has no avatar.
+        """
+
+    /// The `name` field of `AddActorInput`.
+    static let addActorName = "The name of the actor. No name gives the slug of the id as the name."
+
+    /// The `Progress.percent` field (divergence.md Q19).
+    static let progressPercent = "The part of the checklist that is checked, from 0 to 100: fraction times 100."
+
     // MARK: - Task inputs
 
     /// The `board` field of `MoveTaskInput` and `CopyTaskInput` (divergence.md Q21, E6).

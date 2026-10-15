@@ -8,6 +8,9 @@ struct BoardNode: NodeState {
     /// The name of the board. It is empty when no patch set it.
     var name = ""
 
+    /// The model of the board, for example the chat model `haiku`, or `nil` when no patch set it (divergence.md Q19).
+    var model: String?
+
     /// The local ref of the board.
     var ref: LocalRef {
         .board

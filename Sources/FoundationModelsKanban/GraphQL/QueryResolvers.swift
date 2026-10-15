@@ -276,6 +276,17 @@ extension BoardObject {
         state.name
     }
 
+    /// The model of the board, or `nil` when no patch set it (divergence.md Q19).
+    var model: String? {
+        state.model
+    }
+
+    /// Each virtual tag, with its color and its description, in the order of ``VirtualTag/allCases``
+    /// (divergence.md Q19).
+    var virtualTags: [VirtualTag] {
+        VirtualTag.allCases
+    }
+
     /// The live columns, in board order.
     var columns: [ColumnObject] {
         view.liveObjects(at: view.readiness.columnOrder.slots)
@@ -450,6 +461,17 @@ extension ColumnObject: TaskHolderObject {
         state.order
     }
 
+    /// The number of live tasks that show in the column (divergence.md Q19). Rust calls it `task_count`.
+    var taskCount: Int {
+        view.readiness.taskCount(inColumnAt: slot)
+    }
+
+    /// The number of live tasks in the column that no dependency blocks (divergence.md Q19). Rust calls it
+    /// `ready_count`. A done task with no blocking dependency counts.
+    var readyCount: Int {
+        view.readiness.readyCount(inColumnAt: slot)
+    }
+
     /// The `%` atom names a column.
     static let scopeKind = FilterAtomKind.column
 }
@@ -463,6 +485,12 @@ extension ActorObject {
     /// The color of the actor, or `nil` when the actor has no color.
     var color: String? {
         state.color
+    }
+
+    /// The avatar of the actor, for example a URL or an emoji, or `nil` when the actor has no avatar (divergence.md
+    /// Q19).
+    var avatar: String? {
+        state.avatar
     }
 
     /// The `@` atom names the assignee of a task.

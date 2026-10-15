@@ -68,7 +68,9 @@ struct SubscriptionTests {
             proves: "A change with no update that matches the ^id filter is not sent"
         ),
         TitleFilterCase(
-            filter: { _ in "!~actor" },
+            // The first mutation adds the session actor, so the `totalActors` of the board summary changes, and the
+            // board also has an update. The filter leaves out the actor and the board.
+            filter: { _ in "!~actor && !~board" },
             addsOtherTaskFirst: false,
             proves: "A subscription with a filter that does not name DONE sends the change of a done task"
         ),
