@@ -31,7 +31,7 @@ struct BoardView: Sendable {
         from source: BoardSource? = nil,
         reading related: RelatedBoards = .unavailable
     ) {
-        readiness = Readiness(of: graph, inBoard: boardKey, reading: related)
+        readiness = Readiness(of: graph, inBoard: boardKey, reading: related, cachedIn: source?.readiness)
         self.boardKey = boardKey
         self.source = source
     }

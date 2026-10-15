@@ -17,11 +17,20 @@ comments:
     - evidence: 8 files — T/Filter/NextTaskTests.swift, T/Derived/VirtualTagsTests.swift, T/Derived/PriorityTagsTests.swift, T/CrossRepo/CrossRepoDependencyTests.swift (new), T/CrossRepo/CrossRepoRefFilterTests.swift (new), T/Mutations/OtherBoardRefTests.swift (new), IntegrationTests/Tests/FoundationModelsKanbanIntegrationTests/CrossRepoDependencyTests.swift (new), IntegrationTests/.../Support/TemporaryGitRepo.swift. `swift test`: 1500 tests in 117 suites passed, only the accepted mlx "missing creator" warning. Integration suite (scratch path): 2 tests passed.
     - next: /review
   timestamp: 2026-10-15T15:37:55.686135+00:00
+- actor: claude-code
+  id: 01m504emzzkknwrxqhjbvn6m3x
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 8 files
+    - test: green — swift test, 1500 passed, 0 failed, 0 skipped; IntegrationTests 3 passed (tester fixed the fixture so each repo gets a unique root commit; engine bug filed as ^pwpn97e)
+    - commit: 6354ae5
+    - review: clean — none (review sha HEAD~1..HEAD: 0 findings, 0 confirmed, 4 refuted, 7 attempted, 0 failed; 8 files reviewed)
+  timestamp: 2026-10-15T15:56:18.815637+00:00
 depends_on:
 - 01M4X71FVFN9HYJ19VJ71VWV3B
 - 01M4X72R210B06MTDXZ4SXDCKE
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ff8580
 title: Add the missing tests for dependencies, nextTask, and virtual tags
 ---
 ## What

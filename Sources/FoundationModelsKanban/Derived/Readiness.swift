@@ -14,29 +14,14 @@ import Foundation
 ///   scan cannot find, is not done (plan.md §3.3, rule 4).
 /// - A `dependsOn` cycle from a merge (plan.md §5.3 step 5): each task in the cycle is blocked, also when the cycle
 ///   goes across boards (divergence.md X8). A dependency also blocks a task when a walk from the dependency over the
-///   dependencies comes back to the task, also when the dependency is done. The walk follows the dependencies into
-///   the loaded related boards with the same rules: it skips a tombstone, and a target that no loaded board has ends
-///   its path. The walk reads only memory, and it stops at each task that it already visited, so it always ends.
+///   dependencies comes back to the task, also when the dependency is done (``BlockerWalk``).
 /// - A task is **ready** when no dependency blocks it.
 ///
-/// The value calculates the dependencies of all tasks one time, so that one read can ask about many tasks.
+/// The value calculates the dependencies of all tasks one time, so that one read can ask about many tasks. With the
+/// readiness cache of the board (``ReadinessCache``), the value also reads the blockers of each task from the cache,
+/// so a read with no change since the last read walks nothing (divergence.md §16 Gap 3). With no cache, each read of
+/// the blockers of a task walks again.
 struct Readiness {
-    /// The graph of the board.
-    let graph: Graph
-
-    /// The live columns of the board in board order.
-    let columnOrder: ColumnOrder
-
-    /// The related boards that the cross-board dependencies read.
-    let related: RelatedBoards
-
-    /// The current key of the board. A walk across boards reads a task with this key in ``graph``.
-    private let boardKey: String
-
-    /// The dependencies of each task, live or tombstoned, by the slot of the task. A dependency on a tombstoned node
-    /// is not in the list.
-    private let dependencies: [Int: [EdgeTarget]]
-
     /// The slots of the tasks, live and tombstoned, in board order: by the position of the column where the task
     /// shows, then by ordinal, then by ULID. A task with no live column to show in comes last.
     let taskOrder: [Int]
@@ -45,6 +30,13 @@ struct Readiness {
     /// (``PriorityTier/init(atRank:amongOpenTasks:)``). A done task and a tombstone are not in it.
     private let priorityTiers: [Int: PriorityTier]
 
+    /// The dependencies of each task and the walk that finds the blockers of a task.
+    private let walk: BlockerWalk
+
+    /// The blockers of each task, live or tombstoned, by the slot of the task, from the readiness cache of the board,
+    /// or `nil` when the value has no cache.
+    private let knownBlockers: [Int: [EdgeTarget]]?
+
     /// Calculates the readiness of the tasks of a graph.
     ///
     /// - Parameters:
@@ -52,22 +44,39 @@ struct Readiness {
     ///   - currentBoardKey: The current key of the board. A dependency marker with this key resolves in the board.
     ///   - related: The related boards that the cross-board dependencies read. The default reads no related board,
     ///     so each cross-board dependency is not done.
-    init(of graph: Graph, inBoard currentBoardKey: String, reading related: RelatedBoards = .unavailable) {
-        self.graph = graph
-        self.related = related
-        boardKey = currentBoardKey
-        columnOrder = ColumnOrder(of: graph)
-        let dependencies = Dictionary(
-            uniqueKeysWithValues: graph.allSlots.compactMap { slot in
-                graph.liveDependencies(ofTaskAt: slot, inBoard: currentBoardKey, reading: related).map { targets in
-                    (slot, targets)
-                }
-            }
+    ///   - cache: The readiness cache of the board, or `nil` for a readiness that keeps nothing. The default is `nil`.
+    init(
+        of graph: Graph,
+        inBoard currentBoardKey: String,
+        reading related: RelatedBoards = .unavailable,
+        cachedIn cache: ReadinessCache? = nil
+    ) {
+        let known = cache?.readiness(of: graph, inBoard: currentBoardKey, reading: related)
+        walk = BlockerWalk(
+            of: graph,
+            inBoard: currentBoardKey,
+            reading: related,
+            with: known?.dependencies ?? graph.liveDependencies(inBoard: currentBoardKey, reading: related)
         )
-        self.dependencies = dependencies
-        let taskOrder = graph.boardOrder(of: columnOrder)
+        knownBlockers = known?.blockers
+        let taskOrder = graph.boardOrder(of: walk.columnOrder)
         self.taskOrder = taskOrder
-        priorityTiers = graph.priorityTiers(of: taskOrder, by: columnOrder)
+        priorityTiers = graph.priorityTiers(of: taskOrder, by: walk.columnOrder)
+    }
+
+    /// The graph of the board.
+    var graph: Graph {
+        walk.graph
+    }
+
+    /// The live columns of the board in board order.
+    var columnOrder: ColumnOrder {
+        walk.columnOrder
+    }
+
+    /// The related boards that the cross-board dependencies read.
+    var related: RelatedBoards {
+        walk.related
     }
 
     /// Gives the column where a task shows: the `column` field (``ColumnOrder/displaySlot(of:)``).
@@ -83,7 +92,7 @@ struct Readiness {
     /// - Parameter slot: The slot of the task.
     /// - Returns: `true` when the task is done. A slot that holds no task gives `false`.
     func isDone(taskAt slot: Int) -> Bool {
-        graph.isDone(taskAt: slot, by: columnOrder)
+        walk.isDone(taskAt: slot)
     }
 
     /// Gives the priority tier of a task: its third of the open tasks in board order
@@ -102,18 +111,17 @@ struct Readiness {
     /// - Returns: The targets, edges first and then markers. A target that the graph does not have stays an
     ///   unresolved edge. A slot that holds no task gives no targets.
     func dependencies(ofTaskAt slot: Int) -> [EdgeTarget] {
-        dependencies[slot, default: []]
+        walk.dependencies(ofTaskAt: slot)
     }
 
-    /// Gives the dependencies that block a task: the `blockedBy` field.
+    /// Gives the dependencies that block a task: the `blockedBy` field. With the readiness cache, the value reads
+    /// them from the cache and does not walk.
     ///
     /// - Parameter slot: The slot of the task.
     /// - Returns: The blocking targets, in the order of the dependencies. A target that the graph does not have
     ///   stays an unresolved edge.
     func blockers(ofTaskAt slot: Int) -> [EdgeTarget] {
-        dependencies(ofTaskAt: slot).filter { target in
-            isBlocking(target, forTaskAt: slot)
-        }
+        knownBlockers.map { blockers in blockers[slot, default: []] } ?? walk.blockers(ofTaskAt: slot).targets
     }
 
     /// Gives the dependencies of a task that no loaded board has as a task: the `unresolvedDependsOn` field
@@ -137,34 +145,6 @@ struct Readiness {
     func isReady(taskAt slot: Int) -> Bool {
         blockers(ofTaskAt: slot).isEmpty
     }
-}
-
-// MARK: - Walk
-
-extension Readiness {
-    /// Tells if one dependency blocks a task.
-    ///
-    /// - Parameters:
-    ///   - target: The dependency.
-    ///   - slot: The slot of the task that has the dependency.
-    /// - Returns: `true` when the target is not done, or when a walk from the target comes back to the task, also
-    ///   through related boards. A target of a related board is done when the task shows in the terminal column of
-    ///   that board.
-    private func isBlocking(_ target: EdgeTarget, forTaskAt slot: Int) -> Bool {
-        !isDone(target) || hasDependencyPath(from: target, to: slot)
-    }
-
-    /// Tells if one dependency is done.
-    ///
-    /// - Parameter target: The dependency.
-    /// - Returns: `true` when the task of the target shows in the terminal column of its board. A target that no
-    ///   loaded board has is not done.
-    private func isDone(_ target: EdgeTarget) -> Bool {
-        switch target {
-        case .slot(let targetSlot): isDone(taskAt: targetSlot)
-        case .unresolved(let ref): related.isDone(ref)
-        }
-    }
 
     /// Gives the stored ref of a dependency that no loaded board has as a task.
     ///
@@ -181,12 +161,96 @@ extension Readiness {
             return related.task(for: ref) == nil ? ref : nil
         }
     }
+}
+
+// MARK: - Walk
+
+/// The dependencies of the tasks of one board, and the walk that finds the dependencies that block a task (plan.md
+/// §5.3 steps 4 and 5, divergence.md X8).
+///
+/// A dependency blocks a task when it is not done, or when a walk from the dependency over the dependencies comes
+/// back to the task, also when the dependency is done. The walk follows the dependencies into the loaded related
+/// boards with the same rules: it skips a tombstone, and a target that no loaded board has ends its path. The walk
+/// reads only memory, and it stops at each task that it already visited, so it always ends.
+struct BlockerWalk {
+    /// The graph of the board.
+    let graph: Graph
+
+    /// The current key of the board. A walk across boards reads a task with this key in ``graph``.
+    let boardKey: String
+
+    /// The related boards that the cross-board dependencies read.
+    let related: RelatedBoards
+
+    /// The live columns of the board in board order.
+    let columnOrder: ColumnOrder
+
+    /// The dependencies of each task, live or tombstoned, by the slot of the task. A dependency on a tombstoned node
+    /// is not in the list.
+    private let dependencies: [Int: [EdgeTarget]]
+
+    /// Makes the walk of a board.
+    ///
+    /// - Parameters:
+    ///   - graph: The graph of the board.
+    ///   - boardKey: The current key of the board.
+    ///   - related: The related boards that the cross-board dependencies read.
+    ///   - dependencies: The dependencies of each task of the graph, by the slot of the task
+    ///     (``Graph/liveDependencies(inBoard:reading:)``).
+    init(
+        of graph: Graph,
+        inBoard boardKey: String,
+        reading related: RelatedBoards,
+        with dependencies: [Int: [EdgeTarget]]
+    ) {
+        self.graph = graph
+        self.boardKey = boardKey
+        self.related = related
+        self.dependencies = dependencies
+        columnOrder = ColumnOrder(of: graph)
+    }
+
+    /// Gives the dependencies of a task, without the dependencies on tombstoned nodes.
+    ///
+    /// - Parameter slot: The slot of the task.
+    /// - Returns: The targets. A slot that holds no task gives no targets.
+    func dependencies(ofTaskAt slot: Int) -> [EdgeTarget] {
+        dependencies[slot, default: []]
+    }
+
+    /// Tells if a task is done: the task shows in the terminal column.
+    ///
+    /// - Parameter slot: The slot of the task.
+    /// - Returns: `true` when the task is done. A slot that holds no task gives `false`.
+    func isDone(taskAt slot: Int) -> Bool {
+        graph.isDone(taskAt: slot, by: columnOrder)
+    }
+
+    /// Finds the dependencies that block a task. Each dependency that is done starts one walk.
+    ///
+    /// - Parameter slot: The slot of the task.
+    /// - Returns: The blocking targets, in the order of the dependencies, and the number of walks.
+    func blockers(ofTaskAt slot: Int) -> TaskBlockers {
+        let dependencies = dependencies(ofTaskAt: slot)
+        let targets = dependencies.filter { target in
+            !isDone(target) || hasDependencyPath(from: target, to: slot)
+        }
+        return TaskBlockers(targets: targets, walkCount: dependencies.count(where: isDone(_:)))
+    }
+
+    /// Tells if one dependency is done.
+    ///
+    /// - Parameter target: The dependency.
+    /// - Returns: `true` when the task of the target shows in the terminal column of its board. A target that no
+    ///   loaded board has is not done.
+    private func isDone(_ target: EdgeTarget) -> Bool {
+        switch target {
+        case .slot(let targetSlot): isDone(taskAt: targetSlot)
+        case .unresolved(let ref): related.isDone(ref)
+        }
+    }
 
     /// Walks the dependencies from a dependency of a task, and tells if the walk comes back to the task.
-    ///
-    /// The walk follows the dependencies into the loaded related boards (divergence.md X8). It reads only memory. A
-    /// dependency on a tombstone is not in the walk, a target that no loaded board has ends its path, and the walk
-    /// stops at each task that it already visited, so it ends also when the dependencies have a cycle.
     ///
     /// - Parameters:
     ///   - start: The dependency where the walk starts.
@@ -268,6 +332,15 @@ extension Readiness {
     }
 }
 
+/// The dependencies that block one task, and the number of walks that found them.
+struct TaskBlockers {
+    /// The blocking targets, in the order of the dependencies.
+    let targets: [EdgeTarget]
+
+    /// The number of walks: one for each dependency that is done.
+    let walkCount: Int
+}
+
 /// A board that a walk across boards reads: its current key and its graph. The readiness walk and
 /// ``DependencyWalk`` both use it.
 struct WalkBoard {
@@ -325,6 +398,23 @@ extension Graph {
         isLive(TaskNode.self, at: slot)
     }
 
+    /// Gives the dependencies of each task of the graph, live or tombstoned, without the dependencies on tombstoned
+    /// nodes (plan.md §3.3, rule 3).
+    ///
+    /// - Parameters:
+    ///   - currentBoardKey: The current key of the board.
+    ///   - related: The related boards. A dependency on a tombstoned task of a related board is not in the result.
+    /// - Returns: The dependencies of each task, by the slot of the task.
+    func liveDependencies(inBoard currentBoardKey: String, reading related: RelatedBoards) -> [Int: [EdgeTarget]] {
+        Dictionary(
+            uniqueKeysWithValues: allSlots.compactMap { slot in
+                liveDependencies(ofTaskAt: slot, inBoard: currentBoardKey, reading: related).map { targets in
+                    (slot, targets)
+                }
+            }
+        )
+    }
+
     /// Gives the dependencies of a task, without the dependencies on tombstoned nodes (plan.md §3.3, rule 3).
     ///
     /// - Parameters:
@@ -332,7 +422,7 @@ extension Graph {
     ///   - currentBoardKey: The current key of the board.
     ///   - related: The related boards. A dependency on a tombstoned task of a related board is not in the result.
     /// - Returns: The dependencies, or `nil` when the slot holds no task.
-    fileprivate func liveDependencies(
+    func liveDependencies(
         ofTaskAt slot: Int,
         inBoard currentBoardKey: String,
         reading related: RelatedBoards

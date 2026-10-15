@@ -58,6 +58,9 @@ struct BoardSource: Sendable {
 
     /// The events of the board, in the order of their ids: the source of `Board.history`.
     let events: [Event]
+
+    /// The readiness cache of the board, which its live graph keeps (divergence.md §16 Gap 3).
+    let readiness: ReadinessCache
 }
 
 /// A loaded board that the read views of one run read: its key, its graph, and its source.
@@ -340,12 +343,21 @@ struct RelatedBoards: Sendable {
     func task(for ref: StoredRef) -> (board: BoardSnapshot, slot: Int, state: TaskNode)? {
         guard
             case .remote(let uri) = ref,
-            let board = resolution(ofBoard: uri.boardKey).flatMap(board(resolvedAs:)),
+            let board = board(forKey: uri.boardKey),
             let task = board.task(for: uri.ref)
         else {
             return nil
         }
         return (board, task.slot, task.state)
+    }
+
+    /// Gives the loaded board that the key of a cross-board ref names: the board that each read of a task of the key
+    /// reads.
+    ///
+    /// - Parameter key: The board key of a URI, as the URI holds it.
+    /// - Returns: The board, or `nil` when no loaded board has the key.
+    func board(forKey key: String) -> BoardSnapshot? {
+        resolution(ofBoard: key).flatMap(board(resolvedAs:))
     }
 
     /// Tells if a cross-board dependency is done: its task shows in the terminal column of its board. A task that no
@@ -441,17 +453,7 @@ struct RelatedBoards: Sendable {
     ///   - key: The current key of that board.
     /// - Returns: One request for the key of each board that a dependency names.
     private static func dependencyRequests(of graph: Graph, inBoard key: String) -> Set<BoardRequest> {
-        let targets = graph.allSlots
-            .compactMap { slot in graph.node(at: slot, as: TaskNode.self) }
-            .flatMap { task in graph.dependencies(of: task, inBoard: key) }
-        return Set(
-            targets.compactMap { target in
-                guard case .unresolved(.remote(let uri)) = target else {
-                    return nil
-                }
-                return .board(uri.boardKey)
-            }
-        )
+        Set(graph.remoteDependencyKeys(inBoard: key).map(BoardRequest.board))
     }
 
     // MARK: - Writes of the engine

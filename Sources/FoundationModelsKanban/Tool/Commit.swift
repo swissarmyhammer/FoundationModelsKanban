@@ -396,7 +396,7 @@ struct CommitSession: Sendable {
 
     /// The directory, the search, and the events of the board, for its read views.
     var source: BoardSource {
-        BoardSource(directory: directory, search: search, events: live.events)
+        BoardSource(directory: directory, search: search, events: live.events, readiness: live.readiness)
     }
 
     /// The board as a read of a related board sees it: the live graph, with an empty board in memory when the board

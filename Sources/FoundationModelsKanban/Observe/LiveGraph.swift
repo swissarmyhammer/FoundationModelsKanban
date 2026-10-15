@@ -45,6 +45,11 @@ struct LiveGraph: Sendable {
     /// ``takeChanges()`` takes them. The engine makes the `Change` values of the change feed from them (plan.md §6.7).
     private var pendingChanges: [LiveGraphChange] = []
 
+    /// The readiness of the tasks of the board, kept in memory with the graph (divergence.md §16 Gap 3). Each copy of
+    /// the value shares it, and a full reload keeps it. The cache compares the graph that a read gives with the graph
+    /// that it computed from, so it stays correct for each change of the graph.
+    private(set) var readiness = ReadinessCache()
+
     /// The event log of the board.
     var log: EventLog {
         loader.log
@@ -137,9 +142,10 @@ struct LiveGraph: Sendable {
         }
         let (before, knownIDs) = (graph, Set(events.map(\.id)))
         if refs.count * Self.fullReloadDivisor > signatures.count {
-            let (pending, largest) = (pendingChanges, largestEventID)
+            let (pending, largest, cache) = (pendingChanges, largestEventID, readiness)
             self = try await Self.load(using: loader)
             pendingChanges = pending
+            readiness = cache
             raiseLargestEventID(to: largest)
         } else {
             try await reload(filesOf: refs)

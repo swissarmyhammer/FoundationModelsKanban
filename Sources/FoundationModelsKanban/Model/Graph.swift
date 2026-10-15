@@ -117,6 +117,35 @@ struct Graph: Equatable, Sendable {
         replaceEdges(removedEdge, with: unresolvedEdge, inNodesAt: holders)
         waiting[ref, default: []].formUnion(holders)
     }
+
+    /// Lists the nodes that differ from an older graph of the same board: a new node, a changed node, and a removed
+    /// node. A graph that shares its storage with the older graph gives the empty set at once.
+    ///
+    /// - Parameter older: The older graph.
+    /// - Returns: The local refs of the nodes that differ, or `nil` when a ref of the older graph has a different
+    ///   slot in this graph, for example after a full reload builds the graph again.
+    func changedRefs(since older: Graph) -> Set<LocalRef>? {
+        guard self != older else {
+            return []
+        }
+        let differing = (0..<max(nodes.count, older.nodes.count)).filter { slot in
+            older.storedNode(at: slot) != storedNode(at: slot)
+        }
+        let refs = Set(differing.flatMap { slot in [older.storedNode(at: slot)?.ref, storedNode(at: slot)?.ref] }
+            .compactMap(\.self))
+        let keepsSlots = refs.allSatisfy { ref in
+            older.slots[ref].map { slot in slot == slots[ref] } ?? true
+        }
+        return keepsSlots ? refs : nil
+    }
+
+    /// Gives the node in a slot, also for a slot past the end of the node table.
+    ///
+    /// - Parameter slot: A slot.
+    /// - Returns: The node, or `nil` when the slot holds no node or the graph has no such slot.
+    private func storedNode(at slot: Int) -> Node? {
+        nodes.indices.contains(slot) ? nodes[slot] : nil
+    }
 }
 
 // MARK: - Join
