@@ -175,6 +175,17 @@ struct KanbanGraphTests {
         try await graph.execute(query: query, variables: variables, operationName: nil)
     }
 
+    /// Runs one document with no operation name on a new engine of the board of a repo. Each suite that runs a
+    /// document on a new engine of its fixture board calls it.
+    ///
+    /// - Parameters:
+    ///   - document: The GraphQL document.
+    ///   - root: The root directory of the repo.
+    /// - Returns: The response JSON text.
+    static func response(to document: String, inRepoAt root: URL) async throws -> String {
+        try await execute(document, on: makeGraph(at: root))
+    }
+
     /// Writes one patch as an event to the log of its node. The event ids come from the ULID source.
     ///
     /// - Parameters:

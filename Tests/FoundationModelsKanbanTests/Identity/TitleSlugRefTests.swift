@@ -72,14 +72,6 @@ struct TitleSlugRefTests {
         ids = fixture.ids
     }
 
-    /// Runs one document on a new engine of the board.
-    ///
-    /// - Parameter document: The GraphQL document.
-    /// - Returns: The response JSON text.
-    func response(to document: String) async throws -> String {
-        try await KanbanGraphTests.execute(document, on: KanbanGraphTests.makeGraph(at: directory.url))
-    }
-
     /// Makes a query of the tasks of the board with a filter that selects only `totalCount`.
     ///
     /// - Parameter filter: The filter.
@@ -88,12 +80,28 @@ struct TitleSlugRefTests {
         #"{ board { tasks(filter: "\#(filter)") { totalCount } } }"#
     }
 
+    /// Runs ``countQuery(filter:)`` on a new engine of the board.
+    ///
+    /// - Parameter filter: The filter.
+    /// - Returns: The response JSON text.
+    func countResponse(filter: String) async throws -> String {
+        try await KanbanGraphTests.response(to: Self.countQuery(filter: filter), inRepoAt: directory.url)
+    }
+
     /// Makes a query of one task of the board that selects its id.
     ///
     /// - Parameter reference: The ref of the task.
     /// - Returns: The GraphQL document.
     static func taskQuery(naming reference: String) -> String {
         #"{ board { task(id: "\#(reference)") { id } } }"#
+    }
+
+    /// Runs ``taskQuery(naming:)`` on a new engine of the board.
+    ///
+    /// - Parameter reference: The ref of the task.
+    /// - Returns: The response JSON text.
+    func taskResponse(naming reference: String) async throws -> String {
+        try await KanbanGraphTests.response(to: Self.taskQuery(naming: reference), inRepoAt: directory.url)
     }
 
     /// Gives the id of the task of a response to ``taskQuery(naming:)``.
@@ -110,7 +118,8 @@ struct TitleSlugRefTests {
     /// - Parameter reference: The ref of the node.
     /// - Returns: The `__typename` of the node, or `nil` when the response has no node.
     func nodeTypeName(naming reference: String) async throws -> String? {
-        let response = try await response(to: #"{ node(id: "\#(reference)") { __typename } }"#)
+        let query = #"{ node(id: "\#(reference)") { __typename } }"#
+        let response = try await KanbanGraphTests.response(to: query, inRepoAt: directory.url)
         return try KanbanGraphTests.object(named: "node", in: response)["__typename"] as? String
     }
 
@@ -142,14 +151,13 @@ struct TitleSlugRefTests {
 
     @Test("A filter ^<title-slug> of one task lists only that task")
     func filterWithTitleSlugMatchesTask() async throws {
-        let response = try await response(to: Self.countQuery(filter: "^\(Self.fixtureSlug)"))
+        let response = try await countResponse(filter: "^\(Self.fixtureSlug)")
         #expect(response == SharedShortIDTests.totalCountResponse(Self.oneTask))
     }
 
     @Test("A filter ^^<short> lists the task with that short id")
     func filterWithDoubleSigilMatchesTask() async throws {
-        let filter = "^\(AddUpdateTaskTests.sigilRef(of: fixtureTask))"
-        let response = try await response(to: Self.countQuery(filter: filter))
+        let response = try await countResponse(filter: "^\(AddUpdateTaskTests.sigilRef(of: fixtureTask))")
         #expect(response == SharedShortIDTests.totalCountResponse(Self.oneTask))
     }
 
@@ -158,7 +166,8 @@ struct TitleSlugRefTests {
     @Test("updateTask with a shared title slug changes the task with the lowest ULID, and gives a warning")
     func mutationWithTitleSlugChangesFirstMatch() async throws {
         let field = CommentTests.nodeField("updateTask", naming: Self.sharedSlug, with: #"title: "\#(Self.newTitle)""#)
-        let response = try await response(to: AddUpdateTaskTests.mutation(of: field))
+        let mutation = AddUpdateTaskTests.mutation(of: field)
+        let response = try await KanbanGraphTests.response(to: mutation, inRepoAt: directory.url)
         let updated = try SharedShortIDTests.id(ofField: MutationName.updateTask, in: response)
         #expect(updated == SharedShortIDTests.id(of: first))
         let warnings = try ResponseWarningsTests.warnings(of: response)
@@ -183,7 +192,7 @@ struct TitleSlugRefTests {
         TitleSlugRefTests.fixtureSlug, KanbanGraphTests.taskTitle,
     ])
     func taskFieldWithTitleSlug(reference: String) async throws {
-        let response = try await response(to: Self.taskQuery(naming: reference))
+        let response = try await taskResponse(naming: reference)
         #expect(try Self.taskID(in: response) == SharedShortIDTests.id(of: fixtureTask))
         #expect(!response.contains(#""warnings""#))
     }
@@ -194,7 +203,7 @@ struct TitleSlugRefTests {
         var ids = ids
         let log = EventLog(repositoryAt: directory.url)
         _ = try KanbanGraphTests.writeTask(titled: reference, mintingFrom: &ids, to: log)
-        let response = try await response(to: Self.taskQuery(naming: reference))
+        let response = try await taskResponse(naming: reference)
         #expect(try Self.taskID(in: response) == SharedShortIDTests.id(of: fixtureTask))
     }
 

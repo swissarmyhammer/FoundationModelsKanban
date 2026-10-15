@@ -99,6 +99,24 @@ struct SchemaDescriptionTests {
         }
     }
 
+    /// Gives the place of each argument and `input` field with a name whose description does not contain each text.
+    /// Expects that the schema has more than one argument or `input` field with the name.
+    ///
+    /// - Parameters:
+    ///   - name: The name of the argument or of the `input` field, for example `filter`.
+    ///   - texts: The texts that each description must contain.
+    /// - Returns: The place (`Type.field(name:)` or `Input.name`) of each description that does not contain a text.
+    /// - Throws: An error when the schema cannot be made, or a type gives no fields.
+    static func places(ofInputsNamed name: String, notNaming texts: [String]) throws -> [String] {
+        let inputs = try inputValues(named: name)
+        #expect(inputs.count > 1)
+        return inputs.filter { input in
+            let description = input.description ?? ""
+            return !texts.allSatisfy { text in description.contains(text) }
+        }
+        .map(\.place)
+    }
+
     /// Gives each description of the object types and the `input` types of the public schema: of the types, the
     /// fields, the arguments, and the `input` fields.
     ///
@@ -195,40 +213,22 @@ struct SchemaDescriptionTests {
 
     @Test("Each filter argument has a description that names each sigil of the filter atoms")
     func filterArgumentsNameTheSigils() throws {
-        let filters = try Self.inputValues(named: "filter")
-        #expect(filters.count > 1)
-        let missing = filters.filter { filter in
-            let description = filter.description ?? ""
-            return !Self.filterSigils.allSatisfy { sigil in description.contains(sigil) }
-        }
-        #expect(missing.map(\.place) == [])
+        #expect(try Self.places(ofInputsNamed: "filter", notNaming: Self.filterSigils) == [])
     }
 
     @Test("Each filter argument has a description that names the ^^short form and the title slug form")
     func filterArgumentsNameTheRefForms() throws {
-        let filters = try Self.inputValues(named: "filter")
-        #expect(filters.count > 1)
-        let missing = filters.filter { filter in
-            let description = filter.description ?? ""
-            return !Self.filterRefForms.allSatisfy { form in description.contains(form) }
-        }
-        #expect(missing.map(\.place) == [])
+        #expect(try Self.places(ofInputsNamed: "filter", notNaming: Self.filterRefForms) == [])
     }
 
     @Test("Each dependsOn input field has a description that names the title slug of a task")
     func dependsOnInputsNameTheTitleSlug() throws {
-        let dependsOn = try Self.inputValues(named: "dependsOn")
-        #expect(dependsOn.count > 1)
-        let missing = dependsOn.filter { field in !(field.description ?? "").contains(Self.titleSlugName) }
-        #expect(missing.map(\.place) == [])
+        #expect(try Self.places(ofInputsNamed: "dependsOn", notNaming: [Self.titleSlugName]) == [])
     }
 
     @Test("Each board argument and each board input field has a description that names the board URI")
     func boardArgumentsHaveDescriptions() throws {
-        let boards = try Self.inputValues(named: "board")
-        #expect(boards.count > 1)
-        let missing = boards.filter { board in !(board.description ?? "").contains(Self.uriScheme) }
-        #expect(missing.map(\.place) == [])
+        #expect(try Self.places(ofInputsNamed: "board", notNaming: [Self.uriScheme]) == [])
     }
 
     @Test("The id argument of Query.board has a description that names the board URI")

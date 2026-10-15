@@ -29,6 +29,31 @@ comments:
     - evidence: `swift test` 1459 tests in 112 suites passed; only the accepted mlx "missing creator" warning. Files: Sources/FoundationModelsKanban/Filter/FilterParser.swift, Filter/FilterEvaluator.swift, Identity/RefResolver.swift, GraphQL/SchemaDescription.swift, Tool/KanbanTool.swift, README.md, Tests/.../Identity/TitleSlugRefTests.swift (new), Filter/FilterParserTests.swift, GraphQL/SchemaDescriptionTests.swift, Tool/KanbanToolTests.swift
     - next: /review
   timestamp: 2026-10-15T13:53:53.752311+00:00
+- actor: claude-code
+  id: 01m4zy3vsqj9cc05hvywsn4fh6
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 10 files
+    - test: green — swift test, 1459 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 2f3341a
+    - review: findings — Tests/FoundationModelsKanbanTests/GraphQL/SchemaDescriptionTests.swift:207, Tests/FoundationModelsKanbanTests/Identity/TitleSlugRefTests.swift:79
+  timestamp: 2026-10-15T14:05:33.879727+00:00
+- actor: claude-code
+  id: 01m4zyfemj0hwhtj8a1fgf0xc1
+  text: |-
+    Review findings fixed (both reuse/reuse).
+    - SchemaDescriptionTests: new helper `places(ofInputsNamed:notNaming:)` takes the expected texts. It does the `count > 1` check and gives the places that miss a text. The same cause was also in `dependsOnInputsNameTheTitleSlug` and `boardArgumentsHaveDescriptions`, so all four tests now call the helper.
+    - Shared helper: `KanbanGraphTests.response(to:inRepoAt:)` runs one document on a new engine of the board of a repo. The instance `response(to:)` in SharedShortIDTests and in TitleSlugRefTests is removed. Both suites call the shared helper.
+    - TitleSlugRefTests: two more copies in the same file are removed. `countResponse(filter:)` replaces the two one-task filter tests' query-and-run pair, and `taskResponse(naming:)` replaces the two task-field tests' pair.
+    - Search of the other test files: no other copy of the helper. BoardMutationTests, AddUpdateTaskTests, and CommitTests have inline `execute(_, on: makeGraph(at:))` calls in tests that existed before. They are not helper copies, and this change does not touch them.
+  timestamp: 2026-10-15T14:11:53.618209+00:00
+- actor: claude-code
+  id: 01m4zyfgt85zd15dyqdkfc3f9t
+  text: |-
+    ### implement — changed
+    - evidence: 4 files — Tests/FoundationModelsKanbanTests/GraphQL/SchemaDescriptionTests.swift, Tests/FoundationModelsKanbanTests/Identity/TitleSlugRefTests.swift, Tests/FoundationModelsKanbanTests/Identity/SharedShortIDTests.swift, Tests/FoundationModelsKanbanTests/Tool/KanbanGraphTests.swift. `swift test`: 1459 tests in 112 suites passed. The only warning is the accepted SwiftPM "missing creator" warning. Both review findings are checked.
+    - next: /review
+  timestamp: 2026-10-15T14:11:55.848618+00:00
 depends_on:
 - 01M4X77PG6CNGC9JZYCN9WJGTY
 position_column: doing
@@ -67,3 +92,16 @@ Decided behavior:
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-15 08:58)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 9 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsKanbanTests/GraphQL/SchemaDescriptionTests.swift:207` `reuse/reuse` — `filterArgumentsNameTheRefForms` is a parallel copy of `filterArgumentsNameTheSigils` (lines 196-205). The two tests differ only in the list of strings they check, so the shared check should be a helper that takes the expected strings. Extract a helper such as `assertInputs(named:, description contains each of:)` and call it from both tests with `filterSigils` and `filterRefForms`.
+- [x] `Tests/FoundationModelsKanbanTests/Identity/TitleSlugRefTests.swift:79` `reuse/reuse` — The new `response(to:)` helper reimplements the same helper that already exists in SharedShortIDTests. Both run a document on a new engine of the same board with the same body, so the test suite keeps two copies of one behavior that can drift apart. Move the helper to `KanbanGraphTests` (or a shared test extension) as a single `response(to:directory:)`, and call it from both suites. Or have `TitleSlugRefTests` reuse `SharedShortIDTests.response` directly.

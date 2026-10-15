@@ -74,14 +74,6 @@ struct SharedShortIDTests {
         max(first, second)
     }
 
-    /// Runs one document on a new engine of the board.
-    ///
-    /// - Parameter document: The GraphQL document.
-    /// - Returns: The response JSON text.
-    func response(to document: String) async throws -> String {
-        try await KanbanGraphTests.execute(document, on: KanbanGraphTests.makeGraph(at: directory.url))
-    }
-
     /// Gives the `id` of the object of one root field of a response.
     ///
     /// - Parameters:
@@ -124,14 +116,16 @@ struct SharedShortIDTests {
     @Test("updateTask with the shared short id changes the live task with the lowest ULID, and gives a warning")
     func mutationWithSharedShortIDChangesLowestULID() async throws {
         let field = AddUpdateTaskTests.updateTask(first, with: #"title: "\#(Self.newTitle)""#)
-        let response = try await response(to: AddUpdateTaskTests.mutation(of: field))
+        let mutation = AddUpdateTaskTests.mutation(of: field)
+        let response = try await KanbanGraphTests.response(to: mutation, inRepoAt: directory.url)
         #expect(try Self.id(ofField: MutationName.updateTask, in: response) == Self.id(of: lowest))
         try expectSharedShortIDWarning(in: response)
     }
 
     @Test("A query with the shared short id gives the task with the lowest ULID, and gives a warning")
     func queryWithSharedShortIDGivesLowestULID() async throws {
-        let response = try await response(to: #"{ board { task(id: "\#(sharedReference)") { id } } }"#)
+        let query = #"{ board { task(id: "\#(sharedReference)") { id } } }"#
+        let response = try await KanbanGraphTests.response(to: query, inRepoAt: directory.url)
         let task = try KanbanGraphTests.object(named: "board", in: response)["task"] as? [String: Any]
         #expect(task?["id"] as? String == Self.id(of: lowest))
         try expectSharedShortIDWarning(in: response)
@@ -209,13 +203,13 @@ struct SharedShortIDTests {
     func uniqueShortIDStillResolves() async throws {
         let query = CommentTests.taskQuery(of: unique, selecting: "{ title }")
         let expected = #"{"data":{"board":{"task":{"title":"\#(Self.uniqueTitle)"}}}}"#
-        #expect(try await response(to: query) == expected)
+        #expect(try await KanbanGraphTests.response(to: query, inRepoAt: directory.url) == expected)
     }
 
     @Test("The full id of a task with the shared short id still names that task")
     func fullIDOfSharedShortIDOwnerResolves() async throws {
         let query = #"{ board { task(id: "\#(second.ulidString)") { title } } }"#
         let expected = #"{"data":{"board":{"task":{"title":"\#(Self.secondTitle)"}}}}"#
-        #expect(try await response(to: query) == expected)
+        #expect(try await KanbanGraphTests.response(to: query, inRepoAt: directory.url) == expected)
     }
 }
