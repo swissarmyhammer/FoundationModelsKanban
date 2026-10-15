@@ -32,6 +32,24 @@ comments:
     - evidence: 9 files — Sources/FoundationModelsKanban/GraphQL/UndoMutations.swift, Sources/FoundationModelsKanban/GraphQL/Errors.swift, Sources/FoundationModelsKanban/GraphQL/Schema.swift, Sources/FoundationModelsKanban/CrossRepo/RelatedBoards.swift, Sources/FoundationModelsKanban/Tool/KanbanHost.swift, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoCopyUndoTests.swift (new), Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoUndoTests.swift, Tests/FoundationModelsKanbanTests/GraphQL/KanbanErrorTests.swift. `swift test`: 1291 tests in 101 suites passed.
     - next: /review. Follow-up task ^wwntbag records the home-key limit.
   timestamp: 2026-10-15T01:52:49.565454+00:00
+- actor: claude-code
+  id: 01m4ymn24cpwszxywdr079j2pa
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 9 files
+    - test: green — swift test, 1291 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 0ef789b
+    - review: findings — Sources/FoundationModelsKanban/CrossRepo/RelatedBoards.swift:295
+  timestamp: 2026-10-15T02:00:57.228994+00:00
+- actor: claude-code
+  id: 01m4ymttngdna2t8txb2xmtec6
+  text: |-
+    Review finding fixed: RelatedBoards.swift duplication/duplication. A new private generic helper `answer(_:otherwise:)` returns `stored ?? (canLoad ? nil : empty)`. `resolution(ofBoard:)`, `copies`, and `loadedCopies(ofKey:)` now all use it. No other `canLoad` fallback is in the file. This is a refactor with no change in behavior, so the tests that exist cover it (TDD refactor step). Note: the `dump validators` file for one Swift file was 754K characters, so it was not read whole.
+
+    ### implement — changed
+    - evidence: 1 file — Sources/FoundationModelsKanban/CrossRepo/RelatedBoards.swift. `swift test`: 1291 tests in 101 suites passed; the only build warning is the accepted SwiftPM "missing creator" warning.
+    - next: /review
+  timestamp: 2026-10-15T02:04:06.192263+00:00
 depends_on:
 - 01M4X6ZBTA66TCPVYM41QR0ACD
 position_column: doing
@@ -65,3 +83,12 @@ Change:
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-14 20:56)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 9 file(s) reviewed, 6 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+- [x] `Sources/FoundationModelsKanban/CrossRepo/RelatedBoards.swift:295` `duplication/duplication` — The new `loadedCopies(ofKey:)` repeats the `canLoad` fallback that `resolution(ofBoard:)` and `copies` already use. The three accessors differ only by the stored dictionary and the default value. A change to the fallback rule must now be made in three places. Add one private generic helper, for example `func answer<T>(_ stored: T?, otherwise empty: T) -> T?`, that returns `stored ?? (canLoad ? nil : empty)`. Use it in all three accessors. This is a low-severity finding because each line is short.

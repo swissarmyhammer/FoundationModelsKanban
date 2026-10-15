@@ -277,13 +277,13 @@ struct RelatedBoards: Sendable {
     /// - Returns: The board, or `nil` when the engine did not resolve the ref yet. A value that cannot load gives
     ///   ``BoardResolution/notFound`` for an unknown ref.
     func resolution(ofBoard reference: String) -> BoardResolution? {
-        resolutions[reference] ?? (canLoad ? nil : .notFound)
+        answer(resolutions[reference], otherwise: .notFound)
     }
 
     /// The list of `Query.boards`, or `nil` when the engine did not scan for it yet. A value that cannot load gives
     /// an empty list.
     var copies: [ListedCopy]? {
-        listing ?? (canLoad ? nil : [])
+        answer(listing, otherwise: [])
     }
 
     /// Gives the copies with a key that the table of the host has loaded (plan.md §6.5, many boards).
@@ -292,7 +292,18 @@ struct RelatedBoards: Sendable {
     /// - Returns: The copies, or `nil` when the engine did not read the table for the key yet. A value that cannot
     ///   load gives an empty list.
     func loadedCopies(ofKey key: String) -> [BoardResolution]? {
-        keyCopies[key] ?? (canLoad ? nil : [])
+        answer(keyCopies[key], otherwise: [])
+    }
+
+    /// Gives the answer of a read from a stored value: the stored value when the engine found it, `nil` when the
+    /// engine can still load it, or the empty value when the value cannot load.
+    ///
+    /// - Parameters:
+    ///   - stored: The value that the engine stored, or `nil` when it stored none yet.
+    ///   - empty: The value to give when the value cannot load.
+    /// - Returns: The stored value, `nil` when the engine did not load the value yet, or `empty`.
+    private func answer<Value>(_ stored: Value?, otherwise empty: Value) -> Value? {
+        stored ?? (canLoad ? nil : empty)
     }
 
     /// Gives the loaded board of a resolved board ref.
