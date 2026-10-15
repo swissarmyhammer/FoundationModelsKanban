@@ -30,11 +30,20 @@ comments:
     - evidence: 4 files — Sources/FoundationModelsKanban/GraphQL/ColumnActorMutations.swift, Sources/FoundationModelsKanban/GraphQL/TaskOperationMutations.swift, Tests/FoundationModelsKanbanTests/Mutations/ColumnActorTests.swift, Tests/FoundationModelsKanbanTests/Mutations/TaskOperationTests.swift. `swift test`: 1445 tests in 111 suites passed, 0 failures; only the accepted SwiftPM "missing creator" warning.
     - next: /review
   timestamp: 2026-10-15T13:22:06.162968+00:00
+- actor: claude-code
+  id: 01m4zw1w84b8nxb9gsk275640h
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 4 files
+    - test: green — swift test, 1445 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 3c58cc8
+    - review: clean — none
+  timestamp: 2026-10-15T13:29:31.652893+00:00
 depends_on:
 - 01M4X6X6PS5P524DW45RBSSWN2
 - 01M4X764NWFQQH1Y10RFXKM3BC
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ff8280
 title: Keep the Rust behavior for addActor ensure, empty tag lists, and unknown before/after refs
 ---
 ## What

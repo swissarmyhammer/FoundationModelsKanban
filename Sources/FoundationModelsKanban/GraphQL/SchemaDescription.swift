@@ -15,11 +15,20 @@ enum SchemaDescription {
     private static let boardForms =
         "A board key, a repo directory name, a repo path, or a kanban://<board-key> URI."
 
-    /// The grammar of a filter (plan.md §6.3).
+    /// The rule for a task ref that is the slug of a task title (divergence.md C3, E4).
+    private static let taskTitleSlugRef = """
+        A task ref can also be the title slug of a task, for example fix-login-bug for the title Fix login bug. A \
+        ULID or a short id wins over a title slug. When two tasks have the title slug, the call uses the first \
+        (a live task, then the lowest id) and gives a \(RefResolver.sharedTitleSlugWarningCode) warning.
+        """
+
+    /// The grammar of a filter (plan.md §6.3, divergence.md Q25).
     private static let filterSyntax = """
-        Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id of a task also matches the tasks that \
-        depend on it. A virtual tag, for example #\(VirtualTag.ready.rawValue), is also a #tag atom. Join atoms \
-        with && (or a space), ||, and !, and group them with ( ).
+        Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or \
+        ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or \
+        title slug, and the tasks that depend on one of them. A virtual tag, for example \
+        #\(VirtualTag.ready.rawValue), is also a #tag atom. Join atoms with && (or a space), ||, and !, and group \
+        them with ( ).
         """
 
     // MARK: - Board refs
@@ -182,13 +191,14 @@ enum SchemaDescription {
     /// The `dependsOn` field of `AddTaskInput`.
     static let addTaskDependsOn = """
         The tasks that this task depends on. A short ref names a task of the board of the input. \
-        \(crossBoardDependency) A task URL in the body is also a dependency.
+        \(taskTitleSlugRef) \(crossBoardDependency) A task URL in the body is also a dependency.
         """
 
     /// The `dependsOn` field of `UpdateTaskInput`.
     static let updateTaskDependsOn = """
         The new list of the tasks that this task depends on. It replaces the old list, and removes from the body the \
-        task URLs that the list drops. A short ref names a task of the board of this task. \(crossBoardDependency)
+        task URLs that the list drops. A short ref names a task of the board of this task. \(taskTitleSlugRef) \
+        \(crossBoardDependency)
         """
 
     /// The `column` field of `UpdateTaskInput` (divergence.md E5).

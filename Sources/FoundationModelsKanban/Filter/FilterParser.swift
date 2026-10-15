@@ -11,7 +11,7 @@ import Parsing
 /// or_expr  = and_expr (("||"|"or"|"OR") and_expr)*
 /// and_expr = not_expr (("&&"|"and"|"AND")? not_expr)*      // two terms next to each other = AND
 /// not_expr = ("!"|"not"|"NOT") not_expr | atom
-/// atom     = ("#"|"@"|"^"|"%"|"~") body | url | "(" expr ")"
+/// atom     = ("#"|"@"|"%"|"~") body | "^"+ body | url | "(" expr ")"   // "^^short" is "^short"
 /// url      = "kanban://" body
 /// body     = [^ whitespace #@^%~$()&|!]+
 /// ```
@@ -207,6 +207,8 @@ extension FilterParser {
 
         /// Reads an atom with a sigil.
         ///
+        /// After the `^` sigil, each next `^` is part of the sigil, so `^^short` gives the same atom as `^short`.
+        ///
         /// - Parameters:
         ///   - kind: The kind of the sigil.
         ///   - input: The rest of the filter, at the sigil.
@@ -218,6 +220,10 @@ extension FilterParser {
         {
             let start = input
             input.removeFirst()
+            if kind == .ref {
+                // `^^short` is the `^short` form of a task after the `^` sigil (divergence.md Q25).
+                input = input.drop { character in character == kind.sigil }
+            }
             guard let body = Optionally({ FilterParser.Body() }).parse(&input) else {
                 throw FilterSyntaxError(problem: .missingBody(kind: kind), at: start[..<input.startIndex])
             }

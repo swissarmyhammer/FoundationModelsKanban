@@ -13,6 +13,13 @@ struct SchemaDescriptionTests {
     /// The sigils of the filter atoms that each `filter` description names (plan.md §6.3).
     static let filterSigils = ["#", "@", "^", "%", "~"]
 
+    /// The name of the title slug ref form in the descriptions (divergence.md Q25, C3).
+    static let titleSlugName = "title slug"
+
+    /// The forms of a `^` atom that each `filter` description names (divergence.md Q25): `^^short`, and the title
+    /// slug of a task.
+    static let filterRefForms = ["^^", titleSlugName]
+
     /// The `Task` fields that must have a description.
     static let describedTaskFields = ["dependsOn", "blockedBy", "unresolvedDependsOn", "ready", "virtualTags"]
 
@@ -194,6 +201,25 @@ struct SchemaDescriptionTests {
             let description = filter.description ?? ""
             return !Self.filterSigils.allSatisfy { sigil in description.contains(sigil) }
         }
+        #expect(missing.map(\.place) == [])
+    }
+
+    @Test("Each filter argument has a description that names the ^^short form and the title slug form")
+    func filterArgumentsNameTheRefForms() throws {
+        let filters = try Self.inputValues(named: "filter")
+        #expect(filters.count > 1)
+        let missing = filters.filter { filter in
+            let description = filter.description ?? ""
+            return !Self.filterRefForms.allSatisfy { form in description.contains(form) }
+        }
+        #expect(missing.map(\.place) == [])
+    }
+
+    @Test("Each dependsOn input field has a description that names the title slug of a task")
+    func dependsOnInputsNameTheTitleSlug() throws {
+        let dependsOn = try Self.inputValues(named: "dependsOn")
+        #expect(dependsOn.count > 1)
+        let missing = dependsOn.filter { field in !(field.description ?? "").contains(Self.titleSlugName) }
         #expect(missing.map(\.place) == [])
     }
 

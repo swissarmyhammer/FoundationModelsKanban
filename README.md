@@ -309,7 +309,9 @@ subscription { changes(filter: "#bug || ~comment") { txn ops updates { id type k
 - `~type` keeps the updates of one node type: `~task`, `~column`, `~tag`,
   `~actor`, `~comment`, or `~board`.
 - `^id` keeps the updates of one node. On a task, it also keeps the updates of
-  the tasks that depend on it.
+  the tasks that depend on it. The id can be a ULID, a short id (`^short` or
+  `^^short`), or the slug of a task title, for example `^fix-login-bug`. A
+  title slug matches each task with that slug.
 - A task atom (`#tag`, `@actor`, `%column`) matches only a task.
 - `history` and `changes` take no `type`, `node`, `actor`, or `derived`
   argument. To get the author of a change, read `actor` of the `Change`.

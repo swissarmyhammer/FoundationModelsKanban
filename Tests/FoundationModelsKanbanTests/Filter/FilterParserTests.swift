@@ -59,6 +59,26 @@ struct FilterParserTests {
         #expect(try FilterExpr(parsing: "^01ABC") == .atom(.ref, .name("01ABC")))
     }
 
+    @Test("A ^ after the ^ sigil is part of the sigil, so ^^short gives the short id", arguments: [
+        "^^01ABC", "^^^01ABC",
+    ])
+    func doubleSigilRefAtom(filter: String) throws {
+        #expect(try FilterExpr(parsing: filter) == .atom(.ref, .name("01ABC")))
+    }
+
+    @Test("A ^^ with no body gives the error of a missing body over the two sigils")
+    func doubleSigilWithNoBody() throws {
+        let filter = "^^"
+        #expect(throws: KanbanError.invalidFilter(
+            filter: filter,
+            position: 0..<filter.count,
+            detail: "`^` needs a node id",
+            example: "^ajv8v4t"
+        )) {
+            try FilterExpr(parsing: filter)
+        }
+    }
+
     @Test("A column atom")
     func columnAtom() throws {
         #expect(try FilterExpr(parsing: "%doing") == .atom(.column, .name("doing")))

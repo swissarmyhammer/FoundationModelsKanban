@@ -9,6 +9,9 @@ import Foundation
 ///   remote ref, but only when the caller accepts a ref to a node of a different board.
 /// - For a task or a comment: a full ULID, a short id, `^short`, or a unique ULID prefix. The compare ignores case,
 ///   and a canonical form wins over a prefix of the same characters (``ShortID/resolve(_:among:)``).
+/// - For a task only, after each ULID form: the slug of the title, or a title that gives the slug, for example
+///   `fix-login-bug` (divergence.md C3, E4). A title slug that more than one task has names the first match, the same
+///   as a shared short id, with a ``sharedTitleSlugWarningCode`` warning.
 /// - For a column or an actor: the slug, or a name that gives the slug (``Slug/normalizedText(of:)``).
 /// - For a tag: the slug, or a tag name that gives the slug (``TagName``). The resolve then follows the rename
 ///   redirect (plan.md §6.2), so a ref to an old slug gives the tag at the end of the rename chain.
@@ -40,6 +43,10 @@ struct RefResolver: Sendable {
     /// The code of the warning of a short id that more than one node has, in `extensions.warnings` (divergence.md
     /// Q20). The resolve names the first match and gives this warning.
     static let sharedShortIDWarningCode = "SHARED_SHORT_ID"
+
+    /// The code of the warning of a title slug that more than one task has, in `extensions.warnings` (divergence.md
+    /// C3). The resolve names the first match and gives this warning.
+    static let sharedTitleSlugWarningCode = "SHARED_TITLE_SLUG"
 
     /// The graph of the target board.
     let graph: Graph
@@ -104,7 +111,8 @@ struct RefResolver: Sendable {
     /// Finds the node of any type that a forgiving ref names in this board, live or tombstoned (plan.md §3.3, rule 3).
     ///
     /// A full URI and the stored local form `<type>/<id>` name the type of their node. A short form tries the node
-    /// types of ``shortFormTypes`` in order, and the first type with a match gives the node.
+    /// types of ``shortFormTypes`` in order, and the first type with a match gives the node. The title slug of a task
+    /// comes last, after each other slug, so a column slug that is the same text gives the column (divergence.md E4).
     ///
     /// - Parameter reference: The ref as the caller wrote it. White space at the two ends is ignored.
     /// - Returns: The local ref of the node, or `nil` when no node has the ref, the URI does not parse, or the URI
@@ -133,12 +141,18 @@ struct RefResolver: Sendable {
     ///   ULID.
     private func anyLocalRef(forKey key: String, writtenAs reference: String) throws(KanbanError) -> LocalRef? {
         for type in Self.shortFormTypes {
-            let lookup = Lookup(reference: reference, type: type, includesTombstones: true, ulidTypes: Self.ulidTypes)
+            let lookup = Lookup(
+                reference: reference,
+                type: type,
+                includesTombstones: true,
+                ulidTypes: Self.ulidTypes,
+                matchesTitleSlug: false
+            )
             if let ref = try candidateRef(forKey: key, in: lookup) {
                 return ref
             }
         }
-        return nil
+        return titleSlugRef(for: key, in: Lookup(reference: reference, type: .task, includesTombstones: true))
     }
 }
 
@@ -159,6 +173,9 @@ extension RefResolver {
         /// The node types of the candidates of a ULID form.
         let ulidTypes: Set<PatchNodeType>
 
+        /// `true` when a task ref that is no ULID form can name a task by the slug of its title (divergence.md C3).
+        let matchesTitleSlug: Bool
+
         /// Makes a resolve.
         ///
         /// - Parameters:
@@ -166,16 +183,21 @@ extension RefResolver {
         ///   - type: The node type that the caller expects.
         ///   - includesTombstones: `true` when the ref can name a tombstone.
         ///   - ulidTypes: The node types of the candidates of a ULID form, or `nil` for the expected type only.
+        ///   - matchesTitleSlug: `true` when a task ref that is no ULID form can name a task by the slug of its
+        ///     title. A resolve with no expected type sets `false`, and tries the title slug after each other slug
+        ///     (divergence.md E4).
         init(
             reference: String,
             type: PatchNodeType,
             includesTombstones: Bool,
-            ulidTypes: Set<PatchNodeType>? = nil
+            ulidTypes: Set<PatchNodeType>? = nil,
+            matchesTitleSlug: Bool = true
         ) {
             self.reference = reference
             self.type = type
             self.includesTombstones = includesTombstones
             self.ulidTypes = ulidTypes ?? [type]
+            self.matchesTitleSlug = matchesTitleSlug
         }
 
         /// The `NOT_FOUND` error of the ref.
@@ -379,9 +401,32 @@ extension RefResolver {
             return ref(of: .actor(slug: Slug.normalizedText(of: key)), in: lookup)
         case .tag:
             return tagRef(named: key, in: lookup)
-        case .task, .comment:
+        case .task:
+            return try ulidRef(for: key, in: lookup) ?? titleSlugRef(for: key, in: lookup)
+        case .comment:
             return try ulidRef(for: key, in: lookup)
         }
+    }
+
+    /// Finds the task whose title has the slug of a short form (divergence.md C3).
+    ///
+    /// A title slug that more than one task has names the first match, with the same order and the same kind of
+    /// warning as a short id that more than one task has (``firstMatch(among:writtenAs:sharing:)``).
+    ///
+    /// - Parameters:
+    ///   - key: The short form: the title slug, or a title that gives the slug.
+    ///   - lookup: The resolve.
+    /// - Returns: The local ref of the task, or `nil` when the lookup does not match title slugs, or no task that the
+    ///   lookup accepts has the title slug.
+    private func titleSlugRef(for key: String, in lookup: Lookup) -> LocalRef? {
+        guard lookup.matchesTitleSlug else {
+            return nil
+        }
+        let owners = graph.taskSlots(withTitleSlugOf: key).compactMap { slot in ref(at: slot, in: lookup) }
+        guard owners.count > 1 else {
+            return owners.first
+        }
+        return firstMatch(among: owners, writtenAs: lookup.reference, sharing: .titleSlug)
     }
 
     /// Finds the tag that a tag name names, after the rename redirect.
@@ -413,7 +458,7 @@ extension RefResolver {
     ///   - key: The full ULID, the short id, either of these with a leading ``ShortID/sigil``, or a ULID prefix.
     ///   - lookup: The resolve.
     /// - Returns: The local ref of the node, or `nil` when no candidate matches. A short id of more than one candidate
-    ///   gives the first match (``firstMatch(among:writtenAs:)``).
+    ///   gives the first match (``firstMatch(among:writtenAs:sharing:)``).
     /// - Throws: ``KanbanError/ambiguousID(reference:matches:)`` when the key is a ULID prefix of more than one
     ///   candidate.
     private func ulidRef(for key: String, in lookup: Lookup) throws(KanbanError) -> LocalRef? {
@@ -426,7 +471,8 @@ extension RefResolver {
         case .notFound:
             return nil
         case .shared(let ulids):
-            return firstMatch(among: Self.refs(withULIDs: ulids, among: candidates), writtenAs: lookup.reference)
+            let owners = Self.refs(withULIDs: ulids, among: candidates)
+            return firstMatch(among: owners, writtenAs: lookup.reference, sharing: .shortID)
         case .ambiguous(let ulids):
             throw .ambiguousID(reference: lookup.reference, matches: ambiguousMatches(of: ulids, among: candidates))
         }
@@ -471,23 +517,63 @@ extension RefResolver {
         return candidates.filter { candidate in candidate.localID.map(matched.contains) ?? false }
     }
 
-    /// Picks the first match of a short id that more than one node has, and adds a warning that lists the matches
-    /// (divergence.md Q20).
+    /// The form of a ref that more than one node can have: a short id (divergence.md Q20), or the slug of a task
+    /// title (divergence.md C3).
+    private enum SharedForm {
+        /// A short id that more than one ULID has.
+        case shortID
+
+        /// A title slug that more than one task has.
+        case titleSlug
+
+        /// The name of the form in the warning, for example `short id`.
+        var name: String {
+            switch self {
+            case .shortID: "short id"
+            case .titleSlug: "title slug"
+            }
+        }
+
+        /// The name of each match in the warning, for example `id`.
+        var matchName: String {
+            switch self {
+            case .shortID: "id"
+            case .titleSlug: "task"
+            }
+        }
+
+        /// The code of the warning.
+        var warningCode: String {
+            switch self {
+            case .shortID: RefResolver.sharedShortIDWarningCode
+            case .titleSlug: RefResolver.sharedTitleSlugWarningCode
+            }
+        }
+    }
+
+    /// Picks the first match of a ref that more than one node has, and adds a warning that lists the matches
+    /// (divergence.md Q20 and C3).
     ///
     /// The order is the same on each call: a live node comes before a tombstone, then the lowest ULID
     /// (``precedes(_:_:)``). The warning goes to the collector of the run (``ResolverWarnings/current``), so that the
     /// agent learns that the call used one of more nodes, and how to name a different one.
     ///
     /// - Parameters:
-    ///   - owners: The local refs of the nodes that have the short id.
+    ///   - owners: The local refs of the nodes that have the ref.
     ///   - reference: The ref as the caller wrote it, for the warning.
+    ///   - form: The form of the ref that the nodes share.
     /// - Returns: The first match, or `nil` when the list is empty.
-    private func firstMatch(among owners: [LocalRef], writtenAs reference: String) -> LocalRef? {
+    private func firstMatch(
+        among owners: [LocalRef],
+        writtenAs reference: String,
+        sharing form: SharedForm
+    ) -> LocalRef? {
         let ordered = owners.sorted(by: precedes)
         guard let first = ordered.first else {
             return nil
         }
-        ResolverWarnings.current?.add(Self.sharedShortIDWarning(writtenAs: reference, picking: first, of: ordered))
+        let warning = Self.sharedRefWarning(writtenAs: reference, sharing: form, picking: first, of: ordered)
+        ResolverWarnings.current?.add(warning)
         return first
     }
 
@@ -514,23 +600,25 @@ extension RefResolver {
         graph.slot(for: ref).flatMap(graph.node(at:))?.state.fields.isDeleted ?? false
     }
 
-    /// Makes the warning of the pick of the first match of a shared short id.
+    /// Makes the warning of the pick of the first match of a shared short id or title slug.
     ///
     /// - Parameters:
     ///   - reference: The ref as the caller wrote it.
+    ///   - form: The form of the ref that the matches share.
     ///   - first: The local ref of the first match.
     ///   - ordered: The local refs of the matches, in the order of the pick.
     /// - Returns: The warning, with the ULID of each match.
-    private static func sharedShortIDWarning(
+    private static func sharedRefWarning(
         writtenAs reference: String,
+        sharing form: SharedForm,
         picking first: LocalRef,
         of ordered: [LocalRef]
     ) -> ResponseWarning {
         let ids = ordered.compactMap(\.localID).joined(separator: KanbanError.listSeparator)
-        let message = "The short id \"\(reference)\" matches more than one id: \(ids). The call used "
-            + "\(first.localID ?? ""): a live node comes first, and then the lowest id. Send the full id to use a "
-            + "different node."
-        return ResponseWarning(message: message, code: sharedShortIDWarningCode)
+        let message = "The \(form.name) \"\(reference)\" matches more than one \(form.matchName): \(ids). The call "
+            + "used \(first.localID ?? ""): a live node comes first, and then the lowest id. Send the full id to use "
+            + "a different node."
+        return ResponseWarning(message: message, code: form.warningCode)
     }
 
     /// Gives the matches of an ambiguous ULID prefix for its `AMBIGUOUS_ID` error (divergence.md P5).
@@ -560,5 +648,27 @@ extension RefResolver {
     /// - Returns: The title, or `nil` when the node is not a task, for example a comment.
     private func title(of ref: LocalRef) -> String? {
         graph.slot(for: ref).flatMap { slot in graph.node(at: slot, as: TaskNode.self) }?.title
+    }
+}
+
+// MARK: - Title slugs
+
+extension Graph {
+    /// Finds each task whose title has the slug of a name, live or tombstoned (divergence.md Q25, C3).
+    ///
+    /// The resolve of a task ref and the `^` filter atom both read it, so that the two agree on which tasks have a
+    /// title slug. The slug rule is ``Slug/normalizedText(of:)``, so `Fix login bug`, `fix-login-bug`, and
+    /// `^fix-login-bug` all give `fix-login-bug`.
+    ///
+    /// - Parameter name: The title slug, or a title that gives the slug.
+    /// - Returns: The slots of the tasks, in slot order. A name that gives an empty slug gives no slots.
+    func taskSlots(withTitleSlugOf name: String) -> [Int] {
+        let slug = Slug.normalizedText(of: name)
+        guard !slug.isEmpty else {
+            return []
+        }
+        return allSlots.filter { slot in
+            node(at: slot, as: TaskNode.self).map { task in Slug.normalizedText(of: task.title) == slug } ?? false
+        }
     }
 }

@@ -15,8 +15,10 @@ import Foundation
 /// - `^id` matches the task itself, and each task that depends on it, from an edge or a dependency marker. The value
 ///   can be a full ULID, a short id, or a ULID prefix. As in Rust, the value resolves among the task and its
 ///   dependencies in this board (``ShortID/resolve(_:among:)``), so a prefix that is ambiguous there matches nothing,
-///   and a short id that more than one of them has matches. On a node that is not a task, `^id` matches the node
-///   that the value names: the forgiving ref of ``RefResolver/anyLocalRef(for:)``, or the URL of the node.
+///   and a short id that more than one of them has matches. The value can also be the slug of a task title, for
+///   example `^fix-login-bug` (divergence.md Q25): each task with that title slug matches, and each task that depends
+///   on one of them (divergence.md C3; Rust keeps only the last task). On a node that is not a task, `^id` matches
+///   the node that the value names: the forgiving ref of ``RefResolver/anyLocalRef(for:)``, or the URL of the node.
 /// - `%column` matches a task that shows in a live column whose slug, or the slug of whose name, is the slug of the
 ///   value. A task with no live column shows in the first column (``ColumnOrder``).
 /// - `~type` matches each node of the node type that the value names, for example `~comment`.
@@ -332,11 +334,44 @@ extension FilterCompiler {
     private func taskRefTest(naming target: AtomTarget?) -> NodeTest {
         switch target {
         case .local(let reference)?:
-            { slot in isReferenced(taskAt: slot, by: reference) }
+            localTaskRefTest(naming: reference)
         case .remote(let uri)?:
             dependentTest(onRemoteTask: uri)
         case nil:
             Self.noMatch
+        }
+    }
+
+    /// Makes the test of a `^id` atom on a task, for a value that names a task of this board.
+    ///
+    /// A task matches by a ULID form (``isReferenced(taskAt:by:)``), or by the slug of a task title (divergence.md
+    /// Q25): each task whose title has the slug of the value matches, and each task that depends on one of them. The
+    /// filter matches all of them (divergence.md C3), where Rust keeps only the last task with the slug.
+    ///
+    /// - Parameter reference: The value: a ULID form, a title slug, or a title that gives the slug.
+    /// - Returns: The test.
+    private func localTaskRefTest(naming reference: String) -> NodeTest {
+        let titled = Set(graph.taskSlots(withTitleSlugOf: reference))
+        return { slot in
+            isReferenced(taskAt: slot, by: reference) || isTask(at: slot, orDependentOfTaskAmong: titled)
+        }
+    }
+
+    /// Tells if a task is one of some tasks, or depends on one of them in this board.
+    ///
+    /// - Parameters:
+    ///   - slot: The slot of the task.
+    ///   - taskSlots: The slots of the tasks.
+    /// - Returns: `true` when the task is one of the tasks, or a dependency of the task resolves to one of them.
+    private func isTask(at slot: Int, orDependentOfTaskAmong taskSlots: Set<Int>) -> Bool {
+        guard !taskSlots.isEmpty else {
+            return false
+        }
+        return taskSlots.contains(slot) || readiness.dependencies(ofTaskAt: slot).contains { target in
+            guard case .slot(let dependency) = target else {
+                return false
+            }
+            return taskSlots.contains(dependency)
         }
     }
 

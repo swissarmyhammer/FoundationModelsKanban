@@ -214,6 +214,14 @@ struct KanbanToolTests {
         #expect(description.contains(KanbanTool.storedLocalRefExample))
     }
 
+    @Test("The description tells that a task ref can be a title slug, and that a filter takes ^^short (Q25, C3)")
+    func descriptionNamesTheTitleSlugAndDoubleSigil() throws {
+        let description = try Self.makeTool(inRepoAt: TemporaryDirectory().url).description
+        #expect(description.contains(KanbanTool.titleSlugRefExample))
+        #expect(description.contains(SchemaDescriptionTests.titleSlugName))
+        #expect(description.contains("^^"))
+    }
+
     @Test("The history example of the description runs, and its filter keeps only the task updates")
     func historyExampleRuns() async throws {
         #expect(try Self.makeTool(inRepoAt: TemporaryDirectory().url).description.contains(KanbanTool.historyExample))
