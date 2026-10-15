@@ -19,6 +19,9 @@ struct SchemaDescriptionTests {
     /// The name of the removed virtual tag of the reverse dependency (divergence.md Q1). No description can name it.
     static let removedVirtualTag = "BLOCKING"
 
+    /// The field of a connection type that holds the edges. Each object type with this field is a connection type.
+    static let connectionEdgesField = "edges"
+
     /// The introspection query that reads the descriptions of the fields of `Task` and of `AddTaskInput`.
     static let introspectionQuery = """
         { task: __type(name: "Task") { fields { name description } } \
@@ -112,7 +115,42 @@ struct SchemaDescriptionTests {
         .compactMap { description in description }
     }
 
+    /// Gives the named type of a field type, and tells if the field type is a list.
+    ///
+    /// - Parameter type: The type of a field.
+    /// - Returns: The name of the named type, and `true` when the type is a list or a non-null list.
+    static func shape(of type: any GraphQLType) -> (name: String?, isList: Bool) {
+        let isList = type is GraphQLList || (type as? GraphQLNonNull)?.ofType is GraphQLList
+        return (getNamedType(type: type)?.name, isList)
+    }
+
+    /// Gives each connection type of the public schema: each object type with an `edges` field.
+    ///
+    /// - Returns: The connection types.
+    /// - Throws: An error when the schema cannot be made, or a type gives no fields.
+    static func connectionTypes() throws -> [GraphQLObjectType] {
+        try schemaTypes().compactMap { type in type as? GraphQLObjectType }.filter { type in
+            try type.fields()[connectionEdgesField] != nil
+        }
+    }
+
     // MARK: - Tests
+
+    @Test("Each connection type has a described nodes field: a list of the node type of its edges")
+    func connectionTypesHaveDescribedNodes() throws {
+        let connections = try Self.connectionTypes()
+        #expect(!connections.isEmpty)
+        for connection in connections {
+            let fields = try connection.fields()
+            let edges = try #require(fields[Self.connectionEdgesField])
+            let edge = try #require(getNamedType(type: edges.type) as? GraphQLObjectType)
+            let node = try #require(try edge.fields()["node"])
+            let nodes = try #require(fields["nodes"], "\(connection.name) has no nodes field")
+            #expect(Self.shape(of: nodes.type).name == Self.shape(of: node.type).name)
+            #expect(Self.shape(of: nodes.type).isList)
+            #expect(!(nodes.description ?? "").isEmpty)
+        }
+    }
 
     @Test("Introspection of Task.dependsOn names the full kanban:// URI of a task on a different board")
     func taskDependsOnNamesTheURI() async throws {

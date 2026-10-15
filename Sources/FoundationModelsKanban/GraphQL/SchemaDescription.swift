@@ -101,6 +101,14 @@ enum SchemaDescription {
         #\(VirtualTag.ready.rawValue).
         """
 
+    // MARK: - Connection fields
+
+    /// The `nodes` field of a connection type, for example `TaskConnection` (divergence.md §4).
+    static let connectionNodes = """
+        The nodes of the page, in the same order as edges. Use it in place of edges { node } when you do not need \
+        the cursor of each node.
+        """
+
     // MARK: - Board fields
 
     /// The `Board.nextTask` field.

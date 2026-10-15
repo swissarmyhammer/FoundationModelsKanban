@@ -205,6 +205,8 @@ The goal: each argument and each input field has **one canonical name**, plus sy
 
 **Rule from the user: be forgiving on synonyms.** The tables in 4.2 and 4.3 are the minimum, not the full list. When a name that an agent can send has only one possible meaning in that position, accept it. Refuse a name only when it can mean two different fields (`AMBIGUOUS_NAME`) or when it means no field.
 
+- **Connection `nodes` (from the "very forgiving" principle).** Each connection type, for example `TaskConnection`, also has `nodes`: the list of the edge nodes. Agents often send `{ nodes { … } }` in place of `{ edges { node { … } } }`.
+
 The matcher (`S/GraphQL/NameMatcher.swift`, `S/GraphQL/NameRewrite.swift`, and the alias table at `S/GraphQL/Schema.swift:1002-1013`) tries these steps in this order:
 
 1. Exact match.

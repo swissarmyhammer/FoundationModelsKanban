@@ -81,10 +81,19 @@ comments:
     - evidence: 2 files — Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift (type lookup by canonical name in rewrittenFields), Tests/FoundationModelsKanbanTests/GraphQL/VariableRewriteTests.swift (takenKeyRewritesItsNestedValue). swift test: 1334 passed, 0 failed; only the accepted SwiftPM "missing creator" warning.
     - next: /review
   timestamp: 2026-10-15T04:48:14.613239+00:00
+- actor: claude-code
+  id: 01m4yyek5nsh5t324z600dmfsp
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — 2 files (1 finding fixed, 1 new test)
+    - test: green — swift test, 1334 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: fdcf243
+    - review: clean — none
+  timestamp: 2026-10-15T04:52:11.061482+00:00
 depends_on:
 - 01M4X7471GDT9W0J6PWBQTQ6H3
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: f580
 title: Apply the name rewrite to the keys in variables at all depths
 ---
 ## What

@@ -803,6 +803,11 @@ struct TaskConnection: Sendable {
 
     /// The number of tasks in the full list.
     let totalCount: Int
+
+    /// The tasks of the page, with no cursor: the node of each edge, in the same order (divergence.md §4).
+    var nodes: [TaskObject] {
+        edges.map(\.node)
+    }
 }
 
 /// One task of a page, as the GraphQL `TaskEdge` type.
@@ -948,6 +953,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             }
             Type(TaskConnection.self) {
                 Field("edges", at: \.edges)
+                Field("nodes", at: \.nodes).description(SchemaDescription.connectionNodes)
                 Field("pageInfo", at: \.pageInfo)
                 Field("totalCount", at: \.totalCount)
             }

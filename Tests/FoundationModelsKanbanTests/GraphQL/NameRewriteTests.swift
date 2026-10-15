@@ -5,7 +5,8 @@ import Testing
 @testable import FoundationModelsKanban
 
 /// Tests the name rewrite of a parsed document (plan.md §4.5, §12 items 14 and 16): each position of a name, the
-/// response key, ties, the root move, and the archive and restore verbs.
+/// response key, ties, the root move, the root query verbs, the verbs for the noun `board`, and the archive and restore
+/// verbs.
 ///
 /// The position tests run the rewriter on the public schema and read the text that it gives. The other tests run the
 /// document through the public schema or an engine.
@@ -114,17 +115,19 @@ struct NameRewriteTests {
     ///   - document: The document under test.
     ///   - reference: The document that gives the expected result.
     ///   - key: The key of the expected result in the `data` of the reference, or `nil` for all of `data`.
+    ///   - search: The task search of the two calls. The default search has no task.
     /// - Returns: The `data` of the document under test.
     /// - Throws: An error when a response has no `data` object, or the reference has no object at `key`.
     @discardableResult
     private static func expectSameData(
         of document: String,
         as reference: String,
-        under key: String? = nil
+        under key: String? = nil,
+        searchingWith search: TaskSearch = TaskSearch(embeddingWith: nil)
     ) async throws -> [String: Any] {
         let fixture = try QueryFixture()
-        let actual = try await data(of: fixture.respond(to: document))
-        var expected = try await data(of: fixture.respond(to: reference))
+        let actual = try await data(of: fixture.respond(to: document, searchingWith: search))
+        var expected = try await data(of: fixture.respond(to: reference, searchingWith: search))
         if let key {
             expected = try #require(expected[key] as? [String: Any])
         }
@@ -272,7 +275,9 @@ struct NameRewriteTests {
         arguments: [("tasks", "tasks", " { totalCount }"), ("Tasks", "tasks", " { totalCount }"),
                     ("next_task", "nextTask", " { id }"), ("summaries", "summary", " { total }"),
                     ("description", "body", ""), ("columnz", "columns", " { name }"),
-                    ("history", "history", " { txn }")]
+                    ("history", "history", " { txn }"), ("getTask", "task", #"(id: "\#(Self.taskRef)") { title }"#),
+                    ("listTasks", "tasks", " { totalCount }"), ("listColumns", "columns", " { name }"),
+                    ("search", "searchTasks", #"(query: "x") { score }"#), ("next", "nextTask", " { id }")]
     )
     func rootFieldMovesIntoBoard(written: String, canonical: String, selection: String) throws {
         let rewritten = try Self.rewritten(from: "{ \(written)\(selection) }")
@@ -320,11 +325,80 @@ struct NameRewriteTests {
         )
     }
 
-    @Test("A root field of the query type stays at the root")
-    func queryFieldStaysAtRoot() throws {
-        let rewritten = try Self.rewritten(from: "{ Board { name } }")
-        #expect(rewritten.text == "{ Board: board { name } }")
-        #expect(rewritten.rewrites == [NameRewrite(from: "Board", to: "board", path: ["Board"])])
+    @Test("A root field of the query type stays at the root", arguments: ["Board", "getBoard", "showBoard"])
+    func queryFieldStaysAtRoot(written: String) throws {
+        let rewritten = try Self.rewritten(from: "{ \(written) { name } }")
+        #expect(rewritten.text == "{ \(written): board { name } }")
+        #expect(rewritten.rewrites == [NameRewrite(from: written, to: "board", path: [written])])
+    }
+
+    @Test("A root query verb in a fragment definition on the query type moves into board")
+    func fragmentQueryVerbMovesIntoBoard() throws {
+        let rewritten = try Self.rewritten(from: "{ ...Q } fragment Q on Query { listTasks { totalCount } }")
+        let moved = "\(Self.firstMoveKey): board { listTasks: tasks { totalCount } }"
+        #expect(rewritten.text == "{ ...Q } fragment Q on Query { \(moved) }")
+        #expect(rewritten.rewrites == [NameRewrite(from: "listTasks", to: "board.tasks", path: ["Q", "listTasks"])])
+    }
+
+    @Test("{ getTask(id:) { title } } gives the title of the task under getTask")
+    func getTaskGivesTask() async throws {
+        let ref = QueryFixture.sigilRef(of: ReadinessFixture.first)
+        let data = try await Self.expectSameData(
+            of: #"{ getTask(id: "\#(ref)") { title } }"#,
+            as: #"{ board { getTask: task(id: "\#(ref)") { title } } }"#,
+            under: "board"
+        )
+        #expect(data as? [String: [String: String]] == ["getTask": ["title": QueryFixture.firstTitle]])
+    }
+
+    @Test("{ listTasks { … } } gives the result of board { tasks }, under data.listTasks")
+    func listTasksGivesTasks() async throws {
+        let data = try await Self.expectSameData(
+            of: "{ listTasks\(Self.taskListSelection) }",
+            as: "{ board { listTasks: tasks\(Self.taskListSelection) } }",
+            under: "board"
+        )
+        #expect(data.keys.sorted() == ["listTasks"])
+    }
+
+    @Test("{ listTasks { nodes { id } } } gives the id of each task of board { tasks }, under data.listTasks.nodes")
+    func listTasksNodesGivesEachTask() async throws {
+        let data = try await Self.expectSameData(
+            of: "{ listTasks { nodes { id } } }",
+            as: "{ board { listTasks: tasks { nodes { id } } } }",
+            under: "board"
+        )
+        let listTasks = try #require(data["listTasks"] as? [String: Any])
+        let nodes = try #require(listTasks["nodes"] as? [[String: String]])
+        #expect(nodes.count == QueryResolverTests.taskCount)
+    }
+
+    @Test("{ getBoard { name } } gives the name of the board under getBoard")
+    func getBoardGivesBoard() async throws {
+        let data = try await Self.data(of: QueryFixture().respond(to: "{ getBoard { name } }"))
+        #expect(data as? [String: [String: String]] == ["getBoard": ["name": QueryFixture.boardName]])
+    }
+
+    @Test("{ search(query:) { … } } gives the hits of board { searchTasks }, under data.search")
+    func searchGivesSearchTasks() async throws {
+        let arguments = #"(query: "\#(TaskSearchTests.titleWord)") { task { title } }"#
+        let data = try await Self.expectSameData(
+            of: "{ search\(arguments) }",
+            as: "{ board { search: searchTasks\(arguments) } }",
+            under: "board",
+            searchingWith: QueryFixture().makeSearch()
+        )
+        #expect(try !#require(data["search"] as? [Any]).isEmpty)
+    }
+
+    @Test("{ next { id } } gives the result of board { nextTask }, under data.next")
+    func nextGivesNextTask() async throws {
+        let data = try await Self.expectSameData(
+            of: "{ next { id } }",
+            as: "{ board { next: nextTask { id } } }",
+            under: "board"
+        )
+        #expect(data.keys.sorted() == ["next"])
     }
 
     @Test("{ tasks } gives the same result as { board { tasks } }, under data.tasks")
@@ -432,14 +506,16 @@ struct NameRewriteTests {
         #expect(response == tagged + Self.extensionsSuffix(rewrite: rewrite))
     }
 
-    @Test("createBoard does not map to initBoard, and writes nothing")
-    func createBoardDoesNotMapToInitBoard() async throws {
-        let response = try await ColumnActorTests.respondWritingNothing(
-            to: #"mutation { createBoard(input: { name: "x" }) { id } }"#,
-            in: try TemporaryDirectory()
-        )
-        let message = try Self.firstErrorMessage(of: response)
-        #expect(message.hasPrefix(#"Cannot query field "createBoard" on type "Mutation"."#))
+    @Test("createBoard and newBoard run initBoard through execute, under the response key that the caller wrote",
+          arguments: ["createBoard", "newBoard"])
+    func createAndNewBoardRunInitBoard(name: String) async throws {
+        let directory = try TemporaryDirectory()
+        let mutation = "mutation { \(name)(\(BoardMutationTests.boardInput)) { name body } }"
+        let (root, response) = try await BoardMutationTests.execute(mutation, onEmptyRepoIn: directory)
+        let rewrite = #"{"from":"\#(name)","path":["\#(name)"],"to":"initBoard"}"#
+        let data = #"{"data":{"\#(name)":\#(BoardMutationTests.boardJSON)}"#
+        #expect(response == data + Self.extensionsSuffix(rewrite: rewrite))
+        #expect(try BoardMutationTests.storedRefs(inRepoAt: root) == BoardMutationTests.initializedRefs)
     }
 
     @Test("archiveTask runs deleteTask through execute")

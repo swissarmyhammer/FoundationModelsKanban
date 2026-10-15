@@ -139,6 +139,19 @@ struct QueryResolverTests {
         #expect(!secondPage.pageInfo.hasNextPage)
     }
 
+    @Test("The nodes of a task page are the node of each edge, in the same order (divergence.md §4)")
+    func nodesAreTheNodeOfEachEdge() async throws {
+        let response = try await QueryFixture().respond(
+            to: "{ board { tasks(first: \(Self.pageSize)) { nodes { id } edges { node { id } } } } }"
+        )
+        let board = try #require(try NameRewriteTests.data(of: response)["board"] as? [String: Any])
+        let tasks = try #require(board["tasks"] as? [String: Any])
+        let nodes = try #require(tasks["nodes"] as? [[String: String]])
+        let edges = try #require(tasks["edges"] as? [[String: [String: String]]])
+        #expect(nodes.count == Self.pageSize)
+        #expect(nodes == edges.compactMap { edge in edge["node"] })
+    }
+
     @Test("The tasks of the board are in column order, and then in ordinal order in a column")
     func tasksAreInColumnOrderThenOrdinalOrder() async throws {
         var fixture = try QueryFixture()

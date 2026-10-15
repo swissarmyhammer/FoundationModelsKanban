@@ -371,7 +371,7 @@ private struct RewriteWalk {
     /// - Throws: An error from the schema when a type gives no fields.
     private mutating func visit(_ operation: OperationDefinition) throws {
         let (root, position): (GraphQLObjectType?, NamePosition) = switch operation.operation {
-        case .query: (schema.queryType, .anyOther)
+        case .query: (schema.queryType, .topLevelQuery)
         case .mutation: (schema.mutationType, .topLevelMutation)
         case .subscription: (schema.subscriptionType, .anyOther)
         }
@@ -380,15 +380,16 @@ private struct RewriteWalk {
 
     /// Visits each selection of a selection set.
     ///
-    /// When the selections read the query type, a field that only `Board` has moves into `board`. This applies to
-    /// the root fields of a `query`, and to the fields of an inline fragment or a fragment definition on the query
-    /// type. No field gives the query type, so these fields are always at the root of `data`.
+    /// When the selections read the query type, a field that only `Board` has moves into `board`, and each field
+    /// gets the query verbs (``NamePosition/topLevelQuery``). This applies to the root fields of a `query`, and to
+    /// the fields of an inline fragment or a fragment definition on the query type. No field gives the query type,
+    /// so these fields are always at the root of `data`.
     ///
     /// - Parameters:
     ///   - selectionSet: The selection set.
     ///   - parent: The type that the selections read, or `nil` when the type is not known.
     ///   - path: The path to the selection set.
-    ///   - position: The position of a field of the selection set.
+    ///   - position: The position of a field of the selection set when the selections do not read the query type.
     /// - Throws: An error from the schema when a type gives no fields.
     private mutating func visitSelections(
         of selectionSet: SelectionSet,
@@ -397,11 +398,12 @@ private struct RewriteWalk {
         as position: NamePosition
     ) throws {
         let readsQuery = schema.queryType.map { query in parent?.name == query.name } ?? false
+        let fieldPosition: NamePosition = readsQuery ? .topLevelQuery : position
         for selection in selectionSet.selections {
             if readsQuery, let field = selection as? Field, try moveIntoBoard(field, at: path) {
                 continue
             }
-            try visit(selection, on: parent, at: path, as: position)
+            try visit(selection, on: parent, at: path, as: fieldPosition)
         }
     }
 
@@ -463,7 +465,7 @@ private struct RewriteWalk {
     }
 
     /// Moves a root query field into a `board { … }` field when the query type has no field with the name, and
-    /// `Board` has one.
+    /// `Board` has one. Both matches get the query verbs, so `getTask` moves into `board` as `task`.
     ///
     /// - Parameters:
     ///   - field: A field that reads the query type.
@@ -474,7 +476,7 @@ private struct RewriteWalk {
         let name = WrittenName(field.name)
         guard !name.text.hasPrefix(Self.introspectionPrefix), let query = schema.queryType,
               let rootFields = try Self.fields(of: query),
-              NameMatcher.match(for: name.text, among: Self.candidates(rootFields, on: query), at: .anyOther)
+              NameMatcher.match(for: name.text, among: Self.candidates(rootFields, on: query), at: .topLevelQuery)
                 == .notFound,
               let board = rootFields[Self.boardField],
               let boardType = getNamedType(type: board.type),
@@ -482,7 +484,7 @@ private struct RewriteWalk {
               let canonical = canonicalName(
                   of: name,
                   among: Self.candidates(boardFields, on: boardType),
-                  at: .anyOther
+                  at: .topLevelQuery
               ),
               let definition = boardFields[canonical], let start = field.loc?.start,
               let end = field.name.loc?.startToken.fieldEnd.end

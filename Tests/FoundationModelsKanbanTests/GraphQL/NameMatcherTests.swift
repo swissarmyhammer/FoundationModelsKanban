@@ -3,7 +3,8 @@ import Testing
 
 @testable import FoundationModelsKanban
 
-/// Tests the name matcher of the forgiving names (plan.md §4.5): each match step, ties, and the never list.
+/// Tests the name matcher of the forgiving names (plan.md §4.5): each match step, ties, the root query verbs, and the
+/// verbs for the noun `board` (divergence.md Q10, Q11).
 @Suite("Name matcher")
 struct NameMatcherTests {
     /// The top-level mutations of plan.md §4.2.
@@ -27,6 +28,17 @@ struct NameMatcherTests {
         "summary",
     ].map { CanonicalName(field: $0, in: .selection(type: "Board")) }
 
+    /// The root fields of the `Query` type.
+    static let queryFields = ["board", "node", "nodes", "boards"].map { name in
+        CanonicalName(field: name, in: .selection(type: "Query"))
+    }
+
+    /// The fields of the `Board` type that a root query field can move into: ``boardFields``, with `nextTask`,
+    /// `searchTasks`, and `history`.
+    static let boardQueryFields = boardFields + ["nextTask", "searchTasks", "history"].map { name in
+        CanonicalName(field: name, in: .selection(type: "Board"))
+    }
+
     /// The fields of the `input` object of `moveTask`.
     static let moveTaskInputFields = ["id", "column", "ordinal", "before", "after"].map { name in
         CanonicalName(field: name, in: .inputField(type: "MoveTaskInput", coordinate: "Mutation.moveTask"))
@@ -38,6 +50,16 @@ struct NameMatcherTests {
     /// - Returns: The match among the mutations of plan.md §4.2.
     static func mutationMatch(for name: String) -> NameMatch {
         NameMatcher.match(for: name, among: mutations, at: .topLevelMutation)
+    }
+
+    /// Gives the match of a root query field name.
+    ///
+    /// - Parameters:
+    ///   - name: The name that the agent wrote.
+    ///   - candidates: The valid names. The default is ``boardQueryFields``.
+    /// - Returns: The match among the candidates.
+    static func queryMatch(for name: String, among candidates: [CanonicalName] = boardQueryFields) -> NameMatch {
+        NameMatcher.match(for: name, among: candidates, at: .topLevelQuery)
     }
 
     /// Gives the match of a name at a position that is not a top-level mutation.
@@ -186,28 +208,89 @@ struct NameMatcherTests {
         #expect(Self.fieldMatch(for: "tasks", among: Self.boardFields) == .found(canonical: "tasks"))
     }
 
-    // MARK: - The never list
+    // MARK: - The verbs for the noun board
 
-    @Test("createBoard does not give initBoard")
-    func createBoardDoesNotGiveInitBoard() {
-        #expect(Self.mutationMatch(for: "createBoard") == .notFound)
-        #expect(Self.mutationMatch(for: "boardCreate") == .notFound)
+    @Test(
+        "create and new give init for the noun board",
+        arguments: ["createBoard", "newBoard", "boardCreate", "board_new", "createBoards", "CreateBoard"]
+    )
+    func createAndNewGiveInitForBoard(name: String) {
+        #expect(Self.mutationMatch(for: name) == .found(canonical: "initBoard"))
     }
 
-    @Test("The never list blocks a mapping that a step gives, but not the exact name")
-    func neverListBlocksStepMatch() {
-        // The alias makes step 5 give `initBoard` for `createBoard`. The never list must block it.
-        let candidates = [CanonicalName(name: "initBoard", aliases: ["createBoard"])]
-        #expect(NameMatcher.match(for: "createBoard", among: candidates, at: .topLevelMutation) == .notFound)
-        #expect(NameMatcher.match(for: "initBoard", among: candidates, at: .topLevelMutation)
-            == .found(canonical: "initBoard"))
+    @Test(
+        "create and new give add for each noun other than board",
+        arguments: [("createTask", "addTask"), ("newTask", "addTask"), ("createColumn", "addColumn"),
+                    ("newTag", "addTag"), ("createComment", "addComment")]
+    )
+    func createAndNewGiveAddForOtherNouns(name: String, expected: String) {
+        #expect(Self.mutationMatch(for: name) == .found(canonical: expected))
     }
 
-    @Test("The never list does not block a mapping that keeps the forbidden word")
-    func neverListKeepsMappingWithBothWords() {
-        let candidates = [CanonicalName(name: "createInitBoard", aliases: [])]
-        #expect(NameMatcher.match(for: "createInitBoards", among: candidates, at: .topLevelMutation)
-            == .found(canonical: "createInitBoard"))
+    // MARK: - Step 4: the root query verbs
+
+    @Test(
+        "A get, show, read, or fetch verb and a noun give the singular field",
+        arguments: [("getTask", "task"), ("get_task", "task"), ("getTasks", "task"), ("taskGet", "task"),
+                    ("showTask", "task"), ("readTask", "task"), ("fetchTask", "task"), ("FETCH_TASKS", "task")]
+    )
+    func getVerbGivesSingularField(name: String, expected: String) {
+        #expect(Self.queryMatch(for: name) == .found(canonical: expected))
+    }
+
+    @Test(
+        "A get verb and a noun with no singular field give the field that lists the noun",
+        arguments: [("showColumn", "columns"), ("getColumns", "columns"), ("readTag", "tags"),
+                    ("getSummary", "summary"), ("fetchHistory", "history")]
+    )
+    func getVerbWithNoSingularFieldGivesList(name: String, expected: String) {
+        #expect(Self.queryMatch(for: name) == .found(canonical: expected))
+    }
+
+    @Test(
+        "A list, find, or query verb and a noun give the plural field",
+        arguments: [("listTasks", "tasks"), ("listTask", "tasks"), ("findTasks", "tasks"), ("queryTasks", "tasks"),
+                    ("list_columns", "columns"), ("tasksList", "tasks"), ("findColumn", "columns"),
+                    ("listHistory", "history")]
+    )
+    func listVerbGivesPluralField(name: String, expected: String) {
+        #expect(Self.queryMatch(for: name) == .found(canonical: expected))
+    }
+
+    @Test("search, with or without the noun task, gives searchTasks", arguments: [
+        "search", "Search", "searchTask", "search_task", "tasksSearch",
+    ])
+    func searchGivesSearchTasks(name: String) {
+        #expect(Self.queryMatch(for: name) == .found(canonical: "searchTasks"))
+    }
+
+    @Test("next, with or without a get verb or the noun task, gives nextTask", arguments: [
+        "next", "Next", "getNext", "getNextTask", "showNext", "next_tasks",
+    ])
+    func nextGivesNextTask(name: String) {
+        #expect(Self.queryMatch(for: name) == .found(canonical: "nextTask"))
+    }
+
+    @Test(
+        "A query verb gives a root field of the query type",
+        arguments: [("getBoard", "board"), ("fetchBoard", "board"), ("listBoards", "boards"), ("findBoard", "boards"),
+                    ("getNode", "node")]
+    )
+    func queryVerbGivesRootField(name: String, expected: String) {
+        #expect(Self.queryMatch(for: name, among: Self.queryFields) == .found(canonical: expected))
+    }
+
+    @Test("A query verb with no noun, and a noun with no field, give no match", arguments: [
+        "get", "list", "getFrobnicate",
+    ])
+    func queryVerbWithNoFieldGivesNoMatch(name: String) {
+        #expect(Self.queryMatch(for: name) == .notFound)
+    }
+
+    @Test("The root query verbs apply only at the root of a query")
+    func queryVerbsOnlyAtRootOfQuery() {
+        #expect(Self.fieldMatch(for: "getTask", among: Self.boardQueryFields) == .notFound)
+        #expect(Self.fieldMatch(for: "listTasks", among: Self.boardQueryFields) == .notFound)
     }
 
     @Test("A name with no match gives no match")
