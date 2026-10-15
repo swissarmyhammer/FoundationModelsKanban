@@ -111,11 +111,23 @@ struct TagResolveTests {
         #expect(tags == ["bug"])
     }
 
-    @Test("The edges come first, then the markers, in text order")
-    func edgesComeBeforeMarkers() throws {
-        let nodes = [Self.tag(named: "bug"), Self.tag(named: "login"), Self.tag(named: "ui")]
-        let tags = try Self.taskTags(with: nodes, body: "#login and #bug", tagEdges: ["ui"])
-        #expect(tags == ["ui", "login", "bug"])
+    @Test("An edge tag and a marker tag are sorted by slug")
+    func edgeAndMarkerAreSortedBySlug() throws {
+        let nodes = [Self.tag(named: "zeta"), Self.tag(named: "alpha")]
+        #expect(try Self.taskTags(with: nodes, body: "#alpha", tagEdges: ["zeta"]) == ["alpha", "zeta"])
+    }
+
+    @Test("Edges and markers in a mixed order are sorted by slug, and a tag from both shows one time")
+    func mixedEdgesAndMarkersAreSortedBySlug() throws {
+        let nodes = [Self.tag(named: "ui"), Self.tag(named: "bug"), Self.tag(named: "login"), Self.tag(named: "api")]
+        let tags = try Self.taskTags(with: nodes, body: "#login and #bug and #ui", tagEdges: ["ui", "api", "login"])
+        #expect(tags == ["api", "bug", "login", "ui"])
+    }
+
+    @Test("The sort uses the slug of the tag at the end of the rename redirect")
+    func sortUsesRedirectedSlug() throws {
+        let nodes = [Self.tag(named: "aaa", renamedTo: "zzz"), Self.tag(named: "zzz"), Self.tag(named: "mid")]
+        #expect(try Self.taskTags(with: nodes, body: "#mid", tagEdges: ["aaa"]) == ["mid", "zzz"])
     }
 
     @Test("A marker or an edge to a tag that the graph does not have gives no tag")

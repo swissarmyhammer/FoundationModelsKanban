@@ -502,7 +502,7 @@ extension TaskObject {
         view.liveObjects(at: state.assignees.compactMap(\.resolvedSlot))
     }
 
-    /// The live tags of the task: the edges and the markers (plan.md §6.1).
+    /// The live tags of the task: the edges and the markers (plan.md §6.1), sorted by slug.
     var tags: [TagObject] {
         view.liveObjects(at: view.graph.tagSlots(of: state))
     }

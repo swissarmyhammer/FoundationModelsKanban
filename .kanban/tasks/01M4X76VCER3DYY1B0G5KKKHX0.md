@@ -24,8 +24,17 @@ comments:
     - evidence: `swift test` 1387 tests in 109 suites passed; only the accepted SwiftPM "missing creator" warning. Files: Sources/FoundationModelsKanban/GraphQL/TagMutations.swift, Tests/FoundationModelsKanbanTests/Mutations/TagMutationTests.swift, Tests/FoundationModelsKanbanTests/Mutations/ReservedSlugTests.swift, Tests/FoundationModelsKanbanTests/Mutations/VirtualTagNameTests.swift
     - next: /review
   timestamp: 2026-10-15T08:36:50.807271+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4zcnk6vjjdvn12c1hg0yrbc
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 4 files
+    - test: green — swift test, 1387 passed, 0 failed, 0 skipped (first run had 60s time-limit starvation under load 70-97; rerun green); IntegrationTests 2 passed
+    - commit: 0d9814d
+    - review: clean — none
+  timestamp: 2026-10-15T09:00:40.539118+00:00
+position_column: done
+position_ordinal: fc80
 title: Make updateTag with a new slug do a renameTag
 ---
 ## What

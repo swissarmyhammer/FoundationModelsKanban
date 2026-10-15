@@ -299,6 +299,16 @@ struct ChangeBuilderTests {
         changing: [(.tag, .created), (.tag, .updated)]
     )
 
+    /// The case that gives the fixture task the edge tag `zeta` and the body marker `#alpha`.
+    static let edgeAndMarkerTags = MutationCase(
+        "updateTask with an edge tag and a body marker",
+        running: { refs in
+            let input = ##"body: "#\##(AddUpdateTaskTests.alphaSlug)", tags: ["\##(AddUpdateTaskTests.zetaSlug)"]"##
+            return AddUpdateTaskTests.updateTask(refs.task, with: input)
+        },
+        changing: [(.task, .updated), (.tag, .created), (.tag, .created)]
+    )
+
     // MARK: - Fields
 
     /// Makes the `assignTask` field that assigns `alice` to the fixture task.
@@ -746,6 +756,17 @@ struct ChangeBuilderTests {
             diff: nil
         )
         #expect(task.fields == [tags])
+    }
+
+    @Test("The tags field change of a task gives the added edge and marker tags sorted by slug")
+    func tagsFieldChangeIsSortedBySlug() async throws {
+        let recorded = try await Self.record(Self.edgeAndMarkerTags)
+        let patched = Self.updates(of: recorded, ofPatchedNodes: true)
+        let task = try #require(patched.first { update in update.type == .task })
+        let sorted = [AddUpdateTaskTests.alphaSlug, AddUpdateTaskTests.zetaSlug].map { slug in
+            Self.idValue(of: .tag(slug: slug))
+        }
+        #expect(try Self.field(named: "tags", in: task).added == sorted)
     }
 
     // MARK: - Batches of transactions

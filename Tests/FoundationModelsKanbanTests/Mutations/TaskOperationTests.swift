@@ -647,12 +647,12 @@ struct TaskOperationTests {
         #expect(try AddUpdateTaskTests.lastPatch(of: task, in: directory) == expected)
     }
 
-    @Test("tagTask with two tags adds one edge for each tag")
+    @Test("tagTask with two tags adds one edge for each tag, and gives the tags sorted by slug")
     func tagTaskWithTwoTags() async throws {
         let input = Self.tagsInput(Self.feature, Self.bug)
         let tag = try Self.fixtureField("tagTask", with: input, selecting: Self.tagsSelection)
         let response = try await Self.respond(toFields: tag, in: try TemporaryDirectory())
-        #expect(response == Self.tagsResponse(of: "tagTask", named: Self.feature, Self.bug))
+        #expect(response == Self.tagsResponse(of: "tagTask", named: Self.bug, Self.feature))
     }
 
     @Test("tagTask with a tag that the task has writes nothing")

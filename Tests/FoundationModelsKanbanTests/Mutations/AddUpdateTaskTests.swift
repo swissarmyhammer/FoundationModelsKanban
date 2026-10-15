@@ -66,6 +66,12 @@ struct AddUpdateTaskTests {
     /// The slug of a tag that only a body marker names.
     static let markerSlug = "ui"
 
+    /// The slug of a body marker tag that sorts before ``zetaSlug``.
+    static let alphaSlug = "alpha"
+
+    /// The slug of an edge tag that sorts after ``alphaSlug``.
+    static let zetaSlug = "zeta"
+
     /// The slug of a tombstoned tag of the fixture.
     private static let oldSlug = "old"
 
@@ -522,6 +528,16 @@ struct AddUpdateTaskTests {
             add: [PropertyName.tags: Self.tagRefs(Self.tagSlug)]
         )
         #expect(try Self.lastPatch(of: task, in: directory) == expected)
+    }
+
+    @Test("addTask with the edge tag zeta and the body marker #alpha gives the tags sorted by slug")
+    func addTaskGivesTagsSortedBySlug() async throws {
+        let directory = try TemporaryDirectory()
+        let input = ##"body: "#\##(Self.alphaSlug)", tags: ["\##(Self.zetaSlug)"]"##
+        let add = Self.addTask(with: input, selecting: "{ tags { name } }")
+        let response = try await ColumnActorTests.respond(to: Self.mutation(of: add), onFixtureIn: directory)
+        let sorted = #""tags":[{"name":"\#(Self.alphaSlug)"},{"name":"\#(Self.zetaSlug)"}]"#
+        #expect(response.hasSuffix(sorted + "}}}"))
     }
 
     @Test("addTask with a tag that the board has writes no second tag patch")

@@ -201,13 +201,13 @@ extension TagMarkers {
 extension Graph {
     /// Gives the tags of a task at read time: `resolve(tags edges) ∪ resolve(#markers in the body)` (plan.md §6.1).
     ///
-    /// The edges come first, in their stored order, and then the markers, in text order. The resolve of each edge and
-    /// each marker follows the rename redirect (``renameTarget(ofTagAt:)``). A resolve that ends at a tombstone drops
-    /// the tag. An edge or a marker to a tag that the graph does not have gives no tag. A tag is in the result one
-    /// time.
+    /// The result is sorted by the slug of each tag, as the Rust kanban sorts the tags (divergence.md F9). The
+    /// resolve of each edge and each marker follows the rename redirect (``renameTarget(ofTagAt:)``), and the sort
+    /// uses the slug of the tag at the end of the redirect. A resolve that ends at a tombstone drops the tag. An edge
+    /// or a marker to a tag that the graph does not have gives no tag. A tag is in the result one time.
     ///
     /// - Parameter task: The task, as this graph stores it, so that its edges hold slots.
-    /// - Returns: The slots of the live tags of the task.
+    /// - Returns: The slots of the live tags of the task, in slug order.
     func tagSlots(of task: TaskNode) -> [Int] {
         let edgeSlots = task.tags.compactMap { edge -> Int? in
             guard case .slot(let slot) = edge else {
@@ -218,7 +218,11 @@ extension Graph {
         let markerSlots = TagMarkers.slugs(in: task.fields.body).compactMap { slug in
             slot(for: .tag(slug: slug.value))
         }
-        return Array(OrderedSet((edgeSlots + markerSlots).compactMap(liveTagSlot(redirectedFrom:))))
+        let liveSlots = OrderedSet((edgeSlots + markerSlots).compactMap(liveTagSlot(redirectedFrom:)))
+        let liveTags = liveSlots.compactMap { slot in
+            node(at: slot, as: TagNode.self).map { tag in (slot: slot, slug: tag.slug) }
+        }
+        return liveTags.sorted { left, right in left.slug < right.slug }.map(\.slot)
     }
 
     /// Gives the tags that `Board.tags` lists (plan.md §6.2): each live tag with no rename, and each live tag where a
