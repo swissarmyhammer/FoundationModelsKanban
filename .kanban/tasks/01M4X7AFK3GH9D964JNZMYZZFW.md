@@ -34,6 +34,30 @@ comments:
     - note: divergence.md §16 Gap 3 still describes the gap as open; divergence.md was not changed in this task.
     - next: /review
   timestamp: 2026-10-15T16:30:22.246532+00:00
+- actor: claude-code
+  id: 01m50787wpezb8mxddz57y90x5
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 9 files
+    - test: green — swift test, 1506 passed, 0 failed, 0 skipped; IntegrationTests 3 passed
+    - commit: 73069c1
+    - review: findings — Sources/FoundationModelsKanban/Derived/ReadinessCache.swift:177, Sources/FoundationModelsKanban/Derived/ReadinessCache.swift:294
+  timestamp: 2026-10-15T16:45:14.518681+00:00
+- actor: claude-code
+  id: 01m507py46trxdqwbwp0apkvgq
+  text: |-
+    Review findings fixed in Derived/ReadinessCache.swift (refactor only, no change of behavior):
+    - Full-walk fallback: the cause was in three places, not two. updated() had two copies, and ReadinessCache.readiness(of:) had a third. Now ReadinessState.updated(to:inBoard:reading:) gives `ReadinessState?`: `nil` when the change needs a full walk. The one fallback `ReadinessState(computing:...)` is in readiness(of:), after `known.flatMap { updated }`.
+    - Missing-key check: new private RelatedReads.missingKeysStillMissing(in:). The loaded-board mapping is shared too: new private RelatedReads.loadedBoards(in:). isCurrent(reading:) is now `missingKeysStillMissing(in:) && loadedBoards(in:) == boards`; change(reading:) calls the same two helpers.
+    - Tests: `swift test --filter ReadinessCache` 6/6 passed. Full `swift test` at load average 152 (other sessions run many swift-build and sourcekit-lsp processes): 1506 tests, 16 issues, each one a 60 s time limit in a git-repo suite (CrossRepo*, DependencyTargetWarning). The same suites alone: `swift test --filter 'CrossRepo|DependencyTargetWarning'` 100/100 passed in 7.4 s. The /test step must run the full suite again when the machine has less load.
+  timestamp: 2026-10-15T16:53:16.038393+00:00
+- actor: claude-code
+  id: 01m507pzrk65at9w0czd9gnzeb
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Sources/FoundationModelsKanban/Derived/ReadinessCache.swift. Both review findings checked. Filtered tests green (ReadinessCache 6/6; CrossRepo|DependencyTargetWarning 100/100). Full suite had 16 time-limit issues only under load average 152.
+    - next: /test (full suite again), then /review
+  timestamp: 2026-10-15T16:53:17.715881+00:00
 depends_on:
 - 01M4X6ZBTA66TCPVYM41QR0ACD
 - 01M4X72R210B06MTDXZ4SXDCKE
@@ -67,3 +91,16 @@ divergence.md §2 ("Performance"), §16 (Gap 3 of the "fully cached" rule), and 
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-15 11:35)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 9 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `divergence.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsKanban/Derived/ReadinessCache.swift:177` `duplication/duplication` — The full-walk fallback `ReadinessState(computing: newGraph, inBoard: key, reading: related)` is written twice in updated(). It appears once in the guard-else at line 172 and again in the index guard at line 177. The two copies can drift apart when the fallback changes. Give the fallback a name, for example `let fullWalk = ReadinessState(computing: newGraph, inBoard: key, reading: related)` or a private helper, and return it from both guards. Alternatively, restructure the guards so that one fallback return covers both cases.
+- [x] `Sources/FoundationModelsKanban/Derived/ReadinessCache.swift:294` `duplication/duplication` — The check that every missing key still names no loaded board is written twice in RelatedReads. The same expression is in isCurrent(reading:). A fix to one copy can leave the other out of step, and the two checks decide whether the cache is reused. Move the missing-key check into one private helper on RelatedReads, for example `func missingKeysStillMissing(in related: RelatedBoards) -> Bool`, and call it from both isCurrent(reading:) and change(reading:). If the loaded-board mapping can be shared as well, extract it the same way.

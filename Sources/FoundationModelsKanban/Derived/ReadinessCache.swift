@@ -39,7 +39,7 @@ final class ReadinessCache: Sendable {
         if let known, known.isCurrent(for: graph, inBoard: key, reading: related) {
             return known
         }
-        let next = known.map { state in state.updated(to: graph, inBoard: key, reading: related) }
+        let next = known.flatMap { state in state.updated(to: graph, inBoard: key, reading: related) }
             ?? ReadinessState(computing: graph, inBoard: key, reading: related)
         store.withLock { stored in
             stored.state = next
@@ -155,26 +155,29 @@ struct ReadinessState: Sendable {
 
     /// Gives the readiness of new inputs. Only the tasks that the change can affect walk again: each changed task,
     /// and each task that depends on a changed node, also across boards. A change of a column of the board, a change
-    /// of the board that a key names, a graph that a full reload built again, and a new key give a full walk.
+    /// of the board that a key names, a graph that a full reload built again, a new key, and a changed task with a
+    /// dependency on a board that the computation did not read need a full walk, which the caller does
+    /// (``ReadinessCache/readiness(of:inBoard:reading:)``).
     ///
     /// - Parameters:
     ///   - newGraph: The graph of the board, as the read sees it.
     ///   - key: The current key of the board.
     ///   - related: The related boards of the read.
-    /// - Returns: The readiness, the same as a full walk of the new inputs gives.
-    func updated(to newGraph: Graph, inBoard key: String, reading related: RelatedBoards) -> ReadinessState {
+    /// - Returns: The readiness, the same as a full walk of the new inputs gives, or `nil` when the change needs a
+    ///   full walk.
+    func updated(to newGraph: Graph, inBoard key: String, reading related: RelatedBoards) -> ReadinessState? {
         guard
             key == boardKey,
             let ownRefs = newGraph.changedRefs(since: graph),
             !ownRefs.contains(where: { ref in ref.nodeType == .column }),
             let relatedChange = reads.change(reading: related)
         else {
-            return ReadinessState(computing: newGraph, inBoard: key, reading: related)
+            return nil
         }
         let positions = Set(ownRefs.map { ref in NodeURI(boardKey: key, ref: ref) }).union(relatedChange.positions)
         let graphs = relatedChange.reads.indexedGraphs(with: newGraph, inBoard: key)
         guard let newIndex = index.updating(positions, in: graphs, along: relatedChange.reads) else {
-            return ReadinessState(computing: newGraph, inBoard: key, reading: related)
+            return nil
         }
         let touched = Set(
             newIndex.closure(of: positions)
@@ -281,8 +284,7 @@ struct RelatedReads: Sendable {
     /// - Parameter related: The related boards of the read.
     /// - Returns: `true` when each key reads the same.
     func isCurrent(reading related: RelatedBoards) -> Bool {
-        missingKeys.allSatisfy { rawKey in related.board(forKey: rawKey) == nil }
-            && boards.allSatisfy { rawKey, board in ReadBoard(resolving: rawKey, in: related) == board }
+        missingKeysStillMissing(in: related) && loadedBoards(in: related) == boards
     }
 
     /// Finds the changes of the related boards of a read.
@@ -291,14 +293,10 @@ struct RelatedReads: Sendable {
     /// - Returns: The reads of the new related boards and the positions of the nodes that changed, or `nil` when a key
     ///   names a different board, or a board that a full reload built again.
     func change(reading related: RelatedBoards) -> (reads: RelatedReads, positions: Set<NodeURI>)? {
-        guard missingKeys.allSatisfy({ rawKey in related.board(forKey: rawKey) == nil }) else {
+        guard missingKeysStillMissing(in: related) else {
             return nil
         }
-        let newBoards = Dictionary(
-            uniqueKeysWithValues: boards.keys.compactMap { rawKey in
-                ReadBoard(resolving: rawKey, in: related).map { board in (rawKey, board) }
-            }
-        )
+        let newBoards = loadedBoards(in: related)
         guard
             newBoards.count == boards.count,
             newBoards.allSatisfy({ rawKey, board in boards[rawKey]?.key == board.key })
@@ -341,6 +339,27 @@ struct RelatedReads: Sendable {
             }
         }
         return byKey.merging([key: [graph]]) { _, own in own }
+    }
+
+    /// Tells if each key that named no loaded board still names no loaded board in the related boards of a read.
+    ///
+    /// - Parameter related: The related boards of the read.
+    /// - Returns: `true` when no missing key names a loaded board now.
+    private func missingKeysStillMissing(in related: RelatedBoards) -> Bool {
+        missingKeys.allSatisfy { rawKey in related.board(forKey: rawKey) == nil }
+    }
+
+    /// Finds the board that each key of a loaded board names in the related boards of a read. A key that names no
+    /// loaded board now is not in the result.
+    ///
+    /// - Parameter related: The related boards of the read.
+    /// - Returns: The board of each key that still names a loaded board.
+    private func loadedBoards(in related: RelatedBoards) -> [String: ReadBoard] {
+        Dictionary(
+            uniqueKeysWithValues: boards.keys.compactMap { rawKey in
+                ReadBoard(resolving: rawKey, in: related).map { board in (rawKey, board) }
+            }
+        )
     }
 }
 
