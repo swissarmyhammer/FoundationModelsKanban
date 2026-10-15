@@ -855,15 +855,17 @@ public actor KanbanGraph {
 
     /// Finds the board that a board ref names in the index of the scan of the host (plan.md §6.6, index life, board
     /// refs). The first call scans. A path to a folder that the index does not have gives the board at the top folder
-    /// of the worktree of that folder, with no scan (divergence.md §16). A later call whose ref names no copy of the
-    /// index and no folder scans again only when a file watcher of a scan place saw a change since the last scan
-    /// (divergence.md §16, Gap 1). Else the ref is not found, with no scan and no `git`.
+    /// of the worktree of that folder, with no scan (divergence.md §16), and the host records that board, so that a
+    /// later ref with its key resolves to it (divergence.md X4). A later call whose ref names no copy of the index and
+    /// no folder scans again only when a file watcher of a scan place saw a change since the last scan (divergence.md
+    /// §16, Gap 1). A key that no copy of the current index has then gives the first board with that key that a call
+    /// reached by a path. Else the ref is not found, with no scan and no `git`.
     ///
     /// - Parameters:
     ///   - reference: The board ref.
     ///   - current: The copy of the current board: the top folder of its worktree and its current key.
     /// - Returns: The board, ``BoardResolution/notARepo(path:)`` for a path to a folder that is not in a git repo, or
-    ///   `nil` when no copy of the index and no folder has the ref.
+    ///   `nil` when no copy of the index, no folder, and no board that a call reached by a path has the ref.
     /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the scan or during a
     ///   read of git for a folder. Each other ``BoardKeyError`` of the read of the top folder of a folder.
     private func resolution(
@@ -883,9 +885,17 @@ public actor KanbanGraph {
             findingTopsWith: host.configuration.topReader
         )
         if let folder {
+            if case .copy(let copy) = folder {
+                await host.recordPathCopy(copy)
+            }
             return folder
         }
-        return resolve(try await host.currentScanIndex(around: current.directory))
+        if let found = resolve(try await host.currentScanIndex(around: current.directory)) {
+            return found
+        }
+        return await host.pathCopy(namedBy: reference).map { copy in
+            BoardResolution(of: copy, currentRoot: current.directory)
+        }
     }
 
     /// Gives the copies of `Query.boards` from the current scan index of the host, and loads each copy that is not the

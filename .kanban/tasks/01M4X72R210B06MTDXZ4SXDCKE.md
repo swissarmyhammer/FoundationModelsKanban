@@ -45,8 +45,17 @@ comments:
     - evidence: 5 files. Sources/FoundationModelsKanban/Derived/Readiness.swift, Sources/FoundationModelsKanban/Derived/DependencyWalk.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoFixture.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoParallelLoadTests.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoCycleReadinessTests.swift. `swift test`: 1275 tests in 98 suites passed, 0 failed. The only warning is the accepted SwiftPM "missing creator" warning.
     - next: /review
   timestamp: 2026-10-15T00:05:29.036210+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4yedysw8f1x4jghzt5czvkc
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 5 files (5 findings fixed)
+    - test: green — swift test, 1275 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 8617fa4
+    - review: clean — none
+  timestamp: 2026-10-15T00:12:12.988663+00:00
+position_column: done
+position_ordinal: ef80
 title: Block each task in a dependency cycle across boards
 ---
 ## What

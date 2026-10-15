@@ -49,6 +49,11 @@ public actor KanbanHost {
     /// the indexes of the place out of date.
     private var placeWatches: [String: BoardWatch] = [:]
 
+    /// The copy of each board that a call reached by a path, by the canonical path of the top folder of its worktree
+    /// (divergence.md X4). A later ref with the key of such a board resolves to it when the scan index has no copy
+    /// with the key.
+    private var pathCopies: [String: BoardCopy] = [:]
+
     /// The session views that get the changes of the boards, by their object identity. The host does not keep a view
     /// alive.
     private var views: [ObjectIdentifier: WeakView] = [:]
@@ -425,6 +430,34 @@ public actor KanbanHost {
     /// - Returns: The canonical path of each place, in scan order.
     private static func placesKey(of places: [URL]) -> [String] {
         places.map(\.canonicalPath)
+    }
+
+    // MARK: - Boards reached by a path
+
+    /// Records the copy of a board that a call reached by a path, so that a later ref with the key of the board
+    /// resolves to it (divergence.md X4). A path can name a folder outside the scan places, and the scan index does not
+    /// have the board of such a folder. A second record of the same folder replaces the first.
+    ///
+    /// - Parameter copy: The copy: the top folder of the worktree of the folder, and the key of its board.
+    func recordPathCopy(_ copy: BoardCopy) {
+        pathCopies[copy.directory.canonicalPath] = copy
+    }
+
+    /// Finds the copy that a key ref names among the boards that calls reached by a path (divergence.md X4). Copies
+    /// with the same key obey the rule of the scan: the key gives the first copy in a fixed order, here the sort order
+    /// of the canonical path of the folder (plan.md §6.6, many copies of one repo). A copy whose folder is not there
+    /// any more is not a match.
+    ///
+    /// - Parameter reference: The board ref: a board key, or the URI of a board. White space at the two ends is
+    ///   ignored.
+    /// - Returns: The copy, or `nil` when the ref is not a key, or when no copy has the key.
+    func pathCopy(namedBy reference: String) -> BoardCopy? {
+        guard let key = BoardIndex.boardKey(in: reference.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            return nil
+        }
+        return pathCopies.sorted { lhs, rhs in lhs.key < rhs.key }.lazy.map(\.value).first { copy in
+            copy.key.description == key && FileManager.default.fileExists(atPath: copy.directory.path)
+        }
     }
 
     // MARK: - Views

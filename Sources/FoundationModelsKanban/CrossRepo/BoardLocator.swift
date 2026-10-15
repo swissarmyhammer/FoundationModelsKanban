@@ -339,7 +339,7 @@ struct BoardIndex: Sendable {
     ///
     /// - Parameter text: The ref, without white space at the two ends.
     /// - Returns: The key, or `nil` when the ref is a URI that does not parse or that names a node other than a board.
-    private static func boardKey(in text: String) -> String? {
+    static func boardKey(in text: String) -> String? {
         guard NodeURI.hasScheme(atStartOf: text) else {
             return BoardKey.normalizedText(of: text)
         }
