@@ -21,6 +21,9 @@ struct PathBoardKeyTests {
     /// sorts before the path of the first repo.
     static let earlierOutsidePath = "outside/a-other"
 
+    /// The `origin` that a test gives to the repo outside the scan places after a call reached it by a path.
+    static let movedOrigin = "https://github.com/example/moved-lib.git"
+
     // MARK: - Helpers
 
     /// Gives the key of the repo outside the scan places as text.
@@ -91,6 +94,48 @@ struct PathBoardKeyTests {
         #expect(try await CrossRepoReadTests.board("path", of: earlier.path, on: graph) == earlier.path)
         #expect(try await CrossRepoReadTests.board("path", of: Self.outsideKey(), on: graph) == earlier.path)
         await graph.close()
+    }
+
+    // MARK: - Invalidation
+
+    @Test("A new origin of a repo that a call reached by a path makes its old key resolve to that repo no more")
+    func changedOriginForgetsOldKey() async throws {
+        let (repos, outside) = try await Self.makeRepos()
+        let recorder = ScanRecorder()
+        let host = Self.makeHost(recordedBy: recorder)
+        let graph = try await host.session(workingDirectory: repos.app, actor: KanbanHostTests.firstActor)
+        let key = try Self.outsideKey()
+        #expect(try await CrossRepoReadTests.board("path", of: outside.path, on: graph) == outside.path)
+        #expect(try await ScanCacheTests.hasBoard(of: key, on: graph))
+        try await GitSandbox.runGit(withArguments: ["remote", "set-url", "origin", Self.movedOrigin], in: outside)
+        try await recorder.waitForChange(.repo(outside.canonicalPath)) {
+            try await !ScanCacheTests.hasBoard(of: key, on: graph)
+        }
+        #expect(try await !ScanCacheTests.hasBoard(of: key, on: graph))
+        await host.close()
+    }
+
+    @Test("A closed host keeps no board that a call reached by a path")
+    func closedHostForgetsPathCopies() async throws {
+        let (repos, outside) = try await Self.makeRepos()
+        let host = Self.makeHost(recordedBy: ScanRecorder())
+        let graph = try await host.session(workingDirectory: repos.app, actor: KanbanHostTests.firstActor)
+        #expect(try await CrossRepoReadTests.board("path", of: outside.path, on: graph) == outside.path)
+        await host.close()
+        #expect(try await !ScanCacheTests.hasBoard(of: Self.outsideKey(), on: graph))
+    }
+
+    /// Makes a host that reads the worktree tops and the board keys from git, and whose scans and watched changes a
+    /// recorder records.
+    ///
+    /// - Parameter recorder: Records each scan, and each change that a file watcher of the host sees.
+    /// - Returns: The host.
+    static func makeHost(recordedBy recorder: ScanRecorder) -> KanbanHost {
+        HostFixture.makeHost(
+            readingKeyWith: BoardKey.read(fromRepoAt:),
+            findingTopWith: BoardKey.worktreeTop(of:),
+            observingScansWith: recorder
+        )
     }
 
     // MARK: - Reads by key

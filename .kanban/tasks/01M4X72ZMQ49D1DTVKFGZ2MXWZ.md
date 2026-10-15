@@ -22,6 +22,34 @@ comments:
     - evidence: 4 files — Sources/FoundationModelsKanban/Tool/KanbanHost.swift, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift, Sources/FoundationModelsKanban/CrossRepo/BoardLocator.swift, Tests/FoundationModelsKanbanTests/CrossRepo/PathBoardKeyTests.swift (new, 6 tests pass). Full suite: 11 streamNotStarted issues in 2 suites that this change does not touch. Those 2 suites pass alone.
     - next: /test, to confirm the full suite is green, then /review
   timestamp: 2026-10-15T00:23:50.381931+00:00
+- actor: claude-code
+  id: 01m4ygmt845dxpk3np4cct6naa
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 4 files
+    - test: green — swift test, 1281 passed, 0 failed, 0 skipped; IntegrationTests 2 passed (the implementer's 11 streamNotStarted failures did not reproduce; FSEvents stream limit is system-wide, see ^swk9c8n)
+    - commit: d72f34f
+    - review: findings — Sources/FoundationModelsKanban/Tool/KanbanHost.swift:55
+  timestamp: 2026-10-15T00:50:54.852753+00:00
+- actor: claude-code
+  id: 01m4ygvbw306gk90kycr2xzsdf
+  text: 'Picked up the review finding (KanbanHost.swift:55, pathCopies is never refreshed). Decision from the orchestrator: a path copy follows the same invalidation as the scan index, through a file watch, with no git on reads. Research: the scan index forgets a repo on ScanChange.repo (repo folder, its .git entry, or .git/config) and on ScanChange.place (the place, or lost events). WatchedPlace(watching: parent) already maps those paths of a child folder to .repo(<canonical path of the child>). Plan: when the host records a path copy, it starts a BoardWatch (the same shared shape as placeWatches and unloadableBoards, so ^swk9c8n can fold it in) on the parent folder of the worktree top, and it drops the copy on .repo(<top>) or .place(<parent>). The host reports the change to BoardScanObserver, so a test can wait for the effect. A closed host records no path copy (no watcher can follow it), and close() ends each watch and clears pathCopies. A watch that cannot start gives no record and a swift-log warning, the same as markUnloadable.'
+  timestamp: 2026-10-15T00:54:29.507174+00:00
+- actor: claude-code
+  id: 01m4yh6y7k2hydtp5swcq8pkwg
+  text: 'Finding fix landed (TDD). RED: changedOriginForgetsOldKey hit the 1-minute time limit (the old key still resolved, so no change ever ended the wait), and closedHostForgetsPathCopies failed (the key still resolved after close). GREEN: both pass. Change: KanbanHost.pathCopies now holds PathCopy (copy + BoardWatch). recordPathCopy starts a BoardWatch on the parent folder of the worktree top (the same BoardWatch(of: StartedWatcher) shape as placeWatches, so ^swk9c8n can fold it in). The new WatchedPlace.keyChange(ofRepoAt:in:) gives the first .repo(<top>) or .place(<parent>) change, the same changes on which BoardIndex.forgetting forgets a key. On that change the host removes the entry, calls the new BoardScanObserver.pathCopyDidChange, and stops the watcher. Reads run no git. A closed host records no path copy, and close() ends each path-copy watch and clears pathCopies. A watch that cannot start gives no record and a swift-log warning. Known limit: a change between the key read in BoardLocator.resolution(ofFolderAt:) and the start of the watch is not seen; the next path call reads the key again. ^xxv6d0a will change the path-ref read path. Full swift test: 1283 tests in 99 suites passed; the only build warning is the accepted SwiftPM "missing creator" warning.'
+  timestamp: 2026-10-15T01:00:48.755013+00:00
+- actor: claude-code
+  id: 01m4yh70hsfacgtx7v17br85wn
+  text: |-
+    ### implement — changed
+    - evidence: 4 files — Sources/FoundationModelsKanban/Tool/KanbanHost.swift, Sources/FoundationModelsKanban/CrossRepo/ScanChange.swift, Tests/FoundationModelsKanbanTests/CrossRepo/PathBoardKeyTests.swift (2 new tests), Tests/FoundationModelsKanbanTests/CrossRepo/ScanCacheTests.swift (ScanRecorder.pathCopyDidChange). swift test: 1283 passed, 0 failed.
+    - next: /test, then /review
+  timestamp: 2026-10-15T01:00:51.129147+00:00
+- actor: claude-code
+  id: 01m4yh76h4v32j6cqrgxpv2rjy
+  text: 'Correction to the comment above: the task that will change the path-ref read path is ^58v2scm ("Keep the result of a path board ref in memory, so a repeated path ref runs no git"), not "^xxv6d0a".'
+  timestamp: 2026-10-15T01:00:57.252784+00:00
 depends_on:
 - 01M4X6XKP0Y832GDRHQ1MG22VF
 position_column: doing
@@ -46,7 +74,16 @@ Change: when a call reaches a board by a path, add that board (its key and its w
 ## Tests
 - [x] The three results above, each as a test (these are also listed in the K14 missing tests).
 - [x] Tests use temporary fixture folders. Never use the `.kanban/` of this repo (it is a Rust board).
-- [ ] `swift test` passes.
+- [x] `swift test` passes.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-14 19:46)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsKanban/Tool/KanbanHost.swift:55` `completeness/invariant-propagation` — The new pathCopies store keeps a board key that was read once, at record time. The scan index is refreshed when a file watcher sees a change, but pathCopies is never refreshed. If the origin of a path-reached repo changes, the old key still resolves to that folder. Watcher events also do not remove the entry, and only a missing folder does. This is a second store of board keys that the invalidation path does not reach. Decide whether a path copy must follow the same invalidation as the scan index. If it must, re-read the key of the recorded folder when a watcher for it sees a change, or drop the entry on that change. If stale keys are accepted by design, document that in divergence.md X4 and add a test that pins the chosen behaviour. Clear pathCopies in close() if the host must not keep copies after close.

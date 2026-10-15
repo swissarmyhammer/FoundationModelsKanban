@@ -273,7 +273,8 @@ final class ScanKeyReader: Sendable {
 
 // MARK: - Scan recorder
 
-/// Records each scan of a host, and gives each change of a scan place that the file watcher of the host sees.
+/// Records each scan of a host, and gives each change that a file watcher of the host sees: of a scan place, or of a
+/// board that a call reached by a path.
 final class ScanRecorder: BoardScanObserver {
     /// The number of scans that started, behind a lock, because the scans run on different threads.
     private let starts = Mutex(0)
@@ -305,6 +306,13 @@ final class ScanRecorder: BoardScanObserver {
     ///
     /// - Parameter change: The change.
     func scanPlaceDidChange(_ change: ScanChange) {
+        changeSink.yield(change)
+    }
+
+    /// Records a change that made the host forget a board that a call reached by a path.
+    ///
+    /// - Parameter change: The change.
+    func pathCopyDidChange(_ change: ScanChange) {
         changeSink.yield(change)
     }
 

@@ -49,10 +49,11 @@ public actor KanbanHost {
     /// the indexes of the place out of date.
     private var placeWatches: [String: BoardWatch] = [:]
 
-    /// The copy of each board that a call reached by a path, by the canonical path of the top folder of its worktree
-    /// (divergence.md X4). A later ref with the key of such a board resolves to it when the scan index has no copy
-    /// with the key.
-    private var pathCopies: [String: BoardCopy] = [:]
+    /// The copy of each board that a call reached by a path, and the file watcher that keeps its key current, by the
+    /// canonical path of the top folder of its worktree (divergence.md X4). A later ref with the key of such a board
+    /// resolves to it when the scan index has no copy with the key. A change that the watcher sees of the key of the
+    /// board removes the entry, the same as the scan index forgets the key of a repo.
+    private var pathCopies: [String: PathCopy] = [:]
 
     /// The session views that get the changes of the boards, by their object identity. The host does not keep a view
     /// alive.
@@ -436,11 +437,63 @@ public actor KanbanHost {
 
     /// Records the copy of a board that a call reached by a path, so that a later ref with the key of the board
     /// resolves to it (divergence.md X4). A path can name a folder outside the scan places, and the scan index does not
-    /// have the board of such a folder. A second record of the same folder replaces the first.
+    /// have the board of such a folder. A second record of the same folder replaces the copy and keeps the watcher.
+    ///
+    /// The first record of a folder starts a file watcher on its parent folder. The host forgets the copy when the
+    /// watcher sees a change of the key of the repo: its folder, its `.git` entry, or its git config, for example a
+    /// new `origin` (``WatchedPlace/keyChange(ofRepoAt:in:)``). Thus a read gets the key from memory and runs no
+    /// `git`, and the next path call reads the key again. A closed host records nothing, because no watcher can keep
+    /// the copy current. When the watcher cannot start, the host records nothing, and it records the failure with
+    /// swift-log.
     ///
     /// - Parameter copy: The copy: the top folder of the worktree of the folder, and the key of its board.
     func recordPathCopy(_ copy: BoardCopy) {
-        pathCopies[copy.directory.canonicalPath] = copy
+        let path = copy.directory.canonicalPath
+        guard !isClosed, pathCopies[path] == nil else {
+            pathCopies[path]?.copy = copy
+            return
+        }
+        do {
+            pathCopies[path] = PathCopy(copy: copy, watch: try makePathCopyWatch(of: copy.directory))
+        } catch {
+            Log.kanban.warning(
+                "The host cannot watch a board that a call reached by a path, so a ref with its key does not find it",
+                metadata: ["path": "\(copy.directory.path)", "error": "\(error)"]
+            )
+        }
+    }
+
+    /// Makes the watch of a board that a call reached by a path: a file watcher on the parent folder of the top folder
+    /// of its worktree, and a task that gives each batch to ``pathCopyFolderDidChange(_:in:at:)``. The task holds the
+    /// host weakly.
+    ///
+    /// - Parameter directory: The top folder of the worktree of the board.
+    /// - Returns: The watch.
+    /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when the watcher cannot start.
+    private func makePathCopyWatch(of directory: URL) throws(BoardWatcherError) -> BoardWatch {
+        let parent = directory.deletingLastPathComponent()
+        let watched = WatchedPlace(watching: parent)
+        let path = directory.canonicalPath
+        return BoardWatch(of: try StartedWatcher(watching: parent)) { [weak self] paths in
+            await self?.pathCopyFolderDidChange(path, in: watched, at: paths)
+        }
+    }
+
+    /// Forgets a board that a call reached by a path when one batch of its file watcher changes the key of its repo
+    /// (divergence.md X4). The watcher then stops.
+    ///
+    /// - Parameters:
+    ///   - path: The canonical path of the top folder of the worktree of the board.
+    ///   - parent: The watched parent folder.
+    ///   - paths: The changed paths of the batch.
+    private func pathCopyFolderDidChange(_ path: String, in parent: WatchedPlace, at paths: [URL]) async {
+        guard let change = parent.keyChange(ofRepoAt: path, in: paths),
+            let forgotten = pathCopies.removeValue(forKey: path)
+        else {
+            return
+        }
+        configuration.scanObserver?.pathCopyDidChange(change)
+        await forgotten.watch.watcher.stop()
     }
 
     /// Finds the copy that a key ref names among the boards that calls reached by a path (divergence.md X4). Copies
@@ -455,7 +508,7 @@ public actor KanbanHost {
         guard let key = BoardIndex.boardKey(in: reference.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             return nil
         }
-        return pathCopies.sorted { lhs, rhs in lhs.key < rhs.key }.lazy.map(\.value).first { copy in
+        return pathCopies.sorted { lhs, rhs in lhs.key < rhs.key }.lazy.map(\.value.copy).first { copy in
             copy.key.description == key && FileManager.default.fileExists(atPath: copy.directory.path)
         }
     }
@@ -499,15 +552,19 @@ public actor KanbanHost {
 
     // MARK: - Close
 
-    /// Stops the file watcher of each board, of each scan place, and of each board that could not load, and ends
-    /// each subscription. The boards stay in memory, and a board that loads later has no watcher. With no watcher on
-    /// its places, a scan index is not current any more. A board that could not load loads again at its next related
-    /// load. The shared host stays open for the life of the process; a test closes its own host.
+    /// Stops the file watcher of each board, of each scan place, of each board that could not load, and of each board
+    /// that a call reached by a path, and ends each subscription. The boards stay in memory, and a board that loads
+    /// later has no watcher. With no watcher on its places, a scan index is not current any more. A board that could
+    /// not load loads again at its next related load. The host forgets each board that a call reached by a path, so a
+    /// ref with its key does not find it, and a path ref still does. The shared host stays open for the life of the
+    /// process; a test closes its own host.
     func close() async {
         isClosed = true
-        let watches = Array(placeWatches.values) + unloadableBoards.values.map(\.watch)
+        let watches =
+            Array(placeWatches.values) + unloadableBoards.values.map(\.watch) + pathCopies.values.map(\.watch)
         placeWatches = [:]
         unloadableBoards = [:]
+        pathCopies = [:]
         for watch in watches {
             await watch.end()
         }
@@ -557,8 +614,8 @@ struct HostConfiguration: Sendable {
     /// Gets a call when each worker of a loader reads a file, or `nil` for no calls.
     let workerObserver: (any LoaderWorkerObserver)?
 
-    /// Gets a call when a scan for the related boards starts, and when the file watcher of a scan place sees a
-    /// change, or `nil` for no calls.
+    /// Gets a call when a scan for the related boards starts, when the file watcher of a scan place sees a change,
+    /// and when the host forgets a board that a call reached by a path, or `nil` for no calls.
     let scanObserver: (any BoardScanObserver)?
 
     /// Makes a configuration. Each default is the value of the process: git, the system clock, random ULIDs, and the
@@ -575,8 +632,8 @@ struct HostConfiguration: Sendable {
     ///   - logWriter: The writer of the appends of each commit.
     ///   - loadObserver: Gets a call when the file load of a board starts and ends, or `nil` for no calls.
     ///   - workerObserver: Gets a call when each worker of a loader reads a file, or `nil` for no calls.
-    ///   - scanObserver: Gets a call when a scan starts, and when the file watcher of a scan place sees a change, or
-    ///     `nil` for no calls.
+    ///   - scanObserver: Gets a call when a scan starts, when the file watcher of a scan place sees a change, and when
+    ///     the host forgets a board that a call reached by a path, or `nil` for no calls.
     init(
         keyReader: @escaping BoardKeyReader = BoardKey.read(fromRepoAt:),
         topReader: @escaping WorktreeTopReader = BoardKey.worktreeTop(of:),
@@ -622,6 +679,16 @@ private struct UnloadableBoard {
     let error: any Error
 
     /// The file watcher of the `.kanban/` directory of the board, or of its repo directory.
+    let watch: BoardWatch
+}
+
+/// A board that a call reached by a path (divergence.md X4): its copy, and the file watcher whose change of the key of
+/// the repo makes the host forget the copy.
+private struct PathCopy {
+    /// The copy: the top folder of the worktree, and the key of the board.
+    var copy: BoardCopy
+
+    /// The file watcher of the parent folder of the top folder of the worktree.
     let watch: BoardWatch
 }
 
