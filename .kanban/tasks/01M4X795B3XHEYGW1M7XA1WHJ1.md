@@ -96,6 +96,22 @@ comments:
     - evidence: One local commit "fix(skill): address review findings for the skill doc test (^xa1whj1)". Files: Tests/FoundationModelsKanbanTests/KanbanSkillTests.swift and the task files in .kanban/tasks/. Not staged: Package.resolved, .kanban/mcp.17281.log. No push.
     - next: /review.
   timestamp: 2026-10-15T23:17:40.741547+00:00
+- actor: claude-code
+  id: 01m50y01hzm1gwmbmm5th6xnph
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (a673d72). 0 findings (0 confirmed, 1 refuted, 7 attempted, 0 failed). 1 file reviewed. 2 files in .kanban/ not reviewed (ignore rule). All prior Review Findings items are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-15T23:22:43.135689+00:00
+- actor: claude-code
+  id: 01m50y0a3jjc2s81dmj97aeg3y
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — KanbanSkillTests.swift (condition trait on copyIsSkillsRepoFile, doc comment)
+    - test: green — swift test, 1539 passed, 0 skipped
+    - commit: a673d72
+    - review: clean — 0 findings
+  timestamp: 2026-10-15T23:22:51.890941+00:00
 depends_on:
 - 01M4X6X6PS5P524DW45RBSSWN2
 - 01M4X71FVFN9HYJ19VJ71VWV3B
@@ -109,8 +125,8 @@ depends_on:
 - 01M4X77PG6CNGC9JZYCN9WJGTY
 - 01M4X77ZET324X8HKM7HRJ0KK0
 - 01M4X6XKP0Y832GDRHQ1MG22VF
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ff8a80
 title: Write a new kanban skill in ../skills for the Swift kanban
 ---
 ## What

@@ -92,9 +92,9 @@ extension BoardStore {
     ///
     /// The field searches the board that the input names, else the current board and the loaded related boards. A
     /// transaction that spans boards names the keys of the other boards in `boards`. The field finds each copy of
-    /// those boards that holds events of the transaction (divergence.md X5), and it reverses the transaction in each
-    /// of these boards, or in no board when one of them fails or cannot be reached. Each board obeys the rules of
-    /// ``runMutation(named:on:at:_:)``.
+    /// those boards, and each other copy with the key of the board where it found the transaction, that holds events
+    /// of the transaction (divergence.md X5). It reverses the transaction in each of these boards, or in no board
+    /// when one of them fails or cannot be reached. Each board obeys the rules of ``runMutation(named:on:at:_:)``.
     ///
     /// - Parameters:
     ///   - direction: `undo` or `redo`.
@@ -209,7 +209,11 @@ extension BoardStore {
     }
 
     /// Gives each board that a transaction changed: the board where the field found it, and each copy of a board that
-    /// its `boards` value names and that holds events of the transaction (plan.md §5.1, §6.5; divergence.md X5).
+    /// holds events of the transaction and has the key of `home` or a key that its `boards` value names (plan.md §5.1,
+    /// §6.5; divergence.md X5).
+    ///
+    /// The `boards` value of an event does not hold the key of its own board. A transaction that changed two copies
+    /// (worktrees) of one repo thus names the key of neither copy, so the field also looks for the key of `home`.
     ///
     /// - Parameters:
     ///   - txn: The transaction.
@@ -223,7 +227,7 @@ extension BoardStore {
         among named: [MutationTarget]
     ) throws(KanbanError) -> [MutationTarget]? {
         let events = workingCopy(of: home).liveEvents.filter { event in event.txn == txn }
-        let keys = events.lazy.compactMap(\.boards).first ?? []
+        let keys = [key(of: home)] + (events.lazy.compactMap(\.boards).first ?? [])
         let found = try keys.map { key throws(KanbanError) in
             try copies(ofKey: key, holding: txn, among: named)
         }

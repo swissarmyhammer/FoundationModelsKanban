@@ -68,6 +68,7 @@ These are the problems that the review found. Each one was checked by reading th
 - **X5. Undo across boards can reverse part of a transaction, with no error.**
   - `boards(of:)` changes each key to the first copy in scan order (`S/GraphQL/UndoMutations.swift:192-201`). Then the undo field drops each board where the reverse wrote no events (`:119`).
   - Example: a write to a second worktree of `lib`. The undo looks at the first copy, finds nothing, and reverses only the current board.
+  - **Second copy of the home board (closed by ^wwntbag):** the `boards` value of an event holds only the keys of the other boards, so a transaction that wrote two worktrees of one repo names the key of neither copy. The undo now also looks for each copy with the key of the board where it found the transaction (the scan, the host table, and the `boards` input), and it reverses the transaction in each copy that holds events of it.
 - **X6. Undo has no conflict check across boards.**
   - Example: call 1 adds `lib#X`. Call 2 adds `app#Y`, which depends on `X`. `undo(call1)` gives no `UNDO_CONFLICT`. It tombstones `X`, and `Y` becomes READY with no warning.
 - **X7. `undeleteTask` can bring back a cycle.**

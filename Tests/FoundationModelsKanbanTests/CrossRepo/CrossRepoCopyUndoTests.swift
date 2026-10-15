@@ -11,7 +11,9 @@ import ULID
 ///
 /// Each test makes the current repo, the related repo, and a worktree of the related repo in a ``GitSandbox``. The
 /// related repo comes first in scan order, so its key resolves to the first copy, and the worktree is the second
-/// copy. The engines read the worktree tops and the board keys from git.
+/// copy. The engines read the worktree tops and the board keys from git. One test instead makes a worktree of the
+/// current repo: the `boards` value of the events then names no key, because both copies have the key of the board
+/// of the event.
 @Suite("Cross-repo: undo and redo on a second copy of a repo", .watcherBudget, .timeLimit(.minutes(1)))
 struct CrossRepoCopyUndoTests {
     /// The repos of a sandbox with the current repo and two copies of the related repo.
@@ -107,8 +109,16 @@ struct CrossRepoCopyUndoTests {
     ///   - repos: The repos of the test.
     /// - Throws: An error when a log cannot be read or has no event.
     static func expectUndone(_ call: CopyCall, in repos: Copies) throws {
-        let events = try lastEvents(of: call, in: repos)
-        #expect(events.allSatisfy { event in event.patch.delete == true && event.undoes == call.txn }, "\(events)")
+        expectOneUndo(of: call.txn, wrote: try lastEvents(of: call, in: repos))
+    }
+
+    /// Expects that one undo transaction of a call wrote each event: a tombstone with `undoes` = the call.
+    ///
+    /// - Parameters:
+    ///   - txn: The transaction of the call.
+    ///   - events: The newest event of each task that the call added.
+    static func expectOneUndo(of txn: ULID, wrote events: [Event]) {
+        #expect(events.allSatisfy { event in event.patch.delete == true && event.undoes == txn }, "\(events)")
         #expect(Set(events.map(\.txn)).count == 1)
     }
 
@@ -180,6 +190,28 @@ struct CrossRepoCopyUndoTests {
         try await CrossRepoUndoTests.runWithNoErrors(UndoTests.reverseField(MutationName.undo, with: input), on: app)
         try Self.expectUndone(call, in: repos)
         await app.close()
+    }
+
+    // MARK: - Copy of the current repo
+
+    /// The name of the worktree of the current repo in ``undoReversesWorktreeOfCurrentRepo()``.
+    static let appWorktreeName = "app-worktree"
+
+    @Test("undo reverses a call in the current board and in a second worktree of the current repo")
+    func undoReversesWorktreeOfCurrentRepo() async throws {
+        let sandbox = try GitSandbox()
+        let app = try await sandbox.makeRepo(named: BoardLocatorTests.appName, origin: BoardLocatorTests.appOrigin)
+        let worktree = try await sandbox.addWorktree(named: Self.appWorktreeName, to: app)
+        let graph = try GitGraphFixture.makeGraph(at: app)
+        let tasks = try await CrossRepoUndoTests.addTaskToEachBoard(on: graph, relatedBoard: worktree.path)
+        let txn = try CrossRepoUndoTests.lastEvent(ofTask: tasks.app, inRepoAt: app).txn
+        try await CrossRepoUndoTests.runWithNoErrors(CrossRepoUndoTests.undoField, on: graph)
+        let events = [
+            try CrossRepoUndoTests.lastEvent(ofTask: tasks.app, inRepoAt: app),
+            try CrossRepoUndoTests.lastEvent(ofTask: tasks.lib, inRepoAt: worktree),
+        ]
+        Self.expectOneUndo(of: txn, wrote: events)
+        await graph.close()
     }
 
     // MARK: - Board not reached
