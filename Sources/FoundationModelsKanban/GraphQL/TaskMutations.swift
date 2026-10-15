@@ -42,6 +42,10 @@ private struct AddTaskInput: Decodable, Sendable {
     /// The board of the task: a board key, a repo directory name, or a path, or `nil` for the current board (plan.md
     /// §6.6). The short refs of the input resolve in this board.
     let board: String?
+
+    /// The priority value, or `nil` for none (divergence.md P2 and K15). It is not stored: it puts the new task at
+    /// the top or at the end of its column, and gives a warning.
+    let priority: PriorityValue?
 }
 
 /// The `input` object of `updateTask` (plan.md §4.2). A field that is not set does not change, and `null` clears the
@@ -68,6 +72,10 @@ private struct UpdateTaskInput: Decodable, Sendable {
     /// The column to move the task to, at the end of the column, or `nil` for no move (divergence.md E5): a full
     /// URI, the slug, or a name. A slug that no column has makes a new column, the same as `moveTask`.
     let column: NodeID?
+
+    /// The priority value, or `nil` for none (divergence.md P2 and K15). It is not stored: it moves the task to the
+    /// top or to the end of its column, in the same change, and gives a warning.
+    let priority: PriorityValue?
 }
 
 // MARK: - Change
@@ -89,7 +97,8 @@ private struct TaskWrite: Sendable {
     /// The local ref of the task.
     let ref: LocalRef
 
-    /// The warnings of the cross-board dependencies that the field wrote (``DependencyWarnings``).
+    /// The warnings of the cross-board dependencies that the field wrote (``DependencyWarnings``), then the warning of
+    /// the priority value of the input (``PriorityMove``).
     let warnings: [ResponseWarning]
 }
 
@@ -118,7 +127,11 @@ extension KanbanResolver {
             let knownActor = work.knownSessionActor.map { actor in [StoredRef.local(actor)] }
             let ref = LocalRef.task(work.mintULID())
             let column = try work.graph.columnRef(for: input.column, resolvingWith: resolver)
-            let ordinal = try input.ordinal.map(Ordinal.init(parsing:)) ?? work.graph.nextOrdinal(inColumn: column)
+            let moved = input.priority.flatMap { value in
+                work.graph.ordinal(for: value.move, inColumn: column, excluding: nil)
+            }
+            let ordinal = try moved ?? input.ordinal.map(Ordinal.init(parsing:))
+                ?? work.graph.nextOrdinal(inColumn: column)
             var edges = try work.edges(
                 assignees: input.assignees,
                 tags: input.tags,
@@ -135,7 +148,7 @@ extension KanbanResolver {
             let body = input.body.map(FieldUpdate.changed) ?? .unchanged
             let change = TaskChange(values: values, body: body, edges: edges)
             let warnings = try work.write(change, toTask: ref, inBoard: resolver.boardKey, at: time)
-            return TaskWrite(ref: ref, warnings: warnings)
+            return TaskWrite(ref: ref, warnings: warnings + PriorityValue.warnings(of: input.priority))
         }
     }
 
@@ -165,11 +178,17 @@ extension KanbanResolver {
                 resolvingWith: resolver,
                 at: time
             )
-            let place = try work.place(of: ref, movingTo: input.column, resolvingWith: resolver, at: time)
+            let place = try work.place(
+                of: ref,
+                movingTo: input.column,
+                by: input.priority?.move,
+                resolvingWith: resolver,
+                at: time
+            )
             let values = place.merging([PropertyName.title: input.title.map(PatchValue.string)]) { _, title in title }
             let change = TaskChange(values: values, body: input.body, edges: edges)
             let warnings = try work.write(change, toTask: ref, inBoard: resolver.boardKey, at: time)
-            return TaskWrite(ref: ref, warnings: warnings)
+            return TaskWrite(ref: ref, warnings: warnings + PriorityValue.warnings(of: input.priority))
         }
     }
 }
@@ -305,30 +324,59 @@ extension WorkingCopy {
         return lists.compactMapValues { list in list }
     }
 
-    /// Gives the `column` and the `ordinal` updates of an `updateTask` field that moves the task (divergence.md E5).
-    /// The task goes to the end of the column, in the patch of the field. The column follows the rule of `moveTask`.
+    /// Gives the `column` and the `ordinal` updates of an `updateTask` field that moves the task (divergence.md E5,
+    /// P2, and K15), in the patch of the field. A column goes to the end of that column, and the column follows the
+    /// rule of `moveTask`. A priority move puts the task at the top or at the end of its column: the new column, or
+    /// the column where the task shows now.
     ///
     /// - Parameters:
     ///   - task: The local ref of the task.
-    ///   - column: The column that the input names, or `nil` for no move.
+    ///   - column: The column that the input names, or `nil` for no column move.
+    ///   - move: The move of the priority value of the input, or `nil` when the input has no priority value.
     ///   - resolver: The resolver of the forgiving refs of the board.
     ///   - time: The time of the change.
-    /// - Returns: The updates of the column and the ordinal, or no update when the input names no column.
-    /// - Throws: The errors of ``columnRef(forMoveTo:resolvingWith:at:)``.
+    /// - Returns: The updates of the column and the ordinal, only the ordinal update for a priority move in the
+    ///   current column, or no update when nothing moves the task.
+    /// - Throws: The errors of ``columnRef(forMoveTo:resolvingWith:at:)``, and
+    ///   ``KanbanError/notFound(type:reference:)`` when the board has no live column.
     fileprivate mutating func place(
         of task: LocalRef,
         movingTo column: NodeID?,
+        by move: PriorityMove?,
         resolvingWith resolver: RefResolver,
         at time: DateTime
     ) throws -> [String: FieldUpdate<PatchValue>] {
         guard let column else {
-            return [:]
+            return try place(of: task, by: move)
         }
         let ref = try columnRef(forMoveTo: column, resolvingWith: resolver, at: time)
+        let ordinal = move.flatMap { move in graph.ordinal(for: move, inColumn: ref, excluding: task) }
+            ?? graph.nextOrdinal(inColumn: ref, excluding: task)
         return [
             PropertyName.column: .changed(.ref(.local(ref))),
-            PropertyName.ordinal: .changed(.string(graph.nextOrdinal(inColumn: ref, excluding: task).value)),
+            PropertyName.ordinal: .changed(.string(ordinal.value)),
         ]
+    }
+
+    /// Gives the `ordinal` update of a priority move in the column where the task shows now (divergence.md K15).
+    ///
+    /// - Parameters:
+    ///   - task: The local ref of the task.
+    ///   - move: The move of the priority value of the input, or `nil` when the input has no priority value.
+    /// - Returns: The update of the ordinal, or no update when the move keeps the place of the task.
+    /// - Throws: ``KanbanError/notFound(type:reference:)`` when the board has no live column.
+    private func place(
+        of task: LocalRef,
+        by move: PriorityMove?
+    ) throws(KanbanError) -> [String: FieldUpdate<PatchValue>] {
+        guard let move, let node = graph.node(for: task)?.state as? TaskNode else {
+            return [:]
+        }
+        let column = try graph.displayColumn(of: node)
+        guard let ordinal = graph.ordinal(for: move, inColumn: column, excluding: task) else {
+            return [:]
+        }
+        return [PropertyName.ordinal: .changed(.string(ordinal.value))]
     }
 
     /// Writes the task patch of a field, and checks the dependency rule (plan.md §3.3, rule 6).
@@ -597,6 +645,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 InputField("tags", at: \.tags)
                 InputField("dependsOn", at: \.dependsOn).description(SchemaDescription.addTaskDependsOn)
                 InputField("board", at: \.board).description(SchemaDescription.boardToChange)
+                InputField("priority", at: \.priority).description(SchemaDescription.taskPriority)
             }
             Input(UpdateTaskInput.self) {
                 InputField("id", at: \.id)
@@ -606,6 +655,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 InputField("tags", at: \.tags.value)
                 InputField("dependsOn", at: \.dependsOn.value).description(SchemaDescription.updateTaskDependsOn)
                 InputField("column", at: \.column).description(SchemaDescription.updateTaskColumn)
+                InputField("priority", at: \.priority).description(SchemaDescription.taskPriority)
             }
         }
         .addMutation {

@@ -54,8 +54,17 @@ comments:
     - evidence: 3 files — Sources/FoundationModelsKanban/GraphQL/JSONListText.swift, Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift, Tests/FoundationModelsKanbanTests/GraphQL/ListInStringTests.swift; `swift test` 1364 tests in 108 suites passed; 2/2 review findings checked
     - next: /review
   timestamp: 2026-10-15T06:30:14.986389+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4z49pv1fzjsw9y0xrswftwj
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 3 files (2 findings fixed)
+    - test: green — swift test, 1364 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 485ce17
+    - review: clean — none
+  timestamp: 2026-10-15T06:34:22.433002+00:00
+position_column: done
+position_ordinal: f880
 title: Split a JSON array sent as a string for list fields
 ---
 ## What

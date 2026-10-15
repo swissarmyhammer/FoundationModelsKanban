@@ -208,10 +208,11 @@ enum JSONScalar {
 }
 
 extension SchemaBuilder {
-    /// Adds the `ID`, `DateTime`, and `JSON` scalars to the schema.
+    /// Adds the `ID`, `DateTime`, `JSON`, and `Priority` scalars to the schema.
     ///
     /// Graphiti maps no Swift type to the built-in `ID` scalar, so ``NodeID`` is a scalar with that name. The
-    /// schema does not refer to the built-in scalar, so the two do not collide.
+    /// schema does not refer to the built-in scalar, so the two do not collide. ``PriorityValue`` keeps the text of
+    /// each priority value, whatever its GraphQL kind.
     ///
     /// - Returns: This builder, for method chaining.
     @discardableResult
@@ -225,6 +226,12 @@ extension SchemaBuilder {
                 serialize: JSONScalar.serialize,
                 parseValue: JSONScalar.parseValue,
                 parseLiteral: JSONScalar.parseLiteral
+            )
+            Scalar(
+                PriorityValue.self,
+                as: PriorityValue.name,
+                parseValue: PriorityValue.parseValue,
+                parseLiteral: PriorityValue.parseLiteral
             )
         }
     }

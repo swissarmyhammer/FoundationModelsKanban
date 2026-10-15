@@ -68,6 +68,9 @@ enum GraphQLFieldAliases {
         "dependencies", "dependency", "depends", "deps", "blockers", "prerequisites", "blockedBy",
     ]
 
+    /// The aliases of the priority value of a task input (divergence.md P2 and K15).
+    private static let priority = ["prio", "urgent"]
+
     /// The aliases of the `id` of an input that names a task.
     private static let taskID = refAliases(ofType: "task")
 
@@ -82,9 +85,12 @@ enum GraphQLFieldAliases {
         "Task": ["column": ["status", "state", "lane"]],
         "TaskConnection": ["totalCount": ["count", "total"]],
         "Mutation": ["unassignTask": ["removeAssignee"], "assignTask": ["addAssignee"]],
-        "AddTaskInput": ["title": title, "column": column, "assignees": assignees, "dependsOn": dependsOn],
+        "AddTaskInput": [
+            "title": title, "column": column, "assignees": assignees, "dependsOn": dependsOn, "priority": priority,
+        ],
         "UpdateTaskInput": [
             "id": taskID, "title": title, "column": column, "assignees": assignees, "dependsOn": dependsOn,
+            "priority": priority,
         ],
         "MoveTaskInput": [
             "id": taskID, "column": column, "before": ["beforeId", "beforeTask"], "after": ["afterId", "afterTask"],

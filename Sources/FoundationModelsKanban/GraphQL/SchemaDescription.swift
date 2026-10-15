@@ -137,6 +137,13 @@ enum SchemaDescription {
         column has makes the column, the same as moveTask.
         """
 
+    /// The `priority` field of `AddTaskInput` and `UpdateTaskInput` (divergence.md P2 and K15).
+    static let taskPriority = """
+        Not stored: a task has no priority field, and the place in the column is the priority. urgent, critical, \
+        high, P0, P1, or true moves the task to the top of its column; low, P3, or P4 moves it to the end. Each other \
+        value makes no move. The case does not matter, and the response gives a warning.
+        """
+
     // MARK: - Comment inputs
 
     /// The `task` field of `UpdateCommentInput` and `CommentReferenceInput` (divergence.md E5, K16).
