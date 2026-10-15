@@ -23,6 +23,28 @@ comments:
     - evidence: 2 files. Sources/FoundationModelsKanban/Derived/Readiness.swift (cross-board walk), Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoCycleReadinessTests.swift (new, 5 tests, `.watcherBudget`). `swift test`: 1275 passed, 0 failed.
     - next: /review
   timestamp: 2026-10-14T23:51:41.642179+00:00
+- actor: claude-code
+  id: 01m4ydqwpt32fgr3e57rf9vva6
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 2 files
+    - test: green — swift test, 1275 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: a3b3447
+    - review: findings — Sources/FoundationModelsKanban/Derived/Readiness.swift:272, Sources/FoundationModelsKanban/Derived/Readiness.swift:297, Sources/FoundationModelsKanban/Derived/Readiness.swift:300, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoCycleReadinessTests.swift:30, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoCycleReadinessTests.swift:42
+  timestamp: 2026-10-15T00:00:09.946021+00:00
+- actor: claude-code
+  id: 01m4ye1macqyj6cc23p8t5ys94
+  text: |-
+    Review findings (2026-10-14 18:55) are fixed. All 5 items are checked.
+    - WalkBoard reuse: `WalkBoard` is now internal and is the one type for a board key and graph pair. `DependencyWalk.board(holding:)` returns `WalkBoard?`, and `DependencyWalk.readiness(of:)` takes `WalkBoard`. The unnamed tuple is gone. A new `WalkBoard.init(of: BoardSnapshot)` makes the board from a loaded related board. `Readiness.step(toTaskOf:)` and `DependencyWalk` both use it.
+    - `TaskPosition.boardKey` and `TaskPosition.slot` assign-only: the synthesized `Hashable` conformance reads these properties (the walk keeps a `Set<TaskPosition>` and compares with `==`). The dead-code-swift rule says: do not delete such a property, and write `// periphery:ignore` above it with the reason on its own line. I did that for each of the two properties. TaskPosition is the only Hashable type in the file.
+    - ThreeRepos and makeThreeRepos: `CrossRepoFixture.ThreeRepos` (sandbox, app, lib, tools) with `make(toolsNamed:origin:)` replaces the two copies. CrossRepoParallelLoadTests and CrossRepoCycleReadinessTests both call it. Each file keeps only its `toolsName` and `toolsOrigin` constants. No other test file made a third repo.
+    - Tool note: `replace_all: true` on the `files` edit op changed only one match each time. I made the remaining edits one at a time.
+
+    ### implement — changed
+    - evidence: 5 files. Sources/FoundationModelsKanban/Derived/Readiness.swift, Sources/FoundationModelsKanban/Derived/DependencyWalk.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoFixture.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoParallelLoadTests.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoCycleReadinessTests.swift. `swift test`: 1275 tests in 98 suites passed, 0 failed. The only warning is the accepted SwiftPM "missing creator" warning.
+    - next: /review
+  timestamp: 2026-10-15T00:05:29.036210+00:00
 position_column: doing
 position_ordinal: '80'
 title: Block each task in a dependency cycle across boards
@@ -48,3 +70,16 @@ Change: the cycle part of readiness follows edges into loaded related boards too
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-14 18:55)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 2 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsKanban/Derived/Readiness.swift:272` `reuse/reuse` — The new `WalkBoard` struct holds a board key and graph pair. `DependencyWalk` already returns this pair as an unnamed tuple from its board lookup, so the codebase has two shapes for one thing. Use one type for a board key and graph pair. Either give `DependencyWalk` the `WalkBoard` type, or use the existing tuple in `Readiness` and drop `WalkBoard`. Keep only one of the two.
+- [x] `Sources/FoundationModelsKanban/Derived/Readiness.swift:297` `code-hygiene/dead-code-swift` — var.instance `boardKey` is assignOnlyProperty.
+- [x] `Sources/FoundationModelsKanban/Derived/Readiness.swift:300` `code-hygiene/dead-code-swift` — var.instance `slot` is assignOnlyProperty.
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoCycleReadinessTests.swift:30` `reuse/reuse` — The `ThreeRepos` struct repeats the three-repo shape already defined in another test file. Use the `ThreeRepos` type from `CrossRepoParallelLoadTests` instead of declaring a second one, or move the type into `CrossRepoFixture` so that both files share it.
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoCycleReadinessTests.swift:42` `reuse/reuse` — `makeThreeRepos()` builds the same three side-by-side repos as an existing helper, so the test file now carries a second copy of that setup. Call `CrossRepoParallelLoadTests.ThreeRepos.make` in place of this helper, or move that helper to `CrossRepoFixture` and call it from all three test files. Keep only the `toolsName` and `toolsOrigin` arguments in this file.

@@ -26,25 +26,6 @@ struct CrossRepoCycleReadinessTests {
 
     // MARK: - Helpers
 
-    /// The repos of a test with three boards: the current repo, the related repo, and a third repo, side by side.
-    struct ThreeRepos {
-        /// The current repo and the related repo.
-        let repos: CrossRepoFixture.SideBySide
-
-        /// The third repo, ``toolsName``.
-        let tools: URL
-    }
-
-    /// Makes the sandbox with the three repos.
-    ///
-    /// - Returns: The repos.
-    /// - Throws: An error when a directory cannot be made, or when a git command fails.
-    static func makeThreeRepos() async throws -> ThreeRepos {
-        let repos = try await CrossRepoFixture.SideBySide.make()
-        let tools = try await repos.sandbox.makeRepo(named: toolsName, origin: toolsOrigin)
-        return ThreeRepos(repos: repos, tools: tools)
-    }
-
     /// Gives the key of the third repo as text.
     ///
     /// - Returns: The key.
@@ -149,8 +130,8 @@ struct CrossRepoCycleReadinessTests {
     /// The tasks of a chain across three boards: `a` in the current board depends on `b` in the related board, and
     /// `b` depends on `c` in the third board. `b` and `c` are done.
     struct ThreeBoardChain {
-        /// The three repos.
-        let repos: ThreeRepos
+        /// The three repos. The third repo is ``toolsName``.
+        let repos: CrossRepoFixture.ThreeRepos
 
         /// The full URI of `a`, the task of the current board. It is not done.
         let first: String
@@ -167,8 +148,8 @@ struct CrossRepoCycleReadinessTests {
     /// - Returns: The repos and the three tasks.
     /// - Throws: An error when a call fails.
     static func makeThreeBoardChain() async throws -> ThreeBoardChain {
-        let repos = try await makeThreeRepos()
-        let app = try GitGraphFixture.makeGraph(at: repos.repos.app)
+        let repos = try await CrossRepoFixture.ThreeRepos.make(toolsNamed: toolsName, origin: toolsOrigin)
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
         let third = try await CrossRepoFixture.addTask(with: CrossRepoWriteTests.boardField(toolsKey()), on: app)
         let second = try await CrossRepoWriteTests.addLibTask(
             with: "dependsOn: \(AddUpdateTaskTests.list(of: [third]))",
@@ -200,8 +181,8 @@ struct CrossRepoCycleReadinessTests {
     func threeBoardCycleBlocksEachTask() async throws {
         let chain = try await Self.makeThreeBoardChain()
         try Self.logEdge(from: chain.third, to: chain.first, inRepoAt: chain.repos.tools)
-        let first = try await Self.fields(of: chain.first, inRepoAt: chain.repos.repos.app)
-        let second = try await Self.fields(of: chain.second, inRepoAt: chain.repos.repos.lib)
+        let first = try await Self.fields(of: chain.first, inRepoAt: chain.repos.app)
+        let second = try await Self.fields(of: chain.second, inRepoAt: chain.repos.lib)
         let third = try await Self.fields(of: chain.third, inRepoAt: chain.repos.tools)
         Self.expectBlocked(by: chain.second, in: first)
         Self.expectBlocked(by: chain.third, in: second)
@@ -213,18 +194,18 @@ struct CrossRepoCycleReadinessTests {
     @Test("A chain across three boards with no cycle keeps its readiness: the task is READY and nextTask gives it")
     func threeBoardChainWithNoCycleIsReady() async throws {
         let chain = try await Self.makeThreeBoardChain()
-        let fields = try await Self.fields(of: chain.first, inRepoAt: chain.repos.repos.app)
+        let fields = try await Self.fields(of: chain.first, inRepoAt: chain.repos.app)
         #expect(fields["ready"] as? Bool == true, "\(fields)")
         #expect(UnresolvedDependsOnTests.blockerIDs(in: fields) == [], "\(fields)")
         let next = #"{"data":{"board":{"nextTask":{"id":"\#(chain.first)"}}}}"#
-        #expect(try await Self.nextTask(inRepoAt: chain.repos.repos.app) == next)
+        #expect(try await Self.nextTask(inRepoAt: chain.repos.app) == next)
     }
 
     @Test("A cycle across boards behind a done dependency does not block a task outside the cycle, and the walk ends")
     func crossBoardCycleBehindDoneDependencyDoesNotBlock() async throws {
         let chain = try await Self.makeThreeBoardChain()
         try Self.logEdge(from: chain.third, to: chain.second, inRepoAt: chain.repos.tools)
-        let fields = try await Self.fields(of: chain.first, inRepoAt: chain.repos.repos.app)
+        let fields = try await Self.fields(of: chain.first, inRepoAt: chain.repos.app)
         #expect(fields["ready"] as? Bool == true, "\(fields)")
     }
 }

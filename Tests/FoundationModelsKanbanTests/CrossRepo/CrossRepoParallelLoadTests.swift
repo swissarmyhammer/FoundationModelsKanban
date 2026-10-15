@@ -23,31 +23,6 @@ struct CrossRepoParallelLoadTests {
     /// The number of related boards that a test reaches.
     static let relatedCount = 2
 
-    /// The repos of a sandbox: the current repo and two related repos, side by side.
-    struct ThreeRepos {
-        /// The sandbox of the test. It removes the repos when the test ends.
-        let sandbox: GitSandbox
-
-        /// The current repo, ``BoardLocatorTests/appName``.
-        let app: URL
-
-        /// The first related repo, ``BoardLocatorTests/libName``.
-        let lib: URL
-
-        /// The second related repo, ``CrossRepoParallelLoadTests/toolsName``.
-        let tools: URL
-
-        /// Makes the sandbox and the three repos in it.
-        ///
-        /// - Returns: The sandbox and its repos.
-        /// - Throws: An error when a directory cannot be made, or when a git command fails.
-        static func make() async throws -> ThreeRepos {
-            let repos = try await CrossRepoFixture.SideBySide.make()
-            let tools = try await repos.sandbox.makeRepo(named: toolsName, origin: toolsOrigin)
-            return ThreeRepos(sandbox: repos.sandbox, app: repos.app, lib: repos.lib, tools: tools)
-        }
-    }
-
     /// Makes a host that reads git and that waits in each file load.
     ///
     /// - Parameter recorder: The load recorder of the host.
@@ -90,7 +65,7 @@ struct CrossRepoParallelLoadTests {
 
     @Test("A query that names two related boards starts both loads before either load ends")
     func boardFieldsLoadAtSameTime() async throws {
-        let repos = try await ThreeRepos.make()
+        let repos = try await CrossRepoFixture.ThreeRepos.make(toolsNamed: Self.toolsName, origin: Self.toolsOrigin)
         let recorder = LoadRecorder(waitingInEachLoad: Self.loadDelay)
         let host = Self.makeSlowHost(recordedBy: recorder)
         let session = try await host.session(workingDirectory: repos.app, actor: KanbanHostTests.firstActor)
@@ -107,7 +82,7 @@ struct CrossRepoParallelLoadTests {
 
     @Test("Query.boards starts the load of each related copy before any load ends, and keeps the scan order")
     func boardListLoadsAtSameTime() async throws {
-        let repos = try await ThreeRepos.make()
+        let repos = try await CrossRepoFixture.ThreeRepos.make(toolsNamed: Self.toolsName, origin: Self.toolsOrigin)
         let recorder = LoadRecorder(waitingInEachLoad: Self.loadDelay)
         let host = Self.makeSlowHost(recordedBy: recorder)
         let session = try await host.session(workingDirectory: repos.app, actor: KanbanHostTests.firstActor)
@@ -121,7 +96,7 @@ struct CrossRepoParallelLoadTests {
 
     @Test("Two calls of two sessions that reach the same related board at the same time load it one time")
     func sameBoardLoadsOneTime() async throws {
-        let repos = try await ThreeRepos.make()
+        let repos = try await CrossRepoFixture.ThreeRepos.make(toolsNamed: Self.toolsName, origin: Self.toolsOrigin)
         let recorder = LoadRecorder(waitingInEachLoad: Self.loadDelay)
         let host = Self.makeSlowHost(recordedBy: recorder)
         let app = try await host.session(workingDirectory: repos.app, actor: KanbanHostTests.firstActor)

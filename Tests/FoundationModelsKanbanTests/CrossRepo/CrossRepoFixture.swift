@@ -62,6 +62,34 @@ enum CrossRepoFixture {
         }
     }
 
+    /// The repos of a sandbox with the current repo and two related repos, side by side.
+    struct ThreeRepos {
+        /// The sandbox of the test. It removes the repos when the test ends.
+        let sandbox: GitSandbox
+
+        /// The current repo, ``BoardLocatorTests/appName``.
+        let app: URL
+
+        /// The first related repo, ``BoardLocatorTests/libName``.
+        let lib: URL
+
+        /// The second related repo, with the name that the test gives.
+        let tools: URL
+
+        /// Makes the sandbox and the three repos in it.
+        ///
+        /// - Parameters:
+        ///   - name: The name of the second related repo.
+        ///   - origin: The `origin` remote of the second related repo.
+        /// - Returns: The sandbox and its repos.
+        /// - Throws: An error when a directory cannot be made, or when a git command fails.
+        static func make(toolsNamed name: String, origin: String) async throws -> ThreeRepos {
+            let repos = try await SideBySide.make()
+            let tools = try await repos.sandbox.makeRepo(named: name, origin: origin)
+            return ThreeRepos(sandbox: repos.sandbox, app: repos.app, lib: repos.lib, tools: tools)
+        }
+    }
+
     /// Adds a task with an `addTask` input, and gives its id.
     ///
     /// - Parameters:

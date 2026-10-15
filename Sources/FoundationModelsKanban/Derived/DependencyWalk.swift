@@ -102,9 +102,9 @@ struct DependencyWalk {
     ///
     /// - Parameter task: The URI of the task.
     /// - Returns: The current key and the graph of the board, or `nil` when no loaded board has the task.
-    private mutating func board(holding task: NodeURI) -> (key: String, graph: Graph)? {
+    private mutating func board(holding task: NodeURI) -> WalkBoard? {
         guard task.boardKey != boardKey else {
-            return (boardKey, graph)
+            return WalkBoard(key: boardKey, graph: graph)
         }
         guard let found = related.task(for: .remote(task)) else {
             return nil
@@ -112,14 +112,14 @@ struct DependencyWalk {
         if let directory = found.board.source?.directory {
             readBoards.insert(directory.canonicalPath)
         }
-        return (found.board.key, found.board.graph)
+        return WalkBoard(of: found.board)
     }
 
     /// Gives the readiness of a board, and keeps it for the next task of the board.
     ///
     /// - Parameter board: The current key and the graph of the board.
     /// - Returns: The readiness.
-    private mutating func readiness(of board: (key: String, graph: Graph)) -> Readiness {
+    private mutating func readiness(of board: WalkBoard) -> Readiness {
         if let known = readiness[board.key] {
             return known
         }

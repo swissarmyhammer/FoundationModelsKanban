@@ -260,7 +260,7 @@ extension Readiness {
             return nil
         }
         guard found.board.key == boardKey else {
-            return WalkStep(board: WalkBoard(key: found.board.key, graph: found.board.graph), slot: found.slot)
+            return WalkStep(board: WalkBoard(of: found.board), slot: found.slot)
         }
         return graph.slot(for: uri.ref).flatMap { slot in
             graph.isLiveTask(at: slot) ? WalkStep(board: currentBoard, slot: slot) : nil
@@ -268,13 +268,23 @@ extension Readiness {
     }
 }
 
-/// A board that a walk across boards reads: its current key and its graph.
-private struct WalkBoard {
+/// A board that a walk across boards reads: its current key and its graph. The readiness walk and
+/// ``DependencyWalk`` both use it.
+struct WalkBoard {
     /// The current key of the board.
     let key: String
 
     /// The graph of the board.
     let graph: Graph
+}
+
+extension WalkBoard {
+    /// Makes the board of a walk from a loaded related board.
+    ///
+    /// - Parameter board: The loaded board.
+    init(of board: BoardSnapshot) {
+        self.init(key: board.key, graph: board.graph)
+    }
 }
 
 /// One task that a walk across boards reached.
@@ -294,9 +304,13 @@ private struct WalkStep {
 /// The place of a task on a walk across boards: the current key of its board and its slot in that board.
 private struct TaskPosition: Hashable {
     /// The current key of the board of the task.
+    /// Read by the synthesized `Hashable` conformance; periphery sees no caller.
+    // periphery:ignore
     let boardKey: String
 
     /// The slot of the task in the graph of its board.
+    /// Read by the synthesized `Hashable` conformance; periphery sees no caller.
+    // periphery:ignore
     let slot: Int
 }
 
