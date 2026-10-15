@@ -20,10 +20,11 @@ import Foundation
 ///
 /// A ref names only a live node, unless the caller asks for tombstones (the undelete mutations do). A ref that names
 /// no node gives ``KanbanError/notFound(type:reference:)``. A URI that does not parse also gives that error, because
-/// the error catalog has no code for a ``NodeRefError``. A prefix of more than one ULID gives
-/// ``KanbanError/ambiguousID(reference:matches:)`` with the short ids of the matches. A short id that more than one
-/// ULID has (a merge can make such ULIDs) gives ``KanbanError/sharedShortID(reference:ids:)`` with the full ULIDs of
-/// the matches (``KanbanError/ambiguity(of:among:)``).
+/// the error catalog has no code for a ``NodeRefError``. A ULID prefix of more than one ULID gives
+/// ``KanbanError/ambiguousID(reference:matches:)`` with the id and the title of each match (divergence.md P5). A
+/// short id that more than one ULID has (a merge can make such ULIDs) names the first match: a live node comes before
+/// a tombstone, then the lowest ULID. The pick adds a ``sharedShortIDWarningCode`` warning to the collector of the
+/// run (``ResolverWarnings``), with the ULIDs of the matches (divergence.md Q20).
 ///
 /// ``anyLocalRef(for:)`` resolves a ref with no expected type, for `node(id:)` and `nodes(ids:)` (plan.md §4.1).
 struct RefResolver: Sendable {
@@ -36,9 +37,9 @@ struct RefResolver: Sendable {
     /// that a prefix of a task and a comment is ambiguous, and a canonical form wins over a prefix.
     private static let ulidTypes: Set<PatchNodeType> = [.task, .comment]
 
-    /// The smallest number of nodes that make a shared short id. When this number of nodes or more have the same
-    /// short id, the short id names no node, and the resolve gives `AMBIGUOUS_ID` (plan.md §3.2).
-    private static let sharedShortIDOwnerCount = 2
+    /// The code of the warning of a short id that more than one node has, in `extensions.warnings` (divergence.md
+    /// Q20). The resolve names the first match and gives this warning.
+    static let sharedShortIDWarningCode = "SHARED_SHORT_ID"
 
     /// The graph of the target board.
     let graph: Graph
@@ -119,20 +120,6 @@ struct RefResolver: Sendable {
         case .otherBoard?, nil:
             return nil
         }
-    }
-
-    /// Checks that a short form is not a short id that two or more tasks or comments of this board have, live or
-    /// tombstoned.
-    ///
-    /// A `^id` filter atom resolves its value among one task and its dependencies (``FilterEvaluator``), so it does
-    /// not find two tasks with the same short id. The filter calls this check one time, before it tests the nodes.
-    ///
-    /// - Parameters:
-    ///   - key: The short form, for example the value of a `^id` filter atom.
-    ///   - reference: The ref as the caller wrote it, for the error message, for example `^ajv8v4t`.
-    /// - Throws: ``KanbanError/sharedShortID(reference:ids:)`` when two or more tasks or comments have the short id.
-    func checkShortIDIsUnique(_ key: String, writtenAs reference: String) throws(KanbanError) {
-        try checkShortIDIsUnique(key, writtenAs: reference, among: Self.ulidTypes)
     }
 
     /// Finds the node of any type that a short form names, live or tombstoned.
@@ -419,18 +406,17 @@ extension RefResolver {
     /// Finds the task or the comment that a ULID form names.
     ///
     /// The candidates are the nodes of the ULID types of the lookup that the lookup accepts, in slot order. Thus, a
-    /// tombstone does not make a prefix ambiguous, unless the lookup accepts tombstones.
+    /// tombstone does not make a prefix ambiguous, and is not a match of a short id, unless the lookup accepts
+    /// tombstones.
     ///
     /// - Parameters:
     ///   - key: The full ULID, the short id, either of these with a leading ``ShortID/sigil``, or a ULID prefix.
     ///   - lookup: The resolve.
-    /// - Returns: The local ref of the node, or `nil` when no candidate matches.
-    /// - Throws: ``KanbanError/ambiguousID(reference:matches:)`` when the key is a prefix of more than one candidate.
-    ///   ``KanbanError/sharedShortID(reference:ids:)`` when the key is a short id that two or more nodes of the ULID
-    ///   types have, live or tombstoned (``checkShortIDIsUnique(_:writtenAs:among:)``), or when two or more of the
-    ///   candidates that a prefix matches have the same short id.
+    /// - Returns: The local ref of the node, or `nil` when no candidate matches. A short id of more than one candidate
+    ///   gives the first match (``firstMatch(among:writtenAs:)``).
+    /// - Throws: ``KanbanError/ambiguousID(reference:matches:)`` when the key is a ULID prefix of more than one
+    ///   candidate.
     private func ulidRef(for key: String, in lookup: Lookup) throws(KanbanError) -> LocalRef? {
-        try checkShortIDIsUnique(key, writtenAs: lookup.reference, among: lookup.ulidTypes)
         let candidates = graph.allSlots
             .compactMap { slot in ref(at: slot, in: lookup) }
             .filter { candidate in lookup.ulidTypes.contains(candidate.nodeType) }
@@ -439,35 +425,10 @@ extension RefResolver {
             return candidates.first { candidate in candidate.localID == ulid }
         case .notFound:
             return nil
+        case .shared(let ulids):
+            return firstMatch(among: Self.refs(withULIDs: ulids, among: candidates), writtenAs: lookup.reference)
         case .ambiguous(let ulids):
-            throw .ambiguity(of: lookup.reference, among: ulids)
-        }
-    }
-
-    /// Checks that no two nodes of some types have the short id that a ULID form names.
-    ///
-    /// The check reads each node of the types, live or tombstoned, also when the lookup does not accept tombstones.
-    /// Thus, a short id that a live node and a tombstone share names no node (plan.md §3.2: a short id is a unique
-    /// ULID prefix).
-    ///
-    /// - Parameters:
-    ///   - key: The ULID form. Only a short id, with or without a leading ``ShortID/sigil``, can fail the check.
-    ///   - reference: The ref as the caller wrote it, for the error message.
-    ///   - types: The node types whose local id is a ULID that the form can name.
-    /// - Throws: ``KanbanError/sharedShortID(reference:ids:)`` with the full ULIDs, in slot order, when two or more
-    ///   nodes have the short id.
-    private func checkShortIDIsUnique(
-        _ key: String,
-        writtenAs reference: String,
-        among types: Set<PatchNodeType>
-    ) throws(KanbanError) {
-        let ulids = graph.allSlots
-            .compactMap { slot in graph.node(at: slot)?.ref }
-            .filter { ref in types.contains(ref.nodeType) }
-            .compactMap(\.localID)
-        let owners = ShortID.ulids(withShortIDOf: key, among: ulids)
-        guard owners.count < Self.sharedShortIDOwnerCount else {
-            throw .sharedShortID(reference: reference, ids: owners)
+            throw .ambiguousID(reference: lookup.reference, matches: ambiguousMatches(of: ulids, among: candidates))
         }
     }
 
@@ -493,5 +454,111 @@ extension RefResolver {
             return nil
         }
         return node.ref
+    }
+}
+
+// MARK: - More than one match
+
+extension RefResolver {
+    /// Gives the candidates that have some ULIDs, in the order of the candidates.
+    ///
+    /// - Parameters:
+    ///   - ulids: The ULID texts that a resolve matched.
+    ///   - candidates: The local refs of the candidates of the resolve.
+    /// - Returns: The local ref of each candidate whose local id is one of the ULIDs.
+    private static func refs(withULIDs ulids: [String], among candidates: [LocalRef]) -> [LocalRef] {
+        let matched = Set(ulids)
+        return candidates.filter { candidate in candidate.localID.map(matched.contains) ?? false }
+    }
+
+    /// Picks the first match of a short id that more than one node has, and adds a warning that lists the matches
+    /// (divergence.md Q20).
+    ///
+    /// The order is the same on each call: a live node comes before a tombstone, then the lowest ULID
+    /// (``precedes(_:_:)``). The warning goes to the collector of the run (``ResolverWarnings/current``), so that the
+    /// agent learns that the call used one of more nodes, and how to name a different one.
+    ///
+    /// - Parameters:
+    ///   - owners: The local refs of the nodes that have the short id.
+    ///   - reference: The ref as the caller wrote it, for the warning.
+    /// - Returns: The first match, or `nil` when the list is empty.
+    private func firstMatch(among owners: [LocalRef], writtenAs reference: String) -> LocalRef? {
+        let ordered = owners.sorted(by: precedes)
+        guard let first = ordered.first else {
+            return nil
+        }
+        ResolverWarnings.current?.add(Self.sharedShortIDWarning(writtenAs: reference, picking: first, of: ordered))
+        return first
+    }
+
+    /// Tells if a node comes before a different node in the order of the matches of a shared short id: a live node
+    /// comes before a tombstone, then the lowest ULID.
+    ///
+    /// - Parameters:
+    ///   - lhs: The local ref of the first node.
+    ///   - rhs: The local ref of the second node.
+    /// - Returns: `true` when the first node comes before the second node.
+    private func precedes(_ lhs: LocalRef, _ rhs: LocalRef) -> Bool {
+        let (lhsIsTombstone, rhsIsTombstone) = (isTombstone(lhs), isTombstone(rhs))
+        guard lhsIsTombstone == rhsIsTombstone else {
+            return rhsIsTombstone
+        }
+        return (lhs.localID ?? "") < (rhs.localID ?? "")
+    }
+
+    /// Tells if the node of a local ref is a tombstone.
+    ///
+    /// - Parameter ref: The local ref of a node of the graph.
+    /// - Returns: `true` when the graph has the node and the node is deleted.
+    private func isTombstone(_ ref: LocalRef) -> Bool {
+        graph.slot(for: ref).flatMap(graph.node(at:))?.state.fields.isDeleted ?? false
+    }
+
+    /// Makes the warning of the pick of the first match of a shared short id.
+    ///
+    /// - Parameters:
+    ///   - reference: The ref as the caller wrote it.
+    ///   - first: The local ref of the first match.
+    ///   - ordered: The local refs of the matches, in the order of the pick.
+    /// - Returns: The warning, with the ULID of each match.
+    private static func sharedShortIDWarning(
+        writtenAs reference: String,
+        picking first: LocalRef,
+        of ordered: [LocalRef]
+    ) -> ResponseWarning {
+        let ids = ordered.compactMap(\.localID).joined(separator: KanbanError.listSeparator)
+        let message = "The short id \"\(reference)\" matches more than one id: \(ids). The call used "
+            + "\(first.localID ?? ""): a live node comes first, and then the lowest id. Send the full id to use a "
+            + "different node."
+        return ResponseWarning(message: message, code: sharedShortIDWarningCode)
+    }
+
+    /// Gives the matches of an ambiguous ULID prefix for its `AMBIGUOUS_ID` error (divergence.md P5).
+    ///
+    /// Each match gives the id that names it alone in the lookup: the short id with a leading ``ShortID/sigil``, or
+    /// the full ULID when a different candidate has the same short id (``ShortID/collisions(among:)``). A task gives
+    /// its title.
+    ///
+    /// - Parameters:
+    ///   - ulids: The ULID texts that the prefix matches, in the order of the candidates.
+    ///   - candidates: The local refs of the candidates of the resolve.
+    /// - Returns: The matches, in the order of the ULIDs.
+    private func ambiguousMatches(of ulids: [String], among candidates: [LocalRef]) -> [KanbanError.AmbiguousMatch] {
+        let sharedShortIDs = ShortID.collisions(among: candidates.compactMap(\.localID))
+        return Self.refs(withULIDs: ulids, among: candidates).compactMap { ref in
+            ref.localID.map { ulid in
+                let shortID = ShortID(ofULIDString: ulid)
+                let id = sharedShortIDs[shortID] == nil ? "\(ShortID.sigil)\(shortID.value)" : ulid
+                return KanbanError.AmbiguousMatch(id: id, title: title(of: ref))
+            }
+        }
+    }
+
+    /// Gives the title of the task of a local ref.
+    ///
+    /// - Parameter ref: The local ref of a node of the graph.
+    /// - Returns: The title, or `nil` when the node is not a task, for example a comment.
+    private func title(of ref: LocalRef) -> String? {
+        graph.slot(for: ref).flatMap { slot in graph.node(at: slot, as: TaskNode.self) }?.title
     }
 }

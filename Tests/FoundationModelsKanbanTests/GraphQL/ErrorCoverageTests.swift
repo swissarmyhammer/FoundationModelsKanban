@@ -115,7 +115,10 @@ struct ErrorCoverageTests {
         let (first, second) = (try #require(added.first), try #require(added.last))
         let prefix = String(zip(first.ulidString, second.ulidString).prefix { pair in pair.0 == pair.1 }.map(\.0))
         let response = try await KanbanGraphTests.execute(#"{ node(id: "\#(prefix)") { id } }"#, on: graph)
-        let expected = KanbanError.ambiguousID(reference: prefix, matches: added.map(ShortID.init(of:)))
+        let matches = added.map { task in
+            KanbanError.AmbiguousMatch(id: AddUpdateTaskTests.sigilRef(of: task), title: AddUpdateTaskTests.title)
+        }
+        let expected = KanbanError.ambiguousID(reference: prefix, matches: matches)
         try Self.expectFailure(of: "node", in: response, giving: expected, coded: "AMBIGUOUS_ID")
     }
 

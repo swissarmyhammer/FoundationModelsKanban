@@ -1329,6 +1329,11 @@ extension API where ContextType == KanbanContext {
     /// Runs a rewritten document, and gives the result in the form of the
     /// document that the caller wrote.
     ///
+    /// The run binds a ``ResolverWarnings`` collector, so that the warnings
+    /// of the ref resolver, for example the pick of the first match of a
+    /// shared short id (divergence.md Q20), go into the warnings of the
+    /// context.
+    ///
     /// - Parameters:
     ///   - rewritten: The document and the values of its variables after the name rewrite.
     ///   - operationName: The operation of the document to run, or `nil`.
@@ -1345,12 +1350,14 @@ extension API where ContextType == KanbanContext {
         guard rewritten.ties.isEmpty else {
             return GraphQLResult(errors: rewritten.ties)
         }
-        let result = try await execute(
-            request: rewritten.text,
-            context: context,
-            variables: rewritten.variables,
-            operationName: operationName
-        )
+        let result = try await ResolverWarnings.collecting(into: context.warnings) {
+            try await execute(
+                request: rewritten.text,
+                context: context,
+                variables: rewritten.variables,
+                operationName: operationName
+            )
+        }
         return rewritten.codedCallerResult(from: result)
     }
 }

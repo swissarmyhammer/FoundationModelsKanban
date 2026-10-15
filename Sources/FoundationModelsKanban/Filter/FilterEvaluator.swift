@@ -3,9 +3,9 @@ import Foundation
 /// Evaluates a parsed filter against the nodes of one board (plan.md §6.3).
 ///
 /// The evaluator resolves each atom one time, when it is made, so that the test of each node does no name lookup.
-/// Each match ignores case. An atom whose value names nothing matches nothing; it is not an error. One value is an
-/// error: a `^id` value that is a short id of two or more tasks or comments gives `AMBIGUOUS_ID`
-/// (``KanbanError/sharedShortID(reference:ids:)``), because a short id is a unique ULID prefix (plan.md §3.2).
+/// Each match ignores case. An atom whose value names nothing matches nothing; it is not an error. A `^id` value that
+/// is a short id of two or more tasks matches each of these tasks, and each task that depends on one of them
+/// (divergence.md Q20). The filter picks no first match, so it gives no warning.
 ///
 /// - `#tag` matches a task that has the tag from an edge or from a `#marker` in its body, after the rename redirect
 ///   (``Graph/tagSlots(of:)``). The name of a virtual tag (``VirtualTag``) matches only a task that has that
@@ -14,9 +14,9 @@ import Foundation
 ///   the value.
 /// - `^id` matches the task itself, and each task that depends on it, from an edge or a dependency marker. The value
 ///   can be a full ULID, a short id, or a ULID prefix. As in Rust, the value resolves among the task and its
-///   dependencies in this board (``ShortID/resolve(_:among:)``), so a prefix that is ambiguous there matches nothing.
-///   On a node that is not a task, `^id` matches the node that the value names: the forgiving ref of
-///   ``RefResolver/anyLocalRef(for:)``, or the URL of the node.
+///   dependencies in this board (``ShortID/resolve(_:among:)``), so a prefix that is ambiguous there matches nothing,
+///   and a short id that more than one of them has matches. On a node that is not a task, `^id` matches the node
+///   that the value names: the forgiving ref of ``RefResolver/anyLocalRef(for:)``, or the URL of the node.
 /// - `%column` matches a task that shows in a live column whose slug, or the slug of whose name, is the slug of the
 ///   value. A task with no live column shows in the first column (``ColumnOrder``).
 /// - `~type` matches each node of the node type that the value names, for example `~comment`.
@@ -41,10 +41,11 @@ struct FilterEvaluator {
     ///   - filter: The parsed filter.
     ///   - readiness: The readiness of the tasks of the board. It holds the graph and the column order.
     ///   - boardKey: The current key of the board. A URL with this key names a node of the board.
-    /// - Throws: ``KanbanError/sharedShortID(reference:ids:)`` when the value of a `^id` atom is a short id that two
-    ///   or more tasks or comments of the board have, live or tombstoned.
+    /// - Throws: No error at this time: each value of an atom gives a test, also a value that names nothing or a
+    ///   short id that more than one task has (divergence.md Q20). The typed `throws` stays for the callers
+    ///   (``TaskFilter``).
     init(evaluating filter: FilterExpr, over readiness: Readiness, inBoard boardKey: String) throws(KanbanError) {
-        test = try FilterCompiler(readiness: readiness, boardKey: boardKey).test(for: filter)
+        test = FilterCompiler(readiness: readiness, boardKey: boardKey).test(for: filter)
     }
 
     /// Tells if a node matches the filter.
@@ -92,22 +93,20 @@ private struct FilterCompiler {
     ///
     /// - Parameter filter: The filter, or a part of it.
     /// - Returns: The test.
-    /// - Throws: ``KanbanError/sharedShortID(reference:ids:)`` when the value of a `^id` atom is a short id that two
-    ///   or more tasks or comments have (``refTest(for:)``).
-    func test(for filter: FilterExpr) throws(KanbanError) -> NodeTest {
+    func test(for filter: FilterExpr) -> NodeTest {
         switch filter {
         case .atom(let kind, let value):
-            return try atomTest(of: kind, value: value)
+            return atomTest(of: kind, value: value)
         case .and(let lhs, let rhs):
-            let left = try test(for: lhs)
-            let right = try test(for: rhs)
+            let left = test(for: lhs)
+            let right = test(for: rhs)
             return { slot in left(slot) && right(slot) }
         case .or(let lhs, let rhs):
-            let left = try test(for: lhs)
-            let right = try test(for: rhs)
+            let left = test(for: lhs)
+            let right = test(for: rhs)
             return { slot in left(slot) || right(slot) }
         case .not(let operand):
-            let operandTest = try test(for: operand)
+            let operandTest = test(for: operand)
             return { slot in !operandTest(slot) }
         }
     }
@@ -118,14 +117,12 @@ private struct FilterCompiler {
     ///   - kind: The kind of the atom.
     ///   - value: The value of the atom.
     /// - Returns: The test.
-    /// - Throws: ``KanbanError/sharedShortID(reference:ids:)`` when the atom is a `^id` atom whose value is a short
-    ///   id that two or more tasks or comments have (``refTest(for:)``).
-    private func atomTest(of kind: FilterAtomKind, value: FilterValue) throws(KanbanError) -> NodeTest {
+    private func atomTest(of kind: FilterAtomKind, value: FilterValue) -> NodeTest {
         switch kind {
         case .tag: localTest(of: kind, value: value, makingTestWith: tagTest(named:))
         case .assignee: localTest(of: kind, value: value, makingTestWith: assigneeTest(named:))
         case .column: localTest(of: kind, value: value, makingTestWith: columnTest(named:))
-        case .ref: try refTest(for: value)
+        case .ref: refTest(for: value)
         case .type: nodeTypeTest(for: value)
         }
     }
@@ -311,19 +308,12 @@ extension FilterCompiler {
     /// Makes the test of a `^id` atom. A task matches by the task test (``taskRefTest(naming:)``). A node of a
     /// different type matches when the value names that node.
     ///
-    /// The task test resolves the value among one task and its dependencies, so it cannot find a short id that two
-    /// tasks share. Thus, the value is first checked against all of the tasks and the comments of the board
-    /// (``RefResolver/checkShortIDIsUnique(_:writtenAs:)``): a short id is a unique ULID prefix (plan.md §3.2).
+    /// The task test resolves the value among each task and its dependencies, so a short id that two or more tasks
+    /// share matches each of these tasks, and each task that depends on one of them (divergence.md Q20, as Rust does).
     ///
     /// - Parameter value: The value of the atom.
     /// - Returns: The test.
-    /// - Throws: ``KanbanError/sharedShortID(reference:ids:)`` when the value is a short id that two or more tasks or
-    ///   comments have, live or tombstoned.
-    private func refTest(for value: FilterValue) throws(KanbanError) -> NodeTest {
-        if case .name(let reference) = value {
-            let resolver = RefResolver(graph: graph, boardKey: boardKey)
-            try resolver.checkShortIDIsUnique(reference, writtenAs: "\(FilterAtomKind.ref.sigil)\(reference)")
-        }
+    private func refTest(for value: FilterValue) -> NodeTest {
         let taskTest = taskRefTest(naming: target(of: value, for: .ref))
         let namedRef = localRef(namedBy: value)
         return { slot in
@@ -365,14 +355,15 @@ extension FilterCompiler {
 
     /// Resolves a forgiving ref to a node of any type (``RefResolver/anyLocalRef(for:)``).
     ///
+    /// The resolve binds no ``ResolverWarnings`` collector: a filter selects nodes, so the first match of a shared
+    /// short id is no pick of the call, and gives no warning.
+    ///
     /// - Parameter reference: The ref as the filter writes it, for example a slug or a short id.
     /// - Returns: The local ref of the node, or `nil` when no node has the ref. A prefix of more than one ULID also
     ///   gives `nil`: a value that names no single node matches nothing, the same as a value that names no node.
     private func resolvedRef(for reference: String) -> LocalRef? {
-        do {
-            return try RefResolver(graph: graph, boardKey: boardKey).anyLocalRef(for: reference)
-        } catch {
-            return nil
+        ResolverWarnings.$current.withValue(nil) {
+            try? RefResolver(graph: graph, boardKey: boardKey).anyLocalRef(for: reference)
         }
     }
 
@@ -393,14 +384,15 @@ extension FilterCompiler {
     /// - Parameters:
     ///   - slot: The slot of the task.
     ///   - reference: The full ULID, the short id, or a ULID prefix.
-    /// - Returns: `true` when the reference resolves to exactly one candidate.
+    /// - Returns: `true` when the reference resolves to exactly one candidate, or is a short id that more than one
+    ///   candidate has.
     private func isReferenced(taskAt slot: Int, by reference: String) -> Bool {
         guard let task = graph.node(at: slot, as: TaskNode.self) else {
             return false
         }
         let dependencies = readiness.dependencies(ofTaskAt: slot).compactMap(localTaskULID(of:))
         switch ShortID.resolve(reference, among: [task.id.ulidString] + dependencies) {
-        case .found:
+        case .found, .shared:
             return true
         case .notFound, .ambiguous:
             return false

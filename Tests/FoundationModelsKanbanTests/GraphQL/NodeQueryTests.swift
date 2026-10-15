@@ -280,9 +280,15 @@ struct NodeQueryTests {
         #expect(response.contains(#""path":["nodes"]"#))
         let context = QueryFixture.context(reading: fixture.graph)
         let result = try await PublicSchema().execute(request: document, context: context)
-        let matches = [
-            ReadinessFixture.first, ReadinessFixture.second, ReadinessFixture.third, ReadinessFixture.firstComment,
-        ].map(ShortID.init(ofULIDString:))
+        let titledMatches: [(text: String, title: String?)] = [
+            (ReadinessFixture.first, QueryFixture.firstTitle),
+            (ReadinessFixture.second, QueryFixture.secondTitle),
+            (ReadinessFixture.third, QueryFixture.thirdTitle),
+            (ReadinessFixture.firstComment, nil),
+        ]
+        let matches = titledMatches.map { text, title in
+            KanbanError.AmbiguousMatch(id: QueryFixture.sigilRef(of: text), title: title)
+        }
         let expected = KanbanError.ambiguousID(reference: Self.sharedPrefix, matches: matches)
         #expect(result.errors.first?.originalError as? KanbanError == expected)
     }

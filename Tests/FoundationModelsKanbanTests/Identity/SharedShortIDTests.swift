@@ -1,13 +1,14 @@
 import Foundation
-import GraphQL
 import Testing
 import ULID
 
 @testable import FoundationModelsKanban
 
-/// Tests a board where two tasks have the same short id, as a merge can make (plan.md §3.2). A short id is a unique
-/// ULID prefix (git style), so the shared short id names no task: a mutation and a filter that use it give
-/// `AMBIGUOUS_ID` with the full ids of the two tasks, and write nothing.
+/// Tests a board where two tasks have the same short id, as a merge can make (plan.md §3.2, divergence.md Q20).
+///
+/// A mutation or a query that names the shared short id uses the first match: a live task comes before a tombstone,
+/// then the lowest ULID. The response gives a `SHARED_SHORT_ID` warning that lists the matches. A filter that names
+/// the shared short id matches each task with that short id, and each task that depends on one of them.
 @Suite("A short id that two tasks share", .watcherBudget)
 struct SharedShortIDTests {
     /// The title of the second task with the shared short id.
@@ -15,6 +16,16 @@ struct SharedShortIDTests {
 
     /// The title of the task whose short id no other task has.
     static let uniqueTitle = "Write the docs"
+
+    /// The new title that the update tests give.
+    static let newTitle = "Port the lexer"
+
+    /// The number of tasks that the filter of the shared short id lists when the unique task depends on the second
+    /// task: the two tasks with the shared short id, and the unique task.
+    static let ownersAndDependentCount = 3
+
+    /// The number of tasks with the shared short id.
+    static let ownerCount = 2
 
     /// The repo directory of the board.
     let directory: TemporaryDirectory
@@ -53,23 +64,14 @@ struct SharedShortIDTests {
         AddUpdateTaskTests.sigilRef(of: first)
     }
 
-    /// The `AMBIGUOUS_ID` error of the shared short id: the full ids of the two tasks, in board order. The loader
-    /// puts the nodes in the order of their refs, so the board order of the two tasks is the order of their ULIDs.
-    var sharedError: KanbanError {
-        .sharedShortID(reference: sharedReference, ids: [first.ulidString, second.ulidString].sorted())
+    /// The task with the shared short id and the lowest ULID: the first match of two live tasks.
+    var lowest: ULID {
+        min(first, second)
     }
 
-    /// Runs one document in a commit session of the board, and expects that it writes no log file.
-    ///
-    /// - Parameter document: The GraphQL document.
-    /// - Returns: The error of the first GraphQL error of the response, or `nil` when the response has no error.
-    func error(of document: String) async throws -> KanbanError? {
-        let log = EventLog(repositoryAt: directory.url)
-        let before = try log.nodeFileSignatures()
-        var session = try await CommitTests.makeSession(of: log)
-        let result = try await ColumnActorTests.result(of: document, in: &session)
-        #expect(try log.nodeFileSignatures() == before)
-        return result.errors.first?.originalError as? KanbanError
+    /// The task with the shared short id and the highest ULID.
+    var highest: ULID {
+        max(first, second)
     }
 
     /// Runs one document on a new engine of the board.
@@ -80,6 +82,37 @@ struct SharedShortIDTests {
         try await KanbanGraphTests.execute(document, on: KanbanGraphTests.makeGraph(at: directory.url))
     }
 
+    /// Gives the `id` of the object of one root field of a response.
+    ///
+    /// - Parameters:
+    ///   - field: The response key of the root field, for example `updateTask`.
+    ///   - response: The response JSON text.
+    /// - Returns: The full URI of the node.
+    /// - Throws: An error when the response has no `data`, or the field has no `id`.
+    static func id(ofField field: String, in response: String) throws -> String? {
+        (try NameRewriteTests.data(of: response)[field] as? [String: Any])?["id"] as? String
+    }
+
+    /// Gives the full URI of a task of the board.
+    ///
+    /// - Parameter task: The ULID of the task.
+    /// - Returns: The URI text.
+    static func id(of task: ULID) -> String {
+        ColumnActorTests.id(of: .task(task))
+    }
+
+    /// Expects that a response gives one `SHARED_SHORT_ID` warning that lists the ULIDs of the two owners.
+    ///
+    /// - Parameter response: The response JSON text.
+    /// - Throws: An error when the response has no `extensions.warnings`.
+    func expectSharedShortIDWarning(in response: String) throws {
+        let warnings = try ResponseWarningsTests.warnings(of: response)
+        #expect(warnings.map(\.code) == [RefResolver.sharedShortIDWarningCode])
+        let message = try #require(warnings.first?.message)
+        #expect(message.contains(first.ulidString))
+        #expect(message.contains(second.ulidString))
+    }
+
     // MARK: - Tests
 
     @Test("The two tasks have the same short id and different ULIDs")
@@ -88,43 +121,73 @@ struct SharedShortIDTests {
         #expect(first != second)
     }
 
-    @Test("A mutation that names the shared short id gives AMBIGUOUS_ID with the full ids, and writes nothing")
-    func mutationWithSharedShortIDIsAmbiguous() async throws {
-        let field = CommentTests.nodeField("deleteTask", naming: sharedReference)
-        let failure = try await error(of: AddUpdateTaskTests.mutation(of: field))
-        #expect(failure == sharedError)
+    @Test("updateTask with the shared short id changes the live task with the lowest ULID, and gives a warning")
+    func mutationWithSharedShortIDChangesLowestULID() async throws {
+        let field = AddUpdateTaskTests.updateTask(first, with: #"title: "\#(Self.newTitle)""#)
+        let response = try await response(to: AddUpdateTaskTests.mutation(of: field))
+        #expect(try Self.id(ofField: MutationName.updateTask, in: response) == Self.id(of: lowest))
+        try expectSharedShortIDWarning(in: response)
     }
 
-    @Test("A tombstone with the shared short id also makes the short id name no task")
-    func tombstoneSharesTheShortID() async throws {
-        let deletion = CommentTests.nodeField("deleteTask", naming: second.ulidString)
-        let deleted = #"{"data":{"deleteTask":{"id":"\#(ColumnActorTests.id(of: .task(second)))"}}}"#
-        #expect(try await response(to: AddUpdateTaskTests.mutation(of: deletion)) == deleted)
-        let field = CommentTests.nodeField("completeTask", naming: sharedReference)
-        let failure = try await error(of: AddUpdateTaskTests.mutation(of: field))
-        #expect(failure == sharedError)
+    @Test("A query with the shared short id gives the task with the lowest ULID, and gives a warning")
+    func queryWithSharedShortIDGivesLowestULID() async throws {
+        let response = try await response(to: #"{ board { task(id: "\#(sharedReference)") { id } } }"#)
+        let task = (try NameRewriteTests.data(of: response)["board"] as? [String: Any])?["task"] as? [String: Any]
+        #expect(task?["id"] as? String == Self.id(of: lowest))
+        try expectSharedShortIDWarning(in: response)
     }
 
-    @Test("A filter that names the shared short id gives AMBIGUOUS_ID with the full ids, and writes nothing")
-    func filterWithSharedShortIDIsAmbiguous() async throws {
-        let query = #"{ board { tasks(filter: "\#(sharedReference)") { totalCount } } }"#
-        let failure = try await error(of: query)
-        #expect(failure == sharedError)
-    }
-
-    @Test("A subscription whose filter names the shared short id gives one response with AMBIGUOUS_ID, and ends")
-    func subscriptionWithSharedShortIDIsAmbiguous() async throws {
+    @Test("A tombstone with the shared short id comes after the live task, also when its ULID is lower")
+    func tombstoneComesAfterLiveTask() async throws {
         let graph = try KanbanGraphTests.makeGraph(at: directory.url)
-        let document = SubscriptionTests.subscription(#"(filter: "\#(sharedReference)")"#)
-        let stream = try await SubscriptionTests.subscribe(document, on: graph)
-        let (eventCount, code) = try await SubscriptionTests.errorCode(of: stream)
-        #expect(eventCount == SubscriptionTests.oneEvent)
-        #expect(code == "AMBIGUOUS_ID")
+        let deletion = CommentTests.nodeField("deleteTask", naming: lowest.ulidString)
+        _ = try await KanbanGraphTests.execute(AddUpdateTaskTests.mutation(of: deletion), on: graph)
+        let field = CommentTests.nodeField("completeTask", naming: sharedReference)
+        let response = try await KanbanGraphTests.execute(AddUpdateTaskTests.mutation(of: field), on: graph)
+        #expect(try Self.id(ofField: "completeTask", in: response) == Self.id(of: highest))
         await graph.close()
     }
 
-    @Test("A subscription whose short id becomes shared after the start ends, and sends no change")
-    func subscriptionEndsWhenItsShortIDBecomesShared() async throws {
+    @Test("A filter with the shared short id lists each task with it, and each task that depends on one of them")
+    func filterWithSharedShortIDMatchesAll() async throws {
+        let graph = try KanbanGraphTests.makeGraph(at: directory.url)
+        let query = #"{ board { tasks(filter: "\#(sharedReference)") { totalCount } } }"#
+        let owners = try await KanbanGraphTests.execute(query, on: graph)
+        #expect(owners == Self.totalCountResponse(Self.ownerCount))
+        let dependsOn = #"dependsOn: ["\#(second.ulidString)"]"#
+        let link = CommentTests.nodeField("updateTask", naming: unique.ulidString, with: dependsOn)
+        _ = try await KanbanGraphTests.execute(AddUpdateTaskTests.mutation(of: link), on: graph)
+        let withDependent = try await KanbanGraphTests.execute(query, on: graph)
+        #expect(withDependent == Self.totalCountResponse(Self.ownersAndDependentCount))
+        await graph.close()
+    }
+
+    /// Gives the response of a `tasks` query of the board that selects only `totalCount`.
+    ///
+    /// - Parameter count: The number of tasks of the list.
+    /// - Returns: The response JSON text.
+    static func totalCountResponse(_ count: Int) -> String {
+        #"{"data":{"board":{"tasks":{"totalCount":\#(count)}}}}"#
+    }
+
+    @Test("A subscription whose filter names the shared short id sends the change of each task with it")
+    func subscriptionWithSharedShortIDSendsEachOwner() async throws {
+        let graph = try KanbanGraphTests.makeGraph(at: directory.url)
+        let document = SubscriptionTests.subscription(#"(filter: "\#(sharedReference)")"#)
+        let stream = try await SubscriptionTests.subscribe(document, on: graph)
+        for task in [second, first] {
+            let rename = CommentTests.nodeField("updateTask", naming: task.ulidString, with: #"title: "x""#)
+            _ = try await KanbanGraphTests.execute(AddUpdateTaskTests.mutation(of: rename), on: graph)
+        }
+        let events = try await SubscriptionTests.events(Self.ownerCount, of: stream)
+        #expect(events.count == Self.ownerCount)
+        #expect(events.first?.contains(Self.id(of: second)) == true)
+        #expect(events.last?.contains(Self.id(of: first)) == true)
+        await graph.close()
+    }
+
+    @Test("A subscription whose short id becomes shared after the start keeps going, and sends the new task")
+    func subscriptionSendsTaskThatSharesItsShortIDLater() async throws {
         let board = try TemporaryDirectory()
         var fixture = try KanbanGraphTests.writeFixture(inRepoAt: board.url)
         let graph = try KanbanGraphTests.makeGraph(at: board.url)
@@ -136,11 +199,13 @@ struct SharedShortIDTests {
         let merged = try Self.ulid(sharingShortIDOf: fixture.task)
         let log = EventLog(repositoryAt: board.url)
         try KanbanGraphTests.writeTask(merged, titled: Self.secondTitle, mintingFrom: &fixture.ids, to: log)
-        #expect(try await SubscriptionTests.allEvents(of: stream) == [])
+        let events = try await SubscriptionTests.events(SubscriptionTests.oneEvent, of: stream)
+        #expect(events.count == SubscriptionTests.oneEvent)
+        #expect(events.first?.contains(Self.id(of: merged)) == true)
         await graph.close()
     }
 
-    @Test("A short id that one task has still names that task")
+    @Test("A short id that one task has still names that task, with no warning")
     func uniqueShortIDStillResolves() async throws {
         let query = CommentTests.taskQuery(of: unique, selecting: "{ title }")
         let expected = #"{"data":{"board":{"task":{"title":"\#(Self.uniqueTitle)"}}}}"#

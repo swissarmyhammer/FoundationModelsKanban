@@ -76,10 +76,19 @@ comments:
     - evidence: `swift test` 1412 tests in 110 suites passed, 0 failures, only the accepted SwiftPM "missing creator" warning. File: Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoTransferTests.swift.
     - next: /review
   timestamp: 2026-10-15T10:19:24.530886+00:00
+- actor: claude-code
+  id: 01m4zhj7ay2k0cjxxtmyap2gwa
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — 1 test file (1 finding fixed)
+    - test: green — swift test, 1412 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: a169693
+    - review: clean — none
+  timestamp: 2026-10-15T10:26:12.958659+00:00
 depends_on:
 - 01M4X6ZBTA66TCPVYM41QR0ACD
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: fe80
 title: Add moveTask(board:) and copyTask to move or copy a task to a different board
 ---
 ## What

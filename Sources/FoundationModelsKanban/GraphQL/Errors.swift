@@ -3,7 +3,7 @@ import Foundation
 /// An error that the tool returns to the caller in the `errors` list of a GraphQL response (plan.md §4.4).
 ///
 /// Each case has one fixed ``code`` and a ``message`` that tells the caller how to correct the call. Each case
-/// holds the data that its message needs, for example the matching short ids of an ambiguous reference.
+/// holds the data that its message needs, for example the matching ids and titles of an ambiguous ULID prefix.
 ///
 /// The type does not use the GraphQL engine. ``responseError(at:)`` makes the GraphQL error JSON with `Codable`.
 enum KanbanError: Error, Hashable, Sendable {
@@ -32,12 +32,10 @@ enum KanbanError: Error, Hashable, Sendable {
     /// `.kanban/` directory.
     case incompatibleBoard(directory: String)
 
-    /// `AMBIGUOUS_ID`: the reference is a prefix of more than one id. The matches are the short ids of these ids.
-    case ambiguousID(reference: String, matches: [ShortID])
-
-    /// `AMBIGUOUS_ID`: the reference matches more than one id, and two or more of these ids have the same short id
-    /// (a merge can make such ids). A short id cannot name one of them, so the ids are the full ULIDs of the matches.
-    case sharedShortID(reference: String, ids: [String])
+    /// `AMBIGUOUS_ID`: the reference is a ULID prefix of more than one id (divergence.md P5). Each match gives the id
+    /// that names it alone and its title, so that the next call can send one of these ids. A 7-character short id
+    /// that more than one id has is not this error: it names the first match (divergence.md Q20).
+    case ambiguousID(reference: String, matches: [AmbiguousMatch])
 
     /// `ACTOR_NOT_FOUND`: no actor has the reference.
     case actorNotFound(reference: String)
@@ -137,7 +135,7 @@ extension KanbanError {
         case .notFound, .boardNotFound, .transactionBoardNotLoaded: "NOT_FOUND"
         case .notARepo: "NOT_A_REPO"
         case .incompatibleBoard: "INCOMPATIBLE_BOARD"
-        case .ambiguousID, .sharedShortID: "AMBIGUOUS_ID"
+        case .ambiguousID: "AMBIGUOUS_ID"
         case .actorNotFound: "ACTOR_NOT_FOUND"
         case .duplicateID: "DUPLICATE_ID"
         case .columnNotEmpty: "COLUMN_NOT_EMPTY"
@@ -181,11 +179,8 @@ extension KanbanError {
         case .incompatibleBoard(let directory):
             "There is an incompatible board at `\(directory)`. Remove it, then try again."
         case .ambiguousID(let reference, let matches):
-            "The reference \"\(reference)\" matches more than one id: \(Self.sigilList(of: matches)). "
-                + "Send one of these short ids."
-        case .sharedShortID(let reference, let ids):
-            "The reference \"\(reference)\" matches more than one id: \(ids.joined(separator: Self.listSeparator)). "
-                + "These ids have the same short id, so send one of these full ids."
+            "The reference \"\(reference)\" matches more than one id: "
+                + "\(matches.map(\.text).joined(separator: Self.listSeparator)). Send one of these ids."
         case .actorNotFound(let reference):
             "No actor has the reference \"\(reference)\". Add the actor with addActor, "
                 + "or use the id of an actor of the board."
@@ -262,15 +257,6 @@ extension KanbanError {
         return "The slug \"\(Slug.reservedForBoard)\" is reserved for the board URI \(boardURI), "
             + "so a \(noun(for: type)) cannot have it."
     }
-
-    /// Gives a list of short ids in a message, each with a leading ``ShortID/sigil``, for example
-    /// `^ajv8v4t, ^rc9rb4g`.
-    ///
-    /// - Parameter shortIDs: The short ids, in the order to show.
-    /// - Returns: The list text.
-    private static func sigilList(of shortIDs: [ShortID]) -> String {
-        shortIDs.map { "\(ShortID.sigil)\($0.value)" }.joined(separator: listSeparator)
-    }
 }
 
 // MARK: - Call failure
@@ -297,21 +283,23 @@ extension KanbanError {
 // MARK: - Ambiguous reference
 
 extension KanbanError {
-    /// Makes the `AMBIGUOUS_ID` error of a reference that matches more than one id.
-    ///
-    /// The error gives the form of the ids that names one id: the short ids when they are unique
-    /// (``ambiguousID(reference:matches:)``), else the full ids (``sharedShortID(reference:ids:)``).
-    ///
-    /// - Parameters:
-    ///   - reference: The reference as the caller wrote it.
-    ///   - ulids: The text of each ULID that the reference matches, in the order to show.
-    /// - Returns: The error.
-    static func ambiguity(of reference: String, among ulids: [String]) -> KanbanError {
-        let shortIDs = ulids.map(ShortID.init(ofULIDString:))
-        guard Set(shortIDs).count == shortIDs.count else {
-            return .sharedShortID(reference: reference, ids: ulids)
+    /// One node that an ambiguous ULID prefix matches, as the `AMBIGUOUS_ID` error lists it (divergence.md P5).
+    struct AmbiguousMatch: Hashable, Sendable {
+        /// The id that names this node alone, as the caller sends it: the short id with a leading ``ShortID/sigil``,
+        /// for example `^ajv8v4t`, or the full ULID when a different node of the lookup has the same short id.
+        let id: String
+
+        /// The title of the task, or `nil` for a node with no title, for example a comment.
+        let title: String?
+
+        /// The match in a message: the id, then the title in quotes, for example `^ajv8v4t "Fix the build"`. A
+        /// match with no title or with the empty title gives the id alone.
+        var text: String {
+            guard let title, !title.isEmpty else {
+                return id
+            }
+            return "\(id) \"\(title)\""
         }
-        return .ambiguousID(reference: reference, matches: shortIDs)
     }
 }
 

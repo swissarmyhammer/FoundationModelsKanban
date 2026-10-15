@@ -22,10 +22,11 @@ struct KanbanErrorTests {
     /// The index in the response path of the JSON test.
     static let pathIndex = 2
 
-    /// The short ids that the `AMBIGUOUS_ID` test gives: the short ids of two ULIDs with the prefix `01KT6SA`.
+    /// The matches that the `AMBIGUOUS_ID` test gives for the prefix `01KT6SA`: a task with a title, and a comment,
+    /// which has no title.
     static let ambiguousMatches = [
-        ShortID(ofULIDString: "01KT6SAMJAJ40XVQ9Y7JRAJ9VG"),
-        ShortID(ofULIDString: "01KT6SA4911JQPK09YQRC9RB4G"),
+        KanbanError.AmbiguousMatch(id: "^jraj9vg", title: "Fix the build"),
+        KanbanError.AmbiguousMatch(id: "^rc9rb4g", title: nil),
     ]
 
     /// A message of the GraphQL engine, with its "did you mean" suggestion. The parse, validation, and internal
@@ -174,39 +175,27 @@ struct KanbanErrorTests {
         )
     }
 
-    @Test("AMBIGUOUS_ID gives the matching short ids")
+    @Test("AMBIGUOUS_ID gives the id and the title of each match, and the id alone for a match with no title")
     func ambiguousIDMessage() {
         let error = KanbanError.ambiguousID(reference: "01KT6SA", matches: Self.ambiguousMatches)
         #expect(
             error.message
-                == "The reference \"01KT6SA\" matches more than one id: ^jraj9vg, ^rc9rb4g. "
-                + "Send one of these short ids."
+                == "The reference \"01KT6SA\" matches more than one id: ^jraj9vg \"Fix the build\", ^rc9rb4g. "
+                + "Send one of these ids."
         )
     }
 
-    @Test("AMBIGUOUS_ID for a short id that two ids share gives the full ids")
-    func sharedShortIDMessage() {
-        let owners = [ShortIDTests.ownerOf0123456, ShortIDTests.secondOwnerOf0123456]
-        let error = KanbanError.sharedShortID(reference: "^0123456", ids: owners)
-        #expect(error.code == "AMBIGUOUS_ID")
+    @Test("AMBIGUOUS_ID gives a full id as the caller sends it, and leaves out an empty title")
+    func ambiguousIDMessageWithFullIDs() {
+        let matches = [
+            KanbanError.AmbiguousMatch(id: ShortIDTests.ownerOf0123456, title: "Merge the branch"),
+            KanbanError.AmbiguousMatch(id: ShortIDTests.secondOwnerOf0123456, title: ""),
+        ]
+        let error = KanbanError.ambiguousID(reference: "01KT6", matches: matches)
         #expect(
             error.message
-                == "The reference \"^0123456\" matches more than one id: 01KT6R6HR3KJT6JVNDR0123456, "
-                + "01KT6SAMJAJ40XVQ9YJ0123456. These ids have the same short id, so send one of these full ids."
-        )
-    }
-
-    @Test("The error of an ambiguous reference gives the short ids when they are unique, else the full ids")
-    func ambiguityGivesTheFormThatNamesOneID() {
-        let siblings = [ShortIDTests.siblingA, ShortIDTests.siblingB]
-        let owners = [ShortIDTests.ownerOf0123456, ShortIDTests.secondOwnerOf0123456]
-        #expect(
-            KanbanError.ambiguity(of: "01KT6SA", among: siblings)
-                == .ambiguousID(reference: "01KT6SA", matches: Self.ambiguousMatches)
-        )
-        #expect(
-            KanbanError.ambiguity(of: "^0123456", among: owners)
-                == .sharedShortID(reference: "^0123456", ids: owners)
+                == "The reference \"01KT6\" matches more than one id: 01KT6R6HR3KJT6JVNDR0123456 \"Merge the branch\", "
+                + "01KT6SAMJAJ40XVQ9YJ0123456. Send one of these ids."
         )
     }
 

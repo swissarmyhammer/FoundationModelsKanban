@@ -60,8 +60,8 @@ struct ChangeFilter: Sendable {
     /// Checks that the filter can test the nodes of the graph of a read view, as a subscription does when it starts.
     ///
     /// - Parameter view: The read view of the graph whose nodes the filter tests.
-    /// - Throws: An error of ``TaskFilter/init(filtering:over:inBoard:)``, for example `AMBIGUOUS_ID` for a `^id` value
-    ///   that is a short id of two or more tasks.
+    /// - Throws: An error of ``TaskFilter/init(filtering:over:inBoard:)``. A `^id` value that is a short id of two or
+    ///   more tasks gives no error: it matches each of these tasks (divergence.md Q20).
     func check(against view: BoardView) throws(KanbanError) {
         _ = try test(over: view)
     }

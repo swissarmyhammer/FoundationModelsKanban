@@ -26,6 +26,19 @@ struct RefResolverTests {
     /// A ULID whose short id is `01kt6r7`: a prefix of the ULID of the second task.
     static let collidingULID = "01KT6R6HR3KJT6JVNDR01KT6R7"
 
+    /// A ULID whose short id is the short id of the target task, ``targetShortID``. It is lower than the ULID of the
+    /// target task and of the first task, as a merge of two branches can make it.
+    static let lowerSharer = "01KT6R0000000000000JRAJ9VG"
+
+    /// The title of the first task in the test of the matches of an ambiguous prefix.
+    static let firstTitle = "Write the docs"
+
+    /// The title of the task ``lowerSharer`` in the test of the matches of an ambiguous prefix.
+    static let sharerTitle = "Merge the branch"
+
+    /// The title of the target task in the test of the matches of an ambiguous prefix.
+    static let targetTitle = "Fix the build"
+
     /// The slug of a tag that a rename made point to ``renameTarget``.
     static let renamedTag = "bug"
 
@@ -134,6 +147,14 @@ struct RefResolverTests {
         .notFound(type: type, reference: reference)
     }
 
+    /// Gives the match of an `AMBIGUOUS_ID` error for a task of the test board, which has the empty title.
+    ///
+    /// - Parameter text: The ULID text of the task. No other task of the board has its short id.
+    /// - Returns: The match: the short id with a leading ``ShortID/sigil``, and the empty title.
+    static func untitledMatch(of text: String) -> KanbanError.AmbiguousMatch {
+        KanbanError.AmbiguousMatch(id: QueryFixture.sigilRef(of: text), title: "")
+    }
+
     // MARK: - Short forms
 
     @Test(
@@ -186,7 +207,7 @@ struct RefResolverTests {
 
     @Test("A prefix of more than one task gives AMBIGUOUS_ID with the short ids of the matches")
     func ambiguousPrefixGivesMatches() {
-        let matches = [ReadinessFixture.first, ReadinessFixture.second].map(ShortID.init(ofULIDString:))
+        let matches = [ReadinessFixture.first, ReadinessFixture.second].map(Self.untitledMatch(of:))
         #expect(throws: KanbanError.ambiguousID(reference: Self.sharedPrefix, matches: matches)) {
             try Self.resolve(Self.sharedPrefix, as: .task)
         }
@@ -195,10 +216,68 @@ struct RefResolverTests {
     @Test("A tombstone is not a match of an ambiguous prefix")
     func tombstoneIsNotAmbiguousMatch() {
         let live = [ReadinessFixture.first, ReadinessFixture.second, Self.target]
-        let error = KanbanError.ambiguousID(reference: "01KT6", matches: live.map(ShortID.init(ofULIDString:)))
+        let error = KanbanError.ambiguousID(reference: "01KT6", matches: live.map(Self.untitledMatch(of:)))
         #expect(throws: error) {
             try Self.resolve("01KT6", as: .task)
         }
+    }
+
+    @Test("AMBIGUOUS_ID of a prefix lists the id and the title of each match, and a full id for a shared short id")
+    func ambiguousPrefixListsIDsAndTitles() throws {
+        var board = ReadinessFixture()
+        try board.addTask(withULID: ReadinessFixture.first, titled: Self.firstTitle)
+        try board.addTask(withULID: Self.lowerSharer, titled: Self.sharerTitle)
+        try board.addTask(withULID: Self.target, titled: Self.targetTitle)
+        let matches = [
+            KanbanError.AmbiguousMatch(id: QueryFixture.sigilRef(of: ReadinessFixture.first), title: Self.firstTitle),
+            KanbanError.AmbiguousMatch(id: Self.lowerSharer, title: Self.sharerTitle),
+            KanbanError.AmbiguousMatch(id: Self.target, title: Self.targetTitle),
+        ]
+        #expect(throws: KanbanError.ambiguousID(reference: "01KT", matches: matches)) {
+            try Self.resolve("01KT", as: .task, in: board)
+        }
+    }
+
+    // MARK: - Shared short ids
+
+    @Test("A short id of two live tasks names the task with the lowest ULID, also when its slot comes later")
+    func sharedShortIDNamesLowestULID() throws {
+        var board = try Self.board()
+        try board.addTask(withULID: Self.lowerSharer)
+        let resolved = try Self.resolve(Self.targetShortID, as: .task, in: board)
+        #expect(resolved == (try Self.storedRef(ofTask: Self.lowerSharer)))
+    }
+
+    @Test("A short id of a live task and a tombstone names the live task, also when the tombstone has the lower ULID")
+    func sharedShortIDNamesLiveTaskBeforeTombstone() throws {
+        var board = try Self.board()
+        try board.addTask(withULID: Self.lowerSharer, fields: ReadinessFixture.fields(isDeleted: true))
+        let resolved = try Self.resolve(Self.targetShortID, as: .task, includingTombstones: true, in: board)
+        #expect(resolved == (try Self.storedRef(ofTask: Self.target)))
+    }
+
+    @Test("The pick of the first match of a shared short id adds one warning with the ids of the matches")
+    func sharedShortIDPickAddsWarning() throws {
+        var board = try Self.board()
+        try board.addTask(withULID: Self.lowerSharer)
+        let warnings = ResolverWarnings()
+        try ResolverWarnings.$current.withValue(warnings) {
+            _ = try Self.resolve(Self.targetShortID, as: .task, in: board)
+            _ = try Self.resolve(Self.targetShortID, as: .task, in: board)
+        }
+        let message = try #require(warnings.list.first?.message)
+        #expect(warnings.list.map(\.code) == [RefResolver.sharedShortIDWarningCode])
+        #expect(message.contains(Self.lowerSharer))
+        #expect(message.contains(Self.target))
+    }
+
+    @Test("A short id of one task adds no warning")
+    func uniqueShortIDAddsNoWarning() throws {
+        let warnings = ResolverWarnings()
+        try ResolverWarnings.$current.withValue(warnings) {
+            _ = try Self.resolve(Self.targetShortID, as: .task)
+        }
+        #expect(warnings.list.isEmpty)
     }
 
     @Test(

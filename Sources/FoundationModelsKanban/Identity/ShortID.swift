@@ -53,8 +53,9 @@ struct ShortID: Hashable, Sendable, CustomStringConvertible {
 extension ShortID {
     /// The result of a resolve of a forgiving ULID reference against a list of ULIDs.
     ///
-    /// The result is not an optional, because a reference with more than one match must give the matches. The caller
-    /// shows the matches in its error (`AMBIGUOUS_ID`, plan.md §4.4).
+    /// The result is not an optional, because a reference with more than one match must give the matches. For a
+    /// shared short id, the caller picks the first match and gives a warning. For an ambiguous prefix, the caller
+    /// shows the matches in its error (`AMBIGUOUS_ID`, plan.md §4.4, divergence.md Q20 and P5).
     enum Resolution: Hashable, Sendable {
         /// Exactly one ULID matched. The value is the ULID text as the list gave it.
         case found(String)
@@ -62,8 +63,12 @@ extension ShortID {
         /// No ULID matched.
         case notFound
 
-        /// More than one ULID has the short id, or starts with the prefix. The value holds each matching ULID, in
-        /// list order.
+        /// More than one ULID has the canonical form of the reference: the short id that a merge gave to two ULIDs
+        /// (``collisions(among:)``). The value holds each matching ULID, in list order. The caller picks the first
+        /// match by its own order (divergence.md Q20).
+        case shared([String])
+
+        /// More than one ULID starts with the prefix. The value holds each matching ULID, in list order.
         case ambiguous([String])
     }
 
@@ -88,9 +93,10 @@ extension ShortID {
     /// 2. The ULIDs whose short id equals the reference.
     /// 3. The ULIDs that start with the reference.
     ///
-    /// The first form with a match gives the result: one match is ``Resolution/found(_:)``, and more than one match
-    /// is ``Resolution/ambiguous(_:)``. Thus, a short id that two ULIDs share names no ULID (a merge can make such
-    /// ULIDs, see ``collisions(among:)``). When no form has a match, the result is ``Resolution/notFound``.
+    /// The first form with a match gives the result: one match is ``Resolution/found(_:)``. More than one match of a
+    /// canonical form is ``Resolution/shared(_:)``: a short id that two ULIDs share (a merge can make such ULIDs, see
+    /// ``collisions(among:)``), and the caller picks the first match. More than one match of a prefix is
+    /// ``Resolution/ambiguous(_:)``. When no form has a match, the result is ``Resolution/notFound``.
     ///
     /// An empty reference (after the sigil is removed) is ``Resolution/notFound``. It is not a prefix of each ULID.
     ///
@@ -99,8 +105,8 @@ extension ShortID {
     /// - Parameters:
     ///   - reference: The reference as the caller wrote it.
     ///   - ulids: The text of each ULID that the reference can name.
-    /// - Returns: The ULID that the reference names, no ULID, or each ULID that an ambiguous short id or prefix
-    ///   matches.
+    /// - Returns: The ULID that the reference names, no ULID, each ULID that a shared short id names, or each ULID
+    ///   that an ambiguous prefix matches.
     static func resolve(_ reference: String, among ulids: [String]) -> Resolution {
         let key = searchKey(for: reference)
         guard !key.isEmpty else {
@@ -108,9 +114,9 @@ extension ShortID {
         }
         let canonicalMatches = canonicalMatches(for: key, among: ulids)
         guard canonicalMatches.isEmpty else {
-            return resolution(of: canonicalMatches)
+            return resolution(of: canonicalMatches, whenMany: Resolution.shared)
         }
-        return resolution(of: ulids.filter { $0.lowercased().hasPrefix(key) })
+        return resolution(of: ulids.filter { $0.lowercased().hasPrefix(key) }, whenMany: Resolution.ambiguous)
     }
 
     /// Finds each ULID that a search key names in a canonical form: the full ULID, or the short id.
@@ -125,48 +131,25 @@ extension ShortID {
         case ulidLength:
             ulids.filter { $0.lowercased() == key }
         case length:
-            Self.ulids(withShortIDKey: key, among: ulids)
+            ulids.filter { ShortID(ofULIDString: $0).value == key }
         default:
             []
         }
     }
 
-    /// Finds each ULID whose short id is the short id that a reference names.
-    ///
-    /// The mint rule keeps the short ids of a board unique, but a merge can make two ULIDs with the same short id
-    /// (``collisions(among:)``). A caller uses this resolve to find such a short id in all of the nodes of a board,
-    /// also the nodes that ``resolve(_:among:)`` does not get.
-    ///
-    /// - Parameters:
-    ///   - reference: The reference as the caller wrote it, for example `^ajv8v4t`.
-    ///   - ulids: The text of each ULID to check.
-    /// - Returns: Each ULID whose short id equals the search key of the reference (``searchKey(for:)``), in list
-    ///   order. The list is empty when the search key is not as long as a short id.
-    static func ulids(withShortIDOf reference: String, among ulids: [String]) -> [String] {
-        let key = searchKey(for: reference)
-        return key.count == length ? Self.ulids(withShortIDKey: key, among: ulids) : []
-    }
-
-    /// Finds each ULID whose short id equals a search key.
-    ///
-    /// - Parameters:
-    ///   - key: The search key (see ``searchKey(for:)``).
-    ///   - ulids: The text of each ULID to check.
-    /// - Returns: Each ULID whose short id equals the key, in list order.
-    private static func ulids(withShortIDKey key: String, among ulids: [String]) -> [String] {
-        ulids.filter { ShortID(ofULIDString: $0).value == key }
-    }
-
     /// Gives the result of a resolve from the ULIDs that one form of the reference matches.
     ///
-    /// - Parameter matches: The matching ULIDs, in list order.
-    /// - Returns: ``Resolution/notFound`` for no match, ``Resolution/found(_:)`` for one match, and
-    ///   ``Resolution/ambiguous(_:)`` for more than one match.
-    private static func resolution(of matches: [String]) -> Resolution {
+    /// - Parameters:
+    ///   - matches: The matching ULIDs, in list order.
+    ///   - makeMany: Makes the result of more than one match of the form: ``Resolution/shared(_:)`` for a canonical
+    ///     form, and ``Resolution/ambiguous(_:)`` for a prefix.
+    /// - Returns: ``Resolution/notFound`` for no match, ``Resolution/found(_:)`` for one match, and the result of
+    ///   `makeMany` for more than one match.
+    private static func resolution(of matches: [String], whenMany makeMany: ([String]) -> Resolution) -> Resolution {
         guard let firstMatch = matches.first else {
             return .notFound
         }
-        return matches.count == 1 ? .found(firstMatch) : .ambiguous(matches)
+        return matches.count == 1 ? .found(firstMatch) : makeMany(matches)
     }
 }
 

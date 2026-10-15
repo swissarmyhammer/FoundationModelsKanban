@@ -41,8 +41,8 @@ extension KanbanResolver {
     /// - Returns: The events of the subscriber, or a stream that has ended when the engine did not load the board
     ///   yet. The engine then runs the call again after the load.
     /// - Throws: An error of ``BoardStore/view(ofBoard:)``, of ``ChangeFilter/init(parsing:)``, or of
-    ///   ``ChangeFilter/check(against:)`` on the board now, for example `AMBIGUOUS_ID` for a `^id` value that is a
-    ///   short id of two or more tasks.
+    ///   ``ChangeFilter/check(against:)`` on the board now. A `^id` value that is a short id of two or more tasks
+    ///   gives no error: it matches each of these tasks (divergence.md Q20).
     ///   ``KanbanError/notFound(type:reference:)`` for the board when the board has no repo directory to watch, for
     ///   example a board in memory only, or when the board is a related board that cannot be read (divergence.md Q7).
     ///   The subscription then gives one response with the error, and ends.

@@ -155,10 +155,11 @@ final class ChangeFeed: Sendable {
 
     /// Sends the changes that the filter of one subscriber keeps to that subscriber.
     ///
-    /// The subscription checked its filter against the board when it started, but a later change can make the filter
-    /// fail: a merge can give a second task the short id of a `^id` value (`AMBIGUOUS_ID`). The stream of a subscriber
-    /// has no error, so the feed writes the error to the log and ends the stream of the subscriber. The client then
-    /// sees that the subscription ended, and can subscribe again with a full id.
+    /// The subscription checked its filter against the board when it started. A later change does not make the filter
+    /// fail when a merge gives a second task the short id of a `^id` value: the filter then matches each task with
+    /// that short id (divergence.md Q20). When the filter fails on the board now, the stream of a subscriber has no
+    /// error, so the feed writes the error to the log and ends the stream of the subscriber. The client then sees
+    /// that the subscription ended, and can subscribe again.
     ///
     /// - Parameters:
     ///   - changes: The changes, each of one transaction, in the order of their transactions.
