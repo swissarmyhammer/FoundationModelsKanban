@@ -93,8 +93,8 @@ struct ReadmeExamplesTests {
     // MARK: - Board
 
     /// A board of the examples, as example 1 opens it: a git repo with no remote in a folder with the name
-    /// ``folderName``, and the engine of the folder.
-    private struct ExampleBoard {
+    /// ``folderName``, and the engine of the folder. The tests of the kanban skill examples use the same board.
+    struct ExampleBoard {
         /// The temporary directory that holds the folder. It removes the folder when the value ends.
         let directory: TemporaryDirectory
 
@@ -221,12 +221,13 @@ struct ReadmeExamplesTests {
         return instructions.toolDefinitions.map(\.name)
     }
 
-    /// Writes a JSON value as JSON text with sorted keys, the form of each ```` ```json ```` block of the README.
+    /// Writes a JSON value as JSON text with sorted keys, the form of each ```` ```json ```` block of the README and
+    /// of the kanban skill.
     ///
     /// - Parameter text: The JSON text.
     /// - Returns: The same value as JSON text with sorted keys and no white space.
     /// - Throws: An error when the text is not JSON.
-    private static func sortedJSON(_ text: String) throws -> String {
+    static func sortedJSON(_ text: String) throws -> String {
         let value = try JSONSerialization.jsonObject(with: Data(text.utf8))
         let data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .withoutEscapingSlashes])
         return String(decoding: data, as: UTF8.self)

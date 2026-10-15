@@ -35,11 +35,30 @@ enum RepositoryFile {
     /// - Returns: The text between the opening fence and the closing fence of each block, in document order.
     /// - Throws: An error when the file cannot be read.
     static func codeBlocks(of language: CodeLanguage, at path: String) throws -> [String] {
+        try fencedBlocks(at: path)
+            .filter { block in block.language == language.rawValue }
+            .map(\.body)
+    }
+
+    /// Finds each fenced code block of a Markdown file, of each language.
+    ///
+    /// - Parameter path: The path of the Markdown file, relative to the repository root.
+    /// - Returns: Each block, in document order.
+    /// - Throws: An error when the file cannot be read.
+    static func fencedBlocks(at path: String) throws -> [FencedBlock] {
         try text(at: path)
             .matches(of: #/```(?<language>[a-z]*)\n(?<body>[\s\S]*?)\n```/#)
-            .filter { block in block.language == language.rawValue }
-            .map { block in String(block.body) }
+            .map { block in FencedBlock(language: String(block.language), body: String(block.body)) }
     }
+}
+
+/// One fenced code block of a Markdown file.
+struct FencedBlock {
+    /// The info string of the opening fence, for example `js`. It is empty when the fence has no info string.
+    let language: String
+
+    /// The text between the opening fence and the closing fence.
+    let body: String
 }
 
 /// The language of a fenced code block of a Markdown file: the info string of its opening fence.

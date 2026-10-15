@@ -49,8 +49,25 @@ comments:
     - evidence: 7f0443d feat(observe): use one FSEvents stream for each host (^swk9c8n). 14 files: FolderStreams.swift and FolderStreamsTests.swift (new), BoardWatcher, BoardEngine, KanbanHost, their tests, WatcherBudget, divergence.md, and .kanban/tasks files.
     - next: Not staged on purpose: Package.resolved and .kanban/mcp.17281.log. The commit is local only. No push.
   timestamp: 2026-10-15T22:21:09.862923+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m50v5qzb43b978ebm42tjzdd
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (523f0a9). 0 findings, 0 confirmed, 3 refuted, 14 attempted, 0 failed. 9 files reviewed. The .kanban/ files are not reviewed (.reviewignore). divergence.md is not reviewed (no validator matches it). The task had no prior Review Findings items.
+    - note: An earlier comment names sha 7f0443d. The commit was amended. The correct sha is 523f0a9.
+    - next: The task is in done. No work remains.
+  timestamp: 2026-10-15T22:33:24.203323+00:00
+- actor: claude-code
+  id: 01m50v65m4w67q9qw9wtp943kk
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — FolderStreams.swift (new), BoardWatcher, BoardEngine, KanbanHost, tests, divergence.md §16 Gap 4
+    - test: red (60 s time limits at load 127-145), then green — swift test, 1530 passed
+    - commit: 523f0a9
+    - review: clean — 0 findings
+  timestamp: 2026-10-15T22:33:38.180650+00:00
+position_column: done
+position_ordinal: ff8980
 title: Use one FSEvents stream for each host, not one for each watched folder
 ---
 ## What
