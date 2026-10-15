@@ -30,6 +30,30 @@ comments:
     - evidence: 3 files — Sources/FoundationModelsKanban/GraphQL/JSONListText.swift (new), Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift, Tests/FoundationModelsKanbanTests/GraphQL/ListInStringTests.swift (new); `swift test` 1364 tests in 108 suites passed
     - next: /review
   timestamp: 2026-10-15T06:21:29.347720+00:00
+- actor: claude-code
+  id: 01m4z3v94k14m9gy0jxjg8qdaz
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 3 files
+    - test: green — swift test, 1364 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: c62db7f
+    - review: findings — Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift:896, Tests/FoundationModelsKanbanTests/GraphQL/ListInStringTests.swift:115
+  timestamp: 2026-10-15T06:26:29.651682+00:00
+- actor: claude-code
+  id: 01m4z423d3xeph6g57b93785xv
+  text: |-
+    Review findings fixed (2026-10-15 01:24 checklist, both items checked).
+    - duplication (NameRewrite.swift): the rule "split the value when its type is a list" is now in one place, the private `JSONListText.splitting(_:isListPosition:)`. Two `splitting(_:ofType:)` overloads give it to the two type kinds: `(any GraphQLInputType)?` for an `input` key of a variable value, and `any GraphQL.Type` for the declared type of a variable. Each overload is a one-line forward. The two type kinds have no shared protocol, so one overload for each kind is necessary. The old `splitting(_:)` with no type is removed. Both sites in `RewriteWalk` (`rewritten(_:declaredIn:operationName:)` and `rewrittenFields`) now call `JSONListText.splitting(_:ofType:)`. `listEdit(of:ofType:)` is a different output (a text edit for the document text) and was already one helper.
+    - reuse (ListInStringTests.swift): `stringLiteral(of:)` is deleted; both document-text call sites call `KanbanArgumentsTests.jsonLiteral(of:)`. `jsonArray(of:)` stays: it encodes a `[String]`, and no other test helper does that.
+    - This is a refactor with no behavior change; the existing ListInStringTests cover it. Full `swift test`: 1364 tests in 108 suites pass; only the accepted SwiftPM "missing creator" warning.
+  timestamp: 2026-10-15T06:30:13.155419+00:00
+- actor: claude-code
+  id: 01m4z4256afdfkb2gv2jjwa6wb
+  text: |-
+    ### implement — changed
+    - evidence: 3 files — Sources/FoundationModelsKanban/GraphQL/JSONListText.swift, Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift, Tests/FoundationModelsKanbanTests/GraphQL/ListInStringTests.swift; `swift test` 1364 tests in 108 suites passed; 2/2 review findings checked
+    - next: /review
+  timestamp: 2026-10-15T06:30:14.986389+00:00
 position_column: doing
 position_ordinal: '80'
 title: Split a JSON array sent as a string for list fields
@@ -55,3 +79,13 @@ Change: for each input field whose type is a list (at least `tags`, `dependsOn`,
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-15 01:24)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift:896` `duplication/duplication` — The same two-step rule is written twice: a value is split when its type is a list, then the value is passed on. Line 896 repeats the logic of line 812 and differs only by the variable names. A later change to one copy can drift from the other. Add one helper, for example `JSONListText.splitting(_ value: Map, ofType type: (any GraphQLInputType)?) -> Map`, that returns `isList(type) ? splitting(value) : value`. Call it from both sites at lines 812 and 896.
+- [x] `Tests/FoundationModelsKanbanTests/GraphQL/ListInStringTests.swift:115` `reuse/reuse` — The new helper `stringLiteral(of:)` reimplements an existing test helper. It JSON-encodes a string the same way, so the same capability now lives in two places. The existing helper is `static func jsonLiteral(of:)` in `KanbanArgumentsTests`, which is internal, not private, so this file can call it directly. Two copies can drift apart when one is fixed and the other is not. Delete `stringLiteral(of:)` from `ListInStringTests` and call `KanbanArgumentsTests.jsonLiteral(of:)` at the two call sites (lines 194 and 157 use it). If the two suites should not depend on each other, move the helper to a shared test support file and have both suites call it.

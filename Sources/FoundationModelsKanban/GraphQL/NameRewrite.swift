@@ -809,7 +809,7 @@ private struct RewriteWalk {
             guard let definition = definitions[name] else {
                 return (name, written)
             }
-            let value = JSONListText.isList(definition.type) ? JSONListText.splitting(written) : written
+            let value = JSONListText.splitting(written, ofType: definition.type)
             guard let use = variableUses[name] else {
                 return (name, value)
             }
@@ -893,7 +893,7 @@ private struct RewriteWalk {
                 rewrites.append(NameRewrite(from: field.key, to: target, path: fieldPath))
             }
             let fieldType = names.types[canonical]
-            let value = JSONListText.isList(fieldType) ? JSONListText.splitting(field.value) : field.value
+            let value = JSONListText.splitting(field.value, ofType: fieldType)
             let namedType = getNamedType(type: fieldType)
             return (target, try rewrittenValue(value, ofType: namedType, at: fieldPath, readAt: read))
         }

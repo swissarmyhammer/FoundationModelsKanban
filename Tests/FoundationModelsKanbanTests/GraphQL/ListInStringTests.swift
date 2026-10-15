@@ -107,15 +107,6 @@ struct ListInStringTests {
         String(decoding: try JSONEncoder().encode(items), as: UTF8.self)
     }
 
-    /// Gives a GraphQL string literal of a text, with each quote and backslash escaped.
-    ///
-    /// - Parameter text: The text.
-    /// - Returns: The literal, for example `"[\"bug\"]"`.
-    /// - Throws: An error when the text cannot be encoded.
-    private static func stringLiteral(of text: String) throws -> String {
-        String(decoding: try JSONEncoder().encode(text), as: UTF8.self)
-    }
-
     /// Gives the sorted values of one key of the items of a list field of a mutation result.
     ///
     /// - Parameters:
@@ -154,7 +145,7 @@ struct ListInStringTests {
         let name = field.rawValue
         switch form {
         case .documentText:
-            let input = #"title: "x", \#(name): \#(try stringLiteral(of: text))"#
+            let input = #"title: "x", \#(name): \#(try KanbanArgumentsTests.jsonLiteral(of: text))"#
             return try await KanbanGraphTests.execute(
                 "mutation { addTask(input: { \(input) }) \(field.selection) }",
                 on: graph
@@ -191,7 +182,7 @@ struct ListInStringTests {
         let selection = "{ tags { name } }"
         switch form {
         case .documentText:
-            let input = #"id: "\#(id)", tags: \#(try stringLiteral(of: text))"#
+            let input = #"id: "\#(id)", tags: \#(try KanbanArgumentsTests.jsonLiteral(of: text))"#
             let document = "mutation { \(mutation)(input: { \(input) }) \(selection) }"
             return try await KanbanGraphTests.execute(document, on: graph)
         case .inputVariable:

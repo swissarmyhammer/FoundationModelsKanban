@@ -16,13 +16,37 @@ enum JSONListText {
         try? JSONDecoder().decode([String].self, from: Data(text.utf8))
     }
 
-    /// Gives a value of a variable with the items of the array when the value is a string that is a JSON array of
-    /// strings.
+    /// Gives a value of a variable with the items of the array when the schema type of the value is a list and the
+    /// value is a string that is a JSON array of strings.
     ///
-    /// - Parameter value: The value of a list position.
-    /// - Returns: The array of the items, or `value` when it is not such a string.
-    static func splitting(_ value: Map) -> Map {
-        guard case .string(let text) = value, let items = items(of: text) else {
+    /// - Parameters:
+    ///   - value: The value, as the caller sent it.
+    ///   - type: The input type of the value in the schema, or `nil` when the type is not known.
+    /// - Returns: The array of the items, or `value` when the type is not a list or the value is not such a string.
+    static func splitting(_ value: Map, ofType type: (any GraphQLInputType)?) -> Map {
+        splitting(value, isListPosition: isList(type))
+    }
+
+    /// Gives a value of a variable with the items of the array when the declared type of the variable is a list and
+    /// the value is a string that is a JSON array of strings.
+    ///
+    /// - Parameters:
+    ///   - value: The value, as the caller sent it.
+    ///   - type: The type of the variable, as the document declares it.
+    /// - Returns: The array of the items, or `value` when the type is not a list or the value is not such a string.
+    static func splitting(_ value: Map, ofType type: any GraphQL.`Type`) -> Map {
+        splitting(value, isListPosition: isList(type))
+    }
+
+    /// Gives a value with the items of the array when the value is at a list position and is a string that is a JSON
+    /// array of strings.
+    ///
+    /// - Parameters:
+    ///   - value: The value, as the caller sent it.
+    ///   - isListPosition: `true` when the type of the position is a list.
+    /// - Returns: The array of the items, or `value` when the position is not a list or the value is not such a string.
+    private static func splitting(_ value: Map, isListPosition: Bool) -> Map {
+        guard isListPosition, case .string(let text) = value, let items = items(of: text) else {
             return value
         }
         return .array(items.map(Map.string))
