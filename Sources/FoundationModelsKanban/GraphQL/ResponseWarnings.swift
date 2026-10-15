@@ -23,11 +23,12 @@ struct ResponseWarning: Encodable, Sendable {
 /// and a run that the engine starts again does not repeat the warnings of the run before it.
 ///
 /// A resolver adds a warning with `await context.warnings.add(…)`. The name rewrite runs in the same run, before the
-/// engine runs the rewritten document, so it can add to the collector of the same context. The response takes the
-/// list when it is encoded.
+/// engine runs the rewritten document, so it can add to the collector of the same context. The response reads the
+/// list when it is encoded. A read does not empty the list, so that a call that fails as a whole after its run, for
+/// example with `BOARD_BUSY`, gives the same warnings in its error response.
 actor ResponseWarnings {
     /// The warnings that the run added, in the order of the adds.
-    private var warnings: [ResponseWarning] = []
+    private(set) var list: [ResponseWarning] = []
 
     /// Adds one warning to the list.
     ///
@@ -35,21 +36,13 @@ actor ResponseWarnings {
     ///   - message: The text for the agent.
     ///   - code: The kind of the warning, or `nil` for a warning with no code.
     func add(_ message: String, code: String? = nil) {
-        warnings.append(ResponseWarning(message: message, code: code))
+        list.append(ResponseWarning(message: message, code: code))
     }
 
     /// Adds some warnings to the list, in their order.
     ///
     /// - Parameter added: The warnings, for example the warnings that one mutation field gave.
     func add(contentsOf added: [ResponseWarning]) {
-        warnings.append(contentsOf: added)
-    }
-
-    /// Takes the warnings out of the list: the list is empty after the call.
-    ///
-    /// - Returns: The warnings that the run added since the last take, in the order of the adds.
-    func take() -> [ResponseWarning] {
-        defer { warnings = [] }
-        return warnings
+        list.append(contentsOf: added)
     }
 }

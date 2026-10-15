@@ -35,6 +35,9 @@ struct RemovedParameterTests {
     /// The warning text of `due` and `scheduled`, after the name in back quotes.
     private static let noDateText = " is removed, with no replacement: write the date in the body. The call ignored it."
 
+    /// The removed `due` parameter and its value, as an `input` field.
+    private static let removedDue = #"due: "2026-01-01""#
+
     /// The text before the names in the error of an `input` field of `AddTaskInput` with no match.
     private static let addTaskInputLead = "The fields of AddTaskInput are: "
 
@@ -206,6 +209,48 @@ struct RemovedParameterTests {
             let warnings = try ResponseWarningsTests.warnings(of: response)
             #expect(warnings.map(\.message) == ["`due`" + Self.noDateText], "\(response)")
         }
+    }
+
+    // MARK: - Failed calls
+
+    /// Expects that the response of a failed call has one error with a code, and the one warning of the removed
+    /// `due` parameter.
+    ///
+    /// - Parameters:
+    ///   - code: The code of the error.
+    ///   - response: The response JSON text.
+    /// - Throws: An error when the response does not have exactly one error, or has no warnings.
+    private static func expectFailure(coded code: String, withDueWarningIn response: String) throws {
+        let error = try onlyError(of: response)
+        #expect(ErrorCoverageTests.code(of: error) == code, "\(response)")
+        let warnings = try ResponseWarningsTests.warnings(of: response)
+        #expect(warnings.map(\.message) == ["`due`" + noDateText], "\(response)")
+        #expect(warnings.map(\.code) == [warningCode], "\(response)")
+    }
+
+    @Test("A removed Rust parameter in a call whose field fails gives its warning, and the next call gives none")
+    func removedParameterInFailedFieldGivesWarning() async throws {
+        try await Self.withFixture { graph in
+            let input = #"id: "\#(AddUpdateTaskTests.unknownTask)", \#(Self.removedDue)"#
+            let update = "updateTask(input: { \(input) }) { id }"
+            let failed = try await KanbanGraphTests.execute(AddUpdateTaskTests.mutation(of: update), on: graph)
+            try Self.expectFailure(coded: "NOT_FOUND", withDueWarningIn: failed)
+            let next = try await KanbanGraphTests.execute(KanbanGraphTests.nameQuery, on: graph)
+            #expect(try UnreadableRelatedBoardTests.hasNoWarning(next), "\(next)")
+        }
+    }
+
+    @Test("A removed Rust parameter in a BOARD_BUSY call gives its warning, and the next call gives none")
+    func removedParameterInBusyCallGivesWarning() async throws {
+        let (harness, clock) = try AgentPlanPostTests.makeHarnessWithOtherProcess()
+        try await harness.addTask(titled: AgentPlanPostTests.firstTitle)
+        clock.arm(.writingAtEachRead)
+        let add = #"addTask(input: { title: "\#(AgentPlanPostTests.secondTitle)", \#(Self.removedDue) }) { id }"#
+        let busy = try await harness.call(AddUpdateTaskTests.mutation(of: add))
+        clock.arm(.idle)
+        try Self.expectFailure(coded: "BOARD_BUSY", withDueWarningIn: busy)
+        let next = try await harness.call(AgentPlanPostTests.addTask(titled: AgentPlanPostTests.secondTitle))
+        #expect(try UnreadableRelatedBoardTests.hasNoWarning(next), "\(next)")
     }
 
     // MARK: - No match

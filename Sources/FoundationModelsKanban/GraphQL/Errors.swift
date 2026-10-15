@@ -391,23 +391,41 @@ extension KanbanError {
         ResponseError(message: message, path: path, extensions: ResponseError.Extensions(code: code))
     }
 
-    /// The JSON of a response that holds only errors, and no `data`.
+    /// The JSON of a response that holds only errors, no `data`, and the warnings of the call when it has some.
     private struct ErrorResponse: Encodable {
+        /// The `extensions` object of the response, which holds the warnings (plan.md §4.4).
+        struct Extensions: Encodable {
+            /// The warnings of the call, in the order that the call added them.
+            // The synthesized `Encodable` conformance reads this property; periphery sees no reader.
+            // periphery:ignore
+            let warnings: [ResponseWarning]
+        }
+
         /// The errors of the response.
         // The synthesized `Encodable` conformance reads this property; periphery sees no reader.
         // periphery:ignore
         let errors: [ResponseError]
+
+        /// The `extensions` object, or `nil` for a call with no warning. The encoder leaves out the key when the
+        /// value is `nil`.
+        // The synthesized `Encodable` conformance reads this property; periphery sees no reader.
+        // periphery:ignore
+        let extensions: Extensions?
     }
 
     /// Makes the GraphQL response of a call that fails as a whole with this error, for example `BOARD_BUSY` (plan.md
-    /// §5.4 step 5.2): `{"errors": [...]}`, with no `data`. The keys are in sorted order, and a `/` is not escaped,
-    /// the same as each other response of the tool.
+    /// §5.4 step 5.2): `{"errors": [...]}`, with no `data`. The warnings that the call collected before it failed go
+    /// in `extensions.warnings` (plan.md §4.4), so that the agent sees them also on this path. The keys are in sorted
+    /// order, and a `/` is not escaped, the same as each other response of the tool.
     ///
+    /// - Parameter warnings: The warnings of the call. With no warning, the response has no `extensions` key.
     /// - Returns: The response as JSON text.
     /// - Throws: An error from the JSON encoder.
-    func responseJSON() throws -> String {
+    func responseJSON(warnings: [ResponseWarning] = []) throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        return String(decoding: try encoder.encode(ErrorResponse(errors: [responseError()])), as: UTF8.self)
+        let extensions = warnings.isEmpty ? nil : ErrorResponse.Extensions(warnings: warnings)
+        let response = ErrorResponse(errors: [responseError()], extensions: extensions)
+        return String(decoding: try encoder.encode(response), as: UTF8.self)
     }
 }

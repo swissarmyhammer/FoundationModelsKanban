@@ -177,7 +177,7 @@ public actor KanbanGraph {
     ///
     /// The call waits until each earlier call on its boards is done. A GraphQL error does not throw: the response has
     /// it in `errors`. When a log of the board changed before each commit attempt, the response has the one error
-    /// `BOARD_BUSY`, and the call wrote nothing.
+    /// `BOARD_BUSY` and the warnings of the last run in `extensions.warnings`, and the call wrote nothing.
     ///
     /// - Parameters:
     ///   - query: The GraphQL document.
@@ -392,7 +392,10 @@ public actor KanbanGraph {
         on board: Result<BoardEngine, any Error>,
         holding held: HeldGates
     ) async throws -> CallResult<String> {
-        try await runSchemaCall(on: board, holding: held, answeringFailureWith: { $0 }) { schema, context in
+        let answer: (KanbanError, [ResponseWarning]) throws -> String = { failure, warnings in
+            try failure.responseJSON(warnings: warnings)
+        }
+        return try await runSchemaCall(on: board, holding: held, answeringFailureWith: answer) { schema, context in
             try await schema.respond(
                 to: query,
                 variables: variables,
@@ -421,9 +424,11 @@ public actor KanbanGraph {
         on board: Result<BoardEngine, any Error>,
         holding held: HeldGates
     ) async throws -> CallResult<AsyncThrowingStream<String, Error>> {
-        try await runSchemaCall(on: board, holding: held, answeringFailureWith: AsyncThrowingStream.single) {
-            schema,
-            context in
+        // The warnings list of plan.md §4.4 is for a call: a response of a subscription has no warnings.
+        let answer: (KanbanError, [ResponseWarning]) throws -> AsyncThrowingStream<String, Error> = { failure, _ in
+            .single(try failure.responseJSON())
+        }
+        return try await runSchemaCall(on: board, holding: held, answeringFailureWith: answer) { schema, context in
             try await schema.subscribe(
                 to: query,
                 variables: variables,
@@ -442,22 +447,25 @@ public actor KanbanGraph {
     /// - Parameters:
     ///   - board: The board of the working directory, or the error that stops each call.
     ///   - held: The gates that the call holds.
-    ///   - wrap: Gives the output of the response JSON text of a ``KanbanError``.
+    ///   - answer: Gives the output of a ``KanbanError`` that fails the call as a whole, from the error and the
+    ///     warnings that the last run of the call collected (plan.md §4.4), for example the warnings of the removed
+    ///     Rust parameters of a call that fails with `BOARD_BUSY`.
     ///   - call: Runs the document against the schema and the context of one run, and gives the output.
     /// - Returns: ``CallResult/completed(_:)`` with the output of the run that committed or kept no patch, or
-    ///   ``CallResult/failed(_:)`` with the wrapped error response.
+    ///   ``CallResult/failed(_:)`` with the output of `answer`.
     /// - Throws: A ``BoardKeyError``, a ``BoardWatcherError``, or an ``EventLogError`` when a board cannot load or a
-    ///   commit cannot write. ``GateShortfall`` when the call needs one more gate.
+    ///   commit cannot write. ``GateShortfall`` when the call needs one more gate. An error from the JSON encoder.
     private func runSchemaCall<Output: Sendable>(
         on board: Result<BoardEngine, any Error>,
         holding held: HeldGates,
-        answeringFailureWith wrap: (String) -> Output,
+        answeringFailureWith answer: (KanbanError, [ResponseWarning]) throws -> Output,
         _ call: @Sendable (PublicSchema, KanbanContext) async throws -> Output
     ) async throws -> CallResult<Output> {
         let schema = schema
+        let lastRun = LastRunWarnings()
         do {
             return .completed(
-                try await runCall(on: board, holding: held) { context in
+                try await runCall(on: board, holding: held, recordingWarningsIn: lastRun) { context in
                     try await call(schema, context)
                 }
             )
@@ -465,7 +473,7 @@ public actor KanbanGraph {
             guard let failure = KanbanError(callFailure: error) else {
                 throw error
             }
-            return .failed(wrap(try failure.responseJSON()))
+            return .failed(try answer(failure, await lastRun.warnings))
         }
     }
 
@@ -479,6 +487,8 @@ public actor KanbanGraph {
     /// - Parameters:
     ///   - board: The board of the working directory, or the error that stops each call.
     ///   - held: The gates that the call holds.
+    ///   - lastRun: Gets the warnings collector of each run when the run starts, so that it holds the collector of the
+    ///     last run when the call fails as a whole.
     ///   - call: Runs the document against the context of one run, and gives the response.
     /// - Returns: The response of the run that committed, or of the run that kept no patch.
     /// - Throws: The error of `board`. ``GateShortfall`` when the call does not hold the gate of a board that it
@@ -487,6 +497,7 @@ public actor KanbanGraph {
     private func runCall<Response: Sendable>(
         on board: Result<BoardEngine, any Error>,
         holding held: HeldGates,
+        recordingWarningsIn lastRun: LastRunWarnings,
         _ call: @Sendable (KanbanContext) async throws -> Response
     ) async throws -> Response {
         let engine = try board.get()
@@ -512,6 +523,7 @@ public actor KanbanGraph {
                 },
                 { store in
                     let context = KanbanContext(store: store, clock: clock, search: search, feed: feeds)
+                    await lastRun.record(context.warnings)
                     try await Self.checkUnreadableBoards(of: store, in: context)
                     return try await call(context)
                 }
@@ -1077,6 +1089,32 @@ private enum CallResult<Value: Sendable>: Sendable {
         switch self {
         case .completed(let value), .failed(let value):
             value
+        }
+    }
+}
+
+// MARK: - Warnings of the last run
+
+/// The warnings collector of the last run of one call (plan.md §4.4).
+///
+/// Each run of a call gets a new ``KanbanContext``, and thus a new collector. A call that fails as a whole after its
+/// runs, for example with `BOARD_BUSY`, gives an error response in place of the response of its last run. The error
+/// response reads the warnings of the last run here, so that the agent sees them on this path too.
+actor LastRunWarnings {
+    /// The collector of the run that started last, or `nil` before the first run.
+    private var collector: ResponseWarnings?
+
+    /// Records the collector of a run that starts. It replaces the collector of the run before it.
+    ///
+    /// - Parameter warnings: The collector of the context of the run.
+    func record(_ warnings: ResponseWarnings) {
+        collector = warnings
+    }
+
+    /// The warnings of the last run, in the order that the run added them, or no warning when no run started.
+    var warnings: [ResponseWarning] {
+        get async {
+            await collector?.list ?? []
         }
     }
 }

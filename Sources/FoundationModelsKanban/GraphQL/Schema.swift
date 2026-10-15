@@ -1128,9 +1128,10 @@ extension API where ContextType == KanbanContext {
     /// error, and the document does not run.
     ///
     /// The response has the warnings that the run added to the collector of
-    /// the context in `extensions.warnings` (plan.md §4.4). The warnings of the
-    /// removed Rust parameters that the rewrite took out come first. A run with
-    /// no warning has no `extensions.warnings` key.
+    /// the context in `extensions.warnings` (plan.md §4.4), also when the
+    /// document does not parse. The warnings of the removed Rust parameters
+    /// that the rewrite took out come first. A run with no warning has no
+    /// `extensions.warnings` key.
     ///
     /// - Parameters:
     ///   - document: The GraphQL document.
@@ -1150,24 +1151,26 @@ extension API where ContextType == KanbanContext {
         formattedWith formatting: GraphQLJSONEncoder.OutputFormatting = [],
         context: ContextType
     ) async throws -> String {
-        try await rewriting(
+        let answerParseFailure: (GraphQLError) async throws -> String = { error in
+            try Self.errorResponse(error, warnings: await context.warnings.list, formattedWith: formatting)
+        }
+        return try await rewriting(
             document,
             variables: variables,
             operationName: operationName,
-            formattedWith: formatting,
-            answeringFailureWith: { $0 }
+            answeringFailureWith: answerParseFailure
         ) { rewritten in
             await context.warnings.add(contentsOf: rewritten.warnings)
             let result: GraphQLResult
             do {
                 result = try await self.result(of: rewritten, operationName: operationName, context: context)
             } catch let error as GraphQLError {
-                return try Self.errorResponse(error, formattedWith: formatting)
+                return try await answerParseFailure(error)
             }
             return try RewriteResponse.encoded(
                 result: result,
                 rewrites: rewritten.rewrites,
-                warnings: await context.warnings.take(),
+                warnings: await context.warnings.list,
                 formattedWith: formatting
             )
         }
@@ -1196,13 +1199,14 @@ extension API where ContextType == KanbanContext {
         formattedWith formatting: GraphQLJSONEncoder.OutputFormatting,
         context: ContextType
     ) async throws -> AsyncThrowingStream<String, Error> {
-        let single: (String) -> AsyncThrowingStream<String, Error> = AsyncThrowingStream.single
+        let answerParseFailure: (GraphQLError) throws -> AsyncThrowingStream<String, Error> = { error in
+            .single(try Self.errorResponse(error, warnings: [], formattedWith: formatting))
+        }
         return try await rewriting(
             document,
             variables: variables,
             operationName: operationName,
-            formattedWith: formatting,
-            answeringFailureWith: single
+            answeringFailureWith: answerParseFailure
         ) { rewritten in
             let encode: @Sendable (GraphQLResult) throws -> String = { result in
                 try RewriteResponse.encoded(
@@ -1238,17 +1242,15 @@ extension API where ContextType == KanbanContext {
     ///   - document: The GraphQL document as the caller wrote it.
     ///   - variables: The values of the variables of the document, as the caller sent them.
     ///   - operationName: The operation of the document to run, or `nil`.
-    ///   - formatting: The formatting of the JSON text of the error response.
-    ///   - wrap: Gives the output of the response JSON text of the parse error.
+    ///   - answer: Gives the output of the parse error.
     ///   - run: Runs the rewritten document, and gives the output.
-    /// - Returns: The output of `run`, or the wrapped error response when the document does not parse.
-    /// - Throws: An error of `run`, or an error from the JSON encoder.
+    /// - Returns: The output of `run`, or the output of `answer` when the document does not parse.
+    /// - Throws: An error of `run` or of `answer`, for example an error from the JSON encoder.
     private func rewriting<Output>(
         _ document: String,
         variables: [String: Map],
         operationName: String?,
-        formattedWith formatting: GraphQLJSONEncoder.OutputFormatting,
-        answeringFailureWith wrap: (String) -> Output,
+        answeringFailureWith answer: (GraphQLError) async throws -> Output,
         _ run: (RewrittenDocument) async throws -> Output
     ) async throws -> Output {
         let rewritten: RewrittenDocument
@@ -1259,27 +1261,30 @@ extension API where ContextType == KanbanContext {
                 operationName: operationName
             )
         } catch let error as GraphQLError {
-            return wrap(try Self.errorResponse(error, formattedWith: formatting))
+            return try await answer(error)
         }
         return try await run(rewritten)
     }
 
-    /// Gives the response of the error of a document that does not parse, with no `data`, no rewrites, and no
-    /// warnings. The error has the code `GRAPHQL_PARSE_FAILED` (plan.md §4.4).
+    /// Gives the response of the error of a document that does not parse, with no `data` and no rewrites. The error
+    /// has the code `GRAPHQL_PARSE_FAILED` (plan.md §4.4).
     ///
     /// - Parameters:
     ///   - error: The parse error.
+    ///   - warnings: The warnings of the run, for `extensions.warnings`. The response has no `extensions` when the
+    ///     list is empty.
     ///   - formatting: The formatting of the JSON text.
     /// - Returns: The response as JSON text.
     /// - Throws: An error from the JSON encoder.
     private static func errorResponse(
         _ error: GraphQLError,
+        warnings: [ResponseWarning],
         formattedWith formatting: GraphQLJSONEncoder.OutputFormatting
     ) throws -> String {
         try RewriteResponse.encoded(
             result: GraphQLResult(errors: [error.codedAsParseFailure()]),
             rewrites: [],
-            warnings: [],
+            warnings: warnings,
             formattedWith: formatting
         )
     }

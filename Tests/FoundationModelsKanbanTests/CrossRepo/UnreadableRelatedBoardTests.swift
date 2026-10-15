@@ -156,6 +156,17 @@ struct UnreadableRelatedBoardTests {
         try Self.expectUnreadableWarning(in: response, for: dependency.repos)
     }
 
+    @Test("A document that does not parse, with a related board that cannot be read, fails and warns about the board")
+    func parseFailureWarnsAboutRelatedBoard() async throws {
+        let dependency = try await Self.makeBrokenDependency(.brokenLog)
+        let app = try GitGraphFixture.makeGraph(at: dependency.repos.app)
+        let response = try await KanbanGraphTests.execute(ErrorCoverageTests.syntaxErrorDocument, on: app)
+        await app.close()
+        let errors = try NameRewriteTests.errors(of: response)
+        #expect(errors.map(ErrorCoverageTests.code(of:)) == ["GRAPHQL_PARSE_FAILED"], "\(response)")
+        try Self.expectUnreadableWarning(in: response, for: dependency.repos)
+    }
+
     @Test(
         "A task that depends on a task of a related board that cannot be read is not ready",
         arguments: Breakage.allCases
