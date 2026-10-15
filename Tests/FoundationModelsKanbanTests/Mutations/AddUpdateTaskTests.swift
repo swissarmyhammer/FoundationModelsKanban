@@ -630,11 +630,11 @@ struct AddUpdateTaskTests {
         #expect(error == .notFound(type: .task, reference: Self.unknownTask))
     }
 
-    @Test(
-        "A time value in the input is a validation error, and the call writes nothing",
-        arguments: ["created", "due", "scheduled"]
-    )
-    func timeInputIsRefused(field: String) async throws {
+    /// The name rewrite ignores the removed Rust parameters `due` and `scheduled` with a warning
+    /// (``RemovedParameterTests``), so only `created` stays a validation error.
+    @Test("A created time in the input is a validation error, and the call writes nothing")
+    func timeInputIsRefused() async throws {
+        let field = "created"
         let directory = try TemporaryDirectory()
         let add = Self.addTask(with: #"\#(field): "2026-10-07T00:00:00Z""#)
         let response = try await ColumnActorTests.respondWritingNothing(to: Self.mutation(of: add), in: directory)

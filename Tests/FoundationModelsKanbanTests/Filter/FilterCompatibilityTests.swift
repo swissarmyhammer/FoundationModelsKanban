@@ -10,7 +10,8 @@ import Testing
 /// (`../skills/skills/`) is one test case. Each gives the tasks that the Rust `list tasks` gives on the same board with
 /// `excludeDone: false`, except a `$project` example, which gives `INVALID_FILTER`. The Rust arguments `tag`,
 /// `assignee`, `column`, and `excludeDone` are not in the schema: the filter selects the tasks, and a list with no
-/// filter gives each live task, done or not. `!#DONE` gives the open tasks.
+/// filter gives each live task, done or not. `!#DONE` gives the open tasks. The name rewrite ignores `excludeDone`
+/// with a warning, because it is a removed Rust parameter (divergence.md Q12 as P4 changed it).
 @Suite("Filter compatibility")
 struct FilterCompatibilityTests {
     /// The ULID text of a task in `todo` with the tag `bug`, assigned to `alice`.
@@ -114,8 +115,10 @@ struct FilterCompatibilityTests {
         ("#bug || #feature", [polishUI], [fixLogin, addSearch]),
     ]
 
-    /// The arguments that a task list does not have. The filter selects the tasks (plan.md §6.3).
-    static let removedArguments = [#"tag: "bug""#, #"assignee: "alice""#, #"column: "done""#, "excludeDone: false"]
+    /// The arguments that a task list does not have. The filter selects the tasks (plan.md §6.3). `excludeDone` is
+    /// not in the list: the name rewrite ignores that removed Rust parameter with a warning
+    /// (``RemovedParameterTests``).
+    static let removedArguments = [#"tag: "bug""#, #"assignee: "alice""#, #"column: "done""#]
 
     /// Each filter with a `#DONE` atom, with the tasks that it lists, in board order.
     static let doneExamples: [(filter: String, tasks: [String])] = [
@@ -218,7 +221,7 @@ struct FilterCompatibilityTests {
 
     // MARK: - Only the filter
 
-    @Test("A task list has no scoping or excludeDone argument", arguments: removedArguments)
+    @Test("A task list has no scoping argument", arguments: removedArguments)
     func removedArgumentIsUnknown(argument: String) async throws {
         let response = try await fixture.respond(to: "{ board { tasks(\(argument)) { totalCount } } }")
         #expect(response.contains("does not have argument"))

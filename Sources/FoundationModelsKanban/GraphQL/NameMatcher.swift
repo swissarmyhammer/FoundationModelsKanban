@@ -97,6 +97,17 @@ enum NameMatcher {
         }
         return .notFound
     }
+
+    /// Tells if two names have the same words in each case and style, as step 2 of the match compares them:
+    /// `exclude_done`, `excludeDone`, and `EXCLUDE_DONE` have the same words.
+    ///
+    /// - Parameters:
+    ///   - name: The first name.
+    ///   - other: The second name.
+    /// - Returns: `true` when the two names have the same words.
+    static func hasSameWords(_ name: String, as other: String) -> Bool {
+        NameWords(splitting: name).key == NameWords(splitting: other).key
+    }
 }
 
 // MARK: - Query verbs

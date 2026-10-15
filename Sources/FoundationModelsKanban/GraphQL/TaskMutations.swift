@@ -14,8 +14,9 @@ extension MutationName {
 
 // MARK: - Arguments
 
-/// The `input` object of `addTask` (plan.md §4.2). The input has no time value: a `created`, `due`, or `scheduled`
-/// field is not in the schema, so the schema validation refuses it (plan.md §12, item 20).
+/// The `input` object of `addTask` (plan.md §4.2). The input has no time value: a `created` field is not in the
+/// schema, so the schema validation refuses it (plan.md §12, item 20). The name rewrite takes the removed Rust
+/// parameters `due` and `scheduled` out of the input with a warning (``RemovedParameter``).
 private struct AddTaskInput: Decodable, Sendable {
     /// The title of the task.
     let title: String

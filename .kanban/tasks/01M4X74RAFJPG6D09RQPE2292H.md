@@ -71,8 +71,17 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsKanbanTests/GraphQL/NameRewriteTests.swift (fragmentQueryVerbMovesIntoBoard now covers the inline-fragment form and the fragment-definition form). `swift test --filter NameRewriteTests/fragmentQueryVerbMovesIntoBoard`: 2 cases passed. Full `swift test`: 1350 tests in 106 suites passed, 0 failed. Only the accepted SwiftPM "missing creator" warning. No production code change was necessary.
     - next: /review
   timestamp: 2026-10-15T05:24:48.502381+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4z0qqes8ejznpr2shg0jb66
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 test file (1 finding fixed)
+    - test: green — swift test, 1350 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: b56fe25
+    - review: clean — none
+  timestamp: 2026-10-15T05:32:07.513433+00:00
+position_column: done
+position_ordinal: f680
 title: Add root query verbs and map createBoard and newBoard to initBoard
 ---
 ## What

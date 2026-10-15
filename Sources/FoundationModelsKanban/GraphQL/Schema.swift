@@ -1128,8 +1128,9 @@ extension API where ContextType == KanbanContext {
     /// error, and the document does not run.
     ///
     /// The response has the warnings that the run added to the collector of
-    /// the context in `extensions.warnings` (plan.md §4.4). A run with no
-    /// warning has no `extensions.warnings` key.
+    /// the context in `extensions.warnings` (plan.md §4.4). The warnings of the
+    /// removed Rust parameters that the rewrite took out come first. A run with
+    /// no warning has no `extensions.warnings` key.
     ///
     /// - Parameters:
     ///   - document: The GraphQL document.
@@ -1156,6 +1157,7 @@ extension API where ContextType == KanbanContext {
             formattedWith: formatting,
             answeringFailureWith: { $0 }
         ) { rewritten in
+            await context.warnings.add(contentsOf: rewritten.warnings)
             let result: GraphQLResult
             do {
                 result = try await self.result(of: rewritten, operationName: operationName, context: context)

@@ -35,6 +35,29 @@ private struct RootMove: Sendable {
     let fieldKey: String
 }
 
+/// The place where the engine reports a name with no match, and the canonical names of the position of the name
+/// (divergence.md Q12).
+private struct NoMatchPlace: Sendable {
+    /// The UTF-8 offset in the text of the caller where the engine reports the error of the name: the start of the
+    /// field, the argument, or the `input` field, or the start of the definition of the variable whose value holds
+    /// the name.
+    let offset: Int
+
+    /// The sentence that lists the canonical names of the position, for example
+    /// "The fields of AddTaskInput are: title, body.".
+    let listing: String
+}
+
+/// A name of the caller that matches no name of its position (divergence.md Q12). The error of the engine for the
+/// name gets the list of the canonical names of the position.
+private struct UnmatchedName: Sendable {
+    /// The name as the caller wrote it.
+    let text: String
+
+    /// The place of the error of the name, with the list of the canonical names.
+    let place: NoMatchPlace
+}
+
 /// A document after the name rewrite (plan.md §4.5).
 struct RewrittenDocument: Sendable {
     /// The text of the document with the canonical names. Validation and execution read this text.
@@ -50,6 +73,10 @@ struct RewrittenDocument: Sendable {
     /// run.
     let ties: [GraphQLError]
 
+    /// One warning for each removed Rust parameter that the rewrite took out of the document or out of the value of
+    /// a variable (divergence.md Q12 as P4 changed it), in the order of the rewrite.
+    let warnings: [ResponseWarning]
+
     /// The text of the document as the caller wrote it.
     fileprivate let source: String
 
@@ -59,17 +86,21 @@ struct RewrittenDocument: Sendable {
     /// The root query fields that the rewrite moved into `board`: one move for each response key.
     fileprivate let rootMoves: [RootMove]
 
+    /// The names of the caller that match no name of their position, in the order of the rewrite.
+    fileprivate let unmatched: [UnmatchedName]
+
     /// Gives the result of the execution of ``text`` in the form of the document that the caller wrote.
     ///
     /// The result of each moved root query field goes back to the root of `data`, so that the caller finds it under
     /// the key that it wrote: `data.tasks`, not `data.<key>.tasks`. The path of an error in a moved field loses the
     /// key of the added `board` field the same way. The location of each error is in the text that the caller
-    /// wrote, not in ``text``.
+    /// wrote, not in ``text``. The error of a name with no match ends with the list of the canonical names of the
+    /// position of the name (divergence.md Q12).
     ///
     /// - Parameter result: The result of the execution of ``text``.
     /// - Returns: The result with the keys and the locations of the document of the caller.
     func callerResult(from result: GraphQLResult) -> GraphQLResult {
-        guard !edits.isEmpty else {
+        guard !edits.isEmpty || !unmatched.isEmpty else {
             return result
         }
         let moves = Dictionary(uniqueKeysWithValues: rootMoves.map { move in (move.boardKey, move.fieldKey) })
@@ -103,22 +134,39 @@ struct RewrittenDocument: Sendable {
     /// - Parameters:
     ///   - error: An error of the result.
     ///   - moves: The key of the moved field for the key of each added `board` field.
-    /// - Returns: The error without the key of an added `board` field at the start of its path, and with each
-    ///   location in ``source``.
+    /// - Returns: The error without the key of an added `board` field at the start of its path, with each location
+    ///   in ``source``, and with the list of the canonical names when the error is the error of a name with no match.
     private func callerError(from error: GraphQLError, moving moves: [String: String]) -> GraphQLError {
         let elements = error.path.elements
         let path = if case .key(let key)? = elements.first, moves[key] != nil { Array(elements.dropFirst()) } else {
             elements
         }
+        let positions = error.positions.map(sourceOffset(ofTextOffset:))
         return GraphQLError(
-            message: error.message,
+            message: error.message + listings(forMessage: error.message, at: positions),
             nodes: error.nodes,
             source: error.positions.isEmpty ? error.source : Source(body: source),
-            positions: error.positions.map(sourceOffset(ofTextOffset:)),
+            positions: positions,
             path: IndexPath(path),
             originalError: error.originalError,
             extensions: error.extensions
         )
+    }
+
+    /// Gives the lists of the canonical names that an error of the engine gets: one list for each name with no
+    /// match whose error is at one of the positions and whose message quotes the name. Each list is in the text one
+    /// time.
+    ///
+    /// - Parameters:
+    ///   - message: The message of the error.
+    ///   - positions: The UTF-8 offsets of the error in ``source``.
+    /// - Returns: The lists, each after a space, or the empty text when the error is not the error of a name with no
+    ///   match.
+    private func listings(forMessage message: String, at positions: [Int]) -> String {
+        let listings = unmatched
+            .filter { name in positions.contains(name.place.offset) && message.contains("\"\(name.text)\"") }
+            .map(\.place.listing)
+        return OrderedSet(listings).map { listing in " " + listing }.joined()
     }
 
     /// Gives the UTF-8 offset in ``source`` of a UTF-8 offset in ``text``. An offset in the replacement of an edit
@@ -150,11 +198,14 @@ struct RewrittenDocument: Sendable {
 /// field, and an enum value. ``NameMatcher`` gives the canonical name. A field keeps its response key: the rewrite
 /// adds the name of the caller as a GraphQL alias, and keeps an alias that the caller wrote. A root query field that
 /// only `Board` has moves into a `board { … }` field, also in an inline fragment or a fragment definition on the
-/// query type. A name with no match stays as it is, so that validation gives the "did you mean" error.
+/// query type. A name with no match stays as it is, so that validation gives the "did you mean" error, and the
+/// error gets the list of the canonical names of the position (divergence.md Q12). A removed Rust parameter at an
+/// argument or an `input` field (``RemovedParameter``) goes out of the document, and the rewrite gives its warning
+/// (divergence.md Q12 as P4 changed it).
 ///
 /// The rewrite also gives each key of an `input` object in the value of a variable its canonical name, at all
-/// depths, by the input type of the variable (divergence.md Q8). The steps, the aliases, and the tie error are the
-/// same as for the text of the document.
+/// depths, by the input type of the variable (divergence.md Q8). The steps, the aliases, the tie error, the removed
+/// parameters, and the list of the canonical names are the same as for the text of the document.
 ///
 /// The nodes of the GraphQL syntax tree cannot be made outside the GraphQL module. Thus the rewrite changes the text
 /// of the document at the places that the parse gives, and the engine parses the new text again.
@@ -193,9 +244,11 @@ struct DocumentRewriter {
             variables: rewrittenVariables,
             rewrites: walk.rewrites,
             ties: walk.ties,
+            warnings: walk.warnings,
             source: source,
             edits: edits,
-            rootMoves: walk.rootMoves
+            rootMoves: walk.rootMoves,
+            unmatched: walk.unmatched
         )
     }
 }
@@ -278,6 +331,17 @@ private struct VariableUse {
     let node: Variable
 }
 
+/// A variable whose value the rewrite reads: the first place where the document reads it, and the place where the
+/// engine reports an error in its value.
+private struct VariableRead {
+    /// The first place where the document reads the variable.
+    let use: VariableUse
+
+    /// The UTF-8 offset of the definition of the variable in the text of the caller, or `nil` when the parse gave
+    /// no location. The engine reports an error in the value of the variable at its definition.
+    let definitionOffset: Int?
+}
+
 /// The valid names at one position: the arguments of a field, or the fields of an `input` object. Each name has its
 /// input type and its candidate for the name matcher.
 private struct InputNames {
@@ -287,14 +351,35 @@ private struct InputNames {
     /// The candidates of the name matcher: each canonical name with its aliases at the position.
     let candidates: [CanonicalName]
 
+    /// The position of the names, for their listing.
+    private let scope: AliasScope
+
+    /// The sentence that lists the canonical names of the position, for the error of a name with no match.
+    var listing: String {
+        scope.listing(of: Array(types.keys))
+    }
+
     /// Makes the names of a position from the input type of each canonical name.
     ///
     /// - Parameters:
     ///   - types: The input type of each canonical name.
-    ///   - scope: The position of the names, for their aliases.
+    ///   - scope: The position of the names, for their aliases and their listing.
     init(types: OrderedDictionary<String, any GraphQLInputType>, in scope: AliasScope) {
         self.types = types
+        self.scope = scope
         candidates = types.keys.map { name in CanonicalName(field: name, in: scope) }
+    }
+
+    /// Gives the removed Rust parameter that a name of the caller names at the position. A name that a candidate or
+    /// an alias of a candidate has in its case and style is not a removed parameter.
+    ///
+    /// - Parameter name: The name as the caller wrote it.
+    /// - Returns: The removed parameter, or `nil` when the name is not a removed parameter at the position.
+    func removedParameter(named name: String) -> RemovedParameter? {
+        let isKnown = candidates.contains { candidate in
+            ([candidate.name] + candidate.aliases).contains { known in NameMatcher.hasSameWords(known, as: name) }
+        }
+        return isKnown ? nil : RemovedParameter(matching: name)
     }
 
     /// Makes the names of the fields of an `input` type, with the aliases of the fields under one field coordinate.
@@ -336,6 +421,12 @@ private struct RewriteWalk {
 
     /// The root query fields that the walk moved into `board`: one move for each response key.
     private(set) var rootMoves: [RootMove] = []
+
+    /// One warning for each removed Rust parameter that the walk took out.
+    private(set) var warnings: [ResponseWarning] = []
+
+    /// The names with no match, with the place of their errors.
+    private(set) var unmatched: [UnmatchedName] = []
 
     /// The first place where the document reads each variable, by the name of the variable.
     private var variableUses: [String: VariableUse] = [:]
@@ -449,11 +540,18 @@ private struct RewriteWalk {
         as position: NamePosition
     ) throws {
         guard !field.name.value.hasPrefix(Self.introspectionPrefix), let parent,
-              let fields = try Self.fields(of: parent),
-              let canonical = canonicalName(
+              let fields = try Self.fields(of: parent)
+        else {
+            return
+        }
+        let scope = AliasScope.selection(type: parent.name)
+        guard let canonical = canonicalName(
                   of: WrittenName(field.name),
                   among: Self.candidates(fields, on: parent),
-                  at: position
+                  at: position,
+                  unmatchedAt: field.loc.map { location in
+                      NoMatchPlace(offset: location.start, listing: scope.listing(of: Array(fields.keys)))
+                  }
               ),
               let definition = fields[canonical]
         else {
@@ -535,14 +633,31 @@ private struct RewriteWalk {
     ) throws {
         let arguments = field.arguments.map { argument in (argument.name, argument.value) }
         let names = InputNames(types: definition.args.mapValues(\.type), in: .argument(coordinate: coordinate))
-        try visitNamedValues(arguments, among: names, under: coordinate, at: path)
+        let removals = try visitNamedValues(arguments, among: names, under: coordinate, at: path)
+        edits.append(contentsOf: Self.argumentRemovals(removals, of: field))
         if let selectionSet = field.selectionSet {
             try visitSelections(of: selectionSet, on: getNamedType(type: definition.type), at: path, as: .anyOther)
         }
     }
 
+    /// Gives the edits that take some removed arguments out of a field. When the removed arguments are all the
+    /// arguments of the field, one edit takes out the parentheses with the arguments, because `()` does not parse.
+    ///
+    /// - Parameters:
+    ///   - removals: The edit that takes out each removed argument, in the order of the arguments.
+    ///   - field: The field.
+    /// - Returns: The edits.
+    private static func argumentRemovals(_ removals: [TextEdit], of field: Field) -> [TextEdit] {
+        guard !removals.isEmpty, removals.count == field.arguments.count,
+              let opening = field.name.loc?.startToken.nextSignificant, opening.kind == .openingParenthesis
+        else {
+            return removals
+        }
+        return [TextEdit(range: opening.start..<opening.closingToken.end, replacement: "")]
+    }
+
     /// Visits the arguments of a field, or the fields of an `input` object: gives each name its canonical name, and
-    /// visits each value.
+    /// visits each value. A removed Rust parameter gets its warning, and the walk does not visit its value.
     ///
     /// - Parameters:
     ///   - items: The name and the value of each argument or `input` field.
@@ -550,23 +665,61 @@ private struct RewriteWalk {
     ///   - coordinate: The `Type.field` coordinate of the field whose arguments are the names, or whose argument holds
     ///     the `input` object.
     ///   - path: The path to the field or to the `input` object.
+    /// - Returns: The edit that takes out each removed Rust parameter, in the order of the items. The caller adds
+    ///   the edits, because the caller knows when the edits take out all the arguments of a field.
     /// - Throws: An error from the schema when a type gives no fields.
     private mutating func visitNamedValues(
         _ items: [(Name, any GraphQL.Value)],
         among names: InputNames,
         under coordinate: String,
         at path: [String]
-    ) throws {
-        for (name, value) in items {
-            let written = WrittenName(name)
-            guard let canonical = canonicalName(of: written, among: names.candidates, at: .anyOther),
-                  let type = names.types[canonical]
-            else {
-                continue
-            }
-            replace(written, with: canonical, recordingAs: canonical, at: path + [written.text])
-            try visitValue(value, ofType: getNamedType(type: type), under: coordinate, at: path + [written.text])
+    ) throws -> [TextEdit] {
+        try items.compactMap { name, value in
+            try visitNamedValue(value, named: WrittenName(name), among: names, under: coordinate, at: path)
         }
+    }
+
+    /// Visits one argument of a field, or one field of an `input` object: gives the name its canonical name, and
+    /// visits the value.
+    ///
+    /// - Parameters:
+    ///   - value: The value of the argument or the `input` field.
+    ///   - name: The name as the caller wrote it.
+    ///   - names: The valid names, with the input type and the candidate of each.
+    ///   - coordinate: The `Type.field` coordinate of the field whose arguments are the names, or whose argument holds
+    ///     the `input` object.
+    ///   - path: The path to the field or to the `input` object.
+    /// - Returns: The edit that takes out the argument or the `input` field when its name is a removed Rust
+    ///   parameter, else `nil`.
+    /// - Throws: An error from the schema when a type gives no fields.
+    private mutating func visitNamedValue(
+        _ value: any GraphQL.Value,
+        named name: WrittenName,
+        among names: InputNames,
+        under coordinate: String,
+        at path: [String]
+    ) throws -> TextEdit? {
+        if let removed = names.removedParameter(named: name.text), let start = name.range?.lowerBound,
+           let end = value.loc?.startToken.valueEnd.end
+        {
+            warnings.append(removed.warning(writtenAs: name.text))
+            return TextEdit(range: start..<end, replacement: "")
+        }
+        guard let canonical = canonicalName(
+                  of: name,
+                  among: names.candidates,
+                  at: .anyOther,
+                  unmatchedAt: name.range.map { range in
+                      NoMatchPlace(offset: range.lowerBound, listing: names.listing)
+                  }
+              ),
+              let type = names.types[canonical]
+        else {
+            return nil
+        }
+        replace(name, with: canonical, recordingAs: canonical, at: path + [name.text])
+        try visitValue(value, ofType: getNamedType(type: type), under: coordinate, at: path + [name.text])
+        return nil
     }
 
     /// Visits a value of an argument or an `input` field: each item of a list, each field of an `input` object, and
@@ -592,7 +745,7 @@ private struct RewriteWalk {
         case (let object as ObjectValue, let inputType as GraphQLInputObjectType):
             let fields = object.fields.map { field in (field.name, field.value) }
             let names = try InputNames(fieldsOf: inputType, under: coordinate)
-            try visitNamedValues(fields, among: names, under: coordinate, at: path)
+            edits.append(contentsOf: try visitNamedValues(fields, among: names, under: coordinate, at: path))
         case (let enumValue as EnumValue, let enumType as GraphQLEnumType):
             let written = WrittenName(enumValue)
             let candidates = enumType.values.map { value in CanonicalName(name: value.name, aliases: []) }
@@ -634,7 +787,8 @@ private struct RewriteWalk {
                 return (name, value)
             }
             let declared = Self.namedTypeName(of: definition.type).flatMap { type in schema.getType(name: type) }
-            return (name, try rewrittenValue(value, ofType: declared ?? use.type, at: ["$\(name)"], readAt: use))
+            let read = VariableRead(use: use, definitionOffset: definition.loc?.start)
+            return (name, try rewrittenValue(value, ofType: declared ?? use.type, at: ["$\(name)"], readAt: read))
         }
         return Dictionary(uniqueKeysWithValues: rewritten)
     }
@@ -645,20 +799,20 @@ private struct RewriteWalk {
     ///   - value: The value.
     ///   - type: The named input type of the value, or `nil` when the type is not known.
     ///   - path: The path to the value: the `$` name of the variable, then the keys as the caller wrote them.
-    ///   - use: The first place where the document reads the variable.
+    ///   - read: The first place where the document reads the variable, and the place of its definition.
     /// - Returns: The value with the canonical keys.
     /// - Throws: An error from the schema when an `input` type gives no fields.
     private mutating func rewrittenValue(
         _ value: Map,
         ofType type: (any GraphQLNamedType)?,
         at path: [String],
-        readAt use: VariableUse
+        readAt read: VariableRead
     ) throws -> Map {
         switch (value, type) {
         case (.array(let items), _):
-            return .array(try items.map { item in try rewrittenValue(item, ofType: type, at: path, readAt: use) })
+            return .array(try items.map { item in try rewrittenValue(item, ofType: type, at: path, readAt: read) })
         case (.dictionary(let fields), let inputType as GraphQLInputObjectType):
-            return .dictionary(try rewrittenFields(fields, of: inputType, at: path, readAt: use))
+            return .dictionary(try rewrittenFields(fields, of: inputType, at: path, readAt: read))
         default:
             return value
         }
@@ -667,28 +821,38 @@ private struct RewriteWalk {
     /// Gives the fields of an `input` object in a value of a variable with their canonical names, and the value of
     /// each field with its canonical keys.
     ///
-    /// The candidates and the aliases are the same as for an `input` object in the text of the document. A key whose
-    /// canonical name is also a key of the object, or the canonical name of an earlier key, keeps the name that the
-    /// caller wrote, so that the engine reports it as for two fields with one name in the text. The canonical name
-    /// gives the type of the value of each key, also of a key that keeps its written name, so that the keys in the
-    /// value get their canonical names.
+    /// The candidates, the aliases, and the removed Rust parameters are the same as for an `input` object in the text
+    /// of the document: a removed parameter goes out of the object, with its warning. A key whose canonical name is
+    /// also a key of the object, or the canonical name of an earlier key, keeps the name that the caller wrote, so
+    /// that the engine reports it as for two fields with one name in the text. The canonical name gives the type of
+    /// the value of each key, also of a key that keeps its written name, so that the keys in the value get their
+    /// canonical names.
     ///
     /// - Parameters:
-    ///   - fields: The fields of the object, as the caller wrote them.
+    ///   - written: The fields of the object, as the caller wrote them.
     ///   - type: The `input` type of the object.
     ///   - path: The path to the object.
-    ///   - use: The first place where the document reads the variable.
+    ///   - read: The first place where the document reads the variable, and the place of its definition.
     /// - Returns: The fields with the canonical names.
     /// - Throws: An error from the schema when an `input` type gives no fields.
     private mutating func rewrittenFields(
-        _ fields: OrderedDictionary<String, Map>,
+        _ written: OrderedDictionary<String, Map>,
         of type: GraphQLInputObjectType,
         at path: [String],
-        readAt use: VariableUse
+        readAt read: VariableRead
     ) throws -> OrderedDictionary<String, Map> {
-        let names = try InputNames(fieldsOf: type, under: use.coordinate)
+        let names = try InputNames(fieldsOf: type, under: read.use.coordinate)
+        warnings += written.keys.compactMap { key in names.removedParameter(named: key)?.warning(writtenAs: key) }
+        let fields = written.filter { field in names.removedParameter(named: field.key) == nil }
         let canonicals = fields.keys.map { key in
-            canonicalName(of: WrittenName(key: key, of: use.node), among: names.candidates, at: .anyOther) ?? key
+            canonicalName(
+                of: WrittenName(key: key, of: read.use.node),
+                among: names.candidates,
+                at: .anyOther,
+                unmatchedAt: read.definitionOffset.map { offset in
+                    NoMatchPlace(offset: offset, listing: names.listing)
+                }
+            ) ?? key
         }
         let targets = canonicals.indices.map { index in
             let canonical = canonicals[index]
@@ -702,7 +866,7 @@ private struct RewriteWalk {
                 rewrites.append(NameRewrite(from: field.key, to: target, path: fieldPath))
             }
             let fieldType = getNamedType(type: names.types[canonical])
-            return (target, try rewrittenValue(field.value, ofType: fieldType, at: fieldPath, readAt: use))
+            return (target, try rewrittenValue(field.value, ofType: fieldType, at: fieldPath, readAt: read))
         }
         return OrderedDictionary(uniqueKeysWithValues: rewritten)
     }
@@ -744,17 +908,22 @@ private struct RewriteWalk {
         }
     }
 
-    /// Gives the canonical name of a name, and records an error when the name has a tie.
+    /// Gives the canonical name of a name, records an error when the name has a tie, and records the name when it
+    /// has no match and the caller gives the place of its error.
     ///
     /// - Parameters:
     ///   - name: The name that the caller wrote.
     ///   - candidates: The valid names at the position of the name.
     ///   - position: The position of the name.
+    ///   - place: The place where the engine reports the error of the name, with the canonical names of the
+    ///     position, or `nil` when the walk does not record a name with no match. The walk reads it only when the
+    ///     name has no match.
     /// - Returns: The canonical name, or `nil` for a tie or no match.
     private mutating func canonicalName(
         of name: WrittenName,
         among candidates: [CanonicalName],
-        at position: NamePosition
+        at position: NamePosition,
+        unmatchedAt place: @autoclosure () -> NoMatchPlace? = nil
     ) -> String? {
         switch NameMatcher.match(for: name.text, among: candidates, at: position) {
         case .found(let canonical):
@@ -764,6 +933,9 @@ private struct RewriteWalk {
             ties.append(GraphQLError(message: tie.message, nodes: [name.node]).coded(as: tie))
             return nil
         case .notFound:
+            if let place = place() {
+                unmatched.append(UnmatchedName(text: name.text, place: place))
+            }
             return nil
         }
     }
@@ -841,6 +1013,26 @@ private struct RewriteWalk {
     }
 }
 
+extension AliasScope {
+    /// Gives the sentence that lists the canonical names of the position, for the error of a name with no match
+    /// (divergence.md Q12).
+    ///
+    /// - Parameter names: The canonical names of the position, in the order of the schema.
+    /// - Returns: The sentence, for example "The fields of AddTaskInput are: title, body." or
+    ///   "The arguments of Board.tasks are: filter, first, after.".
+    fileprivate func listing(of names: [String]) -> String {
+        let (kind, owner) = switch self {
+        case .selection(let type): ("fields", type)
+        case .argument(let coordinate): ("arguments", coordinate)
+        case .inputField(let type, _): ("fields", type)
+        }
+        guard !names.isEmpty else {
+            return "\(owner) has no \(kind)."
+        }
+        return "The \(kind) of \(owner) are: \(names.joined(separator: ", "))."
+    }
+}
+
 extension Token {
     /// The change of the bracket depth at the token: 1 for an opening bracket, -1 for a closing bracket, else 0.
     fileprivate var depthChange: Int {
@@ -872,6 +1064,22 @@ extension Token {
             token = following
         }
         return token
+    }
+
+    /// The last token of the value that starts at this token: the closing bracket of a list or an `input` object, the
+    /// name of a variable, or this token for each other value.
+    ///
+    /// The parse gives a list, an `input` object, and a variable a location that ends at its first token, so the walk
+    /// finds the end from the tokens.
+    fileprivate var valueEnd: Token {
+        switch kind {
+        case .openingBracket, .openingBrace:
+            closingToken
+        case .dollar:
+            nextSignificant ?? self
+        default:
+            self
+        }
     }
 
     /// The last token of the field whose name is this token: the name, or the end of its arguments, its directives,
