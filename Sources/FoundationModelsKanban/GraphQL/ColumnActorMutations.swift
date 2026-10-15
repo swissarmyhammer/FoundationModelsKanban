@@ -597,7 +597,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 InputField("name", at: \.name)
                 InputField("order", at: \.order)
                 InputField("body", at: \.body)
-                InputField("board", at: \.board)
+                InputField("board", at: \.board).description(SchemaDescription.boardToChange)
             }
             Input(UpdateColumnInput.self) {
                 InputField("id", at: \.id)
@@ -611,7 +611,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 InputField("color", at: \.color)
                 InputField("body", at: \.body)
                 InputField("ensure", at: \.ensure)
-                InputField("board", at: \.board)
+                InputField("board", at: \.board).description(SchemaDescription.boardToChange)
             }
             Input(UpdateActorInput.self) {
                 InputField("id", at: \.id)

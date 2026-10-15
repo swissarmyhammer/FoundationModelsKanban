@@ -562,8 +562,8 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 InputField("ordinal", at: \.ordinal)
                 InputField("assignees", at: \.assignees)
                 InputField("tags", at: \.tags)
-                InputField("dependsOn", at: \.dependsOn)
-                InputField("board", at: \.board)
+                InputField("dependsOn", at: \.dependsOn).description(SchemaDescription.addTaskDependsOn)
+                InputField("board", at: \.board).description(SchemaDescription.boardToChange)
             }
             Input(UpdateTaskInput.self) {
                 InputField("id", at: \.id)
@@ -571,7 +571,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 InputField("body", at: \.body.value)
                 InputField("assignees", at: \.assignees.value)
                 InputField("tags", at: \.tags.value)
-                InputField("dependsOn", at: \.dependsOn.value)
+                InputField("dependsOn", at: \.dependsOn.value).description(SchemaDescription.updateTaskDependsOn)
             }
         }
         .addMutation {

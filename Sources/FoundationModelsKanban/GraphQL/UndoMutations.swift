@@ -449,8 +449,8 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             Input(UndoInput.self) {
                 InputField("txn", at: \.txn)
                 InputField("force", at: \.force)
-                InputField("board", at: \.board)
-                InputField("boards", at: \.boards)
+                InputField("board", at: \.board).description(SchemaDescription.boardOfTransaction)
+                InputField("boards", at: \.boards).description(SchemaDescription.copiesOfTransaction)
             }
         }
         .addMutation {

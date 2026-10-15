@@ -250,7 +250,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Field("undone", at: \.undone)
                 Field("undoes", at: \.undoes)
                 Field("updates", at: Change.updates) {
-                    Argument("filter", at: \.filter)
+                    Argument("filter", at: \.filter).description(SchemaDescription.updateFilter)
                 }
             }
             Type(NodeUpdate.self) {

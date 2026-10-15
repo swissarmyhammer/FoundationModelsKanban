@@ -323,7 +323,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 InputField("name", at: \.name)
                 InputField("color", at: \.color)
                 InputField("body", at: \.body)
-                InputField("board", at: \.board)
+                InputField("board", at: \.board).description(SchemaDescription.boardToChange)
             }
             Input(UpdateTagInput.self) {
                 InputField("id", at: \.id)
@@ -334,7 +334,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             Input(RenameTagInput.self) {
                 InputField("from", at: \.from)
                 InputField("to", at: \.to)
-                InputField("board", at: \.board)
+                InputField("board", at: \.board).description(SchemaDescription.boardToChange)
             }
         }
         .addMutation {

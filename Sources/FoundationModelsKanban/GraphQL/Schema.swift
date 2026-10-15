@@ -833,7 +833,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             .addChangeTypes()
             .addQuery {
                 Field("board", at: KanbanResolver.board) {
-                    Argument("id", at: \.id)
+                    Argument("id", at: \.id).description(SchemaDescription.boardToRead)
                 }
                 Field("node", at: KanbanResolver.node) {
                     Argument("id", at: \.id)
@@ -874,22 +874,23 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                     Argument("id", at: \.id)
                 }
                 Field("tasks", at: BoardObject.tasks) {
-                    Argument("filter", at: \.filter)
+                    Argument("filter", at: \.filter).description(SchemaDescription.taskFilter)
                     Argument("first", at: \.first).defaultValue(TasksArguments.defaultPageSize)
                     Argument("after", at: \.after)
                 }
                 Field("nextTask", at: BoardObject.nextTask) {
-                    Argument("filter", at: \.filter)
+                    Argument("filter", at: \.filter).description(SchemaDescription.nextTaskFilter)
                 }
+                .description(SchemaDescription.nextTask)
                 Field("searchTasks", at: BoardObject.searchTasks) {
                     Argument("query", at: \.query)
-                    Argument("filter", at: \.filter)
+                    Argument("filter", at: \.filter).description(SchemaDescription.taskFilter)
                     Argument("first", at: \.first).defaultValue(TasksArguments.defaultPageSize)
                 }
                 Field("summary", at: \.summary)
                 Field("path", at: \.path)
                 Field("history", at: BoardObject.history) {
-                    Argument("filter", at: \.filter)
+                    Argument("filter", at: \.filter).description(SchemaDescription.updateFilter)
                     Argument("since", at: \.since)
                     Argument("first", at: \.first).defaultValue(HistoryArguments.defaultPageSize)
                 }
@@ -924,11 +925,12 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Field("ordinal", at: \.ordinal)
                 Field("assignees", at: \.assignees)
                 Field("tags", at: \.tags)
-                Field("dependsOn", at: \.dependsOn)
-                Field("blockedBy", at: \.blockedBy)
+                Field("dependsOn", at: \.dependsOn).description(SchemaDescription.taskDependsOn)
+                Field("blockedBy", at: \.blockedBy).description(SchemaDescription.taskBlockedBy)
                 Field("unresolvedDependsOn", at: \.unresolvedDependsOn)
-                Field("ready", at: \.ready)
-                Field("virtualTags", at: \.virtualTags)
+                    .description(SchemaDescription.taskUnresolvedDependsOn)
+                Field("ready", at: \.ready).description(SchemaDescription.taskReady)
+                Field("virtualTags", at: \.virtualTags).description(SchemaDescription.taskVirtualTags)
                 Field("progress", at: \.progress)
                 Field("comments", at: \.comments)
                 Field("started", at: \.started)
@@ -1026,7 +1028,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     ///   only, and the other fields keep their data.
     private static func taskListField<Object: TaskHolderObject>() -> FieldComponent<Object, KanbanContext> {
         Field("tasks", at: Object.tasks) {
-            Argument("filter", at: \.filter)
+            Argument("filter", at: \.filter).description(SchemaDescription.taskFilter)
         }
     }
 }

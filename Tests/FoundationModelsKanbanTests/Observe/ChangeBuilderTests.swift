@@ -945,12 +945,11 @@ struct ChangeBuilderTests {
     // MARK: - Schema
 
     @Test("The public schema has the Change, NodeUpdate, and FieldChange types and their enums")
-    func schemaHasChangeTypes() {
+    func schemaHasChangeTypes() throws {
         let sdl = KanbanGraph.schemaSDL
         let lines = [
             "type Change {",
             "  actor: Actor!",
-            "  updates(filter: String): [NodeUpdate!]",
             "type NodeUpdate {",
             "  kind: UpdateKind!",
             "  node: Node",
@@ -964,6 +963,7 @@ struct ChangeBuilderTests {
         for line in lines {
             #expect(sdl.contains(line), "\(line)")
         }
+        #expect(try SDLSignatures.ofPublicSchema().contains("updates(filter: String): [NodeUpdate!]"))
         #expect(!sdl.contains("UpdateSource"))
         #expect(!sdl.contains("  source: "))
     }

@@ -387,8 +387,8 @@ struct KanbanGraphTests {
     }
 
     @Test("The schema SDL has the board query and no patch mutation")
-    func schemaSDLIsPublicSchema() {
-        #expect(KanbanGraph.schemaSDL.contains("board(id: String): Board"))
+    func schemaSDLIsPublicSchema() throws {
+        #expect(try SDLSignatures.ofPublicSchema().contains("board(id: String): Board"))
         #expect(!KanbanGraph.schemaSDL.contains("patch"))
     }
 

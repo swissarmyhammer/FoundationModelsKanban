@@ -479,7 +479,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             Input(BoardInput.self) {
                 InputField("name", at: \.name.value)
                 InputField("body", at: \.body.value)
-                InputField("board", at: \.board)
+                InputField("board", at: \.board).description(SchemaDescription.boardToChange)
             }
         }
         .addMutation {

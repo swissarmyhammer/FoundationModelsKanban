@@ -404,7 +404,8 @@ struct HistoryTests {
     // MARK: - Schema
 
     @Test("The Board type has the history field with only the filter and the paging arguments of plan.md §4.1")
-    func schemaHasHistoryField() {
-        #expect(KanbanGraph.schemaSDL.contains("  history(filter: String, since: ID, first: Int = 20): [Change!]"))
+    func schemaHasHistoryField() throws {
+        let history = "history(filter: String, since: ID, first: Int = \(HistoryArguments.defaultPageSize)): [Change!]"
+        #expect(try SDLSignatures.ofPublicSchema().contains(history))
     }
 }

@@ -379,7 +379,7 @@ struct NodeQueryTests {
         let lines = try PublicSchema().sdl.split(separator: "\n").map { line in
             line.trimmingCharacters(in: .whitespaces)
         }
-        let taskLists = Set(lines.filter { line in line.hasPrefix("tasks(") })
+        let taskLists = Set(try SDLSignatures.ofPublicSchema().filter { field in field.hasPrefix("tasks(") })
         let expected: Set = [
             "tasks(filter: String, first: Int = \(TasksArguments.defaultPageSize), after: String): TaskConnection",
             "tasks(filter: String): [Task!]",

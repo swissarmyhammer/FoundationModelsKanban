@@ -79,8 +79,8 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     func addChangesSubscription() -> Self {
         addSubscription {
             SubscriptionField("changes", as: Change.self, atSub: KanbanResolver.changes) {
-                Argument("board", at: \.board)
-                Argument("filter", at: \.filter)
+                Argument("board", at: \.board).description(SchemaDescription.boardToObserve)
+                Argument("filter", at: \.filter).description(SchemaDescription.updateFilter)
             }
         }
     }
