@@ -18,7 +18,8 @@ struct NameRewrite: Encodable, Hashable, Sendable {
 
     /// The path to the name in the document: the response key of each field from the root, then the names of the
     /// argument and of each `input` field, as the caller wrote them. A name in a fragment definition starts with the
-    /// name of the fragment.
+    /// name of the fragment. A key in the value of a variable starts with the `$` name of the variable, then the keys
+    /// as the caller wrote them, for example `["$input", "name"]`.
     // The synthesized `Encodable` and `Hashable` conformances read this property; periphery sees no reader.
     // periphery:ignore
     let path: [String]
@@ -38,6 +39,9 @@ private struct RootMove: Sendable {
 struct RewrittenDocument: Sendable {
     /// The text of the document with the canonical names. Validation and execution read this text.
     let text: String
+
+    /// The values of the variables with the canonical names in each `input` object. Execution reads these values.
+    let variables: [String: Map]
 
     /// The changes of the rewrite, in the order of the document.
     let rewrites: [NameRewrite]
@@ -148,6 +152,10 @@ struct RewrittenDocument: Sendable {
 /// only `Board` has moves into a `board { … }` field, also in an inline fragment or a fragment definition on the
 /// query type. A name with no match stays as it is, so that validation gives the "did you mean" error.
 ///
+/// The rewrite also gives each key of an `input` object in the value of a variable its canonical name, at all
+/// depths, by the input type of the variable (divergence.md Q8). The steps, the aliases, and the tie error are the
+/// same as for the text of the document.
+///
 /// The nodes of the GraphQL syntax tree cannot be made outside the GraphQL module. Thus the rewrite changes the text
 /// of the document at the places that the parse gives, and the engine parses the new text again.
 struct DocumentRewriter {
@@ -161,18 +169,28 @@ struct DocumentRewriter {
         self.schema = schema
     }
 
-    /// Rewrites the names of a document.
+    /// Rewrites the names of a document and the keys of its variables.
     ///
-    /// - Parameter source: The text of the document.
+    /// - Parameters:
+    ///   - source: The text of the document.
+    ///   - variables: The values of the variables of the document.
+    ///   - operationName: The operation of the document to run, or `nil` when the call sent no name.
     /// - Returns: The rewritten document.
     /// - Throws: A `GraphQLError` when the document does not parse, or an error from the schema when a type gives
     ///   no fields.
-    func rewrittenDocument(from source: String) throws -> RewrittenDocument {
+    func rewrittenDocument(
+        from source: String,
+        variables: [String: Map] = [:],
+        operationName: String? = nil
+    ) throws -> RewrittenDocument {
         var walk = RewriteWalk(schema: schema)
-        try walk.visit(try parse(source: source))
+        let document = try parse(source: source)
+        try walk.visit(document)
+        let rewrittenVariables = try walk.rewritten(variables, declaredIn: document, operationName: operationName)
         let edits = TextEdit.inOffsetOrder(walk.edits)
         return RewrittenDocument(
             text: source.applying(edits),
+            variables: rewrittenVariables,
             rewrites: walk.rewrites,
             ties: walk.ties,
             source: source,
@@ -233,6 +251,31 @@ private struct WrittenName {
         node = value
         range = value.loc.map { location in location.start..<location.end }
     }
+
+    /// Makes the written name of a key in the value of a variable. The key is not in the text of the document, so
+    /// the name has no range, and an error is at the variable.
+    ///
+    /// - Parameters:
+    ///   - key: The key as the caller wrote it.
+    ///   - variable: The variable node of the place where the document reads the value.
+    init(key: String, of variable: Variable) {
+        text = key
+        node = variable
+        range = nil
+    }
+}
+
+/// The first place where a document reads a variable: the facts that the rewrite of the keys of its value needs.
+private struct VariableUse {
+    /// The named input type of the value at the place.
+    let type: any GraphQLNamedType
+
+    /// The `Type.field` coordinate of the field whose argument holds the variable, for the aliases of the `input`
+    /// fields.
+    let coordinate: String
+
+    /// The variable node at the place, for the location of an error.
+    let node: Variable
 }
 
 /// The state of one walk over a document: the text edits and the changes that it found.
@@ -260,6 +303,9 @@ private struct RewriteWalk {
 
     /// The root query fields that the walk moved into `board`: one move for each response key.
     private(set) var rootMoves: [RootMove] = []
+
+    /// The first place where the document reads each variable, by the name of the variable.
+    private var variableUses: [String: VariableUse] = [:]
 
     /// Makes an empty walk.
     ///
@@ -493,7 +539,7 @@ private struct RewriteWalk {
     }
 
     /// Visits a value of an argument or an `input` field: each item of a list, each field of an `input` object, and
-    /// an enum value.
+    /// an enum value. A variable records its first use, for the rewrite of the keys of its value.
     ///
     /// - Parameters:
     ///   - value: The value.
@@ -523,8 +569,147 @@ private struct RewriteWalk {
             if let canonical = canonicalName(of: written, among: candidates, at: .anyOther) {
                 replace(written, with: canonical, recordingAs: canonical, at: path + [written.text])
             }
+        case (let variable as Variable, let type?) where variableUses[variable.name.value] == nil:
+            variableUses[variable.name.value] = VariableUse(type: type, coordinate: coordinate, node: variable)
         default:
             return
+        }
+    }
+
+    // MARK: - Variables
+
+    /// Gives the values of the variables with the canonical name of each key of an `input` object, at all depths
+    /// (divergence.md Q8). The walk must first visit the document, so that it knows where the document reads each
+    /// variable.
+    ///
+    /// The declared type of a variable gives the input type of its value; when the schema does not have the declared
+    /// type, the type at the first place where the document reads the variable gives it. That place also gives the
+    /// coordinate of the aliases. A variable that the operation does not declare, or that the document does not read,
+    /// stays as it is.
+    ///
+    /// - Parameters:
+    ///   - variables: The values of the variables, as the caller sent them.
+    ///   - document: The parsed document.
+    ///   - operationName: The operation of the document to run, or `nil` for each operation of the document.
+    /// - Returns: The values of the variables with the canonical keys.
+    /// - Throws: An error from the schema when an `input` type gives no fields.
+    mutating func rewritten(
+        _ variables: [String: Map],
+        declaredIn document: Document,
+        operationName: String?
+    ) throws -> [String: Map] {
+        let definitions = Self.variableDefinitions(in: document, operationName: operationName)
+        let rewritten = try variables.map { name, value in
+            guard let definition = definitions[name], let use = variableUses[name] else {
+                return (name, value)
+            }
+            let declared = Self.namedTypeName(of: definition.type).flatMap { type in schema.getType(name: type) }
+            return (name, try rewrittenValue(value, ofType: declared ?? use.type, at: ["$\(name)"], readAt: use))
+        }
+        return Dictionary(uniqueKeysWithValues: rewritten)
+    }
+
+    /// Gives a value of a variable with the canonical name of each key of each `input` object in it.
+    ///
+    /// - Parameters:
+    ///   - value: The value.
+    ///   - type: The named input type of the value, or `nil` when the type is not known.
+    ///   - path: The path to the value: the `$` name of the variable, then the keys as the caller wrote them.
+    ///   - use: The first place where the document reads the variable.
+    /// - Returns: The value with the canonical keys.
+    /// - Throws: An error from the schema when an `input` type gives no fields.
+    private mutating func rewrittenValue(
+        _ value: Map,
+        ofType type: (any GraphQLNamedType)?,
+        at path: [String],
+        readAt use: VariableUse
+    ) throws -> Map {
+        switch (value, type) {
+        case (.array(let items), _):
+            return .array(try items.map { item in try rewrittenValue(item, ofType: type, at: path, readAt: use) })
+        case (.dictionary(let fields), let inputType as GraphQLInputObjectType):
+            return .dictionary(try rewrittenFields(fields, of: inputType, at: path, readAt: use))
+        default:
+            return value
+        }
+    }
+
+    /// Gives the fields of an `input` object in a value of a variable with their canonical names, and the value of
+    /// each field with its canonical keys.
+    ///
+    /// The candidates and the aliases are the same as for an `input` object in the text of the document. A key whose
+    /// canonical name is also a key of the object, or the canonical name of an earlier key, keeps the name that the
+    /// caller wrote, so that the engine reports it as for two fields with one name in the text.
+    ///
+    /// - Parameters:
+    ///   - fields: The fields of the object, as the caller wrote them.
+    ///   - type: The `input` type of the object.
+    ///   - path: The path to the object.
+    ///   - use: The first place where the document reads the variable.
+    /// - Returns: The fields with the canonical names.
+    /// - Throws: An error from the schema when an `input` type gives no fields.
+    private mutating func rewrittenFields(
+        _ fields: OrderedDictionary<String, Map>,
+        of type: GraphQLInputObjectType,
+        at path: [String],
+        readAt use: VariableUse
+    ) throws -> OrderedDictionary<String, Map> {
+        let types = try type.fields().mapValues(\.type)
+        let scope = AliasScope.inputField(type: type.name, coordinate: use.coordinate)
+        let candidates = types.keys.map { name in CanonicalName(field: name, in: scope) }
+        let canonicals = fields.keys.map { key in
+            canonicalName(of: WrittenName(key: key, of: use.node), among: candidates, at: .anyOther) ?? key
+        }
+        let targets = canonicals.indices.map { index in
+            let canonical = canonicals[index]
+            let isTaken = fields[canonical] != nil || canonicals[..<index].contains(canonical)
+            return isTaken ? fields.keys[index] : canonical
+        }
+        let rewritten = try zip(fields, targets).map { field, target in
+            let fieldPath = path + [field.key]
+            if target != field.key {
+                rewrites.append(NameRewrite(from: field.key, to: target, path: fieldPath))
+            }
+            let fieldType = getNamedType(type: types[target])
+            return (target, try rewrittenValue(field.value, ofType: fieldType, at: fieldPath, readAt: use))
+        }
+        return OrderedDictionary(uniqueKeysWithValues: rewritten)
+    }
+
+    /// Gives the variable definitions of the operations of a document, by the name of each variable.
+    ///
+    /// - Parameters:
+    ///   - document: The parsed document.
+    ///   - operationName: The operation to read, or `nil` for each operation. When two operations declare one
+    ///     variable, the first declaration gives it.
+    /// - Returns: The definition of each declared variable.
+    private static func variableDefinitions(
+        in document: Document,
+        operationName: String?
+    ) -> [String: VariableDefinition] {
+        let definitions = document.definitions
+            .compactMap { definition in definition as? OperationDefinition }
+            .filter { operation in operationName.map { name in operation.name?.value == name } ?? true }
+            .flatMap(\.variableDefinitions)
+            .map { definition in (definition.variable.name.value, definition) }
+        return Dictionary(definitions) { first, _ in first }
+    }
+
+    /// Gives the name of the named type in a type of the syntax tree, for example `AddTaskInput` for
+    /// `[AddTaskInput!]!`.
+    ///
+    /// - Parameter type: The type as the document declares it.
+    /// - Returns: The name of the named type, or `nil` for a type that the parse does not make.
+    private static func namedTypeName(of type: any GraphQL.`Type`) -> String? {
+        switch type {
+        case let named as NamedType:
+            named.name.value
+        case let list as ListType:
+            namedTypeName(of: list.type)
+        case let nonNull as NonNullType:
+            namedTypeName(of: nonNull.type)
+        default:
+            nil
         }
     }
 

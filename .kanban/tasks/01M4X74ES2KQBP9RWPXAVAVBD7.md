@@ -1,10 +1,38 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m4ywjqgj78cr2dvz4jjw7azr
+  text: |-
+    Research done.
+    - The rewrite lives in S/GraphQL/NameRewrite.swift (DocumentRewriter, private RewriteWalk). Schema.swift `rewriting` calls `rewrittenDocument(from:)` and then passes the caller `variables` to `execute` and `subscribe` with no change.
+    - The scoped alias of an input field needs two facts: the input type name and the `Type.field` coordinate of the field whose argument holds the object (AliasScope.inputField). A variable declaration gives only the type. So the walk must also record the coordinate where each variable is used (for example `Mutation.deleteTask` for NodeReferenceInput).
+    - Plan: the walk records the first usage of each variable (named type and coordinate). After the walk, the keys of each declared and used variable are rewritten with the declared type (fallback: the usage type), the same candidates (CanonicalName(field:in:)), and the same tie error. A key whose canonical name is already a key of the same object keeps its written name, so the engine reports it. A variable that the operation does not declare stays as it is. Each change goes to extensions.rewrites with the path `$<variable>`, then the written keys.
+    - The public schema and the patch schema have no list of input objects. The nested array test uses a small test schema, the same as the enum test in NameRewriteTests.
+    - The PatchSchema also uses `respond(to:variables:)` with `p: PatchInput`. Its keys are canonical, so the exact step keeps them.
+  timestamp: 2026-10-15T04:19:29.426001+00:00
+- actor: claude-code
+  id: 01m4ywz33pm1z0y81qa8d003qm
+  text: |-
+    Implementation landed (TDD: RED was 299 issues in the new suite, all for the missing rewrite; then GREEN).
+    - S/GraphQL/NameRewrite.swift: `rewrittenDocument(from:variables:operationName:)` and `RewrittenDocument.variables`. The walk records the first use of each variable (named type, `Type.field` coordinate, node) in `visitValue`. Then `rewritten(_:declaredIn:operationName:)` rewrites the keys of each declared and used variable at all depths (arrays and nested `input` objects), with `CanonicalName(field:in: .inputField(type:coordinate:))` and the same tie error. The declared type gives the input type; the type of the use is the fallback when the schema does not have the declared type. A key whose canonical name is already a key (or an earlier target) keeps its written name, so the engine reports it. Each change is in `extensions.rewrites` with the path `["$<variable>", <keys as written>]`.
+    - S/GraphQL/Schema.swift: `rewriting` passes `variables` and `operationName` to the rewriter; `execute` and `subscribe` read `rewritten.variables`.
+    - T/GraphQL/VariableRewriteTests.swift: each row of `AliasTableTests.inputRows` in the `variables` form (294 cases); AMBIGUOUS_NAME for `comment` on updateComment; the rewrites path; an undeclared variable stays; a taken canonical name stays; a nested list of input objects in a list (test schema, because the public schema has no list of input objects); and the acceptance call `mutation($i: AddTaskInput!) { addTask(input: $i) ... }` with name, labels, depends through execute on a temporary fixture repo.
+    - Note: the rows of tables 4.2 and 4.3 that name an argument, a mutation, or a selection field cannot be variable keys, so only the input-field rows have a `variables` form.
+    - Not done (out of the card scope): enum values that a variable sends as strings are not rewritten; the card names keys only.
+  timestamp: 2026-10-15T04:26:14.518317+00:00
+- actor: claude-code
+  id: 01m4ywzyvfhp10fk0eqbe87y7j
+  text: |-
+    ### implement — changed
+    - evidence: 3 files — Sources/FoundationModelsKanban/GraphQL/NameRewrite.swift, Sources/FoundationModelsKanban/GraphQL/Schema.swift, Tests/FoundationModelsKanbanTests/GraphQL/VariableRewriteTests.swift (new). `swift test`: 1333 tests in 106 suites passed; the only warning is the accepted SwiftPM "missing creator" warning.
+    - next: /review
+  timestamp: 2026-10-15T04:26:42.927689+00:00
 depends_on:
 - 01M4X7471GDT9W0J6PWBQTQ6H3
-position_column: todo
-position_ordinal: '9880'
+position_column: doing
+position_ordinal: '80'
 title: Apply the name rewrite to the keys in variables at all depths
 ---
 ## What
@@ -18,15 +46,15 @@ Decided behavior:
 - A variable that the operation does not declare is left as it is.
 
 ## Acceptance Criteria
-- [ ] `mutation($i: AddTaskInput!) { addTask(input: $i) { id } }` with `{"i": {"name": "x", "labels": ["bug"], "depends": []}}` works as `title`, `tags`, `dependsOn`.
-- [ ] A nested list of input objects in a variable is rewritten too.
-- [ ] A variable key that can mean two fields gives `AMBIGUOUS_NAME`.
+- [x] `mutation($i: AddTaskInput!) { addTask(input: $i) { id } }` with `{"i": {"name": "x", "labels": ["bug"], "depends": []}}` works as `title`, `tags`, `dependsOn`.
+- [x] A nested list of input objects in a variable is rewritten too.
+- [x] A variable key that can mean two fields gives `AMBIGUOUS_NAME`.
 
 ## Tests
-- [ ] Each row of tables 4.2 and 4.3 also in `variables` (the alias-table task has the document-text tests; this task adds the `variables` form).
-- [ ] A nested array test.
-- [ ] Tests use temporary fixture folders. Never use the `.kanban/` of this repo (it is a Rust board).
-- [ ] `swift test` passes.
+- [x] Each row of tables 4.2 and 4.3 also in `variables` (the alias-table task has the document-text tests; this task adds the `variables` form).
+- [x] A nested array test.
+- [x] Tests use temporary fixture folders. Never use the `.kanban/` of this repo (it is a Rust board).
+- [x] `swift test` passes.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.

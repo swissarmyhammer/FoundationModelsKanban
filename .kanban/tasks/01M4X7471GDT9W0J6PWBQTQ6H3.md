@@ -60,8 +60,17 @@ comments:
     - evidence: `swift test` — 1326 tests in 105 suites passed, 0 failed; only the accepted SwiftPM "missing creator" warning. Files: Tests/FoundationModelsKanbanTests/GraphQL/AliasExecutionTests.swift, Tests/FoundationModelsKanbanTests/Mutations/AddUpdateTaskTests.swift, Tests/FoundationModelsKanbanTests/Undo/UndeleteCycleTests.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoCycleTests.swift
     - next: /review
   timestamp: 2026-10-15T04:07:36.391718+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4yw804j4fhc64nx665djzcm
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 4 test files (4 findings fixed)
+    - test: green — swift test, 1326 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 462b2a5
+    - review: clean — none
+  timestamp: 2026-10-15T04:13:37.810281+00:00
+position_column: done
+position_ordinal: f480
 title: Add alias tables for each input type and the synonym table, and forgive the Rust names
 ---
 ## What

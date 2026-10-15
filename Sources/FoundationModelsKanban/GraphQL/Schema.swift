@@ -1115,7 +1115,8 @@ extension API where ContextType == KanbanContext {
     /// are in the order of the selection. A `/` is not escaped, so a ref such
     /// as `tag/bug` stays easy to read.
     ///
-    /// The name rewrite of plan.md §4.5 changes the document before
+    /// The name rewrite of plan.md §4.5 changes the document and the keys of
+    /// each `input` object in `variables` (divergence.md Q8) before
     /// validation, and the response has each change in
     /// `extensions.rewrites`. A name that matches two or more names gives an
     /// error, and the document does not run.
@@ -1142,15 +1143,16 @@ extension API where ContextType == KanbanContext {
         formattedWith formatting: GraphQLJSONEncoder.OutputFormatting = [],
         context: ContextType
     ) async throws -> String {
-        try await rewriting(document, formattedWith: formatting, answeringFailureWith: { $0 }) { rewritten in
+        try await rewriting(
+            document,
+            variables: variables,
+            operationName: operationName,
+            formattedWith: formatting,
+            answeringFailureWith: { $0 }
+        ) { rewritten in
             let result: GraphQLResult
             do {
-                result = try await self.result(
-                    of: rewritten,
-                    variables: variables,
-                    operationName: operationName,
-                    context: context
-                )
+                result = try await self.result(of: rewritten, operationName: operationName, context: context)
             } catch let error as GraphQLError {
                 return try Self.errorResponse(error, formattedWith: formatting)
             }
@@ -1187,7 +1189,13 @@ extension API where ContextType == KanbanContext {
         context: ContextType
     ) async throws -> AsyncThrowingStream<String, Error> {
         let single: (String) -> AsyncThrowingStream<String, Error> = AsyncThrowingStream.single
-        return try await rewriting(document, formattedWith: formatting, answeringFailureWith: single) { rewritten in
+        return try await rewriting(
+            document,
+            variables: variables,
+            operationName: operationName,
+            formattedWith: formatting,
+            answeringFailureWith: single
+        ) { rewritten in
             let encode: @Sendable (GraphQLResult) throws -> String = { result in
                 try RewriteResponse.encoded(
                     result: rewritten.codedCallerResult(from: result),
@@ -1202,7 +1210,7 @@ extension API where ContextType == KanbanContext {
             let started = try await subscribe(
                 request: rewritten.text,
                 context: context,
-                variables: variables,
+                variables: rewritten.variables,
                 operationName: operationName
             )
             switch started {
@@ -1214,11 +1222,14 @@ extension API where ContextType == KanbanContext {
         }
     }
 
-    /// Applies the name rewrite of plan.md §4.5 to a document, and runs the rewritten document. A document that does
-    /// not parse gives the response with the one parse error and no `data`, and the document does not run.
+    /// Applies the name rewrite of plan.md §4.5 to a document and to the keys of its variables (divergence.md Q8),
+    /// and runs the rewritten document. A document that does not parse gives the response with the one parse error
+    /// and no `data`, and the document does not run.
     ///
     /// - Parameters:
     ///   - document: The GraphQL document as the caller wrote it.
+    ///   - variables: The values of the variables of the document, as the caller sent them.
+    ///   - operationName: The operation of the document to run, or `nil`.
     ///   - formatting: The formatting of the JSON text of the error response.
     ///   - wrap: Gives the output of the response JSON text of the parse error.
     ///   - run: Runs the rewritten document, and gives the output.
@@ -1226,13 +1237,19 @@ extension API where ContextType == KanbanContext {
     /// - Throws: An error of `run`, or an error from the JSON encoder.
     private func rewriting<Output>(
         _ document: String,
+        variables: [String: Map],
+        operationName: String?,
         formattedWith formatting: GraphQLJSONEncoder.OutputFormatting,
         answeringFailureWith wrap: (String) -> Output,
         _ run: (RewrittenDocument) async throws -> Output
     ) async throws -> Output {
         let rewritten: RewrittenDocument
         do {
-            rewritten = try DocumentRewriter(for: schema.schema).rewrittenDocument(from: document)
+            rewritten = try DocumentRewriter(for: schema.schema).rewrittenDocument(
+                from: document,
+                variables: variables,
+                operationName: operationName
+            )
         } catch let error as GraphQLError {
             return wrap(try Self.errorResponse(error, formattedWith: formatting))
         }
@@ -1263,17 +1280,15 @@ extension API where ContextType == KanbanContext {
     /// document that the caller wrote.
     ///
     /// - Parameters:
-    ///   - rewritten: The document after the name rewrite.
-    ///   - variables: The values of the variables of the document.
+    ///   - rewritten: The document and the values of its variables after the name rewrite.
     ///   - operationName: The operation of the document to run, or `nil`.
     ///   - context: The context of each resolver.
     /// - Returns: The result, or the tie errors and no `data` when a name of
-    ///   the document has a tie.
+    ///   the document or a key of a variable has a tie.
     /// - Throws: A `GraphQLError` when the rewritten text does not parse, or
     ///   an error that is not a GraphQL error.
     private func result(
         of rewritten: RewrittenDocument,
-        variables: [String: Map],
         operationName: String?,
         context: ContextType
     ) async throws -> GraphQLResult {
@@ -1283,7 +1298,7 @@ extension API where ContextType == KanbanContext {
         let result = try await execute(
             request: rewritten.text,
             context: context,
-            variables: variables,
+            variables: rewritten.variables,
             operationName: operationName
         )
         return rewritten.codedCallerResult(from: result)
