@@ -14,8 +14,17 @@ comments:
     - discovery: the change feed and TaskSearchItem read `TaskObject.tags`, so the one change in `tagSlots(of:)` covers queries, the change feed, and search. The filter only uses `contains`, so the order does not change it.
     - next: /review
   timestamp: 2026-10-15T09:09:59.869569+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4zdmav9bf1rc4exy93mmx40
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 6 files
+    - test: green — swift test, 1391 passed, 0 failed, 0 skipped; IntegrationTests 2 passed
+    - commit: 01265d1
+    - review: clean — none
+  timestamp: 2026-10-15T09:17:27.785935+00:00
+position_column: done
+position_ordinal: fd80
 title: Sort Task.tags by slug
 ---
 ## What

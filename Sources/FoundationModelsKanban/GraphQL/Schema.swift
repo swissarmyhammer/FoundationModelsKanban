@@ -416,15 +416,28 @@ actor BoardStore {
         inEach targets: [MutationTarget],
         _ body: (inout WorkingCopy, String) throws -> Void
     ) throws -> [BoardFieldChange] {
-        let (savedWork, savedRelatedWork) = (work, relatedWork)
-        do {
-            return try targets.map { target in
+        try runAtomically {
+            try targets.map { target in
                 let before = view(of: target)
                 let keptCount = workingCopy(of: target).kept.count
                 let after = try runField(as: operation, in: target, body).view
                 let kept = Array(workingCopy(of: target).kept.dropFirst(keptCount))
                 return BoardFieldChange(key: key(of: target), events: kept, before: before, after: after)
             }
+        }
+    }
+
+    /// Runs a body that runs one or more steps of one mutation field, each with ``runField(as:in:_:)``, and keeps the
+    /// changes of all steps or of none (plan.md §6.6, one transaction, many boards). When the body throws, the
+    /// working copy of each board is the same as before the body.
+    ///
+    /// - Parameter body: Runs the steps of the field.
+    /// - Returns: The value of the body.
+    /// - Throws: The error of the body. Then no working copy changes.
+    func runAtomically<Value>(_ body: () throws -> Value) throws -> Value {
+        let (savedWork, savedRelatedWork) = (work, relatedWork)
+        do {
+            return try body()
         } catch {
             work = savedWork
             relatedWork = savedRelatedWork
@@ -1096,6 +1109,7 @@ struct PublicSchema: API {
             .addColumnActorMutations()
             .addTaskMutations()
             .addTaskOperationMutations()
+            .addTaskTransferMutations()
             .addCommentMutations()
             .addTagMutations()
             .addUndoMutations()

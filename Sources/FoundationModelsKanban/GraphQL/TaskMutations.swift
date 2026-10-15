@@ -81,8 +81,9 @@ private struct UpdateTaskInput: Decodable, Sendable {
 
 // MARK: - Change
 
-/// The changes of one `addTask` or `updateTask` field, with each ref in the stored form (plan.md §4.3).
-private struct TaskChange {
+/// The changes of one `addTask`, `updateTask`, `moveTask`, or `copyTask` field to one task, with each ref in the stored
+/// form (plan.md §4.3).
+struct TaskChange {
     /// The update of each single-value property: `title`, `column`, and `ordinal`.
     let values: [String: FieldUpdate<PatchValue>]
 
@@ -402,7 +403,7 @@ extension WorkingCopy {
     /// - Throws: ``KanbanError/dependencyCycle(path:)`` when an edge or a marker makes a cycle.
     ///   ``KanbanError/invalidTagName(name:)``, ``KanbanError/reservedTagName``, ``KanbanError/virtualTagName(tag:)``,
     ///   or an ``EventError`` when a patch breaks a rule of the log.
-    fileprivate mutating func write(
+    mutating func write(
         _ change: TaskChange,
         toTask ref: LocalRef,
         inBoard key: String,

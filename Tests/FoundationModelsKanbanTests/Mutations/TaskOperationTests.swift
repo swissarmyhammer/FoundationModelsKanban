@@ -481,6 +481,15 @@ struct TaskOperationTests {
         #expect(try await Self.listedTasks(on: tasks.graph) == [tasks.second, tasks.third, tasks.first])
     }
 
+    @Test("moveTask with no column keeps the task in its column, and puts it at the place of the input")
+    func moveTaskWithNoColumnKeepsColumn() async throws {
+        let tasks = try await Self.threeTasks(in: try TemporaryDirectory())
+        let move = Self.taskField("moveTask", of: tasks.third, with: Self.neighbor("before", of: tasks.first))
+        let response = try await CommentTests.run(move, on: tasks.graph)
+        #expect(try CrossRepoWriteTests.hasNoErrors(response), "\(response)")
+        #expect(try await Self.listedTasks(on: tasks.graph) == [tasks.third, tasks.first, tasks.second])
+    }
+
     @Test("moveTask with an ordinal that is not valid gives INVALID_ORDINAL and writes nothing")
     func moveTaskInvalidOrdinal() async throws {
         let invalid = "zz"

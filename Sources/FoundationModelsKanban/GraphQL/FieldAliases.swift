@@ -80,6 +80,13 @@ enum GraphQLFieldAliases {
     /// The aliases of a `task` field that holds the task of a comment.
     private static let commentTask = ["taskId"]
 
+    /// The aliases of the fields of the input of `moveTask` and `copyTask`: the task, the column, the neighbors, and
+    /// the target board (divergence.md Q21).
+    private static let taskPlacement = [
+        "id": taskID, "column": column, "before": ["beforeId", "beforeTask"], "after": ["afterId", "afterTask"],
+        "board": ["toBoard", "targetBoard", "destination", "repo"],
+    ]
+
     /// The aliases of each object type and each `input` object type, by its GraphQL name.
     private static let byType: [String: [String: [String]]] = [
         "Task": ["column": ["status", "state", "lane"]],
@@ -92,9 +99,8 @@ enum GraphQLFieldAliases {
             "id": taskID, "title": title, "column": column, "assignees": assignees, "dependsOn": dependsOn,
             "priority": priority,
         ],
-        "MoveTaskInput": [
-            "id": taskID, "column": column, "before": ["beforeId", "beforeTask"], "after": ["afterId", "afterTask"],
-        ],
+        "MoveTaskInput": taskPlacement,
+        "CopyTaskInput": taskPlacement,
         "AssignTaskInput": ["id": taskID, "actor": ["assignee", "actorId", "user", "who"]],
         "TagTaskInput": ["id": taskID],
         "AddCommentInput": ["task": commentTask, "actor": ["author", "user"]],

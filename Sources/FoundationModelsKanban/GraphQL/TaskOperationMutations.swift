@@ -7,6 +7,9 @@ extension MutationName {
     /// The mutation that moves a task to a column and to a place in that column.
     static let moveTask = "moveTask"
 
+    /// The mutation that copies a task, to the same board or to a different board.
+    static let copyTask = "copyTask"
+
     /// The mutation that moves a task to the end of the terminal column.
     static let completeTask = "completeTask"
 
@@ -31,61 +34,18 @@ extension MutationName {
 
 // MARK: - Arguments
 
-/// The `input` object of `moveTask` (plan.md §4.2). The input gives one place field (`ordinal`, `before`, or `after`),
-/// or none of them for the end of the column. An input with more than one place field does not decode.
-private struct MoveTaskInput: Decodable, Sendable {
-    /// The keys of the fields of the input that are not place fields. ``Placement`` reads the place fields.
-    private enum CodingKeys: String, CodingKey {
-        /// The key of the task.
-        case id
-
-        /// The key of the column.
-        case column
-    }
-
-    /// The task: a full URI or a short form (plan.md §3.2).
-    let id: NodeID
-
-    /// The column: a full URI, the slug, or a name. A slug that no column has makes a new column.
-    let column: NodeID
-
-    /// The place of the task in the column.
-    let placement: Placement
-
-    /// The `ordinal` field of the input, or `nil`. The schema gets the type of the field from this property.
-    var ordinal: String? {
-        guard case .ordinal(let text) = placement else {
-            return nil
-        }
-        return text
-    }
-
-    /// The `before` field of the input, or `nil`. The schema gets the type of the field from this property.
-    var before: NodeID? {
-        guard case .before(let neighbor) = placement else {
-            return nil
-        }
-        return neighbor
-    }
-
-    /// The `after` field of the input, or `nil`. The schema gets the type of the field from this property.
-    var after: NodeID? {
-        guard case .after(let neighbor) = placement else {
-            return nil
-        }
-        return neighbor
-    }
+/// The `input` object of `moveTask` (plan.md §4.2, divergence.md Q21): the fields of ``TaskPlacementFields``. A
+/// `board` field that names a different board moves the task to that board.
+private struct MoveTaskInput: TaskPlacementInput {
+    /// The fields of the input.
+    let fields: TaskPlacementFields
 
     /// Reads the input object of a move.
     ///
     /// - Parameter decoder: The decoder of the input object.
-    /// - Throws: ``KanbanError/conflictingPlacement(fields:)`` when the input gives more than one place field. A
-    ///   `DecodingError` when the input has no `id` or no `column`, or a field has the wrong type.
+    /// - Throws: The errors of ``TaskPlacementFields/init(from:)``.
     init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(NodeID.self, forKey: .id)
-        column = try container.decode(NodeID.self, forKey: .column)
-        placement = try Placement(from: decoder)
+        fields = try TaskPlacementFields(from: decoder)
     }
 }
 
@@ -116,9 +76,10 @@ private enum NeighborSide {
     case after
 }
 
-/// The place of a moved task in its column, from the place fields of a `moveTask` input (plan.md §4.2, §6,
-/// "moveTask"). A value holds one place, so an input with more than one place field cannot make a value.
-private enum Placement: Decodable, Sendable {
+/// The place of a moved or copied task in its column, from the place fields of a `moveTask` or `copyTask` input
+/// (plan.md §4.2, §6, "moveTask"). A value holds one place, so an input with more than one place field cannot make a
+/// value.
+enum Placement: Decodable, Sendable {
     /// The keys of the place fields of the input.
     private enum CodingKeys: String, CodingKey {
         /// The key of the ordinal.
@@ -167,27 +128,39 @@ private enum Placement: Decodable, Sendable {
 
 extension KanbanResolver {
     /// Resolves `Mutation.moveTask`: writes one task patch with a `set` of the column and the ordinal (plan.md §4.2,
-    /// §6). A column slug that no column has gets a column `set` patch first.
+    /// §6). A column slug that no column has gets a column `set` patch first. No column keeps the column where the
+    /// task shows now. A `board` field that names a different board moves the task to that board
+    /// (``KanbanContext/transferTask(_:as:)``, divergence.md Q21); a `board` field that names the board of the task
+    /// moves the task in its board.
     ///
     /// - Parameters:
     ///   - context: The context of the call.
-    ///   - arguments: The task, the column, and the place in the column.
-    /// - Returns: The task after the move. The GraphQL field is nullable, so that an error gives `null` for this field
-    ///   only.
+    ///   - arguments: The task, the column, the place in the column, and the board.
+    /// - Returns: The task after the move: the new task on the other board for a move to a different board. The
+    ///   GraphQL field is nullable, so that an error gives `null` for this field only.
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live task has the id, a neighbor names no live
     ///   task, or the column is a tombstone. ``KanbanError/invalidOrdinal(ordinal:)`` and
     ///   ``KanbanError/invalidSlug(name:)``. ``KanbanError/reservedSlug(type:)`` when a new column would get the slug
-    ///   ``Slug/reservedForBoard``. The decode of the input throws
+    ///   ``Slug/reservedForBoard``. ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board
+    ///   for the `board` field. The errors of ``KanbanContext/transferTask(_:as:)``. The decode of the input throws
     ///   ``KanbanError/conflictingPlacement(fields:)`` before this resolver runs, so that the field writes nothing.
     fileprivate func moveTask(
         context: KanbanContext,
         arguments: InputArguments<MoveTaskInput>
     ) async throws -> TaskObject? {
-        let input = arguments.input
-        return try await context.changeTask(input.id, named: MutationName.moveTask) { work, resolver, ref, time in
-            let column = try work.columnRef(forMoveTo: input.column, resolvingWith: resolver, at: time)
+        let fields = arguments.input.fields
+        if let board = fields.board {
+            guard let isSameBoard = try await context.store.isBoard(board, holdingTask: fields.id) else {
+                return nil
+            }
+            guard isSameBoard else {
+                return try await context.transferTask(fields, as: .move)
+            }
+        }
+        return try await context.changeTask(fields.id, named: MutationName.moveTask) { work, resolver, ref, time in
+            let column = try work.columnRef(forMoveOf: ref, to: fields.column, resolvingWith: resolver, at: time)
             let ordinal = try work.graph.ordinal(
-                placing: input.placement,
+                placing: fields.placement,
                 inColumn: column,
                 moving: ref,
                 resolvingWith: resolver
@@ -408,6 +381,33 @@ extension WorkingCopy {
         return try resolver.nodeRef(for: id, ofType: .column)
     }
 
+    /// Finds the column of a move of a task in its board: the column that the input names, with the rule of
+    /// ``columnRef(forMoveTo:resolvingWith:at:)``, or the column where the task shows now when the input names no
+    /// column.
+    ///
+    /// - Parameters:
+    ///   - task: The local ref of the task.
+    ///   - id: The column that the input names, or `nil` for no column.
+    ///   - resolver: The resolver of the forgiving refs of the board.
+    ///   - time: The time of the change.
+    /// - Returns: The local ref of the column.
+    /// - Throws: The errors of ``columnRef(forMoveTo:resolvingWith:at:)``. ``KanbanError/notFound(type:reference:)``
+    ///   when the graph does not have the task, or the board has no live column.
+    fileprivate mutating func columnRef(
+        forMoveOf task: LocalRef,
+        to id: NodeID?,
+        resolvingWith resolver: RefResolver,
+        at time: DateTime
+    ) throws -> LocalRef {
+        if let id {
+            return try columnRef(forMoveTo: id, resolvingWith: resolver, at: time)
+        }
+        guard let node = graph.node(for: task)?.state as? TaskNode else {
+            throw KanbanError.notFound(type: .task, reference: task.description)
+        }
+        return try graph.displayColumn(of: node)
+    }
+
     /// Writes the task patch of a move: a `set` of the column and the ordinal.
     ///
     /// - Parameters:
@@ -489,7 +489,7 @@ extension Graph {
     /// - Returns: The ordinal.
     /// - Throws: ``KanbanError/invalidOrdinal(ordinal:)`` when the ordinal is not a valid fractional index.
     ///   ``KanbanError/notFound(type:reference:)`` when a neighbor names no live task.
-    fileprivate func ordinal(
+    func ordinal(
         placing placement: Placement,
         inColumn column: LocalRef,
         moving task: LocalRef,
@@ -568,13 +568,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     /// - Returns: This builder, for method chaining.
     func addTaskOperationMutations() -> Self {
         add {
-            Input(MoveTaskInput.self) {
-                InputField("id", at: \.id)
-                InputField("column", at: \.column)
-                InputField("ordinal", at: \.ordinal)
-                InputField("before", at: \.before)
-                InputField("after", at: \.after)
-            }
+            Input(MoveTaskInput.self, Self.placementFields)
             Input(AssignTaskInput.self) {
                 InputField("id", at: \.id)
                 InputField("actor", at: \.actor)

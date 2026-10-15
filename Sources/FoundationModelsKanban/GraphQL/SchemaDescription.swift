@@ -119,6 +119,14 @@ enum SchemaDescription {
 
     // MARK: - Task inputs
 
+    /// The `board` field of `MoveTaskInput` and `CopyTaskInput` (divergence.md Q21, E6).
+    static let taskTargetBoard = """
+        The board to move or copy the task to. \(boardForms) No value, or the board of the task, keeps the task in \
+        its board. The new task keeps its tags (a missing tag is made), and each ref to the old board becomes a full \
+        URI. A move tombstones the old task and adds a line with the new URI to its body. One undo reverses both \
+        boards.
+        """
+
     /// The `dependsOn` field of `AddTaskInput`.
     static let addTaskDependsOn = """
         The tasks that this task depends on. A short ref names a task of the board of the input. \
