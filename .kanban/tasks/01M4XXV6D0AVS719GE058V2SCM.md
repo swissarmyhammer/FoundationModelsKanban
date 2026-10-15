@@ -31,6 +31,33 @@ comments:
     - evidence: 7 files — S/CrossRepo/FolderBoard.swift (new), S/CrossRepo/BoardLocator.swift, S/CrossRepo/ScanChange.swift, S/Tool/KanbanHost.swift, S/Tool/KanbanGraph.swift, Tests/.../CrossRepo/PathRefCacheTests.swift (new), Tests/.../CrossRepo/ScanCacheTests.swift, Tests/.../CrossRepo/BoardLocatorTests.swift (8 with the test helper). `swift test`: 1510 tests in 120 suites passed.
     - next: /review
   timestamp: 2026-10-15T17:18:41.509227+00:00
+- actor: claude-code
+  id: 01m509tnh34kh8ysp9k002rv3j
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 8 files
+    - test: green — swift test, 1510 passed, 0 failed, 0 skipped; IntegrationTests 3 passed
+    - commit: f927525
+    - review: findings — Tests/FoundationModelsKanbanTests/CrossRepo/PathRefCacheTests.swift:66, Tests/FoundationModelsKanbanTests/CrossRepo/PathRefCacheTests.swift:94
+  timestamp: 2026-10-15T17:30:15.459008+00:00
+- actor: claude-code
+  id: 01m50atns05eyx6knspvjqjnh2
+  text: |-
+    Review findings fixed (tests only, no production change).
+    - `firstCommitFindsBoard`: a path ref to a repo whose key read fails, then `reader.setOrigin` and a written `.git/refs/heads/main` (the first commit, with no git). The wait is on `.commits(inRepo:)` until the call finds the board; the key is the new key.
+    - `replacedRepoIsReadAgain`: a path ref to a repo, then the parent folder gets a new modification date first, the old repo moves away, and a new repo with a new origin is made at the same path. The wait is on `.place(parent)` until `host.board(ofFolderAt:)` gives the new key; the git-call counter goes up.
+    - Mutation check: with `.place: false` and the `.commits` clause set to false in `FolderBoard.isExpired`, both new tests hit the 60 s time limit. With the code restored, they pass.
+    - Discovery: FSEvents (file events) reports a change of the watched root folder itself (a new modification date, chmod, xattr) with the path of the root. The root event comes first in the batch when it comes first in time. The host thus reports `.place` and not `.repo`.
+    - Discovery (new task ^0nkvw6d): after the `.place` forget, the host gives the new copy, but the GraphQL read through the session view still gives the old key. `KanbanGraph.loadRelatedBoard` keeps the first engine of a path in `relatedBoards` and `SessionFeeds`. So the `.place` test checks the host result, not the GraphQL read.
+    - `swift test`: 1512 tests in 120 suites passed; only the accepted mlx "missing creator" warning.
+  timestamp: 2026-10-15T17:47:44.288466+00:00
+- actor: claude-code
+  id: 01m50atqdj73jdgezhqcax1w1t
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsKanbanTests/CrossRepo/PathRefCacheTests.swift (2 new tests, 2 helpers, 3 constants). Both review findings checked. `swift test`: 1512 passed, 0 failed. New task ^0nkvw6d for the stale related engine of the session view.
+    - next: /review
+  timestamp: 2026-10-15T17:47:45.970782+00:00
 depends_on:
 - 01M4X707X79HZ4TJARR3PRJNB4
 - 01M4X72ZMQ49D1DTVKFGZ2MXWZ
@@ -61,3 +88,13 @@ Change:
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-15 12:23)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 8 file(s) reviewed, 6 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/PathRefCacheTests.swift:66` `completeness/inverse-operation-coverage` — The change adds a forget path for a failed key read: `FolderBoard.isExpired` returns true for `.commits` in a repo whose key read failed (FolderBoard.swift:73). The record direction is tested by `failedKeyReadRunsNoGit`, which checks that repeated calls run no git. No test checks the inverse, where new commits give the repo a key and the next call reads git again. The test named for a failed key read only asserts that calls stay silent. Add one test. Record a path ref to a repo whose key read fails, make the first commit in the repo, wait with the recorder for `.commits(inRepo:)`, then check that the path ref finds the board. This proves the forget direction for the unreadable-key case.
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/PathRefCacheTests.swift:94` `completeness/inverse-operation-coverage` — The change adds a forget path for a change of the parent folder of the watched repo: `FolderBoard.isExpired` returns true for every `.place` change (FolderBoard.swift:72). No test checks it. The only forget test, `gitInitFindsBoard`, uses a `.repo` change. So the next call after a change of the parent folder, which may replace or remove the repo, is not shown to read git again. Add one test. Record a path ref to a folder, replace the watched repo in its parent folder (for example move it away and make a new repo there), wait with the recorder for `.place(parent)`, then check that the next call reads git again and gives the new board. This proves the `.place` forget direction.
