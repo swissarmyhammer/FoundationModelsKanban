@@ -20,7 +20,7 @@ struct SubscriptionTests {
     static let oneEvent = 1
 
     /// The number of events that a test reads when it expects the events of two changes.
-    private static let twoEvents = 2
+    static let twoEvents = 2
 
     /// The number of lines of the log file of the task before the line of the branch in the merged file: the line of
     /// the fixture.

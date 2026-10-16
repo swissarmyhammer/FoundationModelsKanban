@@ -43,8 +43,25 @@ comments:
     - evidence: local commit "fix(identity): make the engine first commit unique for each repo (^pwpn97e)". Files: Sources/FoundationModelsKanban/Identity/BoardKey.swift, Tests/FoundationModelsKanbanTests/Identity/BoardKeyTests.swift, divergence.md, and the changed .kanban/tasks/ files (01M503RY... and 01M4ZJW4...). Not staged: Package.resolved, .kanban/mcp.17281.log. I fixed one extra space of indent on 4 new lines in divergence.md. Not pushed. The sha is in the step record that the caller receives.
     - next: review
   timestamp: 2026-10-16T03:50:57.056584+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m51dpj1q1n2t7s4xeqf75ch6
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (ca81d8e). 0 findings, 0 confirmed, 0 refuted. 2 files reviewed (Sources/FoundationModelsKanban/Identity/BoardKey.swift, Tests/FoundationModelsKanbanTests/Identity/BoardKeyTests.swift). Not reviewed: 4 .kanban/ files (ignore rule) and divergence.md (no validator matches it).
+    - boxes: I compared each acceptance and test item with the work and ticked all 5. The first commit has the trailer `Kanban-Root-ID: <new ULID>`. The test `firstCommitsAtSameTimeGiveDifferentKeys` makes two empty repos in a temporary folder (GitSandbox) and reads the two keys at the same time with the same author and time. The test step record says `swift test` passed (1553 tests) and IntegrationTests passed (3 tests).
+    - next: none. The task is in done.
+  timestamp: 2026-10-16T03:57:09.559859+00:00
+- actor: claude-code
+  id: 01m51dq08jhm450crv9mn8cjr5
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — BoardKey.swift (Kanban-Root-ID trailer), BoardKeyTests.swift, divergence.md M8
+    - test: green — swift test, 1553 passed; IntegrationTests 3 passed
+    - commit: ca81d8e
+    - review: clean — 0 findings
+  timestamp: 2026-10-16T03:57:24.114963+00:00
+position_column: done
+position_ordinal: ff9080
 title: Make the first commit that the engine makes unique for each repo, so two new repos never get the same board key
 ---
 ## What
@@ -55,13 +72,13 @@ The ^rs0bhrb integration test found a real problem. Two new repos that the engin
 The test fixture now makes its own unique first commit (`IntegrationTests/.../Support/TemporaryGitRepo.swift`). The engine code still has the problem. This is work on the Swift package (S/ = Sources/FoundationModelsKanban/).
 
 ## Acceptance Criteria
-- [ ] The empty first commit that the engine makes has content that is different for each repo (for example, the message includes the repo folder name or a new ULID), so two repos never share a root commit hash.
-- [ ] Two new repos that the engine sets up in the same second get different board keys.
+- [x] The empty first commit that the engine makes has content that is different for each repo (for example, the message includes the repo folder name or a new ULID), so two repos never share a root commit hash.
+- [x] Two new repos that the engine sets up in the same second get different board keys.
 
 ## Tests
-- [ ] A test makes two repos with no commit at the same time, lets the engine make the first commits, and checks that the two board keys are different.
-- [ ] Tests use temporary fixture folders. Never use the `.kanban/` of this repo (it is a Rust board).
-- [ ] `swift test` passes.
+- [x] A test makes two repos with no commit at the same time, lets the engine make the first commits, and checks that the two board keys are different.
+- [x] Tests use temporary fixture folders. Never use the `.kanban/` of this repo (it is a Rust board).
+- [x] `swift test` passes.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.

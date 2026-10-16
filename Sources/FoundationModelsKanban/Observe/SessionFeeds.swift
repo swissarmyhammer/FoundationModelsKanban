@@ -38,6 +38,21 @@ final class SessionFeeds: Sendable {
         }
     }
 
+    /// Puts the feed of a new board in the place of the feed of a board that the view loaded at the same path, for
+    /// example when a new repo replaces the repo of a related board (divergence.md §16). Each subscriber of the view on
+    /// the old feed moves to the new feed, so that its stream continues with the changes of the new board. The
+    /// subscribers of the other views stay on the old feed.
+    ///
+    /// - Parameters:
+    ///   - feed: The feed of the new board.
+    ///   - path: The canonical path of the repo directory of the board.
+    func replace(_ feed: ChangeFeed, forBoardAt path: String) {
+        let old = table.withLock { feeds in
+            feeds.updateValue(feed, forKey: path)
+        }
+        old?.moveSubscribers(ownedBy: owner, to: feed)
+    }
+
     /// Adds a subscriber of the view to the feed of a board.
     ///
     /// - Parameters:

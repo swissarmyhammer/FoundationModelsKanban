@@ -70,23 +70,41 @@ final class ChangeFeed: Sendable {
     ///   the feed is finished.
     func subscribe(filteredBy filter: ChangeFilter, ownedBy owner: ObjectIdentifier) -> AsyncStream<ChangeEvent> {
         let (events, continuation) = AsyncStream<ChangeEvent>.makeStream()
-        let subscriber = Subscriber(owner: owner, filter: filter, continuation: continuation)
-        let id = state.withLock { state -> Int? in
-            guard case .open(var subscribers) = state else {
-                return nil
-            }
-            let id = subscribers.add(subscriber)
-            state = .open(subscribers)
-            return id
-        }
-        guard let id else {
+        let route = SubscriberRoute()
+        let subscriber = Subscriber(owner: owner, filter: filter, continuation: continuation, route: route)
+        guard let id = insert(subscriber) else {
             continuation.finish()
             return events
         }
-        continuation.onTermination = { [weak self] _ in
-            self?.removeSubscriber(withID: id)
+        route.start(in: self, withID: id)
+        continuation.onTermination = { _ in
+            route.end()
         }
         return events
+    }
+
+    /// Moves each subscriber of one owner to a different feed, for example when a new repo replaces the repo of a
+    /// board at the same path, and the session view replaces the engine of that path (divergence.md §16). The streams
+    /// of the subscribers continue: they get the events that the owner sends to the new feed. A subscriber whose
+    /// stream ends during the move goes away from the feed where it is. The new feed ends the stream of each moved
+    /// subscriber when it is finished.
+    ///
+    /// - Parameters:
+    ///   - owner: The owner of the subscribers to move.
+    ///   - feed: The feed that gets the subscribers.
+    func moveSubscribers(ownedBy owner: ObjectIdentifier, to feed: ChangeFeed) {
+        guard feed !== self else {
+            return
+        }
+        for (id, subscriber) in subscribers(ownedBy: owner) {
+            let isRefused = subscriber.route.move(from: self, withID: id) { () -> SubscriberPlace? in
+                self.removeSubscriber(withID: id)
+                return feed.insert(subscriber).map { newID in SubscriberPlace(feed: feed, id: newID) }
+            }
+            if isRefused {
+                subscriber.continuation.finish()
+            }
+        }
     }
 
     /// Sends the changes of the board to each subscriber of one owner.
@@ -102,7 +120,7 @@ final class ChangeFeed: Sendable {
         readingNodesOf view: BoardView,
         resolvingIn board: EventBoard
     ) {
-        for subscriber in subscribers(ownedBy: owner) {
+        for subscriber in subscribers(ownedBy: owner).values {
             send(changes, to: subscriber, readingNodesOf: view, resolvingIn: board)
         }
     }
@@ -143,13 +161,28 @@ final class ChangeFeed: Sendable {
     /// Gives the subscribers of one owner.
     ///
     /// - Parameter owner: The owner.
-    /// - Returns: The subscribers. The list is empty when the feed is finished.
-    private func subscribers(ownedBy owner: ObjectIdentifier) -> [Subscriber] {
+    /// - Returns: The subscribers, by their ids. The table is empty when the feed is finished.
+    private func subscribers(ownedBy owner: ObjectIdentifier) -> [Int: Subscriber] {
         state.withLock { state in
             guard case .open(let subscribers) = state else {
-                return [Subscriber]()
+                return [:]
             }
-            return subscribers.byID.values.filter { subscriber in subscriber.owner == owner }
+            return subscribers.byID.filter { _, subscriber in subscriber.owner == owner }
+        }
+    }
+
+    /// Adds a subscriber with a new id.
+    ///
+    /// - Parameter subscriber: The subscriber.
+    /// - Returns: The id of the subscriber, or `nil` when the feed is finished.
+    private func insert(_ subscriber: Subscriber) -> Int? {
+        state.withLock { state in
+            guard case .open(var subscribers) = state else {
+                return nil
+            }
+            let id = subscribers.add(subscriber)
+            state = .open(subscribers)
+            return id
         }
     }
 
@@ -174,10 +207,10 @@ final class ChangeFeed: Sendable {
         }
     }
 
-    /// Removes the subscriber of a stream that ended.
+    /// Removes a subscriber: the subscriber of a stream that ended, or a subscriber that moves to a different feed.
     ///
     /// - Parameter id: The id of the subscriber.
-    private func removeSubscriber(withID id: Int) {
+    fileprivate func removeSubscriber(withID id: Int) {
         state.withLock { state in
             guard case .open(var subscribers) = state else {
                 return
@@ -227,7 +260,8 @@ private struct Subscribers {
     }
 }
 
-/// One subscriber of a ``ChangeFeed``: its owner, its filters, and the continuation of its events.
+/// One subscriber of a ``ChangeFeed``: its owner, its filters, the continuation of its events, and the feed where it
+/// is now.
 private struct Subscriber: Sendable {
     /// The session view that makes the events of the subscriber.
     let owner: ObjectIdentifier
@@ -237,4 +271,67 @@ private struct Subscriber: Sendable {
 
     /// The continuation of the events of the subscriber.
     let continuation: AsyncStream<ChangeEvent>.Continuation
+
+    /// The feed of the subscriber now, and its id there. The end of the stream removes the subscriber from that feed.
+    let route: SubscriberRoute
+}
+
+/// The feed where one subscriber is now, and the id of the subscriber in that feed. The feed holds it weakly, so that
+/// the subscribers of a feed do not keep the feed alive.
+private struct SubscriberPlace {
+    /// The feed of the subscriber.
+    weak var feed: ChangeFeed?
+
+    /// The id of the subscriber in the feed.
+    let id: Int
+}
+
+/// The place of one subscriber, behind a lock (divergence.md §16).
+///
+/// The termination handler of the stream of a subscriber is set one time, and calls ``end()``. A move of the
+/// subscriber to a different feed changes the place under the same lock. Thus a stream that ends during a move
+/// removes the subscriber from the feed where it is: the old feed before the move, or the new feed after it.
+private final class SubscriberRoute: Sendable {
+    /// The place of the subscriber, or `nil` before the start and after the end.
+    private let place = Mutex<SubscriberPlace?>(nil)
+
+    /// Records the first place of the subscriber.
+    ///
+    /// - Parameters:
+    ///   - feed: The feed of the subscriber.
+    ///   - id: The id of the subscriber in the feed.
+    func start(in feed: ChangeFeed, withID id: Int) {
+        place.withLock { place in
+            place = SubscriberPlace(feed: feed, id: id)
+        }
+    }
+
+    /// Moves the subscriber from one place to a new place, when the subscriber is still at the old place.
+    ///
+    /// - Parameters:
+    ///   - feed: The feed of the old place.
+    ///   - id: The id of the subscriber in that feed.
+    ///   - relocate: Removes the subscriber from the old place, and gives the new place, or `nil` when the new feed
+    ///     refuses the subscriber.
+    /// - Returns: `true` when the new feed refused the subscriber: the caller then ends its stream. `false` when the
+    ///   subscriber moved, or when its stream ended before the move.
+    func move(from feed: ChangeFeed, withID id: Int, relocating relocate: () -> SubscriberPlace?) -> Bool {
+        place.withLock { place in
+            guard let current = place, current.feed === feed, current.id == id else {
+                return false
+            }
+            place = relocate()
+            return place == nil
+        }
+    }
+
+    /// Removes the subscriber from the feed where it is, when its stream ends.
+    func end() {
+        place.withLock { place in
+            if let current = place {
+                current.feed?.removeSubscriber(withID: current.id)
+            }
+            place = nil
+        }
+    }
 }

@@ -963,7 +963,8 @@ struct ChangeBuilderTests {
     func batchGivesEachUpdateToOneChange(batchCase: BatchCase) async throws {
         let batch = try await Self.applyBatch(of: batchCase)
         let path = batch.directory.url.path
-        let changed = try #require(BoardChanges(of: batch.after, changes: batch.changes))
+        let identity = try FolderIdentity(of: batch.directory.url)
+        let changed = try #require(BoardChanges(of: batch.after, changes: batch.changes, madeBy: identity))
         let round = ChangeRound(
             of: [path: changed],
             amongBoards: [path: batch.after],

@@ -664,7 +664,7 @@ public actor KanbanGraph {
         }
         let sessions = await loadedSessions(current: current)
         let round = ChangeRound(
-            of: changed.filter { path, _ in sessions[path] != nil },
+            of: changesOfLoadedEngines(in: changed, amongBoards: sessions, current: current),
             amongBoards: sessions,
             currentPath: copy.directory.canonicalPath,
             reading: related
@@ -684,6 +684,27 @@ public actor KanbanGraph {
                     reading: eventRelatedBoards(ofBoardAt: path, in: round, current: copy)
                 )
             )
+        }
+    }
+
+    /// Keeps the changes of each board that the view loaded, and only when the engine that the view holds for the path
+    /// made them. When a new repo replaced the repo at a path, the engine of the old repo keeps that path, and its
+    /// changes are not changes of the board of the view (divergence.md §16).
+    ///
+    /// - Parameters:
+    ///   - changed: The changes of each board that changed, by the canonical path of its repo directory.
+    ///   - sessions: The session of each board that the view loaded, by the canonical path of its repo directory.
+    ///   - current: The engine of the board of the working directory.
+    /// - Returns: The changes that the view sends to its subscribers.
+    private func changesOfLoadedEngines(
+        in changed: [String: BoardChanges],
+        amongBoards sessions: [String: CommitSession],
+        current: BoardEngine
+    ) -> [String: BoardChanges] {
+        var identities = relatedBoards.mapValues(\.identity)
+        identities[current.root.canonicalPath] = current.identity
+        return changed.filter { path, changes in
+            sessions[path] != nil && identities[path] == changes.identity
         }
     }
 
@@ -983,12 +1004,28 @@ public actor KanbanGraph {
         if case .resolved(.board(let current)) = boardState, current.identity == engine.identity {
             return .current
         }
+        record(engine)
+        return .copy(BoardCopy(directory: engine.root, key: copy.key, isEnabled: copy.isEnabled))
+    }
+
+    /// Records the engine of a related board as the board of its path. A path has one engine in the view. When a new
+    /// repo replaced the repo at the path, the engine has a new identity: it replaces the old engine, and the
+    /// subscribers of the view on the old board move to the feed of the new board (divergence.md §16). The same engine
+    /// again changes nothing.
+    ///
+    /// - Parameter engine: The engine of the related board.
+    private func record(_ engine: BoardEngine) {
         let path = engine.root.canonicalPath
-        if relatedBoards[path] == nil {
+        guard let old = relatedBoards[path] else {
             relatedBoards[path] = engine
             feeds.add(engine.feed, forBoardAt: path)
+            return
         }
-        return .copy(BoardCopy(directory: engine.root, key: copy.key, isEnabled: copy.isEnabled))
+        guard old.identity != engine.identity else {
+            return
+        }
+        relatedBoards[path] = engine
+        feeds.replace(engine.feed, forBoardAt: path)
     }
 }
 

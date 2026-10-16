@@ -141,27 +141,14 @@ struct PathRefCacheTests {
 
     @Test("After the repo of a path ref is replaced in its changed parent folder, the next call reads git again")
     func replacedRepoIsReadAgain() async throws {
-        let place = try ScanPlace.make()
-        let outside = try TemporaryDirectory()
-        let folder = try ScanPlace.makeRepoFolder(named: ScanCacheTests.newName, in: outside.url)
-        let reader = ScanKeyReader()
-        let recorder = ScanRecorder()
-        let host = ScanCacheTests.makeHost(reading: reader, recordedBy: recorder)
-        let session = try await host.session(workingDirectory: place.app, actor: KanbanHostTests.firstActor)
+        let repo = try await PathRepo.make()
         let oldKey = try CrossRepoFixture.keyText(of: ScanCacheTests.newOrigin)
-        #expect(try await CrossRepoReadTests.board("key", of: folder.path, on: session) == oldKey)
-        let gitCalls = reader.count
-        let staging = try TemporaryDirectory()
-        try Self.replaceRepo(at: folder, movingOldRepoInto: staging.url)
-        reader.setOrigin(Self.laterOrigin, ofRepoNamed: ScanCacheTests.newName)
-        let newKey = try CrossRepoFixture.keyText(of: Self.laterOrigin)
-        // The host gives what git tells about the folder. The session view keeps the engine that it loaded for the
-        // path, so a read through the view still shows the old board (^0nkvw6d).
-        try await recorder.waitForChange(.place(outside.url.canonicalPath)) {
-            try await host.board(ofFolderAt: folder).copy?.key.description == newKey
-        }
-        #expect(reader.count > gitCalls)
-        await host.close()
+        #expect(try await CrossRepoReadTests.board("key", of: repo.folder.path, on: repo.session) == oldKey)
+        let gitCalls = repo.reader.count
+        let newKey = try await repo.replace()
+        #expect(repo.reader.count > gitCalls)
+        #expect(try await CrossRepoReadTests.board("key", of: repo.folder.path, on: repo.session) == newKey)
+        await repo.host.close()
     }
 
     // MARK: - Helpers

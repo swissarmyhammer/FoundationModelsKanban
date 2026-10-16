@@ -176,7 +176,7 @@ actor BoardEngine {
     /// - Returns: The changes, or `nil` when the board did not change.
     func takeLiveChanges() -> BoardChanges? {
         let changes = session.takeLiveChanges()
-        return BoardChanges(of: session, changes: changes)
+        return BoardChanges(of: session, changes: changes, madeBy: identity)
     }
 
     /// Stops the file watcher, ends each subscription of the board, and cancels the embeddings of the search in the

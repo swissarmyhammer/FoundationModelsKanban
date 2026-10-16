@@ -11,18 +11,25 @@ struct BoardChanges: Sendable {
     /// The graph of the board before the first change.
     let before: Graph
 
+    /// The identity of the repo directory of the engine that made the changes. A new repo at the same path has a
+    /// different identity, so a session view can tell the changes of the engine that it holds for the path from the
+    /// changes of the engine of an old repo at that path (divergence.md §16).
+    let identity: FolderIdentity
+
     /// Collects the changes of one board.
     ///
     /// - Parameters:
     ///   - session: The session of the board after the operation.
     ///   - changes: The changes of the live graph of the board that added events, in the order that they happened.
+    ///   - identity: The identity of the repo directory of the engine that made the changes.
     /// - Returns: The changes, or `nil` when the board did not change.
-    init?(of session: CommitSession, changes: [LiveGraphChange]) {
+    init?(of session: CommitSession, changes: [LiveGraphChange], madeBy identity: FolderIdentity) {
         guard let first = changes.first else {
             return nil
         }
         self.session = session
         self.changes = changes
+        self.identity = identity
         before = first.before
     }
 }
