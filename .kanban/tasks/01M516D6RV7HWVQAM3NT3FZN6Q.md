@@ -44,10 +44,26 @@ comments:
     - evidence: local commit "feat(observe): send an update when the remote assignee of a moved task changes (^t3fzn6q)". Files: ChangeBuilder.swift, RemoteAssigneeFeedTests.swift (new), divergence.md, .kanban/tasks files. The sha is in the final report of this step.
     - next: review
   timestamp: 2026-10-16T05:30:42.111020+00:00
+- actor: claude-code
+  id: 01m51kdts50b56y1aqt804mze8
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (d7a35a9). 0 findings, 0 confirmed, 1 refuted, 7 attempted, 0 failed. The review examined 2 files. The review did not examine 4 .kanban/ files (.reviewignore) and divergence.md (no validator applies to it). The task has no prior Review Findings items.
+    - next: The task is in done. No more work is necessary.
+  timestamp: 2026-10-16T05:37:15.045593+00:00
+- actor: claude-code
+  id: 01m51ke8y32t15h71djcg3ed26
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — ChangeBuilder.swift, RemoteAssigneeFeedTests.swift (new), divergence.md Q21
+    - test: green — swift test, 1562 passed; IntegrationTests 3 passed
+    - commit: d7a35a9
+    - review: clean — 0 findings
+  timestamp: 2026-10-16T05:37:29.539414+00:00
 depends_on:
 - 01M4ZEVB1RK8S6B8R6DX020T0G
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ff9380
 title: Send a change feed event for a moved task when its remote assignee actor changes
 ---
 ## What

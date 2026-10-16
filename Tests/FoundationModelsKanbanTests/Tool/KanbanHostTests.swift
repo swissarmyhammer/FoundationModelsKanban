@@ -28,6 +28,20 @@ struct KanbanHostTests {
     /// The POSIX permissions of a log file that no user can read, so that the load of its board fails.
     static let unreadablePermissions = 0o000
 
+    /// The longest time that the test of a closed engine waits for `adopt` to return while the task of the moved
+    /// watch is held.
+    static let adoptionWaitLimit = Duration.seconds(adoptionWaitLimitSeconds)
+
+    /// The number of seconds in ``adoptionWaitLimit``.
+    private static let adoptionWaitLimitSeconds = 10
+
+    /// The longest time that a ``HeldConsumer`` holds its task. It is longer than ``adoptionWaitLimit``, so that the
+    /// test releases the task first.
+    static let consumerHoldLimit = Duration.seconds(consumerHoldLimitSeconds)
+
+    /// The number of seconds in ``consumerHoldLimit``.
+    private static let consumerHoldLimitSeconds = 30
+
     /// A query that counts the tasks of the board.
     static let countQuery = "{ board { tasks { totalCount } } }"
 
@@ -220,6 +234,40 @@ struct KanbanHostTests {
         #expect(await !engine.adopt(moved))
         #expect(await !moved.watcher.isRunning)
         #expect(await engine.activeWatch == nil)
+        await host.close()
+    }
+
+    @Test(
+        "A closed engine ends a moved watch with no wait for the task of the watch, which can wait for the engine gate",
+        .timeLimit(.minutes(1))
+    )
+    func closedEngineDoesNotWaitForMovedConsumer() async throws {
+        let directory = try TemporaryDirectory()
+        _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
+        let host = HostFixture.makeHost()
+        let engine = try await host.engine(ofBoardAt: directory.url)
+        await engine.close()
+        let consumer = HeldConsumer()
+        let moved = BoardWatch(
+            watcher: try BoardWatcher(watching: directory.url, in: host.folderStreams),
+            directory: directory.url,
+            consumer: consumer.makeTask(heldAtMost: Self.consumerHoldLimit)
+        )
+        let isAdoptionDone = Mutex(false)
+        let adoption = Task {
+            let isAdopted = await engine.adopt(moved)
+            isAdoptionDone.withLock { isDone in isDone = true }
+            return isAdopted
+        }
+        let isAdoptedFirst = try await EventLogTests.becomesTrue(within: Self.adoptionWaitLimit) {
+            isAdoptionDone.withLock { isDone in isDone }
+        }
+        consumer.release()
+        let isAdopted = await adoption.value
+        await moved.consumer.value
+        #expect(isAdoptedFirst, "adopt waited for the task of the moved watch, so a wait for the gate never ends")
+        #expect(!isAdopted)
+        #expect(await !moved.watcher.isRunning)
         await host.close()
     }
 
@@ -574,6 +622,39 @@ final class LoadRecorder: BoardLoadObserver {
     /// - Returns: The root folders.
     private func roots(of kind: LoadEventKind) -> [URL] {
         events.filter { event in event.kind == kind }.map(\.root)
+    }
+}
+
+// MARK: - Held consumer
+
+/// Makes the task of a watch that does not end until the test releases it, or until a time limit passes. The task
+/// does not end when it is cancelled, the same as the task of an engine watch that waits for the serial gate of the
+/// engine.
+final class HeldConsumer: Sendable {
+    /// `true` after ``release()``, behind a lock, because the task reads it on a different thread.
+    private let releaseState = Mutex(false)
+
+    /// `true` after ``release()``.
+    private var isReleased: Bool {
+        releaseState.withLock { isReleased in isReleased }
+    }
+
+    /// Makes the task. The wait runs in an inner unstructured task, which does not get the cancel of the outer task,
+    /// so a cancel of the outer task does not end the wait.
+    ///
+    /// - Parameter limit: The longest time that the task waits for the release.
+    /// - Returns: The task.
+    func makeTask(heldAtMost limit: Duration) -> Task<Void, Never> {
+        Task {
+            await Task {
+                _ = try? await EventLogTests.becomesTrue(within: limit) { self.isReleased }
+            }.value
+        }
+    }
+
+    /// Lets the task end.
+    func release() {
+        releaseState.withLock { isReleased in isReleased = true }
     }
 }
 

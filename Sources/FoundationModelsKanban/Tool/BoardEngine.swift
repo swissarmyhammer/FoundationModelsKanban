@@ -289,13 +289,17 @@ actor BoardEngine {
     }
 
     /// Stores the watch that a move of the watcher made, when the engine is not closed. A closed engine keeps no
-    /// watch: it ends the moved watch, so that no watcher runs after ``close()``.
+    /// watch: it stops the moved watch, so that no watcher runs after ``close()``.
+    ///
+    /// The caller holds ``gate``, and the task of the moved watch can wait for the gate to give a batch. Thus a closed
+    /// engine does not wait for the end of that task (``BoardWatch/stop()``, not ``BoardWatch/end()``). The task
+    /// gets the gate after the caller, and its batch applies nothing, because the engine is closed.
     ///
     /// - Parameter moved: The new watch.
     /// - Returns: `true` when the engine keeps the watch, or `false` when the engine is closed.
     func adopt(_ moved: BoardWatch) async -> Bool {
         guard !isClosed else {
-            await moved.end()
+            await moved.stop()
             return false
         }
         watchState = .watching(moved)
@@ -508,10 +512,19 @@ struct BoardWatch: Sendable {
     let consumer: Task<Void, Never>
 
     /// Stops the watcher, and waits until the task ends. After the call returns, the watch applies no batch.
+    ///
+    /// A caller that holds the serial gate of the engine of the watch must use ``stop()``: the task can wait for the
+    /// same gate, so this wait never ends.
     func end() async {
+        await stop()
+        await consumer.value
+    }
+
+    /// Stops the watcher and cancels the task, with no wait for the end of the task. The watcher gives no more
+    /// batches, but the task can still give a batch that it has to its receiver.
+    func stop() async {
         await watcher.stop()
         consumer.cancel()
-        await consumer.value
     }
 }
 
