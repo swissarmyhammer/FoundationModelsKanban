@@ -186,6 +186,17 @@ struct BoardKeyTests {
         #expect(try await key == sandbox.headKey(of: repo))
     }
 
+    @Test("Two new repos that get their first commits at the same time, with the same author, get different keys")
+    func firstCommitsAtSameTimeGiveDifferentKeys() async throws {
+        let sandbox = try GitSandbox()
+        let firstRepo = try await sandbox.makeEmptyRepo(named: "first-new-repo")
+        let secondRepo = try await sandbox.makeEmptyRepo(named: "second-new-repo")
+        let environment = GitSandbox.fixedDateEnvironment
+        async let firstKey = BoardKey.read(fromRepoAt: firstRepo, gitEnvironment: environment)
+        async let secondKey = BoardKey.read(fromRepoAt: secondRepo, gitEnvironment: environment)
+        #expect(try await firstKey != secondKey)
+    }
+
     @Test("The first commit does not take the staged files, and the working files do not change")
     func firstCommitKeepsStagedFiles() async throws {
         let sandbox = try GitSandbox()

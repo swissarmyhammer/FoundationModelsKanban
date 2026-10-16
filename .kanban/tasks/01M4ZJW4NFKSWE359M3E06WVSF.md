@@ -47,8 +47,25 @@ comments:
     - evidence: local commit "refactor(filter): remove typed throws that the filter chain cannot give (^e06wvsf)". The sha is in the step report. Files: FilterEvaluator, TaskFilter, ChangeFilter, ChangeFeed, ChangeSubscription, Change, TaskSelection, History, FilterEvaluatorTests, and the changed .kanban/tasks files. Package.resolved and .kanban/mcp.17281.log were not staged.
     - next: review
   timestamp: 2026-10-16T03:18:17.300535+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m51bx2v06ky47g15yqrvhawz
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (dac1015). 0 findings (0 confirmed, 0 refuted, 7 validators attempted, 0 failed). 9 files reviewed. 4 .kanban/ files are not reviewed because .reviewignore excludes them. The task has no prior Review Findings section.
+    - checkboxes: I examined the 3 boxes against the work and ticked them. (1) In FilterEvaluator, TaskFilter, ChangeFilter, ChangeFeed, ChangeSubscription, Change, and TaskSelection, each `throws(KanbanError)` that stays comes from a call that can fail: FilterExpr parse, ChangeFilter(parsing:), TaskSelection.init, or a board view lookup. `check(against:)` has no use and is removed. No code calls `try` before FilterEvaluator(...), TaskFilter(...), applied, updates(of:), or test(over:). (2, 3) The test step record shows `swift test` with 1552 tests in 123 suites passed, 0 failures, 0 skipped, and only the allowed warnings.
+    - next: none. The task is in done.
+  timestamp: 2026-10-16T03:25:46.208054+00:00
+- actor: claude-code
+  id: 01m51bxggjcs81nxg9x4vnnaqs
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 9 files in Filter/, Observe/, GraphQL/TaskSelection.swift, Undo/History.swift, FilterEvaluatorTests.swift
+    - test: green — swift test, 1552 passed; IntegrationTests 3 passed
+    - commit: dac1015
+    - review: clean — 0 findings
+  timestamp: 2026-10-16T03:26:00.210231+00:00
+position_column: done
+position_ordinal: ff8f80
 title: Remove the typed throws that the filter evaluator chain can no longer give
 ---
 ## What
@@ -63,8 +80,8 @@ Make the chain honest:
 - Tests/FoundationModelsKanbanTests/Filter/FilterEvaluatorTests.swift: remove the `try` before `FilterEvaluator(...)`.
 
 ## Acceptance Criteria
-- [ ] No function of the filter chain declares a typed `throws` that it cannot give.
-- [ ] `swift test` passes with no new warning.
+- [x] No function of the filter chain declares a typed `throws` that it cannot give.
+- [x] `swift test` passes with no new warning.
 
 ## Tests
-- [ ] The existing filter, change feed, and subscription tests pass.
+- [x] The existing filter, change feed, and subscription tests pass.

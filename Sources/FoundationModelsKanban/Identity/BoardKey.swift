@@ -165,8 +165,12 @@ extension BoardKey {
     /// The arguments of the git command that gives the SHA of the empty tree, in the hash of the repo.
     static let emptyTreeArguments = ["hash-object", "-t", "tree", "/dev/null"]
 
-    /// The message of the empty first commit that ``read(fromRepoAt:)`` makes in a repo with no commit.
+    /// The subject of the message of the empty first commit that ``read(fromRepoAt:)`` makes in a repo with no commit.
     static let firstCommitMessage = "Initial commit"
+
+    /// The name of the trailer in the message of the empty first commit. The value of the trailer is a new ULID (see
+    /// ``makeFirstCommitTrailer()``).
+    static let firstCommitTrailerName = "Kanban-Root-ID"
 
     /// The old value that `git update-ref` requires for a ref that must not exist yet. Thus two reads at the same
     /// time cannot both set the first commit.
@@ -312,6 +316,10 @@ extension BoardKey {
     /// change. The update requires that the branch does not exist yet. When a different read made the first commit at
     /// the same time, the update fails, and the read uses the commit of the other read.
     ///
+    /// The message has the subject ``firstCommitMessage`` and the trailer of ``makeFirstCommitTrailer()``, with a new
+    /// ULID. Thus the first commits of two repos are different, also when the two commits have the same author and the
+    /// same time, and the two repos get different keys `local/<root commit>` (divergence.md §16, M8).
+    ///
     /// - Parameter repo: A directory in the repo, and the environment of git.
     /// - Throws: ``BoardKeyError/gitFailed(arguments:status:message:)`` with the message of git when git cannot make
     ///   the commit (for example when no `user.name` or `user.email` is set) or cannot set the branch. The other
@@ -321,12 +329,21 @@ extension BoardKey {
             return
         }
         let tree = try await repo.output(of: emptyTreeArguments)
-        let commit = try await repo.output(of: ["commit-tree", tree, "-m", firstCommitMessage])
+        let message = ["-m", firstCommitMessage, "-m", makeFirstCommitTrailer()]
+        let commit = try await repo.output(of: ["commit-tree", tree] + message)
         let arguments = ["update-ref", headName, commit, missingRefValue]
         let result = try await repo.run(arguments)
         if result.status != Git.successStatus, try await !hasHeadCommit(repo) {
             throw .gitFailed(arguments: arguments, status: result.status, message: result.errorOutput)
         }
+    }
+
+    /// Makes the trailer of the message of the empty first commit: ``firstCommitTrailerName`` and a new ULID from
+    /// ``SystemULIDSource``, for example `Kanban-Root-ID: 01M503RY75N5Q0M6QSAPWPN97E`. Each call gives a new ULID.
+    ///
+    /// - Returns: The trailer, as one line of text.
+    private static func makeFirstCommitTrailer() -> String {
+        "\(firstCommitTrailerName): \(SystemULIDSource().makeULID().ulidString)"
     }
 
     /// Tells if ``headName`` names a commit.
