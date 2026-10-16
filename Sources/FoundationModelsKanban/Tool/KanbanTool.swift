@@ -54,7 +54,8 @@ public struct KanbanTool: Tool {
         slug, the call uses the first and gives a warning. A filter takes ^id, ^^short, or ^<title slug>, and \
         matches each task that has it. Task.unresolvedDependsOn shows each dependency that no loaded board has. \
         Read the warnings in extensions.warnings. The board is in .kanban at the top of a git worktree. A folder \
-        that is not in a git repo gives NOT_A_REPO. A .kanban folder of the old Rust kanban gives INCOMPATIBLE_BOARD.
+        that is not in a git repo gives NOT_A_REPO. A .kanban folder of the old Rust kanban gives INCOMPATIBLE_BOARD. \
+        boards leaves out a related repo with a Rust .kanban folder and gives the warning BOARD_INCOMPATIBLE.
         """
 
     /// The schema of the arguments: ``KanbanArguments/generationSchema``.

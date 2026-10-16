@@ -152,8 +152,24 @@ comments:
     - evidence: iteration 3 commit. Files: Sources/FoundationModelsKanban/Tool/KanbanHost.swift and the task files in .kanban/tasks/. The sha is in the git log subject "refactor(host): share the prune of dead weak entries (^1yg0p73)".
     - next: /review
   timestamp: 2026-10-16T08:45:12.582660+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m51yh76rmnysnncyqshqvtyk
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (f40a1d8). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. 1 file reviewed (Sources/FoundationModelsKanban/Tool/KanbanHost.swift). 2 .kanban/ files are excluded by .reviewignore. All prior Review Findings items are checked (4 of 4).
+    - next: none. The task moved to done.
+  timestamp: 2026-10-16T08:51:20.408662+00:00
+- actor: claude-code
+  id: 01m51yhma26tp7rqwv3sw2dk7t
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — KanbanHost.swift (shared removeGoneObjects prune)
+    - test: green — swift test, 1567 passed
+    - commit: f40a1d8
+    - review: clean — 0 findings
+  timestamp: 2026-10-16T08:51:33.826155+00:00
+position_column: done
+position_ordinal: ff9580
 title: Stop the engine of a replaced repo from reading the files of the new repo at the same path
 ---
 ## What

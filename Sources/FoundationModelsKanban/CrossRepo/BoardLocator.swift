@@ -406,14 +406,38 @@ extension BoardResolution {
         }
         return board
     }
+
+    /// This board as the list of `Query.boards` reaches it (divergence.md Q6): a board of the old Rust kanban does not
+    /// stop the call, and gives only a warning. Each other resolution does not change.
+    var listed: BoardResolution {
+        unreadableBoard.map { board in .unreadable(board.listed) } ?? self
+    }
 }
 
 /// A copy of a related repo whose board cannot be read (divergence.md Q7). The response of each call that reaches the
-/// board has a warning that names the board and the reason. A board of the old Rust kanban is the one exception: it
-/// stops each call that reaches it (divergence.md Q6), and only the change feed continues without it.
+/// board has a warning that names the board and the reason. A board of the old Rust kanban is the exception: it stops
+/// each call that names it (divergence.md Q6), and only the change feed continues without it. When only the list of
+/// `Query.boards` reaches it, the call continues with a `BOARD_INCOMPATIBLE` warning.
 struct UnreadableBoard: Hashable, Sendable {
     /// The code of the warning of a board that cannot be read, in `extensions.warnings` (plan.md §4.4).
     static let warningCode = "BOARD_UNREADABLE"
+
+    /// The code of the warning of a board of the old Rust kanban that the list of `Query.boards` leaves out
+    /// (divergence.md Q6).
+    static let incompatibleWarningCode = "BOARD_INCOMPATIBLE"
+
+    /// What a call does when it reaches a board that cannot be read.
+    enum Effect: Hashable, Sendable {
+        /// The call continues with a `BOARD_UNREADABLE` warning (divergence.md Q7).
+        case warning
+
+        /// The board is a board of the old Rust kanban, and only the list of `Query.boards` reached it. The call
+        /// continues with a `BOARD_INCOMPATIBLE` warning (divergence.md Q6).
+        case incompatibleWarning
+
+        /// The error stops the call, for example ``KanbanError/incompatibleBoard(directory:)``.
+        case callFailure(KanbanError)
+    }
 
     /// The copy of the repo of the board.
     let copy: BoardCopy
@@ -421,16 +445,42 @@ struct UnreadableBoard: Hashable, Sendable {
     /// The error of the load, as text.
     let reason: String
 
-    /// The error that stops each call that reaches the board, for example
-    /// ``KanbanError/incompatibleBoard(directory:)``, or `nil` when the call continues with a warning.
-    let callFailure: KanbanError?
+    /// What a call does when it reaches the board.
+    let effect: Effect
+
+    /// The error that stops each call that reaches the board, or `nil` when the call continues with a warning.
+    var callFailure: KanbanError? {
+        guard case .callFailure(let failure) = effect else {
+            return nil
+        }
+        return failure
+    }
+
+    /// This board as the list of `Query.boards` reaches it (divergence.md Q6): a board of the old Rust kanban gives
+    /// only a warning. Each other board does not change.
+    var listed: UnreadableBoard {
+        guard case .callFailure(.incompatibleBoard) = effect else {
+            return self
+        }
+        return UnreadableBoard(copy: copy, reason: reason, effect: .incompatibleWarning)
+    }
+
+    /// The code of the warning, in `extensions.warnings` (plan.md §4.4).
+    var warningCode: String {
+        effect == .incompatibleWarning ? Self.incompatibleWarningCode : Self.warningCode
+    }
 
     /// The text of the warning: the key and the `.kanban/` directory of the board, the reason, and what the call did.
     var warningMessage: String {
-        let directory = EventLog(repositoryAt: copy.directory).directory.path
-        return "The related board \(copy.key) at `\(directory)` cannot be read: \(reason). The call continued without "
-            + "this board, and each dependency on a task of this board is not done. Correct the board. The next call "
-            + "after a change of its files reads it again."
+        let board = "The related board \(copy.key) at `\(EventLog(repositoryAt: copy.directory).directory.path)`"
+        guard effect != .incompatibleWarning else {
+            return "\(board) is an incompatible board of the old Rust kanban. The list of boards does not show it, "
+                + "and the call did not load it. A call that names this board gives INCOMPATIBLE_BOARD. Remove the "
+                + "board, then try again."
+        }
+        return "\(board) cannot be read: \(reason). The call continued without this board, and each dependency on a "
+            + "task of this board is not done. Correct the board. The next call after a change of its files reads it "
+            + "again."
     }
 }
 

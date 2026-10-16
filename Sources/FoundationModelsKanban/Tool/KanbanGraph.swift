@@ -555,8 +555,8 @@ public actor KanbanGraph {
 
     /// Runs one call of the public schema on the board of the working directory, and gives a ``KanbanError`` of the
     /// run or of the commit as one error response (plan.md §4.4, §5.4). A working directory that is not in a git repo
-    /// gives `NOT_A_REPO`, and a `.kanban/` with Rust files, of the current board or of a related board, gives
-    /// `INCOMPATIBLE_BOARD` (divergence.md Q6).
+    /// gives `NOT_A_REPO`, and a `.kanban/` with Rust files, of the current board or of a related board that the call
+    /// names, gives `INCOMPATIBLE_BOARD` (divergence.md Q6).
     ///
     /// - Parameters:
     ///   - board: The board of the working directory, or the error that stops each call.
@@ -593,8 +593,9 @@ public actor KanbanGraph {
 
     /// Runs one call on a copy of the session of the board of the working directory, and commits the patches that its
     /// mutation fields kept (plan.md §5.4). The call loads the related boards that it asks for. A related board that
-    /// cannot be read gives one warning in the response (divergence.md Q7), and a related board of the old Rust kanban
-    /// stops the call with `INCOMPATIBLE_BOARD` (divergence.md Q6). The new session goes
+    /// cannot be read gives one warning in the response (divergence.md Q7). A related board of the old Rust kanban that
+    /// the call names stops the call with `INCOMPATIBLE_BOARD`, and one that only the list of `Query.boards` reaches
+    /// gives one warning (divergence.md Q6). The new session goes
     /// back to the engine while the call holds the gate, also when the call fails, because a commit check can apply
     /// the changed files of a different process before the call fails.
     ///
@@ -651,9 +652,9 @@ public actor KanbanGraph {
     }
 
     /// Checks the related boards that a run reached and that cannot be read (divergence.md Q7). A board that stops each
-    /// call, for example a board of the old Rust kanban (divergence.md Q6), stops the run with its error. Else the
-    /// response of the run gets one warning for each of these boards, with the key and the `.kanban/` directory of the
-    /// board and the reason.
+    /// call, for example a board of the old Rust kanban that the call names (divergence.md Q6), stops the run with its
+    /// error. Else the response of the run gets one warning for each of these boards, with the code of the board, its
+    /// key, its `.kanban/` directory, and the reason.
     ///
     /// - Parameters:
     ///   - store: The store of the run. Its related boards are answered for each request of the run.
@@ -669,7 +670,7 @@ public actor KanbanGraph {
             throw failure
         }
         for board in boards {
-            await context.warnings.add(board.warningMessage, code: UnreadableBoard.warningCode)
+            await context.warnings.add(board.warningMessage, code: board.warningCode)
         }
     }
 
@@ -1082,6 +1083,10 @@ public actor KanbanGraph {
 
     /// Gives one copy of the list of `Query.boards`, and loads the copy when it is not the current repo.
     ///
+    /// A copy of the old Rust kanban does not stop the call (divergence.md Q6): the load stops at the check of its
+    /// `.kanban/` directory before it reads a file, and the list leaves out the copy with a `BOARD_INCOMPATIBLE`
+    /// warning. A call that also names the board still stops with `INCOMPATIBLE_BOARD`.
+    ///
     /// - Parameters:
     ///   - copy: The copy that the scan found.
     ///   - root: The top folder of the worktree of the current board.
@@ -1092,7 +1097,7 @@ public actor KanbanGraph {
         guard case .copy(let related) = resolution else {
             return ListedCopy(board: resolution, isEnabled: copy.isEnabled)
         }
-        return ListedCopy(board: try await loadRelatedBoard(related), isEnabled: copy.isEnabled)
+        return ListedCopy(board: try await loadRelatedBoard(related).listed, isEnabled: copy.isEnabled)
     }
 
     /// Gets the engine of a related board from the host, which loads the board when no session loaded it yet, and
@@ -1105,7 +1110,8 @@ public actor KanbanGraph {
     /// A board that cannot load, for example a log file with no read permission, is
     /// ``BoardResolution/unreadable(_:)`` (divergence.md Q7): a call continues with a warning that names it, and the
     /// change feed continues without it. A board of the old Rust kanban keeps its error as the
-    /// ``UnreadableBoard/callFailure``, so it still stops each call with `INCOMPATIBLE_BOARD` (divergence.md Q6).
+    /// ``UnreadableBoard/callFailure``, so it still stops each call that names it with `INCOMPATIBLE_BOARD`
+    /// (divergence.md Q6). The list of `Query.boards` changes that error to a warning (``BoardResolution/listed``).
     ///
     /// - Parameter copy: The copy of the related repo.
     /// - Returns: The board: the copy at the root directory of its engine, ``BoardResolution/current``, or
@@ -1122,7 +1128,7 @@ public actor KanbanGraph {
             let board = UnreadableBoard(
                 copy: copy,
                 reason: String(describing: error),
-                callFailure: KanbanError(callFailure: error)
+                effect: KanbanError(callFailure: error).map(UnreadableBoard.Effect.callFailure) ?? .warning
             )
             return .unreadable(board)
         }

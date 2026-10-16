@@ -354,7 +354,9 @@ The six node types, the edges, the URI and local-ref forms, the slug rules, the 
 - **S5 (A). "All or nothing" covers only errors that the code catches, not a crash (Q23).**
   - The code appends in place, with no fsync. A crash between two files keeps part of a transaction.
 - **S6 (B). The lock waits with no time limit (Q24).**
-  - `S/Events/BoardLock.swift:99-106` calls `flock(LOCK_EX)` in a loop. A process that holds the lock and stops responding makes each Swift mutation stop responding too.
+  - `LockedFile.waitForLock` in `S/Events/BoardLock.swift` waits for `flock(LOCK_EX)` with no time limit. A process that holds the lock and stops responding makes each Swift mutation stop responding too.
+  - The wait blocks no thread of the Swift cooperative pool (task ^vm0j67z). `EventLog.lock()` and `EventLog.lock(sortedByKey:)` are async. They try `flock(LOCK_EX | LOCK_NB)` first. When the lock is busy, a thread of its own (`Thread.detachNewThread`) waits with `flock(LOCK_EX)` and resumes the caller. Thus many commits that wait for one lock cannot take all pool threads and stop the commit that holds the lock. The lock order of `lockOrder(of:)` does not change.
+  - A cancel of the waiting task does not stop the wait. The thread always resumes the caller, and the caller gets the lock and releases it. Thus a cancel does not leak the lock.
   - Rust defines `lock()` with `try_lock` and `LockBusy` on the same `.kanban/.lock` file (`R/context.rs:690-708`). But only tests call it, so the Rust mutations take no lock.
 - **S7 (A). The watcher can miss files when a tool moves a whole directory.** FSEvents can report only the directory.
 - **S8 (A). The `boards` list cannot name a second copy of the same repo.** An undo reverses only one copy. See also X5.
@@ -476,6 +478,10 @@ All 26 questions have a decision. Section 11 lists the changes to the code and t
 - When a `.kanban/` contains Rust files, Swift does not open it and does not write to it. The error says: "There is an incompatible board at `<path>/.kanban`. Remove it, then try again."
 - Swift stops early: the check runs before any read or write. Swift does not try to continue around the board.
 - This applies to every `.kanban/` that Swift opens: the current board and each related board. Swift never makes a new board in a `.kanban/` that has Rust files. (This is an exception to Q7: an incompatible related board stops the call, and does not give only a warning.)
+- **DECIDED (user, option B, ^nxrqcgn): `Query.boards` does not stop at an incompatible related board.** The scan of `boards` looks in the parent folder of the repo, and many sibling repos still have a Rust `.kanban/`. Thus a stop would make `boards` fail in normal use.
+  - `boards` does not load the incompatible copy: the load stops at the check of `.kanban/`, before it reads a file. The list does not show the copy.
+  - The call continues. The response has one warning with the code `BOARD_INCOMPATIBLE`. The warning names the key and the `.kanban/` directory of the copy, and tells the user to remove the board.
+  - Only a call that names that board stops with `INCOMPATIBLE_BOARD`: a board ref, the `board` field of a mutation, or a dependency on a task of that board. When one call lists the board and also names it, the call stops.
 - How Swift finds a Rust board: `.kanban/` contains a Rust-only path, for example `boards/`, `*.yaml` or `*.md` entity files, `perspectives/`, `views/`, `projects/`, `.gitconfig`, `search-cache.sqlite3`, `undo_stack.yaml`, or `mcp*.log`.
 - There is no git check and no check for a running Rust server.
 - The plan must change §12 item 11. It says now that Rust files are ignored.
@@ -1005,6 +1011,36 @@ This section lists the work in sections 10–14 that we can drop. The reasons: t
         - There is no key that the user sets (no `kanban.key` in git config, and no key file).
         - Add tests: a new repo with no commit gets one empty commit and a `local/<root commit>` key; staged files stay staged and are not in the commit; a repo with commits gets no new commit.
   - **DECIDED: always the top folder of the repo.** In a git repo, the board of a session is always `<repo top>/.kanban/` (from `git rev-parse --show-toplevel`), for each working directory in the repo. A `.kanban/` in a subfolder is ignored. Outside a git repo, the board is `<working dir>/.kanban/`, with no search up. The key of the board is the key of the repo. Add tests: a session in a subfolder uses the repo board; a `.kanban/` in a subfolder is not used; a folder outside git keeps its own board.
+- **M9 → boards in bare folders, a board ID, collect, and link repair.** The user: "we need to support kanban in git repos and in bare folders. this will mean that a bare folder repo needs to have a stored identifier or name to allow kanban uri linking." This replaces the M5 rule "a board exists only in a git repo" where they differ.
+  - **DECIDED: where the board is.**
+    - In a git repo, the board is always `<repo top>/.kanban/`. This does not change (M5, M6).
+    - Outside a git repo, the board is in the nearest folder, from the working directory up, that has a `.kanban/`. When no folder has one, the board is `<working dir>/.kanban/` (made on the first write). The user: "actually let's make .kanban search up ... that'll work a bit more like how other dotfolders work, and our collect can bail us out." This replaces the "no search up" rule for folders outside git. When boards in subfolders were made by mistake, `collectBoards` combines them.
+    - When a session in a git repo finds a `.kanban/` in a subfolder below the repo top, calls use the board at the repo top. The response gives a warning that names the subfolder board and tells the user to run `collectBoards`.
+  - **DECIDED: each board has a board ID in its log.**
+    - `initBoard` writes one event on the board node with a new ULID, also in a git repo. An old board with no ID gets one on its next write. A load never writes.
+    - A board has these names. Each one resolves to the board:
+      - the board ULID, as a bare ULID: `kanban://<ULID>/<type>/<id>`. A git key always has a `/`, so the two forms cannot be confused;
+      - the git key (`origin`, else `local/<root commit>`), while the board is in a repo;
+      - each old name that the board log records (see below).
+    - When a merge gives a board log with more than one ID event (two clones that each ran `initBoard`), each ID stays a name. The lowest ULID is the primary ID.
+    - **Stored refs use the git key when there is one, else the ULID.** This applies to `dependsOn`, an assignee URI, and the tombstone line of a moved task. The input accepts each name.
+    - When the engine sees that the git key of the board changed (a new remote, or `git init` above the folder), it records the old git key as an old name on the next write.
+    - The host keeps an index of all names (ULIDs, git keys, old names) for each board that it scanned. The scan reads the board node log of each candidate folder one time. The watcher keeps the index current.
+    - `Query.boards` and the related-board scan also find sibling folders that have a `.kanban/` and no `.git`.
+    - When a scan finds two folders with the same board ULID (for example, a copied bare folder), calls work, and the response gives a warning that names both paths.
+  - **DECIDED: `collectBoards(sources:, target:, dryRun:)`.** It combines each source `.kanban` into the target `.kanban`. A source is any folder or board ref.
+    - Collect adds the event lines of each source node log to the target node log with the same name, the same as a git union merge. Tasks and comments keep their ULIDs. Columns, tags, and actors with the same slug become one node. Replay decides a field that both boards changed by the event order, and the result lists each such conflict and the value that won.
+    - The target board log gets one `collected` event for each source. It holds each board ID, each git key, and each old name of the source, and the source path, the time, and the actor. These become old names of the target.
+    - When the target has no board, collect makes it (with a new ULID). In a git repo the target must be the repo top.
+    - Collect locks all the boards and checks that each is compatible (a Rust board stops it with `INCOMPATIBLE_BOARD`). The write is crash safe.
+    - Collect removes each source `.kanban` folder after the write.
+    - Collect is final. `undo` does not reverse it. `dryRun: true` reports the slug merges, the conflicts, and the link repairs, and writes nothing.
+    - Collect runs `checkLinks` and `repairLinks` on the target. It repairs other reachable boards only when the reach option is set. It always reports the old-name links that it finds in other boards.
+  - **DECIDED: `checkLinks` and `repairLinks`.**
+    - `checkLinks` (read only) reads the stored refs of the named boards (`dependsOn`, assignee URIs, task URLs in bodies, tombstone lines) and puts each one in a class: **ok**, **old name** (with the current name of the board), **dangling** (no reachable board has the name), or **missing node** (the board is found, the node is not).
+    - An old-name link works at read time (readiness and reads use the board that has the old name), and `checkLinks` gives a warning for it.
+    - `board(id:)` with an old name gives the board that has it now, with its current names.
+    - `repairLinks` rewrites each old-name link to the current name. It writes only to the boards that the call names; the reachable boards are an option. It is a normal transaction: one `undo` reverses it, and `dryRun: true` lists the changes first. It does not change a dangling link.
 - **M6 → worktrees.** Proposal: keep the plan rule (each worktree has its own board, joined by git). Option: all worktrees of one repo use the board of the main clone, so that all agents see one board at once. Then the board is not on the branch of the worktree.
   - **DECIDED (final, replaces the decision below): each worktree has its own board, on its own branch.** The user: "I want the kanban commits to travel with the code commits, so I actually want the kanban to be in the worktree, not the main checkout — and we'll merge up kanbans."
     - The board of a session is `<top folder of its worktree>/.kanban/` (from `git rev-parse --show-toplevel`). In the main clone, it is the top folder of the main clone.

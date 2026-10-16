@@ -642,7 +642,9 @@ struct KanbanResolver: Sendable {
     }
 
     /// Resolves `Query.boards`: each copy of each repo that the scan finds, with its path, in scan order (plan.md
-    /// §6.6).
+    /// §6.6). A copy whose board cannot be read is not in the list, and the response has a warning that names it. For
+    /// a board of the old Rust kanban, the warning is `BOARD_INCOMPATIBLE`, and the call does not stop
+    /// (divergence.md Q6).
     ///
     /// - Parameters:
     ///   - context: The context of the call.

@@ -43,6 +43,7 @@ return { board: r.data.board, errors: r.errors ?? [], warnings: r.extensions?.wa
 - A query on a repo that has no board gives an empty board, and it writes no file. The first mutation makes the board, with the columns `todo`, `doing`, `review`, and `done`. The board name is the name of the folder.
 - A folder that is not in a git repo has no board. Each call then gives `NOT_A_REPO`. Tell the user.
 - A `.kanban/` folder of the old Rust kanban gives `INCOMPATIBLE_BOARD`. Do not change that folder. Tell the user to remove it. Remove it only when the user tells you to remove it.
+- `boards` does not show a related repo with a Rust `.kanban/` folder. The call continues, and the warning `BOARD_INCOMPATIBLE` names that repo. Only a call that names that board gives `INCOMPATIBLE_BOARD`.
 - A call names the current board, unless an input `board` field or a full `kanban://` URI names a different board.
 - Each session has its own actor. Your changes have your actor, so `undo` with no `txn` reverses only your work.
 

@@ -7,6 +7,8 @@ import ULID
 /// Tests that the engine refuses a `.kanban/` directory of the old Rust kanban (divergence.md Q6). A `.kanban/` with a
 /// Rust-only path is incompatible: the engine reads none of its files, writes none, makes no new board in it, and
 /// each call that opens it gives `INCOMPATIBLE_BOARD`. This is true for the current board and for each related board.
+/// The one exception is the list of `Query.boards`: it leaves out a related Rust board, does not load it, and gives a
+/// `BOARD_INCOMPATIBLE` warning. Only a call that names the board stops.
 ///
 /// Each fixture is in a temporary folder. No test reads or changes the `.kanban/` directory of this repo.
 @Suite("Incompatible Rust board", .watcherBudget)
@@ -51,6 +53,12 @@ struct IncompatibleBoardTests {
 
     /// The name of the file in the repo directory of a related Rust board, outside `.kanban/`.
     static let repoFileName = "README.md"
+
+    /// The code of the warning of a related Rust board that the list of `Query.boards` leaves out (divergence.md Q6).
+    static let listedWarningCode = "BOARD_INCOMPATIBLE"
+
+    /// The query of the path of each board of `Query.boards`.
+    static let boardsQuery = "{ boards { path } }"
 
     // MARK: - Fixture
 
@@ -299,5 +307,46 @@ struct IncompatibleBoardTests {
         #expect(response == (try Self.libIncompatibleResponse(in: repos)))
         #expect(try Self.listing(of: repos.lib) == before)
         #expect(!CrossRepoWriteTests.hasBoardDirectory(inRepoAt: repos.app))
+    }
+
+    // MARK: - Board list
+
+    @Test("boards leaves out a related Rust board, warns with its key and path, and changes no file")
+    func boardsWarnsAboutRelatedRustBoard() async throws {
+        let repos = try await Self.makeReposWithRustLib()
+        let before = try Self.listing(of: repos.lib)
+        let graph = try GitGraphFixture.makeGraph(at: repos.app)
+        let response = try await KanbanGraphTests.execute(Self.boardsQuery, on: graph)
+        await graph.close()
+        let boards = try #require(KanbanGraphTests.data(of: response)["boards"] as? [[String: Any]], "\(response)")
+        #expect(boards.compactMap { board in board["path"] as? String } == [repos.app.path], "\(response)")
+        let warnings = try ResponseWarningsTests.warnings(of: response)
+        #expect(warnings.map(\.code) == [Self.listedWarningCode], "\(response)")
+        let message = try #require(warnings.first?.message)
+        let directory = EventLog(repositoryAt: repos.lib.resolvingSymlinksInPath()).directory.path
+        #expect(message.contains(try CrossRepoWriteTests.libKey()), "\(message)")
+        #expect(message.contains(directory), "\(message)")
+        #expect(try Self.listing(of: repos.lib) == before)
+    }
+
+    @Test("boards does not start a load of a related Rust board")
+    func boardsDoesNotLoadRelatedRustBoard() async throws {
+        let repos = try await Self.makeReposWithRustLib()
+        let recorder = UnreadableBoardRecorder()
+        let host = UnreadableRelatedBoardTests.makeHost(recordedBy: recorder)
+        let app = try await host.session(workingDirectory: repos.app, actor: KanbanHostTests.firstActor)
+        _ = try await KanbanGraphTests.execute(Self.boardsQuery, on: app)
+        await host.close()
+        #expect(recorder.loadCount(ofBoardAt: repos.lib) == 0)
+    }
+
+    @Test("A call that lists a related Rust board and also names it gives INCOMPATIBLE_BOARD")
+    func boardsWithNamedRustBoardStops() async throws {
+        let repos = try await Self.makeReposWithRustLib()
+        let graph = try GitGraphFixture.makeGraph(at: repos.app)
+        let named = #"related: board(id: "\#(try CrossRepoWriteTests.libKey())") { name }"#
+        let response = try await KanbanGraphTests.execute("{ boards { path } \(named) }", on: graph)
+        await graph.close()
+        #expect(response == (try Self.libIncompatibleResponse(in: repos)))
     }
 }
