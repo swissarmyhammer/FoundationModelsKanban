@@ -1156,18 +1156,22 @@ extension Token {
 
     /// The next token that is not a comment, or `nil` at the end of the document.
     fileprivate var nextSignificant: Token? {
-        var token = next
-        while token?.kind == .comment {
-            token = token?.next
-        }
-        return token
+        significant(stepping: \.next)
     }
 
     /// The token before this token that is not a comment, or `nil` at the start of the document.
     fileprivate var previousSignificant: Token? {
-        var token = prev
-        while token?.kind == .comment {
-            token = token?.prev
+        significant(stepping: \.prev)
+    }
+
+    /// Gives the first token that is not a comment in one direction from this token.
+    ///
+    /// - Parameter neighbor: The key path to the neighbor token in the direction: `\.next` or `\.prev`.
+    /// - Returns: The token, or `nil` at the end of the document in that direction.
+    private func significant(stepping neighbor: KeyPath<Token, Token?>) -> Token? {
+        var token = self[keyPath: neighbor]
+        while let current = token, current.kind == .comment {
+            token = current[keyPath: neighbor]
         }
         return token
     }

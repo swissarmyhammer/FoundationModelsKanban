@@ -21,8 +21,8 @@ struct RemovedParameterCase: Sendable, CustomTestStringConvertible {
     }
 }
 
-/// One removed Rust `due` parameter whose value is a variable: the document, the values of its variables, and the text
-/// that the rewrite makes.
+/// One removed Rust parameter whose value is a variable: the document, the values of its variables, the text that the
+/// rewrite makes, and the result and the warning that the call gives.
 struct RemovedVariableCase: Sendable, CustomTestStringConvertible {
     /// The document that gives a variable as the value of the removed parameter.
     let document: String
@@ -32,6 +32,12 @@ struct RemovedVariableCase: Sendable, CustomTestStringConvertible {
 
     /// The text that the rewrite must make from the document.
     let rewrittenText: String
+
+    /// The key in `data` of the field that must give a value.
+    let resultKey: String
+
+    /// The text of the warning that the response must give.
+    let warning: String
 
     /// The name of the case in the test report.
     var testDescription: String {
@@ -97,42 +103,53 @@ struct RemovedParameterTests {
         ),
     ]
 
-    /// Each removed `due` parameter whose value is a variable: with no other use of the variable, with an other use
-    /// in an argument, in a directive, or in a fragment that the operation spreads, and with a second variable.
+    /// The warning text of the removed `due` parameter.
+    private static let dueWarning = "`due`" + noDateText
+
+    /// Each removed parameter whose value is a variable. The removed `due` field of an `input` object: with no other
+    /// use of the variable, with an other use in an argument, in a directive, or in a fragment that the operation
+    /// spreads, and with a second variable. The removed `page` argument of a field, with no other use of the variable.
     static let variableCases: [RemovedVariableCase] = [
-        RemovedVariableCase(
+        dueVariableCase(
             document: #"mutation ($d: String) { addTask(input: { title: "x", due: $d }) { title } }"#,
             variables: ["d": "2026-01-01"],
             rewrittenText: #"mutation  { addTask(input: { title: "x",  }) { title } }"#
         ),
-        RemovedVariableCase(
+        dueVariableCase(
             document: "mutation ($t: String!) { addTask(input: { title: $t, due: $t }) { title } }",
             variables: ["t": "x"],
             rewrittenText: "mutation ($t: String!) { addTask(input: { title: $t,  }) { title } }"
         ),
-        RemovedVariableCase(
+        dueVariableCase(
             document: #"mutation ($d: Boolean!) { addTask(input: { title: "x", due: $d }) "#
                 + "{ title @include(if: $d) } }",
             variables: ["d": true],
             rewrittenText: #"mutation ($d: Boolean!) { addTask(input: { title: "x",  }) "#
                 + "{ title @include(if: $d) } }"
         ),
-        RemovedVariableCase(
+        dueVariableCase(
             document: #"mutation ($d: Boolean!) { addTask(input: { title: "x", due: $d }) { ...F } }"#
                 + " fragment F on Task { title @include(if: $d) }",
             variables: ["d": true],
             rewrittenText: #"mutation ($d: Boolean!) { addTask(input: { title: "x",  }) { ...F } }"#
                 + " fragment F on Task { title @include(if: $d) }"
         ),
-        RemovedVariableCase(
+        dueVariableCase(
             document: "mutation ($t: String!, $d: String) { addTask(input: { title: $t, due: $d }) { title } }",
             variables: ["t": "x", "d": "2026-01-01"],
             rewrittenText: "mutation ($t: String!, ) { addTask(input: { title: $t,  }) { title } }"
         ),
-        RemovedVariableCase(
+        dueVariableCase(
             document: "mutation ($d: String, $t: String!) { addTask(input: { title: $t, due: $d }) { title } }",
             variables: ["t": "x", "d": "2026-01-01"],
             rewrittenText: "mutation ($t: String!) { addTask(input: { title: $t,  }) { title } }"
+        ),
+        RemovedVariableCase(
+            document: "query ($p: Int) { board { tasks(page: $p) { totalCount } } }",
+            variables: ["p": 2],
+            rewrittenText: "query  { board { tasks { totalCount } } }",
+            resultKey: "board",
+            warning: "`page` is removed, use `first` and `after` (cursor paging). The call ignored it."
         ),
     ]
 
@@ -166,6 +183,27 @@ struct RemovedParameterTests {
         )
     }
 
+    /// Gives the case of an `addTask` whose `input` object has the removed `due` field with a variable value.
+    ///
+    /// - Parameters:
+    ///   - document: The document that gives a variable as the value of `due`.
+    ///   - variables: The values of the variables of the document.
+    ///   - rewrittenText: The text that the rewrite must make from the document.
+    /// - Returns: The case.
+    private static func dueVariableCase(
+        document: String,
+        variables: [String: Map],
+        rewrittenText: String
+    ) -> RemovedVariableCase {
+        RemovedVariableCase(
+            document: document,
+            variables: variables,
+            rewrittenText: rewrittenText,
+            resultKey: "addTask",
+            warning: dueWarning
+        )
+    }
+
     /// Runs a test body on the fixture board in a new temporary repo. The repo stays until the body ends.
     ///
     /// - Parameter body: The test body. It gets the engine.
@@ -186,6 +224,29 @@ struct RemovedParameterTests {
         let errors = try NameRewriteTests.errors(of: response)
         try #require(errors.count == 1, "\(response)")
         return errors[0]
+    }
+
+    /// Expects that a response has no error, and that its `data` gives an object at a key.
+    ///
+    /// - Parameters:
+    ///   - resultKey: The key in `data` of the field that must give a value.
+    ///   - response: The response JSON text.
+    /// - Throws: An error when the response is not a JSON object.
+    private static func expectResult(at resultKey: String, in response: String) throws {
+        #expect(try KanbanGraphTests.object(of: response)["errors"] == nil, "\(response)")
+        #expect(try KanbanGraphTests.data(of: response)[resultKey] is [String: Any], "\(response)")
+    }
+
+    /// Expects that a response has one warning: the warning of a removed parameter, with its code.
+    ///
+    /// - Parameters:
+    ///   - warning: The text of the warning.
+    ///   - response: The response JSON text.
+    /// - Throws: An error when the response has no warnings.
+    private static func expectRemovedWarning(_ warning: String, in response: String) throws {
+        let warnings = try ResponseWarningsTests.warnings(of: response)
+        #expect(warnings.map(\.message) == [warning], "\(response)")
+        #expect(warnings.map(\.code) == [warningCode], "\(response)")
     }
 
     /// Gives the canonical names of a position from introspection: the input fields of an `input` type, the fields
@@ -276,11 +337,8 @@ struct RemovedParameterTests {
         try await Self.withFixture { graph in
             let variables = removed.variables
             let response = try await KanbanGraphTests.execute(removed.document, variables: variables, on: graph)
-            #expect(try KanbanGraphTests.object(of: response)["errors"] == nil, "\(response)")
-            let added = try KanbanGraphTests.object(named: "addTask", in: response)
-            #expect(added["title"] as? String == "x", "\(response)")
-            let warnings = try ResponseWarningsTests.warnings(of: response)
-            #expect(warnings.map(\.message) == ["`due`" + Self.noDateText], "\(response)")
+            try Self.expectResult(at: removed.resultKey, in: response)
+            try Self.expectRemovedWarning(removed.warning, in: response)
         }
     }
 
@@ -309,9 +367,7 @@ struct RemovedParameterTests {
     private static func expectFailure(coded code: String, withDueWarningIn response: String) throws {
         let error = try onlyError(of: response)
         #expect(ErrorCoverageTests.code(of: error) == code, "\(response)")
-        let warnings = try ResponseWarningsTests.warnings(of: response)
-        #expect(warnings.map(\.message) == ["`due`" + noDateText], "\(response)")
-        #expect(warnings.map(\.code) == [warningCode], "\(response)")
+        try expectRemovedWarning(dueWarning, in: response)
     }
 
     @Test("A removed Rust parameter in a call whose field fails gives its warning, and the next call gives none")
