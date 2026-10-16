@@ -590,7 +590,7 @@ struct CommitSession: Sendable {
         let lockedBoards = writes.indices.filter { index in
             writes[index].hasPatches || reads.contains(writes[index].path)
         }
-        let lock = try EventLog.lock(sortedByKey: lockedBoards.map { index in writes[index].lockEntry })
+        let lock = try await EventLog.lock(sortedByKey: lockedBoards.map { index in writes[index].lockEntry })
         var isLogChanged = false
         for index in lockedBoards {
             let isChanged = try await writes[index].applyChangedFiles()

@@ -42,6 +42,17 @@ struct EventLogTests {
     /// The number of milliseconds in ``retryPause``.
     private static let retryPauseMilliseconds = 10
 
+    /// The number of milliseconds in one second.
+    private static let millisecondsPerSecond = 1000
+
+    /// The pause between two tries of a wait with a deadline, for a wait on a thread of its own.
+    private static let retryPauseInterval = TimeInterval(retryPauseMilliseconds) / TimeInterval(millisecondsPerSecond)
+
+    /// The number of tasks for each processor that wait for the lock in the pool test. The Swift cooperative pool has
+    /// about one thread for each processor, so this count of tasks is more than the pool can run when each wait blocks
+    /// a thread.
+    private static let waitingTasksPerProcessor = 2
+
     /// The record of the lock test when the first lock is released.
     static let releasedRecord = "first released"
 
@@ -189,21 +200,6 @@ struct EventLogTests {
             try await Task.sleep(for: retryPause)
         }
         return await condition()
-    }
-
-    /// Runs blocking work on a new thread of its own, and waits for the end of the work with no blocked thread. Work
-    /// that blocks, for example a `flock` wait, must not run on the Swift cooperative pool. The pool has about one
-    /// thread for each processor, and a blocked pool thread makes the waits of the other tests of a parallel run
-    /// late.
-    ///
-    /// - Parameter work: The blocking work.
-    /// - Throws: The error of the work.
-    private static func runOnOwnThread(_ work: @escaping @Sendable () throws -> Void) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
-            Thread.detachNewThread {
-                continuation.resume(with: Result { try work() })
-            }
-        }
     }
 
     // MARK: - Paths
@@ -408,7 +404,7 @@ struct EventLogTests {
     func lockExcludesOtherDescriptor() async throws {
         let directory = try TemporaryDirectory()
         let log = EventLog(repositoryAt: directory.url)
-        let lock = try log.lock()
+        let lock = try await log.lock()
         #expect(!Self.isLockFree(of: log))
         lock.unlock()
         #expect(try await Self.isLockReleased(of: log), Self.heldLockMessage(of: log))
@@ -421,7 +417,7 @@ struct EventLogTests {
     func lockWaitEndsAtDeadline() async throws {
         let directory = try TemporaryDirectory()
         let log = EventLog(repositoryAt: directory.url)
-        let lock = try log.lock()
+        let lock = try await log.lock()
         let clock = ContinuousClock()
         let start = clock.now
         let isReleased = try await Self.isLockReleased(of: log, within: Self.heldLockWaitLimit)
@@ -437,13 +433,11 @@ struct EventLogTests {
         let directory = try TemporaryDirectory()
         let log = EventLog(repositoryAt: directory.url)
         let records = Mutex<[String]>([])
-        let first = try log.lock()
+        let first = try await log.lock()
         let waiter = Task {
-            try await Self.runOnOwnThread {
-                let second = try log.lock()
-                records.withLock { list in list.append(Self.acquiredRecord) }
-                second.unlock()
-            }
+            let second = try await log.lock()
+            records.withLock { list in list.append(Self.acquiredRecord) }
+            second.unlock()
         }
         try await Task.sleep(for: Self.holdDuration)
         records.withLock { list in list.append(Self.releasedRecord) }
@@ -454,6 +448,71 @@ struct EventLogTests {
         try #require(isAcquired, Self.heldLockMessage(of: log))
         try await waiter.value
         #expect(records.withLock { list in list } == [Self.releasedRecord, Self.acquiredRecord])
+    }
+
+    @Test(
+        "Tasks that wait for the lock block no thread of the cooperative pool, so each task starts before the release",
+        .timeLimit(.minutes(1))
+    )
+    func lockWaitsBlockNoPoolThread() async throws {
+        let directory = try TemporaryDirectory()
+        let log = EventLog(repositoryAt: directory.url)
+        let descriptor = try Self.holdLockWithOwnDescriptor(of: log)
+        let taskCount = Self.waitingTasksPerProcessor * ProcessInfo.processInfo.activeProcessorCount
+        let progress = LockWaitProgress()
+        Self.releaseOnOwnThread(descriptor, whenStarted: taskCount, recordingTo: progress)
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for _ in 0..<taskCount {
+                group.addTask {
+                    progress.recordStart()
+                    let lock = try await log.lock()
+                    lock.unlock()
+                }
+            }
+            try await group.waitForAll()
+        }
+        #expect(progress.lateStartCount == 0)
+    }
+
+    /// Opens the lock file of a board with a file descriptor of the test, and gets its lock. The board has no other
+    /// lock, so the call does not wait.
+    ///
+    /// - Parameter log: The event log of the board.
+    /// - Returns: The file descriptor that holds the lock. Its close releases the lock.
+    /// - Throws: An error when the directory cannot be made, or the file cannot be opened or locked.
+    private static func holdLockWithOwnDescriptor(of log: EventLog) throws -> Int32 {
+        try log.prepareDirectory()
+        let descriptor = open(log.lockFileURL.path, O_RDWR | O_CREAT | O_CLOEXEC, EventLog.lockFileMode)
+        try #require(descriptor >= 0)
+        let isLocked = flock(descriptor, LOCK_EX | LOCK_NB) == 0
+        if !isLocked {
+            close(descriptor)
+        }
+        try #require(isLocked)
+        return descriptor
+    }
+
+    /// Starts a thread of its own that releases a lock when a count of tasks started, or when ``lockWaitLimit`` ends.
+    /// The thread is not a thread of the cooperative pool, so it releases the lock also when each pool thread is
+    /// blocked.
+    ///
+    /// - Parameters:
+    ///   - descriptor: The file descriptor that holds the lock. The thread closes it.
+    ///   - taskCount: The count of tasks that must start before the release.
+    ///   - progress: The record of the started tasks. The thread records the release in it.
+    private static func releaseOnOwnThread(
+        _ descriptor: Int32,
+        whenStarted taskCount: Int,
+        recordingTo progress: LockWaitProgress
+    ) {
+        Thread.detachNewThread {
+            let deadline = ContinuousClock.now + lockWaitLimit
+            while progress.startCount < taskCount, ContinuousClock.now < deadline {
+                Thread.sleep(forTimeInterval: retryPauseInterval)
+            }
+            progress.recordRelease()
+            close(descriptor)
+        }
     }
 
     @Test("The lock of many boards takes the boards in the sort order of the board key", .timeLimit(.minutes(1)))
@@ -493,12 +552,60 @@ struct EventLogTests {
         _ logs: [(key: BoardKey, value: EventLog)],
         inOrder ordered: [EventLog]
     ) async throws {
-        let lock = try EventLog.lock(sortedByKey: logs)
+        let lock = try await EventLog.lock(sortedByKey: logs)
         #expect(ordered.allSatisfy { log in !isLockFree(of: log) })
         lock.unlock()
         for log in ordered {
             #expect(try await isLockReleased(of: log), heldLockMessage(of: log))
         }
+    }
+}
+
+// MARK: - Lock wait progress
+
+/// The record of the pool test: the count of tasks that started, and the count of tasks that started after the
+/// release of the lock. The tasks and the thread that releases the lock share one record.
+///
+/// The type is a class, because the tasks and the thread share one value. A mutex keeps its state safe.
+private final class LockWaitProgress: Sendable {
+    /// The state of the record.
+    private struct State {
+        /// The count of tasks that started.
+        var startCount = 0
+
+        /// The count of tasks that started after the release of the lock.
+        var lateStartCount = 0
+
+        /// `true` after the release of the lock.
+        var isReleased = false
+    }
+
+    /// The state, under a mutex.
+    private let state = Mutex(State())
+
+    /// The count of tasks that started.
+    var startCount: Int {
+        state.withLock { current in current.startCount }
+    }
+
+    /// The count of tasks that started after the release of the lock.
+    var lateStartCount: Int {
+        state.withLock { current in current.lateStartCount }
+    }
+
+    /// Records the start of one task.
+    func recordStart() {
+        state.withLock { current in
+            current.startCount += 1
+            if current.isReleased {
+                current.lateStartCount += 1
+            }
+        }
+    }
+
+    /// Records the release of the lock.
+    func recordRelease() {
+        state.withLock { current in current.isReleased = true }
     }
 }
 
