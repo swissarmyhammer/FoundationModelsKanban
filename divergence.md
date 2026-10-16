@@ -553,6 +553,7 @@ All 26 questions have a decision. Section 11 lists the changes to the code and t
   - `Task.assignees` reads an assignee URI of a different board from the related board, in the same way as `dependsOn` reads a cross-board ref. The engine loads the board of each such URI (the requests of the cross-board refs). The actor shows with its own URI, its name, and its other fields. A tombstoned actor does not show.
   - The `@<slug>` filter matches a task whose assignee URI names an actor of a different board when the slug of the actor, or the slug of its name, is the slug of the value. `@<full actor URI>` of a different board matches each task with that assignee URI.
   - Forgiving: when the board of the actor cannot be read, the call continues with the BOARD_UNREADABLE warning (Q7). `Task.assignees` then leaves out that actor, and the `@<slug>` filter matches by the slug in the URI.
+  - Change feed (task ^t3fzn6q): when a transaction of the board of the actor patches that actor (for example a rename, a delete, or an undelete), the change feed of the board of the task sends an update for each live task with that assignee URI, in the change of that transaction. The update comes also when no field value of the task changed (a rename keeps the actor id), so a subscriber reads the new values with `NodeUpdate.node`. A delete or an undelete also gives the `assignees` field change. This is the same path as the updates across boards for `blockedBy` and `ready` (plan.md §6.7).
 
 ### Storage and safety
 
@@ -641,7 +642,7 @@ Changes from decisions:
 - Q21: add a move and a copy of a task to a different board.
   - Change the code: a `board` field on `moveTask`, and a new `copyTask` mutation in `S/GraphQL/TaskOperationMutations.swift`. Write events on both boards in one transaction, under the locks of both boards. Change local refs to full URIs. Make each missing tag on the target board (E6). A move adds a line to the old task body that points to the new URI (E6).
   - Add tests: move and copy across two repos; dependencies still resolve after a move; dependents on the old board; undo of a move across boards.
-  - Assignees (option A, see Q21): `Task.assignees` and the `@` filter read an assignee URI of a different board from the related board. Tests: `T/CrossRepo/CrossRepoTransferTests.swift`.
+  - Assignees (option A, see Q21): `Task.assignees` and the `@` filter read an assignee URI of a different board from the related board. Tests: `T/CrossRepo/CrossRepoTransferTests.swift`. The change feed sends an update for the task when the old board changes the actor (`S/Observe/ChangeBuilder.swift`). Tests: `T/CrossRepo/RemoteAssigneeFeedTests.swift`.
   - Change the plan: §4.2 and §6.6.
 - Q22: **NOT DONE (K10).** Rust boards are refused (Q6), so no existing board has the bad git files. The text below is history only. Fix the git files of a board.
   - Change the code: `S/Events/EventLog.swift:137-150` (`prepareDirectory`). Change the test `T/Events/EventLogTests.swift:270-279`, which now checks that an existing file is not changed.

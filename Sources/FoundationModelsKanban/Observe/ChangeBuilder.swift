@@ -63,10 +63,14 @@ struct ChangeBuilder: Sendable {
     /// across boards). For example, a task of a related board becomes done, and a task of this board that depends on
     /// it becomes ready.
     ///
+    /// A task of this board whose assignee is an actor of a different board (divergence.md Q21) has its update in the
+    /// change of the last transaction that patched that actor, also when no field value of the task changed: for
+    /// example a rename of the actor, which `NodeUpdate.node` then shows.
+    ///
     /// - Parameter batch: The transactions of the batch in the other boards, in `txn` order.
     /// - Returns: One change for each transaction that has events, in the order of `batch`.
     func changesOfOtherBoards(ofBatch batch: [BatchTransaction]) -> [Change] {
-        changes(ofBatch: batch) { _ in [] }
+        changes(ofBatch: batch) { transaction in after.tasks(assignedToActorsPatchedBy: transaction) }
     }
 
     /// Makes the changes of the transactions of a batch.
@@ -244,6 +248,40 @@ extension BoardView {
     /// - Returns: The URI text, or `null` when there is no slot or the slot holds no node.
     fileprivate func idValue(ofNodeAt slot: Int?) -> Map {
         Map(slot.flatMap(graph.node(at:)).map { node in id(of: node.ref).text })
+    }
+
+    /// Gives the live tasks of this board with an assignee that is an actor that a transaction of a different board
+    /// patched (divergence.md Q21).
+    ///
+    /// - Parameter transaction: A transaction of a different board.
+    /// - Returns: The local refs of the tasks, in slot order. No task when the transaction patched no actor.
+    fileprivate func tasks(assignedToActorsPatchedBy transaction: BatchTransaction) -> OrderedSet<LocalRef> {
+        let actors = Set(transaction.events.map(\.patch.node).filter { ref in ref.nodeType == .actor })
+        guard !actors.isEmpty else {
+            return []
+        }
+        let tasks = graph.allSlots.compactMap { slot in graph.node(at: slot, as: TaskNode.self) }
+        let assigned = tasks.filter { task in
+            !task.fields.isDeleted
+                && task.assignees.contains { target in isActor(target, among: actors, ofBoard: transaction.boardKey) }
+        }
+        return OrderedSet(assigned.map(\.ref))
+    }
+
+    /// Tells if an assignee is one of some actors of a different board. The URI of the assignee holds the board key
+    /// that the move stored, so the related boards resolve it to its board, as `Task.assignees` reads it.
+    ///
+    /// - Parameters:
+    ///   - target: The target of an assignee edge.
+    ///   - actors: The local refs of the actors in their own board.
+    ///   - key: The current key of the board of the actors.
+    /// - Returns: `true` when the target is a ref to a different board, and a loaded board with the key has the actor,
+    ///   live or tombstoned.
+    private func isActor(_ target: EdgeTarget, among actors: Set<LocalRef>, ofBoard key: String) -> Bool {
+        guard case .unresolved(let ref) = target, let found = related.node(for: ref, as: ActorNode.self) else {
+            return false
+        }
+        return found.board.key == key && actors.contains(found.state.ref)
     }
 }
 

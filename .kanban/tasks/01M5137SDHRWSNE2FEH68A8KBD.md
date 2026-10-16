@@ -28,8 +28,24 @@ comments:
     - evidence: local commit of RemovedParameterTests.swift and the changed .kanban/tasks files. The sha is in the report of the commit step. No push.
     - next: review
   timestamp: 2026-10-16T05:08:24.934452+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m51j2xyj9kb2h02gmfem9nsn
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (e0b96e1). 0 findings (0 confirmed, 0 refuted, 7 attempted, 0 failed). 1 file reviewed: Tests/FoundationModelsKanbanTests/GraphQL/RemovedParameterTests.swift. The .reviewignore rule excluded 4 .kanban files.
+    - next: none. The task has no earlier findings. The task moved to done.
+  timestamp: 2026-10-16T05:13:49.266508+00:00
+- actor: claude-code
+  id: 01m51j3fe7zf0fw8a0rzpykrjy
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — RemovedParameterTests.swift (shared helpers, warning text constants)
+    - test: green — swift test, 1560 passed
+    - commit: e0b96e1
+    - review: clean — 0 findings
+  timestamp: 2026-10-16T05:14:07.175606+00:00
+position_column: done
+position_ordinal: ff9280
 title: Use the shared warning helpers in the older removed-parameter tests
 ---
 ## What
