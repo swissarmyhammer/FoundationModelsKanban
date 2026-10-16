@@ -215,6 +215,20 @@ extension RefResolver {
         ref.localID ?? boardKey
     }
 
+    /// Gives the `<id>` part of a ref in the stored local form `<type>/<id>` of one node type (``LocalRef``,
+    /// divergence.md R18). The type segment ignores case, and the `<id>` part has no white space at the two ends.
+    ///
+    /// - Parameters:
+    ///   - reference: The ref as the caller wrote it.
+    ///   - type: The node type that the type segment must name.
+    /// - Returns: The `<id>` part, or `nil` when the ref is not in the stored local form of that node type.
+    static func localID(inStoredLocalForm reference: String, ofType type: PatchNodeType) -> String? {
+        guard case .localRef(let found, let key) = RefText(reference), found == type else {
+            return nil
+        }
+        return key
+    }
+
     /// The text of a ref without white space at the two ends, sorted by its form.
     private enum RefText {
         /// A short form: a ULID form, a slug or a name, or the key of the board.

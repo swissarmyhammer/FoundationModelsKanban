@@ -33,7 +33,7 @@ private struct AddTaskInput: Decodable, Sendable {
     /// The actors of the task, or `nil` for the session actor when the board knew it before the call.
     let assignees: [NodeID]?
 
-    /// The tag names, slugs, or tag URIs of the task. An unknown tag is made.
+    /// The tag names, slugs, stored local forms `tag/<slug>`, or tag URIs of the task. An unknown tag is made.
     let tags: [String]?
 
     /// The tasks that the task waits for, in this board or in a different board.
@@ -64,7 +64,7 @@ private struct UpdateTaskInput: Decodable, Sendable {
     /// The new actors of the task.
     let assignees: FieldUpdate<[NodeID]>
 
-    /// The new tags of the task: tag names, slugs, or tag URIs.
+    /// The new tags of the task: tag names, slugs, stored local forms `tag/<slug>`, or tag URIs.
     let tags: FieldUpdate<[String]>
 
     /// The new dependencies of the task.
@@ -268,23 +268,44 @@ extension RefResolver {
     }
 
     /// Changes the forgiving ref of one tag to the tag that it names (plan.md §6.1). A URI must name a tag of the
-    /// graph. A name or a slug gives its tag name, also when the board has no tag with that slug.
+    /// graph. A name, a slug, or the stored local form `tag/<slug>` gives its tag name, also when the board has no
+    /// tag with that slug (``tagName(of:)``).
     ///
     /// - Parameters:
-    ///   - name: The tag name, the slug, or the tag URI.
+    ///   - name: The tag name, the slug, the stored local form `tag/<slug>`, or the tag URI.
     ///   - includesTombstones: `true` when a URI can name a tombstoned tag.
-    /// - Returns: The tag node that a URI names, or the tag name of a name or a slug.
+    /// - Returns: The tag node that a URI names, or the tag name of each other form.
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when a URI names no tag that the lookup accepts.
     ///   ``KanbanError/invalidTagName(name:)`` when a name gives an empty slug.
     func tag(named name: String, includingTombstones includesTombstones: Bool) throws(KanbanError) -> TagReference {
         guard NodeURI.hasScheme(atStartOf: name) else {
-            return .name(try TagName(normalizing: name))
+            return .name(try Self.tagName(of: name))
         }
         return .node(try nodeRef(for: NodeID(text: name), ofType: .tag, includingTombstones: includesTombstones))
     }
+
+    /// Gives the tag name of a tag text that is not a URI. A text in the stored local form `tag/<slug>`, as the log
+    /// stores a tag ref, gives the tag name of the slug (divergence.md R18a). The type segment ignores case. Each other
+    /// text is a tag name, also when it holds a `/`, for example `area/backend`.
+    ///
+    /// - Parameter text: The tag text as the caller wrote it.
+    /// - Returns: The tag name.
+    /// - Throws: ``KanbanError/invalidTagName(name:)`` with the text as the caller wrote it, when the tag name or the
+    ///   slug of the stored local form gives an empty slug.
+    private static func tagName(of text: String) throws(KanbanError) -> TagName {
+        guard let slug = localID(inStoredLocalForm: text, ofType: .tag) else {
+            return try TagName(normalizing: text)
+        }
+        do {
+            return try TagName(normalizing: slug)
+        } catch {
+            throw .invalidTagName(name: text)
+        }
+    }
 }
 
-/// The tag that one forgiving tag ref names: a tag name, a slug, or a tag URI (plan.md §6.1).
+/// The tag that one forgiving tag ref names: a tag name, a slug, the stored local form `tag/<slug>`, or a tag URI
+/// (plan.md §6.1, divergence.md R18a).
 enum TagReference {
     /// A tag node of the graph, that a URI names.
     case node(LocalRef)
@@ -308,8 +329,8 @@ extension WorkingCopy {
     ///
     /// - Parameters:
     ///   - assignees: The actor refs, or `nil` for no change.
-    ///   - tags: The tag names, slugs, or tag URIs, or `nil` for no change. An unknown or tombstoned tag gets a tag
-    ///     patch first.
+    ///   - tags: The tag names, slugs, stored local forms `tag/<slug>`, or tag URIs, or `nil` for no change. An
+    ///     unknown or tombstoned tag gets a tag patch first.
     ///   - dependsOn: The task refs, or `nil` for no change.
     ///   - resolver: The resolver of the forgiving refs of the board.
     ///   - time: The time of the change.
@@ -507,7 +528,7 @@ extension WorkingCopy {
     /// `delete: false` patch, so that each tag is live (plan.md §6.1).
     ///
     /// - Parameters:
-    ///   - names: The tag names, slugs, or tag URIs.
+    ///   - names: The tag names, slugs, stored local forms `tag/<slug>`, or tag URIs.
     ///   - resolver: The resolver of the forgiving refs of the board, for a tag URI.
     ///   - time: The time of the change.
     /// - Returns: The stored refs of the tags, after the rename redirect.

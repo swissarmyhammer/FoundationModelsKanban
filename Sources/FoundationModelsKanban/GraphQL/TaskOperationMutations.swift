@@ -63,7 +63,7 @@ private struct TagTaskInput: Decodable, Sendable {
     /// The task: a full URI or a short form (plan.md §3.2).
     let id: NodeID
 
-    /// The tag names, slugs, or tag URIs.
+    /// The tag names, slugs, stored local forms `tag/<slug>`, or tag URIs.
     let tags: [String]
 }
 
@@ -458,7 +458,7 @@ extension WorkingCopy {
     ///
     /// - Parameters:
     ///   - ref: The local ref of the live task.
-    ///   - names: The tag names, slugs, or tag URIs.
+    ///   - names: The tag names, slugs, stored local forms `tag/<slug>`, or tag URIs.
     ///   - resolver: The resolver of the forgiving refs of the board, for a tag URI.
     ///   - time: The time of the change.
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when a tag URI names no tag, or the graph does not have the
