@@ -13,8 +13,9 @@ private let readmeSuiteMinutes = 1
 /// Tests the "Get started" examples of `README.md` (^n1yhb0x).
 ///
 /// Each test runs an example with the same code and the same GraphQL documents as the README, on a board in a
-/// temporary git repo with no remote and no commit. The folder of the repo has the name ``folderName``. The engine
-/// makes the first commit of the repo, so the board key is `local/<root commit>` of that commit. Each response must
+/// temporary git repo with no remote. The repo has one empty first commit with a new UUID in its message (see
+/// ``ExampleBoard``). The folder of the repo has the name ``folderName``. The board key is `local/<root commit>` of
+/// that commit, and each test has its own key. Each response must
 /// have no `errors`. A response with no minted id and no transaction ULID must be the same text as a
 /// ```` ```json ```` block of the README.
 @Suite("README: the Get started examples", .watcherBudget, .timeLimit(.minutes(readmeSuiteMinutes)))
@@ -104,17 +105,24 @@ struct ReadmeExamplesTests {
         /// The engine, as example 1 makes it.
         let graph: KanbanGraph
 
-        /// Makes the folder, runs `git init` in it with ``GitSandbox/initializeRepo(at:withIdentity:)``, and makes the
-        /// engine of example 1. The repo gets the local config ``GitSandbox/identityConfig``: a name and an email of the
-        /// author, and no commit signatures. Thus the engine can make the first commit of the repo also on a machine
-        /// with no global git identity.
+        /// Makes the folder, runs `git init` in it with ``GitSandbox/initializeRepo(at:withIdentity:)``, makes the first
+        /// commit of the repo, and makes the engine of example 1. The repo gets the local config
+        /// ``GitSandbox/identityConfig``: a name and an email of the author, and no commit signatures. The message of the
+        /// first commit has a new UUID. Thus the board of each value has its own key: the key is the hash of the first
+        /// commit, and an empty commit with the same message, the same author, and the same second gives the same hash.
+        /// When two boards have one key, the engine of each test sees the other board as a copy of its own board, and an
+        /// `undo` or a `redo` of one test can reverse the transaction of the other test.
         ///
-        /// - Throws: An error when the folder cannot be made, when `git init` or `git config` fails, or when the engine
-        ///   cannot be made.
+        /// - Throws: An error when the folder cannot be made, when `git init`, `git config`, or `git commit` fails, or
+        ///   when the engine cannot be made.
         init() async throws {
             directory = try TemporaryDirectory()
             root = try GitSandbox.makeFolder(named: ReadmeExamplesTests.folderName, in: directory.url)
             try await GitSandbox.initializeRepo(at: root)
+            try await GitSandbox.runGit(
+                withArguments: ["commit", "--quiet", "--allow-empty", "-m", "Example board \(UUID().uuidString)"],
+                in: root
+            )
             graph = try await KanbanHost.shared.session(workingDirectory: root, actor: nil)
         }
 
