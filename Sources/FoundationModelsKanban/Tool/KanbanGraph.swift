@@ -633,10 +633,11 @@ public actor KanbanGraph {
     /// Sends the changes of some boards to the subscribers of this view (plan.md §6.7). The host calls it after each
     /// operation of each session and after each batch of a file watcher. A view with no subscriber does nothing.
     ///
-    /// Before it makes the changes, the view loads each board that a `dependsOn` edge of its board reaches, so that
-    /// the derived fields read the tasks of those boards. A related board that cannot load, also a board of the old
-    /// Rust kanban, does not stop the changes (divergence.md Q7, X12): the derived fields read no task of that board,
-    /// and the changes of the boards that load go out. Only a cancel of the task is recorded with swift-log, and the
+    /// Before it makes the changes, the view loads each board that a `dependsOn` edge of its board reaches, and each
+    /// board of an assignee that is an actor of a different board (divergence.md Q21), so that the derived fields read
+    /// the tasks and the actors of those boards. A related board that cannot load, also a board of the old Rust
+    /// kanban, does not stop the changes (divergence.md Q7, X12): the derived fields read no task of that board, and
+    /// the changes of the boards that load go out. Only a cancel of the task is recorded with swift-log, and the
     /// changes are then not sent.
     ///
     /// - Parameter changed: The changes of each board that changed, by the canonical path of its repo directory.
@@ -649,7 +650,7 @@ public actor KanbanGraph {
         let copy = BoardCopy(directory: current.root, key: currentSession.key)
         let related: RelatedBoards
         do {
-            let requests = RelatedBoards.loadable.dependencyRequests(
+            let requests = RelatedBoards.loadable.crossBoardRequests(
                 of: currentSession.live.graph,
                 inBoard: copy.key.description
             )
@@ -752,10 +753,10 @@ public actor KanbanGraph {
     // MARK: - Related boards
 
     /// Loads the related boards that a run of a call asks for, and gives the related boards of the next run (plan.md
-    /// §6.6). The loop also loads each board that a cross-board dependency of a loaded board names, so that the
-    /// readiness of a task of a related board reads its own dependencies. The result holds each related board that
-    /// the view loaded, also when the run asks for no board, because `undo` and `redo` with no `txn` search the loaded
-    /// boards (plan.md §6.5, scope).
+    /// §6.6). The loop also loads each board that a cross-board dependency or assignee of a loaded board names, so
+    /// that the readiness of a task of a related board reads its own dependencies, and its assignees read their own
+    /// boards. The result holds each related board that the view loaded, also when the run asks for no board, because
+    /// `undo` and `redo` with no `txn` search the loaded boards (plan.md §6.5, scope).
     ///
     /// Each round of the loop answers its open requests at the same time (divergence.md §16, L5). Each load goes
     /// through the table of the host, so two requests for the same board wait for one load.
@@ -773,7 +774,7 @@ public actor KanbanGraph {
         current: BoardCopy
     ) async throws -> RelatedBoards {
         var updated = await withLoadedBoards(related, around: current.directory)
-        var pending = requests.union(updated.loadedDependencyRequests)
+        var pending = requests.union(updated.loadedCrossBoardRequests)
         while !pending.isEmpty {
             let open = pending.filter { request in !updated.satisfies([request]) }
             let answers = try await Array(open).concurrentMap { request in
@@ -783,7 +784,7 @@ public actor KanbanGraph {
                 answer.record(in: &updated)
             }
             updated = await withLoadedBoards(updated, around: current.directory)
-            pending = updated.loadedDependencyRequests.filter { request in !updated.satisfies([request]) }
+            pending = updated.loadedCrossBoardRequests.filter { request in !updated.satisfies([request]) }
         }
         return updated
     }

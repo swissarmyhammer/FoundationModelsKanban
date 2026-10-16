@@ -549,6 +549,10 @@ All 26 questions have a decision. Section 11 lists the changes to the code and t
 - In the new task, a local ref becomes a full URI, so that the dependencies on the old board still resolve.
 - Tags that the target board does not have are dropped, as in Rust (`R/cross_board.rs:212-230`). Rust keeps the assignees with no check (`:196-210`). E6 decided: Swift keeps all tags and makes each missing tag on the target board.
 - A move tombstones the old task. E6 decided: the old task body gets a line that points to the new URI, so that dependents on the old board can find it.
+- **Assignees after a move or a copy. DECIDED: option A** (task ^x020t0g). The rule above stays: the new task stores each assignee of the old board as the full URI `kanban://<old key>/actor/<slug>`. The transfer makes no actor on the target board. (Option B, which makes each missing actor on the target board as E6 does for tags, is not done, because it changes this rule.)
+  - `Task.assignees` reads an assignee URI of a different board from the related board, in the same way as `dependsOn` reads a cross-board ref. The engine loads the board of each such URI (the requests of the cross-board refs). The actor shows with its own URI, its name, and its other fields. A tombstoned actor does not show.
+  - The `@<slug>` filter matches a task whose assignee URI names an actor of a different board when the slug of the actor, or the slug of its name, is the slug of the value. `@<full actor URI>` of a different board matches each task with that assignee URI.
+  - Forgiving: when the board of the actor cannot be read, the call continues with the BOARD_UNREADABLE warning (Q7). `Task.assignees` then leaves out that actor, and the `@<slug>` filter matches by the slug in the URI.
 
 ### Storage and safety
 
@@ -637,6 +641,7 @@ Changes from decisions:
 - Q21: add a move and a copy of a task to a different board.
   - Change the code: a `board` field on `moveTask`, and a new `copyTask` mutation in `S/GraphQL/TaskOperationMutations.swift`. Write events on both boards in one transaction, under the locks of both boards. Change local refs to full URIs. Make each missing tag on the target board (E6). A move adds a line to the old task body that points to the new URI (E6).
   - Add tests: move and copy across two repos; dependencies still resolve after a move; dependents on the old board; undo of a move across boards.
+  - Assignees (option A, see Q21): `Task.assignees` and the `@` filter read an assignee URI of a different board from the related board. Tests: `T/CrossRepo/CrossRepoTransferTests.swift`.
   - Change the plan: §4.2 and §6.6.
 - Q22: **NOT DONE (K10).** Rust boards are refused (Q6), so no existing board has the bad git files. The text below is history only. Fix the git files of a board.
   - Change the code: `S/Events/EventLog.swift:137-150` (`prepareDirectory`). Change the test `T/Events/EventLogTests.swift:270-279`, which now checks that an existing file is not changed.

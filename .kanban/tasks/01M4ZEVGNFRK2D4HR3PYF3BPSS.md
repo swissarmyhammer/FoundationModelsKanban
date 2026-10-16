@@ -1,6 +1,14 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m515cav5hdr36723wqfvadx7
+  text: |-
+    ### finish iteration 1 — stuck
+    - no step ran. The acceptance criteria say "The user decides." The orchestrator does not choose between option A (comments stay on the tombstone) and option B (copy comments to the new task in the same transaction).
+    - next: the user picks A or B. Then /finish can run the task.
+  timestamp: 2026-10-16T01:31:45.893730+00:00
 position_column: todo
 position_ordinal: b280
 title: Decide what moveTask(board:) does with the comments of the moved task

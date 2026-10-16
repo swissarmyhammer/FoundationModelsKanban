@@ -11,7 +11,8 @@ import Foundation
 ///   (``Graph/tagSlots(of:)``). The name of a virtual tag (``VirtualTag``) matches only a task that has that
 ///   virtual tag, also when a real tag from an old log has that slug.
 /// - `@user` matches a task that is assigned to a live actor whose slug, or the slug of whose name, is the slug of
-///   the value.
+///   the value. An assignee that is the URI of an actor of a different board (divergence.md Q21) matches by the actor
+///   on its own board, or by the slug in the URI when no loaded board has the actor.
 /// - `^id` matches the task itself, and each task that depends on it, from an edge or a dependency marker. The value
 ///   can be a full ULID, a short id, or a ULID prefix. As in Rust, the value resolves among the task and its
 ///   dependencies in this board (``ShortID/resolve(_:among:)``), so a prefix that is ambiguous there matches nothing,
@@ -26,10 +27,11 @@ import Foundation
 /// `#tag`, `@user`, and `%column` are task atoms: they never match a node that is not a task, so their NOT matches
 /// each such node.
 ///
-/// A `kanban://` URL with the current key of the board is the same as its local id. A tag, actor, or column URL of
-/// a different board matches nothing, because those edges stay in one board (plan.md §6.6). A task URL of a
-/// different board matches each task that depends on that task. The parser refuses a URL of the wrong type for its
-/// atom; an atom that holds one anyway matches nothing.
+/// A `kanban://` URL with the current key of the board is the same as its local id. A tag or column URL of a
+/// different board matches nothing, because those edges stay in one board (plan.md §6.6). An actor URL of a different
+/// board matches each task whose assignee is that URI, as a move or a copy to a different board stores it
+/// (divergence.md Q21). A task URL of a different board matches each task that depends on that task. The parser
+/// refuses a URL of the wrong type for its atom; an atom that holds one anyway matches nothing.
 ///
 /// This is a port of `evaluate` in the Rust file `swissarmyhammer-filter-expr/src/eval.rs`, and of
 /// `TaskFilterAdapter` in the Rust file `swissarmyhammer-kanban/src/task_helpers.rs`.
@@ -122,7 +124,7 @@ private struct FilterCompiler {
     private func atomTest(of kind: FilterAtomKind, value: FilterValue) -> NodeTest {
         switch kind {
         case .tag: localTest(of: kind, value: value, makingTestWith: tagTest(named:))
-        case .assignee: localTest(of: kind, value: value, makingTestWith: assigneeTest(named:))
+        case .assignee: assigneeAtomTest(for: value)
         case .column: localTest(of: kind, value: value, makingTestWith: columnTest(named:))
         case .ref: refTest(for: value)
         case .type: nodeTypeTest(for: value)
@@ -230,13 +232,49 @@ extension ActorNode: SlugNamedState {}
 extension ColumnNode: SlugNamedState {}
 
 extension FilterCompiler {
-    /// Makes the test of an `@user` atom.
+    /// Makes the test of an `@user` atom: a name or a slug, or the URL of an actor of this board or of a different
+    /// board.
+    ///
+    /// - Parameter value: The value of the atom.
+    /// - Returns: The test, or a test that matches nothing when the value is a URL that is not of an actor.
+    private func assigneeAtomTest(for value: FilterValue) -> NodeTest {
+        switch target(of: value, for: .assignee) {
+        case .local(let name)?:
+            assigneeTest(named: name)
+        case .remote(let uri)?:
+            remoteAssigneeTest(naming: uri)
+        case nil:
+            Self.noMatch
+        }
+    }
+
+    /// Makes the test of an `@user` atom whose value names an actor by its slug or by its name.
+    ///
+    /// A task matches when an actor of this board is its assignee, or when its assignee is the URI of an actor of a
+    /// different board (divergence.md Q21) that has the slug or the name (``isRemoteActor(_:withSlug:)``).
     ///
     /// - Parameter name: The slug or the name of the actor, in any case.
     /// - Returns: The test.
     private func assigneeTest(named name: String) -> NodeTest {
+        let key = Slug.normalizedText(of: name)
         let actorSlots = liveSlots(of: ActorNode.self, named: name)
-        return { slot in isAssigned(taskAt: slot, toActorAmong: actorSlots) }
+        return { slot in
+            assignees(ofTaskAt: slot).contains { edge in
+                switch edge {
+                case .slot(let actorSlot): actorSlots.contains(actorSlot)
+                case .unresolved(let ref): isRemoteActor(ref, withSlug: key)
+                }
+            }
+        }
+    }
+
+    /// Makes the test of an `@user` atom whose value is the URL of an actor of a different board.
+    ///
+    /// - Parameter uri: The URL of the actor.
+    /// - Returns: The test: a task matches when its assignee is that URI.
+    private func remoteAssigneeTest(naming uri: NodeURI) -> NodeTest {
+        let target = EdgeTarget.unresolved(.remote(uri))
+        return { slot in assignees(ofTaskAt: slot).contains(target) }
     }
 
     /// Makes the test of a `%column` atom.
@@ -276,15 +314,32 @@ extension FilterCompiler {
         !node.fields.isDeleted && (node.slug == key || Slug.normalizedText(of: node.name) == key)
     }
 
-    /// Tells if a task is assigned to one of some actors.
+    /// Gives the `assignees` edges of a task.
+    ///
+    /// - Parameter slot: The slot of the node.
+    /// - Returns: The edges, or no edges when the node is not a task.
+    private func assignees(ofTaskAt slot: Int) -> [EdgeTarget] {
+        graph.node(at: slot, as: TaskNode.self)?.assignees ?? []
+    }
+
+    /// Tells if an assignee that is not a slot of this board is an actor of a different board with a slug.
+    ///
+    /// When a loaded board has the actor, the actor matches when it is live and its slug, or the slug of its name, is
+    /// the key. When no loaded board has the actor, for example when its board cannot be read, the slug in the URI
+    /// decides, so that the filter keeps working (divergence.md Q7).
     ///
     /// - Parameters:
-    ///   - slot: The slot of the task.
-    ///   - actorSlots: The slots of the actors.
-    /// - Returns: `true` when an `assignees` edge of the task has one of the actors as its target.
-    private func isAssigned(taskAt slot: Int, toActorAmong actorSlots: Set<Int>) -> Bool {
-        let assignees = graph.node(at: slot, as: TaskNode.self)?.assignees ?? []
-        return assignees.contains { edge in edge.resolvedSlot.map(actorSlots.contains) ?? false }
+    ///   - ref: The stored ref of the assignee.
+    ///   - key: The slug to find. An empty key matches nothing.
+    /// - Returns: `true` when the ref is the URI of an actor of a different board with the slug.
+    private func isRemoteActor(_ ref: StoredRef, withSlug key: String) -> Bool {
+        guard !key.isEmpty, case .remote(let uri) = ref, uri.ref.nodeType == .actor else {
+            return false
+        }
+        guard let found = readiness.related.node(for: ref, as: ActorNode.self) else {
+            return uri.ref.localID == key
+        }
+        return matches(liveNode: found.state, withSlug: key)
     }
 }
 

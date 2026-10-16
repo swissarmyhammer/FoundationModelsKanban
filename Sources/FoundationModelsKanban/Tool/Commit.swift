@@ -450,7 +450,7 @@ struct CommitSession: Sendable {
         admittingCommitsWith admit: CommitAdmission = { _ in },
         _ call: @Sendable (BoardStore) async throws -> Response
     ) async throws -> Response {
-        let initialRequests = RelatedBoards.loadable.dependencyRequests(of: live.graph, inBoard: key.description)
+        let initialRequests = RelatedBoards.loadable.crossBoardRequests(of: live.graph, inBoard: key.description)
         var related = try await load(.loadable, initialRequests)
         for _ in 1...Self.maximumRuns {
             let (response, work, relatedWork) = try await runReading(&related, actingAs: actor, loadingWith: load, call)
@@ -503,8 +503,8 @@ struct CommitSession: Sendable {
             let relatedWork = await store.relatedWork.values.sorted { lhs, rhs in lhs.path < rhs.path }
             ids = work.stamp.ids
             let changed = related.with(working: relatedWork)
-            let dependencies = changed.dependencyRequests(of: work.graph, inBoard: key.description)
-            let requests = await store.requests.union(dependencies)
+            let crossBoard = changed.crossBoardRequests(of: work.graph, inBoard: key.description)
+            let requests = await store.requests.union(crossBoard)
             guard !related.satisfies(requests) else {
                 return (response, work, relatedWork)
             }

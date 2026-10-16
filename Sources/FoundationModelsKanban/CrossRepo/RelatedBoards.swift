@@ -104,8 +104,18 @@ struct BoardSnapshot: Sendable {
     /// - Parameter ref: The local ref of the task.
     /// - Returns: The slot and the state of the task, or `nil` when the graph has no task for the ref.
     func task(for ref: LocalRef) -> (slot: Int, state: TaskNode)? {
+        node(for: ref, as: TaskNode.self)
+    }
+
+    /// Finds the node of one type for a local ref, live or tombstoned.
+    ///
+    /// - Parameters:
+    ///   - ref: The local ref of the node.
+    ///   - type: The state type of the node, for example `ActorNode.self`.
+    /// - Returns: The slot and the state of the node, or `nil` when the graph has no node of the type for the ref.
+    func node<State: NodeState>(for ref: LocalRef, as type: State.Type) -> (slot: Int, state: State)? {
         graph.slot(for: ref).flatMap { slot in
-            graph.node(at: slot, as: TaskNode.self).map { task in (slot, task) }
+            graph.node(at: slot, as: type).map { node in (slot, node) }
         }
     }
 
@@ -341,14 +351,29 @@ struct RelatedBoards: Sendable {
     /// - Returns: The board, the slot, and the state of the task, live or tombstoned. `nil` for a local ref, and for
     ///   a task that no loaded board has.
     func task(for ref: StoredRef) -> (board: BoardSnapshot, slot: Int, state: TaskNode)? {
+        node(for: ref, as: TaskNode.self)
+    }
+
+    /// Finds the node of one type for a stored ref to a node of a different board, for example the actor of an
+    /// assignee that a move or a copy carried from a different board (divergence.md Q21).
+    ///
+    /// - Parameters:
+    ///   - ref: The stored ref.
+    ///   - type: The state type of the node, for example `ActorNode.self`.
+    /// - Returns: The board, the slot, and the state of the node, live or tombstoned. `nil` for a local ref, and for a
+    ///   node that no loaded board has.
+    func node<State: NodeState>(
+        for ref: StoredRef,
+        as type: State.Type
+    ) -> (board: BoardSnapshot, slot: Int, state: State)? {
         guard
             case .remote(let uri) = ref,
             let board = board(forKey: uri.boardKey),
-            let task = board.task(for: uri.ref)
+            let node = board.node(for: uri.ref, as: type)
         else {
             return nil
         }
-        return (board, task.slot, task.state)
+        return (board, node.slot, node.state)
     }
 
     /// Gives the loaded board that the key of a cross-board ref names: the board that each read of a task of the key
@@ -402,19 +427,20 @@ struct RelatedBoards: Sendable {
 
     // MARK: - Requests
 
-    /// Gives the requests for the boards that the cross-board dependencies of a graph and of each loaded board name.
+    /// Gives the requests for the boards that the cross-board refs of a graph and of each loaded board name: the
+    /// cross-board dependencies, and the assignees that are actors of a different board (divergence.md Q21).
     ///
     /// - Parameters:
     ///   - graph: The graph of a board.
     ///   - key: The current key of that board.
-    /// - Returns: One request for the key of each board that a dependency names.
-    func dependencyRequests(of graph: Graph, inBoard key: String) -> Set<BoardRequest> {
-        Self.dependencyRequests(of: graph, inBoard: key).union(loadedDependencyRequests)
+    /// - Returns: One request for the key of each board that a dependency or an assignee names.
+    func crossBoardRequests(of graph: Graph, inBoard key: String) -> Set<BoardRequest> {
+        Self.crossBoardRequests(of: graph, inBoard: key).union(loadedCrossBoardRequests)
     }
 
-    /// The requests for the boards that the cross-board dependencies of the loaded boards name.
-    var loadedDependencyRequests: Set<BoardRequest> {
-        Set(boards.values.flatMap { board in Self.dependencyRequests(of: board.graph, inBoard: board.key) })
+    /// The requests for the boards that the cross-board dependencies and assignees of the loaded boards name.
+    var loadedCrossBoardRequests: Set<BoardRequest> {
+        Set(boards.values.flatMap { board in Self.crossBoardRequests(of: board.graph, inBoard: board.key) })
     }
 
     /// Tells if the value answers each of some requests.
@@ -446,14 +472,14 @@ struct RelatedBoards: Sendable {
         return board(resolvedAs: resolution) != nil
     }
 
-    /// Gives the requests for the boards that the cross-board dependencies of one graph name.
+    /// Gives the requests for the boards that the cross-board dependencies and assignees of one graph name.
     ///
     /// - Parameters:
     ///   - graph: The graph of a board.
     ///   - key: The current key of that board.
-    /// - Returns: One request for the key of each board that a dependency names.
-    private static func dependencyRequests(of graph: Graph, inBoard key: String) -> Set<BoardRequest> {
-        Set(graph.remoteDependencyKeys(inBoard: key).map(BoardRequest.board))
+    /// - Returns: One request for the key of each board that a dependency or an assignee names.
+    private static func crossBoardRequests(of graph: Graph, inBoard key: String) -> Set<BoardRequest> {
+        Set(graph.remoteDependencyKeys(inBoard: key).union(graph.remoteAssigneeKeys).map(BoardRequest.board))
     }
 
     // MARK: - Writes of the engine
@@ -492,5 +518,18 @@ struct RelatedBoards: Sendable {
         sessions = loaded
         boards = loaded.mapValues(\.snapshot)
         searchRoots = places
+    }
+}
+
+extension Graph {
+    /// The board keys of the assignees of the tasks of the graph that are actors of a different board, as the URIs
+    /// hold them. A move or a copy to a different board stores each assignee as the full URI of the actor on the old
+    /// board (divergence.md Q21), and `Task.assignees` reads that actor from its own board.
+    var remoteAssigneeKeys: Set<String> {
+        Set(
+            allSlots.compactMap { slot in node(at: slot, as: TaskNode.self) }
+                .flatMap(\.assignees)
+                .compactMap(\.remoteBoardKey)
+        )
     }
 }

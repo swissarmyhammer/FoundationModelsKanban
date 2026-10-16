@@ -43,8 +43,24 @@ comments:
     - evidence: one local commit, feat(tags): accept tag/<slug> in task tag lists (^jayb2bd). Files: Sources/FoundationModelsKanban/Identity/RefResolver.swift, Sources/FoundationModelsKanban/GraphQL/TaskMutations.swift, Sources/FoundationModelsKanban/GraphQL/TaskOperationMutations.swift, divergence.md, Tests/FoundationModelsKanbanTests/Mutations/StoredTagRefTests.swift, and the changed .kanban/tasks files. I did not stage Package.resolved or .kanban/mcp.17281.log. I did not push. The sha is in the report of the caller.
     - next: none
   timestamp: 2026-10-16T01:23:23.549875+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m515bjvzzjrbwr4rb4h4kwqs
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (902c4f9). The engine reviewed 4 files. It found 0 findings (0 confirmed, 0 refuted, 7 attempted, 0 failed). The .reviewignore file excludes the .kanban/ files. No validator applies to divergence.md. The task has no prior Review Findings sections.
+    - next: The task is in done. No more work is necessary.
+  timestamp: 2026-10-16T01:31:21.343030+00:00
+- actor: claude-code
+  id: 01m515byhaf629pj8xp2emyymm
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — RefResolver.swift, TaskMutations.swift, TaskOperationMutations.swift, divergence.md R18a, StoredTagRefTests.swift (new)
+    - test: green — swift test, 1548 passed; IntegrationTests 3 passed
+    - commit: 902c4f9
+    - review: clean — 0 findings
+  timestamp: 2026-10-16T01:31:33.290677+00:00
+position_column: done
+position_ordinal: ff8d80
 title: Accept the stored local form tag/<slug> in task tag lists
 ---
 ## What

@@ -525,9 +525,11 @@ extension TaskObject {
         state.ordinal.description
     }
 
-    /// The live actors of the task.
+    /// The live actors of the task. An assignee that is the full URI of an actor of a different board, as a move or a
+    /// copy to a different board stores it (divergence.md Q21), is in the list when a loaded board has the actor. An
+    /// actor that no loaded board has, for example of a related board that cannot be read, is not in the list.
     var assignees: [ActorObject] {
-        view.liveObjects(at: state.assignees.compactMap(\.resolvedSlot))
+        state.assignees.compactMap { target in liveObject(at: target) }
     }
 
     /// The live tags of the task: the edges and the markers (plan.md §6.1), sorted by slug.
@@ -538,12 +540,12 @@ extension TaskObject {
     /// The live tasks that the task depends on: the edges and the markers (plan.md §6.1). A task of a related board
     /// is in the list when a loaded board has it (plan.md §6.6). A target that no loaded board has is not in the list.
     var dependsOn: [TaskObject] {
-        view.readiness.dependencies(ofTaskAt: slot).compactMap(liveTask(at:))
+        view.readiness.dependencies(ofTaskAt: slot).compactMap { target in liveObject(at: target) }
     }
 
     /// The live tasks that block the task, also the tasks of related boards.
     var blockedBy: [TaskObject] {
-        view.readiness.blockers(ofTaskAt: slot).compactMap(liveTask(at:))
+        view.readiness.blockers(ofTaskAt: slot).compactMap { target in liveObject(at: target) }
     }
 
     /// The full URI of each dependency that no loaded board has as a task (divergence.md Q2): for example a URI with
@@ -555,20 +557,23 @@ extension TaskObject {
         }
     }
 
-    /// Gives the live task at the target of a dependency.
+    /// Gives the live node at the target of an edge: a task of a dependency, or an actor of an assignee.
     ///
-    /// - Parameter target: The target: a slot of this board, or a ref to a task of a related board.
-    /// - Returns: The task, with the read view of its own board, or `nil` when the target is a tombstone or no loaded
+    /// - Parameter target: The target: a slot of this board, or a ref to a node of a related board.
+    /// - Returns: The node, with the read view of its own board, or `nil` when the target is a tombstone or no loaded
     ///   board has it.
-    private func liveTask(at target: EdgeTarget) -> TaskObject? {
+    private func liveObject<Object: SlotNodeObject>(at target: EdgeTarget) -> Object? {
         switch target {
         case .slot(let targetSlot):
             return view.liveObjects(at: [targetSlot]).first
         case .unresolved(let ref):
-            guard let found = view.related.task(for: ref), !found.state.fields.isDeleted else {
+            guard
+                let found = view.related.node(for: ref, as: Object.State.self),
+                !found.state.fields.isDeleted
+            else {
                 return nil
             }
-            return TaskObject(view: found.board.view(reading: view.related), slot: found.slot, state: found.state)
+            return Object(view: found.board.view(reading: view.related), slot: found.slot, state: found.state)
         }
     }
 

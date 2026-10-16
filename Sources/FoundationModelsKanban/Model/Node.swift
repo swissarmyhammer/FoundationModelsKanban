@@ -19,6 +19,14 @@ enum EdgeTarget: Hashable, Sendable {
         }
         return slot
     }
+
+    /// The board key of a target of a different board, as its URI holds it, or `nil` for a slot or a local ref.
+    var remoteBoardKey: String? {
+        guard case .unresolved(.remote(let uri)) = self else {
+            return nil
+        }
+        return uri.boardKey
+    }
 }
 
 /// The fields that all six node types have: the Markdown body and the time values (plan.md §4.1, §5.3).

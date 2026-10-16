@@ -475,12 +475,7 @@ extension Graph {
         Set(
             allSlots.compactMap { slot in node(at: slot, as: TaskNode.self) }
                 .flatMap { task in dependencies(of: task, inBoard: key) }
-                .compactMap { target in
-                    guard case .unresolved(.remote(let uri)) = target else {
-                        return nil
-                    }
-                    return uri.boardKey
-                }
+                .compactMap(\.remoteBoardKey)
         )
     }
 

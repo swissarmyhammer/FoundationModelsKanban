@@ -43,6 +43,16 @@ struct CrossRepoTransferTests {
     /// The `extensions.code` of a node or a board that a ref does not name.
     static let notFoundCode = "NOT_FOUND"
 
+    /// The name of the assignee of a moved or copied task. Its slug is not ``AddUpdateTaskTests/alice``, the slug of
+    /// the actor, so a filter can name the actor by its slug or by the slug of its name.
+    static let assigneeName = "Alice Smith"
+
+    /// The slug of ``assigneeName``.
+    static let assigneeNameSlug = "alice-smith"
+
+    /// The selection of the id and the name of each assignee of a task.
+    static let assigneesSelection = "assignees { id name }"
+
     // MARK: - Helpers
 
     /// Runs a mutation field on a fixture board whose related boards can load but are not loaded yet, so that each
@@ -146,6 +156,76 @@ struct CrossRepoTransferTests {
     /// - Throws: An error when the task has no `dependsOn` list.
     static func dependencyIDs(of task: [String: Any]) throws -> [String] {
         try #require(task["dependsOn"] as? [[String: Any]]).compactMap { target in target["id"] as? String }
+    }
+
+    /// Two repos side by side, and a task of the related repo that a move or a copy wrote there from the current repo.
+    struct AssignedTransfer {
+        /// The repos.
+        let repos: CrossRepoFixture.SideBySide
+
+        /// The full URI of the task that the move or the copy wrote on the related board.
+        let written: String
+
+        /// The full URI of the assignee on the current board: the ref that the written task stores.
+        let actor: String
+    }
+
+    /// Moves or copies a task with one assignee to the related repo. The assignee is an actor of the current board,
+    /// with the slug ``AddUpdateTaskTests/alice`` and the name ``assigneeName``. The engine of the setup is closed when
+    /// the function returns.
+    ///
+    /// - Parameter operation: `moveTask` or `copyTask`.
+    /// - Returns: The repos, the written task, and the URI of the assignee.
+    /// - Throws: An error when a git command fails, or when a call fails.
+    static func makeAssignedTransfer(_ operation: String) async throws -> AssignedTransfer {
+        let repos = try await CrossRepoFixture.SideBySide.make()
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
+        let actorInput = #"id: "\#(AddUpdateTaskTests.alice)", name: "\#(assigneeName)""#
+        _ = try await CommentTests.run("addActor(input: { \(actorInput) }) { id }", on: app)
+        let assignees = "assignees: " + AddUpdateTaskTests.list(of: [AddUpdateTaskTests.alice])
+        let old = try await CrossRepoFixture.addTask(with: assignees, on: app)
+        let written = try await transfer(operation, old, with: try libBoard(), on: app)
+        await app.close()
+        let actor = NodeURI(boardKey: try CrossRepoWriteTests.appKey(), ref: .actor(slug: AddUpdateTaskTests.alice))
+        return AssignedTransfer(repos: repos, written: written, actor: actor.description)
+    }
+
+    /// Opens an engine on the related repo, so that the related board is the current board of each call.
+    ///
+    /// - Parameter repos: The repos.
+    /// - Returns: The engine. The caller closes it.
+    /// - Throws: An error when the engine cannot be made.
+    static func makeLibGraph(in repos: CrossRepoFixture.SideBySide) throws -> KanbanGraph {
+        try GitGraphFixture.makeGraph(at: repos.lib, mintingFrom: GitGraphFixture.secondEngineIDs)
+    }
+
+    /// Gives the query of the tasks of the current board that a filter selects, with the id and the assignees of each.
+    ///
+    /// - Parameter filter: The filter.
+    /// - Returns: The query.
+    static func filteredTasksQuery(_ filter: String) -> String {
+        #"{ board { tasks(filter: "\#(filter)") { edges { node { id \#(assigneesSelection) } } } } }"#
+    }
+
+    /// Gives the tasks of a `filteredTasksQuery(_:)` response.
+    ///
+    /// - Parameter response: The response JSON text.
+    /// - Returns: The task objects, in board order.
+    /// - Throws: An error when the response has no task list.
+    static func filteredTasks(in response: String) throws -> [[String: Any]] {
+        let board = try KanbanGraphTests.object(named: "board", in: response)
+        let connection = try #require(board["tasks"] as? [String: Any], "\(response)")
+        let edges = try #require(connection["edges"] as? [[String: Any]], "\(response)")
+        return try edges.map { edge in try #require(edge["node"] as? [String: Any]) }
+    }
+
+    /// Gives the ids of the assignees of a task object of a response.
+    ///
+    /// - Parameter task: The task object, with an ``assigneesSelection`` selection.
+    /// - Returns: The ids.
+    /// - Throws: An error when the task has no `assignees` list.
+    static func assigneeIDs(of task: [String: Any]) throws -> [String] {
+        try #require(task["assignees"] as? [[String: Any]]).compactMap { actor in actor["id"] as? String }
     }
 
     // MARK: - Move
@@ -383,6 +463,64 @@ struct CrossRepoTransferTests {
         let added = try #require(try CrossRepoWriteTests.events(ofTask: written, inRepoAt: repos.lib).first).patch.add
         let actor = NodeURI(boardKey: try CrossRepoWriteTests.appKey(), ref: .actor(slug: AddUpdateTaskTests.alice))
         #expect(added[PropertyName.assignees] == [.remote(actor)])
+    }
+
+    @Test(
+        "After a move or a copy, Task.assignees of the new task gives the actor of the old board",
+        arguments: transferOperations
+    )
+    func assigneesGiveActorOfOldBoard(operation: String) async throws {
+        let transfer = try await Self.makeAssignedTransfer(operation)
+        let lib = try Self.makeLibGraph(in: transfer.repos)
+        let task = try await Self.task(transfer.written, selecting: "{ \(Self.assigneesSelection) }", on: lib)
+        await lib.close()
+        #expect(try Self.assigneeIDs(of: task) == [transfer.actor])
+        #expect(try Self.names(in: task["assignees"]) == [Self.assigneeName])
+    }
+
+    @Test(
+        "After a move or a copy, the @ filter with the slug of the actor or of its name finds the new task",
+        arguments: transferOperations,
+        [AddUpdateTaskTests.alice, assigneeNameSlug]
+    )
+    func assigneeFilterFindsTransferredTask(operation: String, actor: String) async throws {
+        let transfer = try await Self.makeAssignedTransfer(operation)
+        let lib = try Self.makeLibGraph(in: transfer.repos)
+        let response = try await KanbanGraphTests.execute(Self.filteredTasksQuery("@" + actor), on: lib)
+        await lib.close()
+        let tasks = try Self.filteredTasks(in: response)
+        #expect(tasks.compactMap { task in task["id"] as? String } == [transfer.written])
+    }
+
+    @Test("After a move, the @ filter with the full URI of the actor on the old board finds the new task")
+    func assigneeURIFilterFindsMovedTask() async throws {
+        let transfer = try await Self.makeAssignedTransfer(MutationName.moveTask)
+        let lib = try Self.makeLibGraph(in: transfer.repos)
+        let response = try await KanbanGraphTests.execute(Self.filteredTasksQuery("@" + transfer.actor), on: lib)
+        await lib.close()
+        let tasks = try Self.filteredTasks(in: response)
+        #expect(tasks.compactMap { task in task["id"] as? String } == [transfer.written])
+    }
+
+    /// The `@` filter finds the task by the slug in the URI, `Task.assignees` leaves the actor out, and the response
+    /// warns about the board.
+    @Test("When the old board cannot be read, the @ filter and Task.assignees keep working, with a warning")
+    func unreadableOldBoardKeepsAssigneeReadsWorking() async throws {
+        let transfer = try await Self.makeAssignedTransfer(MutationName.moveTask)
+        try UnreadableRelatedBoardTests.Breakage.brokenLog.apply(toTask: transfer.written, inRepoAt: transfer.repos.app)
+        let lib = try Self.makeLibGraph(in: transfer.repos)
+        let response = try await KanbanGraphTests.execute(
+            Self.filteredTasksQuery("@" + AddUpdateTaskTests.alice),
+            on: lib
+        )
+        await lib.close()
+        let tasks = try Self.filteredTasks(in: response)
+        #expect(tasks.compactMap { task in task["id"] as? String } == [transfer.written])
+        #expect(try tasks.map(Self.assigneeIDs(of:)) == [[]])
+        let warnings = try ResponseWarningsTests.warnings(of: response)
+        #expect(warnings.map(\.code) == [UnreadableRelatedBoardTests.warningCode])
+        let message = try #require(warnings.first?.message)
+        #expect(message.contains(try CrossRepoWriteTests.appKey()), "\(message)")
     }
 
     // MARK: - Errors
