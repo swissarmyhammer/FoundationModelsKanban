@@ -116,9 +116,8 @@ struct FilterEvaluatorTests {
     ///   - filter: The parsed filter.
     ///   - board: The board.
     /// - Returns: The local refs of the nodes that match, in slot order.
-    /// - Throws: An error of ``FilterEvaluator/init(evaluating:over:inBoard:)``.
-    static func matchingRefs(of filter: FilterExpr, in board: ReadinessFixture) throws -> [LocalRef] {
-        let evaluator = try FilterEvaluator(evaluating: filter, over: board.readiness, inBoard: boardKey)
+    static func matchingRefs(of filter: FilterExpr, in board: ReadinessFixture) -> [LocalRef] {
+        let evaluator = FilterEvaluator(evaluating: filter, over: board.readiness, inBoard: boardKey)
         return board.graph.allSlots.compactMap { slot in
             evaluator.matches(nodeAt: slot) ? board.graph.node(at: slot)?.ref : nil
         }
@@ -132,9 +131,9 @@ struct FilterEvaluatorTests {
     ///   - filter: The text of the filter.
     ///   - board: The board.
     /// - Returns: The local refs of the nodes that match, in slot order.
-    /// - Throws: An error when the filter does not parse, or an error of the evaluator.
+    /// - Throws: An error when the filter does not parse.
     static func matchingRefs(of filter: String, in board: ReadinessFixture) throws -> [LocalRef] {
-        try matchingRefs(of: try FilterExpr(parsing: filter), in: board)
+        matchingRefs(of: try FilterExpr(parsing: filter), in: board)
     }
 
     /// Parses a filter and evaluates it against each node of a board, of each node type.
@@ -167,9 +166,8 @@ struct FilterEvaluatorTests {
     ///   - filter: The parsed filter.
     ///   - board: The board.
     /// - Returns: The ULID texts of the tasks that match, in slot order.
-    /// - Throws: An error of the evaluator.
-    static func matches(of filter: FilterExpr, in board: ReadinessFixture) throws -> [String] {
-        taskULIDs(in: try matchingRefs(of: filter, in: board))
+    static func matches(of filter: FilterExpr, in board: ReadinessFixture) -> [String] {
+        taskULIDs(in: matchingRefs(of: filter, in: board))
     }
 
     /// Parses a filter and evaluates it against each task of a board.

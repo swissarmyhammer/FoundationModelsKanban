@@ -42,13 +42,8 @@ struct TaskSelection {
     ///   - isIncluded: One more test that each task must pass, for example "the task has the virtual tag `READY`".
     /// - Returns: The tasks that pass `isIncluded` and the ``TaskFilter`` of the filter: a task in a hidden state
     ///   only when the filter names that state.
-    /// - Throws: An error of ``TaskFilter/init(filtering:over:inBoard:)``. A `^id` value that is a short id of two
-    ///   or more tasks gives no error: it matches each of these tasks.
-    func tasks(
-        in view: BoardView,
-        where isIncluded: (TaskObject) -> Bool = { _ in true }
-    ) throws(KanbanError) -> [TaskObject] {
-        let taskFilter = try TaskFilter(filtering: filter, over: view.readiness, inBoard: view.boardKey)
+    func tasks(in view: BoardView, where isIncluded: (TaskObject) -> Bool = { _ in true }) -> [TaskObject] {
+        let taskFilter = TaskFilter(filtering: filter, over: view.readiness, inBoard: view.boardKey)
         return view.allTasks.filter { task in
             isIncluded(task) && taskFilter.matches(taskAt: task.slot)
         }

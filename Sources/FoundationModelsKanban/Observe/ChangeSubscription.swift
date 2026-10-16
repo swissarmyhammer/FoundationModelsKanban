@@ -21,7 +21,7 @@ extension KanbanResolver {
     /// - Returns: The changes. In a run that the engine runs again after it loads the board, the stream has ended
     ///   and the subscriber is not added.
     /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for `board`. An
-    ///   error of ``ChangeFilter/init(parsing:)`` or of ``ChangeFilter/check(against:)``.
+    ///   error of ``ChangeFilter/init(parsing:)``.
     ///   ``KanbanError/notFound(type:reference:)`` when the board has no repo directory to watch, or cannot be read.
     func changes(context: KanbanContext, arguments: ChangesArguments) async throws(KanbanError) -> ChangeEvents {
         let store = context.store
@@ -40,9 +40,8 @@ extension KanbanResolver {
     ///   - feed: The change feeds of the session view.
     /// - Returns: The events of the subscriber, or a stream that has ended when the engine did not load the board
     ///   yet. The engine then runs the call again after the load.
-    /// - Throws: An error of ``BoardStore/view(ofBoard:)``, of ``ChangeFilter/init(parsing:)``, or of
-    ///   ``ChangeFilter/check(against:)`` on the board now. A `^id` value that is a short id of two or more tasks
-    ///   gives no error: it matches each of these tasks (divergence.md Q20).
+    /// - Throws: An error of ``BoardStore/view(ofBoard:)`` or of ``ChangeFilter/init(parsing:)``. A `^id` value that
+    ///   is a short id of two or more tasks gives no error: it matches each of these tasks (divergence.md Q20).
     ///   ``KanbanError/notFound(type:reference:)`` for the board when the board has no repo directory to watch, for
     ///   example a board in memory only, or when the board is a related board that cannot be read (divergence.md Q7).
     ///   The subscription then gives one response with the error, and ends.
@@ -58,7 +57,6 @@ extension KanbanResolver {
             return ChangeEvent.endedStream()
         }
         let filter = try ChangeFilter(parsing: arguments.filter)
-        try filter.check(against: view)
         guard let directory = view.source?.directory else {
             Log.kanban.error(
                 "A subscription names a board in memory only; the subscription ends",

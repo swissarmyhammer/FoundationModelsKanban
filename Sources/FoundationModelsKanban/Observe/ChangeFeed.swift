@@ -155,11 +155,8 @@ final class ChangeFeed: Sendable {
 
     /// Sends the changes that the filter of one subscriber keeps to that subscriber.
     ///
-    /// The subscription checked its filter against the board when it started. A later change does not make the filter
-    /// fail when a merge gives a second task the short id of a `^id` value: the filter then matches each task with
-    /// that short id (divergence.md Q20). When the filter fails on the board now, the stream of a subscriber has no
-    /// error, so the feed writes the error to the log and ends the stream of the subscriber. The client then sees
-    /// that the subscription ended, and can subscribe again.
+    /// The filter gives no error on the board now. A merge that gives a second task the short id of a `^id` value
+    /// does not stop the stream: the filter then matches each task with that short id (divergence.md Q20).
     ///
     /// - Parameters:
     ///   - changes: The changes, each of one transaction, in the order of their transactions.
@@ -172,16 +169,8 @@ final class ChangeFeed: Sendable {
         readingNodesOf view: BoardView,
         resolvingIn board: EventBoard
     ) {
-        do {
-            for change in try subscriber.filter.applied(to: changes, readingNodesOf: view) {
-                subscriber.continuation.yield(ChangeEvent(change: change, board: board))
-            }
-        } catch {
-            Log.kanban.error(
-                "The filter of a subscription fails on the board now; the subscription ends",
-                metadata: ["board": "\(view.boardKey)", "code": "\(error.code)", "message": "\(error.message)"]
-            )
-            subscriber.continuation.finish()
+        for change in subscriber.filter.applied(to: changes, readingNodesOf: view) {
+            subscriber.continuation.yield(ChangeEvent(change: change, board: board))
         }
     }
 

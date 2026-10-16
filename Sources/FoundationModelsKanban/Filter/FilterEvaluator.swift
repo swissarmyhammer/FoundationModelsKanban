@@ -41,14 +41,14 @@ struct FilterEvaluator {
 
     /// Makes the evaluator of a filter for one board.
     ///
+    /// The init gives no error: each value of an atom gives a test, also a value that names nothing or a short id
+    /// that more than one task has (divergence.md Q20).
+    ///
     /// - Parameters:
     ///   - filter: The parsed filter.
     ///   - readiness: The readiness of the tasks of the board. It holds the graph and the column order.
     ///   - boardKey: The current key of the board. A URL with this key names a node of the board.
-    /// - Throws: No error at this time: each value of an atom gives a test, also a value that names nothing or a
-    ///   short id that more than one task has (divergence.md Q20). The typed `throws` stays for the callers
-    ///   (``TaskFilter``).
-    init(evaluating filter: FilterExpr, over readiness: Readiness, inBoard boardKey: String) throws(KanbanError) {
+    init(evaluating filter: FilterExpr, over readiness: Readiness, inBoard boardKey: String) {
         test = FilterCompiler(readiness: readiness, boardKey: boardKey).test(for: filter)
     }
 

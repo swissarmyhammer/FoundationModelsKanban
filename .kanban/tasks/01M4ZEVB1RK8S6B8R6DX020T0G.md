@@ -99,8 +99,24 @@ comments:
     - evidence: local commit "fix(cross-repo): address review findings for remote assignees (^x020t0g)". Files: RelatedBoards.swift, ReadinessCache.swift, CrossRepoTransferTests.swift, and the .kanban/tasks files (this task and a new task about a test hang). The sha is in the step record returned to the caller.
     - next: review. No push was done.
   timestamp: 2026-10-16T02:54:39.955647+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m51afhbd882458f5vmwtsv72
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (f64ecbb) gave 0 findings (0 confirmed, 0 refuted; 7 validator runs, 0 failed). The engine reviewed 3 files. It did not review 4 .kanban files (ignore rule). All 4 items in the prior Review Findings section (2026-10-15 20:54) are checked.
+    - next: The task is in done. No work remains on this task.
+  timestamp: 2026-10-16T03:00:53.741695+00:00
+- actor: claude-code
+  id: 01m51afyb0c0cvrvbv7rztxqrd
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — RelatedBoards.swift (remoteBoardKeys helper), ReadinessCache.swift, CrossRepoTransferTests.swift (shared helpers)
+    - test: green — swift test, 1552 passed (one earlier run hung at 0% CPU; recorded as ^je3gkw8)
+    - commit: f64ecbb
+    - review: clean — 0 findings
+  timestamp: 2026-10-16T03:01:07.040892+00:00
+position_column: done
+position_ordinal: ff8e80
 title: Show an assignee that is a full URI of a different board in Task.assignees
 ---
 ## What
