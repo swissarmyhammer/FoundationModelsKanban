@@ -21,6 +21,24 @@ struct RemovedParameterCase: Sendable, CustomTestStringConvertible {
     }
 }
 
+/// One removed Rust `due` parameter whose value is a variable: the document, the values of its variables, and the text
+/// that the rewrite makes.
+struct RemovedVariableCase: Sendable, CustomTestStringConvertible {
+    /// The document that gives a variable as the value of the removed parameter.
+    let document: String
+
+    /// The values of the variables of the document.
+    let variables: [String: Map]
+
+    /// The text that the rewrite must make from the document.
+    let rewrittenText: String
+
+    /// The name of the case in the test report.
+    var testDescription: String {
+        document
+    }
+}
+
 /// Tests the removed Rust parameters and the error for a name with no match (divergence.md Q12 as P4 changed it,
 /// N5).
 ///
@@ -76,6 +94,45 @@ struct RemovedParameterTests {
         tasksCase(
             arguments: "INCLUDE_COUNTS: true",
             warning: "`INCLUDE_COUNTS` is removed, select `summary` (or `totalCount`). The call ignored it."
+        ),
+    ]
+
+    /// Each removed `due` parameter whose value is a variable: with no other use of the variable, with an other use
+    /// in an argument, in a directive, or in a fragment that the operation spreads, and with a second variable.
+    static let variableCases: [RemovedVariableCase] = [
+        RemovedVariableCase(
+            document: #"mutation ($d: String) { addTask(input: { title: "x", due: $d }) { title } }"#,
+            variables: ["d": "2026-01-01"],
+            rewrittenText: #"mutation  { addTask(input: { title: "x",  }) { title } }"#
+        ),
+        RemovedVariableCase(
+            document: "mutation ($t: String!) { addTask(input: { title: $t, due: $t }) { title } }",
+            variables: ["t": "x"],
+            rewrittenText: "mutation ($t: String!) { addTask(input: { title: $t,  }) { title } }"
+        ),
+        RemovedVariableCase(
+            document: #"mutation ($d: Boolean!) { addTask(input: { title: "x", due: $d }) "#
+                + "{ title @include(if: $d) } }",
+            variables: ["d": true],
+            rewrittenText: #"mutation ($d: Boolean!) { addTask(input: { title: "x",  }) "#
+                + "{ title @include(if: $d) } }"
+        ),
+        RemovedVariableCase(
+            document: #"mutation ($d: Boolean!) { addTask(input: { title: "x", due: $d }) { ...F } }"#
+                + " fragment F on Task { title @include(if: $d) }",
+            variables: ["d": true],
+            rewrittenText: #"mutation ($d: Boolean!) { addTask(input: { title: "x",  }) { ...F } }"#
+                + " fragment F on Task { title @include(if: $d) }"
+        ),
+        RemovedVariableCase(
+            document: "mutation ($t: String!, $d: String) { addTask(input: { title: $t, due: $d }) { title } }",
+            variables: ["t": "x", "d": "2026-01-01"],
+            rewrittenText: "mutation ($t: String!, ) { addTask(input: { title: $t,  }) { title } }"
+        ),
+        RemovedVariableCase(
+            document: "mutation ($d: String, $t: String!) { addTask(input: { title: $t, due: $d }) { title } }",
+            variables: ["t": "x", "d": "2026-01-01"],
+            rewrittenText: "mutation ($t: String!) { addTask(input: { title: $t,  }) { title } }"
         ),
     ]
 
@@ -209,6 +266,35 @@ struct RemovedParameterTests {
             let warnings = try ResponseWarningsTests.warnings(of: response)
             #expect(warnings.map(\.message) == ["`due`" + Self.noDateText], "\(response)")
         }
+    }
+
+    // MARK: - Removed parameter with a variable value
+
+    @Test("A removed Rust parameter whose value is a variable is ignored, and the response gives its warning",
+          arguments: variableCases)
+    func removedVariableValueGivesWarning(removed: RemovedVariableCase) async throws {
+        try await Self.withFixture { graph in
+            let variables = removed.variables
+            let response = try await KanbanGraphTests.execute(removed.document, variables: variables, on: graph)
+            #expect(try KanbanGraphTests.object(of: response)["errors"] == nil, "\(response)")
+            let added = try KanbanGraphTests.object(named: "addTask", in: response)
+            #expect(added["title"] as? String == "x", "\(response)")
+            let warnings = try ResponseWarningsTests.warnings(of: response)
+            #expect(warnings.map(\.message) == ["`due`" + Self.noDateText], "\(response)")
+        }
+    }
+
+    @Test("The rewrite takes out the definition of a variable that only a removed Rust parameter reads",
+          arguments: variableCases)
+    func removedVariableValueTakesOutUnusedDefinition(removed: RemovedVariableCase) throws {
+        #expect(try NameRewriteTests.rewritten(from: removed.document).text == removed.rewrittenText)
+    }
+
+    @Test("A variable that the caller does not read, and that no removed Rust parameter reads, keeps its definition")
+    func unreadVariableKeepsDefinition() throws {
+        let document = #"mutation ($u: String) { addTask(input: { title: "x", due: "y" }) { title } }"#
+        let text = #"mutation ($u: String) { addTask(input: { title: "x",  }) { title } }"#
+        #expect(try NameRewriteTests.rewritten(from: document).text == text)
     }
 
     // MARK: - Failed calls

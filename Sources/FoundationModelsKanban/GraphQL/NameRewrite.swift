@@ -201,7 +201,8 @@ struct RewrittenDocument: Sendable {
 /// query type. A name with no match stays as it is, so that validation gives the "did you mean" error, and the
 /// error gets the list of the canonical names of the position (divergence.md Q12). A removed Rust parameter at an
 /// argument or an `input` field (``RemovedParameter``) goes out of the document, and the rewrite gives its warning
-/// (divergence.md Q12 as P4 changed it).
+/// (divergence.md Q12 as P4 changed it). When no other place reads a variable that was the value of a removed
+/// parameter, the definition of the variable goes out too.
 ///
 /// The rewrite also gives each key of an `input` object in the value of a variable its canonical name, at all
 /// depths, by the input type of the variable (divergence.md Q8). The steps, the aliases, the tie error, the removed
@@ -237,6 +238,7 @@ struct DocumentRewriter {
         var walk = RewriteWalk(schema: schema)
         let document = try parse(source: source)
         try walk.visit(document)
+        walk.takeOutUnreadDefinitions(of: document)
         let rewrittenVariables = try walk.rewritten(variables, declaredIn: document, operationName: operationName)
         let edits = TextEdit.inOffsetOrder(walk.edits)
         return RewrittenDocument(
@@ -430,6 +432,9 @@ private struct RewriteWalk {
 
     /// The first place where the document reads each variable, by the name of the variable.
     private var variableUses: [String: VariableUse] = [:]
+
+    /// The range of UTF-8 offsets of each removed Rust parameter that the walk took out, with its value.
+    private var removedRanges: [Range<Int>] = []
 
     /// Makes an empty walk.
     ///
@@ -703,6 +708,7 @@ private struct RewriteWalk {
            let end = value.loc?.startToken.valueEnd.end
         {
             warnings.append(removed.warning(writtenAs: name.text))
+            removedRanges.append(start..<end)
             return TextEdit(range: start..<end, replacement: "")
         }
         guard let canonical = canonicalName(
@@ -775,6 +781,79 @@ private struct RewriteWalk {
             variableUses[variable.name.value] = VariableUse(type: type, coordinate: coordinate, node: variable)
         default:
             return
+        }
+    }
+
+    // MARK: - Variable definitions
+
+    /// Takes out the definition of each variable that only removed Rust parameters read (divergence.md P4). The walk
+    /// must first visit the document, so that it knows the removed parameters.
+    ///
+    /// When the walk takes out a removed parameter whose value is a variable, the variable can have no read after the
+    /// rewrite, and validation then fails the call with "Variable is never used". A read in an argument, in a
+    /// directive, or in a fragment that the operation spreads keeps the definition. A variable that the caller wrote
+    /// and never read keeps its definition too, so that validation reports it as before. The value of a variable
+    /// whose definition goes out stays in the variables: the engine ignores a value with no definition.
+    ///
+    /// - Parameter document: The parsed document.
+    mutating func takeOutUnreadDefinitions(of document: Document) {
+        guard !removedRanges.isEmpty else {
+            return
+        }
+        for case let operation as OperationDefinition in document.definitions {
+            edits += Self.definitionRemovals(named: unreadVariables(of: operation, in: document), of: operation)
+        }
+    }
+
+    /// Gives the names of the variables that an operation reads only in removed Rust parameters.
+    ///
+    /// - Parameters:
+    ///   - operation: The operation.
+    ///   - document: The document of the operation, for its fragment definitions.
+    /// - Returns: The names of the variables whose every read is in a removed parameter.
+    private func unreadVariables(of operation: OperationDefinition, in document: Document) -> Set<String> {
+        let reads = Dictionary(grouping: VariableReads.variables(readBy: operation, in: document), by: isRemoved)
+        let removed = Set((reads[true] ?? []).map(\.name.value))
+        let kept = Set((reads[false] ?? []).map(\.name.value))
+        return removed.subtracting(kept)
+    }
+
+    /// Tells whether a read of a variable is in a removed Rust parameter that the walk took out.
+    ///
+    /// - Parameter variable: The variable node of the read.
+    /// - Returns: `true` when a removed range holds the read. A read with no location is not removed.
+    private func isRemoved(_ variable: Variable) -> Bool {
+        guard let offset = variable.loc?.start else {
+            return false
+        }
+        return removedRanges.contains { range in range.contains(offset) }
+    }
+
+    /// Gives the edits that take some variable definitions out of an operation. An edit takes out a definition up to
+    /// the next definition, or up to the closing parenthesis. When the definitions are all the definitions of the
+    /// operation, one edit takes out the parentheses with the definitions, because `()` does not parse.
+    ///
+    /// - Parameters:
+    ///   - names: The names of the variables whose definitions go out.
+    ///   - operation: The operation.
+    /// - Returns: The edits, in the order of the definitions.
+    private static func definitionRemovals(named names: Set<String>, of operation: OperationDefinition) -> [TextEdit] {
+        let definitions = operation.variableDefinitions
+        guard !names.isEmpty, let opening = definitions.first?.loc?.startToken.previousSignificant,
+              opening.kind == .openingParenthesis
+        else {
+            return []
+        }
+        let closing = opening.closingToken
+        if definitions.allSatisfy({ definition in names.contains(definition.variable.name.value) }) {
+            return [TextEdit(range: opening.start..<closing.end, replacement: "")]
+        }
+        let ends: [Int?] = definitions.dropFirst().map { definition in definition.loc?.start } + [closing.start]
+        return zip(definitions, ends).compactMap { definition, end in
+            guard names.contains(definition.variable.name.value), let start = definition.loc?.start, let end else {
+                return nil
+            }
+            return TextEdit(range: start..<end, replacement: "")
         }
     }
 
@@ -1080,6 +1159,15 @@ extension Token {
         var token = next
         while token?.kind == .comment {
             token = token?.next
+        }
+        return token
+    }
+
+    /// The token before this token that is not a comment, or `nil` at the start of the document.
+    fileprivate var previousSignificant: Token? {
+        var token = prev
+        while token?.kind == .comment {
+            token = token?.prev
         }
         return token
     }

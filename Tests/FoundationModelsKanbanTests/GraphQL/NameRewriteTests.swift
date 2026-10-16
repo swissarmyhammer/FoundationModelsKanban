@@ -48,7 +48,7 @@ struct NameRewriteTests {
     /// - Parameter document: The GraphQL document.
     /// - Returns: The rewritten document.
     /// - Throws: A `GraphQLError` when the document does not parse.
-    private static func rewritten(from document: String) throws -> RewrittenDocument {
+    static func rewritten(from document: String) throws -> RewrittenDocument {
         try DocumentRewriter(for: PublicSchema().schema.schema).rewrittenDocument(from: document)
     }
 

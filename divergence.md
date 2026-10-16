@@ -811,6 +811,7 @@ These decisions give an error where a forgiving rule can do the work. Each point
 - Now: the whole call fails, with a list of the fields of the type, or a "removed, use X" message.
 - Proposal: for a removed Rust parameter (`project`, `due`, `scheduled`, `exclude_done`, `page`, `detail`, `include_counts`, `attachments`), ignore it and do the call, with a warning. For a name that matches nothing, keep the error, because Swift cannot know what the agent wanted to set.
 - **DECIDED:** accept the proposal. This changes Q12: a removed Rust parameter is ignored, and the response gives the "removed, use X" text as a warning. A name that matches nothing still fails, and the error lists the canonical fields of the type. Add a test for each removed parameter.
+- **DECIDED (^164tehz):** when the value of a removed parameter is a variable, and the document reads that variable at no other place, the rewrite also takes out the definition of the variable. When no definition stays, the rewrite takes out the parentheses too. A read in an argument, in a directive, or in a fragment that the operation spreads keeps the definition. A variable that the caller defined and did not read keeps its definition, and validation still reports it. The value of the variable in `variables` stays; the engine ignores it.
 
 **P5. A ULID prefix that matches more than one ULID (Q20).**
 

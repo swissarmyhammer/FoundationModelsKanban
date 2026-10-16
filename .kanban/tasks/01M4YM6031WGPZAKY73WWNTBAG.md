@@ -86,8 +86,24 @@ comments:
     - evidence: local commit "test(undo): cover redo on a second copy of the home board (^wwntbag)". Files: Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoCopyUndoTests.swift, Tests/FoundationModelsKanbanTests/ReadmeExamplesTests.swift, and the changed .kanban/tasks files. The sha is in the step block of the caller, because a comment cannot hold its own sha. Not pushed.
     - next: review
   timestamp: 2026-10-16T00:07:45.704187+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m510xxyf7drxk61h7wz4d8z1
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (86f4614). 0 findings, 0 confirmed, 1 refuted, 7 attempted, 0 failed. 2 files reviewed. All items in the prior Review Findings section (2026-10-15 18:36) are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-16T00:13:59.631417+00:00
+- actor: claude-code
+  id: 01m510y83e4c1c321pjv9yyhe7
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — CrossRepoCopyUndoTests.swift (redo test)
+    - test: green — swift test, 1541 passed (fixed ExampleBoard shared board key race in ReadmeExamplesTests.swift)
+    - commit: 86f4614
+    - review: clean — 0 findings
+  timestamp: 2026-10-16T00:14:10.030648+00:00
+position_column: done
+position_ordinal: ff8b80
 title: 'Undo: find a second copy with the key of the home board in the same transaction'
 ---
 ## What
