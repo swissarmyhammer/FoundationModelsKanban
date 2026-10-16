@@ -209,10 +209,17 @@ public actor KanbanGraph {
         operationName: String?,
         postingPlansTo context: ToolContext?
     ) async throws -> String {
-        let board = await resolvedBoard()
-        return try await holdingGates(startingWith: board) { held in
-            try await self.publishingChanges(of: held, postingPlansTo: context) {
-                try await self.respond(to: query, variables: variables, operationName: operationName, on: board, holding: held)
+        try await followingMovedBoards { board in
+            try await holdingGates(startingWith: board) { held in
+                try await self.publishingChanges(of: held, postingPlansTo: context) {
+                    try await self.respond(
+                        to: query,
+                        variables: variables,
+                        operationName: operationName,
+                        on: board,
+                        holding: held
+                    )
+                }
             }
         }
     }
@@ -242,17 +249,18 @@ public actor KanbanGraph {
         variables: [String: Map],
         operationName: String?
     ) async throws -> AsyncThrowingStream<String, Error> {
-        let board = await resolvedBoard()
         await host.register(self)
-        return try await holdingGates(startingWith: board) { held in
-            try await self.publishingChanges(of: held, postingPlansTo: nil) {
-                try await self.startSubscription(
-                    to: query,
-                    variables: variables,
-                    operationName: operationName,
-                    on: board,
-                    holding: held
-                )
+        return try await followingMovedBoards { board in
+            try await holdingGates(startingWith: board) { held in
+                try await self.publishingChanges(of: held, postingPlansTo: nil) {
+                    try await self.startSubscription(
+                        to: query,
+                        variables: variables,
+                        operationName: operationName,
+                        on: board,
+                        holding: held
+                    )
+                }
             }
         }
     }
@@ -334,10 +342,99 @@ public actor KanbanGraph {
             return .notARepo(path: path)
         }
         let engine = try await host.engine(ofBoardAt: top)
-        feeds.add(engine.feed, forBoardAt: engine.root.canonicalPath)
+        feeds.replace(engine.feed, forBoardAt: engine.root.canonicalPath)
         await host.register(self)
         boardState = .resolved(.board(engine))
         return .board(engine)
+    }
+
+    // MARK: - Moved boards
+
+    /// Runs an operation on the board of the working directory, after the view follows each board whose folder moved
+    /// away from its path (divergence.md §16, Gap 6). When the folder of a board moves during the operation, the commit
+    /// of the operation stops before it writes (``MovedBoards``); the view follows the move and runs the operation
+    /// again, so that the write goes to the board that is now at the path.
+    ///
+    /// - Parameter operation: The operation. It gets the board of the working directory, or the error that stops each
+    ///   call.
+    /// - Returns: The value of the operation.
+    /// - Throws: The error of the operation. ``EventLogError/fileSystem(path:detail:)`` when a folder of the operation
+    ///   moved during each of ``movedBoardRuns`` runs. Then the operation wrote nothing.
+    private func followingMovedBoards<Value: Sendable>(
+        _ operation: (Result<BoardEngine, any Error>) async throws -> Value
+    ) async throws -> Value {
+        var moved: [URL] = []
+        for _ in 1...Self.movedBoardRuns {
+            await followMovedBoards()
+            do {
+                return try await operation(await resolvedBoard())
+            } catch let error as MovedBoards {
+                moved = error.roots
+            }
+        }
+        throw EventLogError.fileSystem(
+            path: moved.map(\.path).joined(separator: ", "),
+            detail: "The repo folder at the path changed during each of \(Self.movedBoardRuns) runs of the call"
+        )
+    }
+
+    /// The number of runs of a call whose board moves away from its path during each run, before the call stops.
+    private static let movedBoardRuns = 3
+
+    /// Puts the engine of the folder that is now at each path in the place of each engine of the view whose folder
+    /// moved away from its path, for example when a user moved the repo away and made a new repo at the same path
+    /// (divergence.md §16, Gap 6). Thus no read and no write of the view goes to an engine whose folder is not at its
+    /// path. The board of the working directory resolves again. A related board takes the engine of the folder that
+    /// is now at its path, and the subscribers of the view move to that engine (``record(_:)``). A related board that
+    /// cannot load at its path any more goes away from the view, and the streams of its subscribers end.
+    private func followMovedBoards() async {
+        if case .resolved(.board(let current)) = boardState, !current.isAtRoot {
+            boardState = .unresolved
+            _ = try? await resolveBoard()
+        }
+        for (path, engine) in relatedBoards where !engine.isAtRoot {
+            await followMovedRelatedBoard(at: path)
+        }
+    }
+
+    /// Puts the engine of the folder that is now at the path of a related board in the place of the engine of the
+    /// view, or takes the board away from the view when no board loads at the path (divergence.md §16, Gap 6).
+    ///
+    /// - Parameter path: The canonical path of the repo directory of the related board.
+    private func followMovedRelatedBoard(at path: String) async {
+        let folder = URL(filePath: path, directoryHint: .isDirectory)
+        guard
+            let engine = try? await host.relatedEngine(ofBoardAt: folder, knownKey: nil),
+            engine.root.canonicalPath == path,
+            !isCurrentBoard(engine)
+        else {
+            forgetRelatedBoard(at: path)
+            return
+        }
+        record(engine)
+    }
+
+    /// Takes a related board away from the view, and ends the streams of the subscribers of the view on it. The feed
+    /// of the path stays when it is the feed of the board of the working directory.
+    ///
+    /// - Parameter path: The canonical path of the repo directory of the related board.
+    private func forgetRelatedBoard(at path: String) {
+        relatedBoards[path] = nil
+        if case .resolved(.board(let current)) = boardState, current.root.canonicalPath == path {
+            return
+        }
+        feeds.remove(forBoardAt: path)
+    }
+
+    /// Tells whether an engine is the engine of the board of the working directory.
+    ///
+    /// - Parameter engine: The engine.
+    /// - Returns: `true` when the view found its board, and that board has the identity of the engine.
+    private func isCurrentBoard(_ engine: BoardEngine) -> Bool {
+        guard case .resolved(.board(let current)) = boardState else {
+            return false
+        }
+        return current.identity == engine.identity
     }
 
     // MARK: - Calls
@@ -559,13 +656,16 @@ public actor KanbanGraph {
         }
     }
 
-    /// Checks that a call holds the gate of each board of a commit attempt (divergence.md §16, locks across boards).
+    /// Checks that a call holds the gate of each board of a commit attempt (divergence.md §16, locks across boards),
+    /// and that the folder of each of these boards is still at its path (divergence.md §16, Gap 6). Thus an engine
+    /// whose folder moved away never reads or writes the files of a new repo at its path.
     ///
     /// - Parameters:
     ///   - paths: The canonical paths of the repo directories of the boards of the commit.
     ///   - held: The gates that the call holds.
     ///   - current: The engine of the board of the working directory.
-    /// - Throws: ``GateShortfall`` with the engines whose gates the call does not hold.
+    /// - Throws: ``MovedBoards`` with the root directory of each board whose folder moved away from it.
+    ///   ``GateShortfall`` with the engines whose gates the call does not hold.
     private func admit(_ paths: Set<String>, holding held: HeldGates, current: BoardEngine) throws {
         let engines = paths.sorted().compactMap { (path: String) -> BoardEngine? in
             guard let engine = path == current.root.canonicalPath ? current : relatedBoards[path] else {
@@ -574,6 +674,10 @@ public actor KanbanGraph {
                 return nil
             }
             return engine
+        }
+        let moved = engines.filter { engine in !engine.isAtRoot }
+        guard moved.isEmpty else {
+            throw MovedBoards(roots: moved.map(\.root))
         }
         let missing = engines.filter { engine in !held.holds(engine) }
         guard missing.isEmpty else {
@@ -640,8 +744,12 @@ public actor KanbanGraph {
     /// the changes of the boards that load go out. Only a cancel of the task is recorded with swift-log, and the
     /// changes are then not sent.
     ///
+    /// First the view follows each board whose folder moved away from its path (divergence.md §16, Gap 6), so that a
+    /// subscriber from before a new repo replaced its repo gets the changes of the new repo.
+    ///
     /// - Parameter changed: The changes of each board that changed, by the canonical path of its repo directory.
     func publish(_ changed: [String: BoardChanges]) async {
+        await followMovedBoards()
         let subscribed = feeds.subscribedBoards
         guard !changed.isEmpty, !subscribed.isEmpty, case .resolved(.board(let current)) = boardState else {
             return

@@ -5,6 +5,10 @@ import FoundationModelsExtras
 /// divergence.md §16). The changes are by the canonical path of the repo directory of each board.
 typealias ChangePublisher = @Sendable ([String: BoardChanges]) async -> Void
 
+/// Tells the host that an engine retired because its folder moved away from its root path, so that the host lets go
+/// of the engine (divergence.md §16, Gap 6). The call does not wait for an engine gate.
+typealias EngineRetirement = @Sendable (BoardEngine) async -> Void
+
 /// Gets a call when the file load of a board starts and when it ends.
 ///
 /// A test uses it to count the loads of a board, to prove that the key read and the file load run at the same time
@@ -63,6 +67,10 @@ extension BoardLoadObserver {
 /// no file. A call that writes holds ``gate``, runs on a copy of the session, and gives the new session back with
 /// ``replaceSession(with:)`` while it still holds the gate (write through). The watcher brings each change from
 /// outside the process into memory, inside the gate.
+///
+/// A user can move the repo away and make a new repo at the same path. The folder at ``root`` then is not the folder
+/// of the engine (``isAtRoot``), and the engine reads and writes no file at the path: it retires (``retire()``), and
+/// the host lets go of it (divergence.md §16, Gap 6).
 actor BoardEngine {
     /// The identity of the repo directory of the board: the key of the engine in the host.
     nonisolated let identity: FolderIdentity
@@ -89,6 +97,9 @@ actor BoardEngine {
     /// Sends the changes of a batch of the watcher to the session views.
     private let publish: ChangePublisher
 
+    /// Tells the host that the engine retired.
+    private let reportRetirement: EngineRetirement
+
     /// Makes the engine of a loaded board.
     ///
     /// - Parameters:
@@ -97,19 +108,30 @@ actor BoardEngine {
     ///   - session: The loaded session of the board.
     ///   - batchObserver: Gets a call when the watcher applies a batch, or `nil` for no calls.
     ///   - publish: Sends the changes of a batch of the watcher to the session views.
+    ///   - reportRetirement: Tells the host that the engine retired.
     private init(
         identity: FolderIdentity,
         root: URL,
         session: CommitSession,
         observingBatchesWith batchObserver: (any LiveGraphObserver)?,
-        publishingTo publish: @escaping ChangePublisher
+        publishingTo publish: @escaping ChangePublisher,
+        reportingRetirementTo reportRetirement: @escaping EngineRetirement
     ) {
         self.identity = identity
         self.root = root
         self.session = session
         self.batchObserver = batchObserver
         self.publish = publish
+        self.reportRetirement = reportRetirement
         watchState = .unwatched
+    }
+
+    /// `true` while the folder at ``root`` is the folder of the engine. When a user moved the repo away and made a
+    /// new repo at the same path, the folder at the path has a different identity, or the path holds no folder. The
+    /// engine then must not read or write a file at the path (divergence.md §16, Gap 6). The check reads the identity
+    /// of the folder with one `stat`.
+    nonisolated var isAtRoot: Bool {
+        (try? FolderIdentity(of: root)) == identity
     }
 
     /// The file watcher of the board while it runs, or `nil` when the board has no watcher. A test reads it to prove
@@ -149,7 +171,8 @@ actor BoardEngine {
                 root: request.root,
                 session: session,
                 observingBatchesWith: request.configuration.batchObserver,
-                publishingTo: request.publish
+                publishingTo: request.publish,
+                reportingRetirementTo: request.reportRetirement
             )
             if let started {
                 await engine.consume(started)
@@ -181,13 +204,29 @@ actor BoardEngine {
 
     /// Stops the file watcher, ends each subscription of the board, and cancels the embeddings of the search in the
     /// background. After the call returns, a change of a file applies nothing. The board stays in memory, and a
-    /// search uses the keyword index. A second call does nothing.
+    /// search uses the keyword index. A second call does nothing. A retired engine closes too: its subscriptions end.
     func close() async {
         feed.finish()
         let watch = activeWatch
         watchState = .closed
         await session.source.search.stopEmbedding()
         await watch?.end()
+    }
+
+    /// Stops the file watcher of an engine whose folder is not at its root path any more (divergence.md §16, Gap 6).
+    /// After the call returns, a change of a file at the path applies nothing. The feed stays open: each session view
+    /// that holds the engine moves its subscribers to the engine of the folder that is now at the path, or ends them.
+    /// A stopped engine (closed or retired) stays as it is.
+    ///
+    /// The caller can hold ``gate``, and the task of the watch can wait for the gate to give a batch. Thus the engine
+    /// does not wait for the end of that task (``BoardWatch/stop()``, not ``BoardWatch/end()``).
+    func retire() async {
+        guard !isStopped else {
+            return
+        }
+        let watch = activeWatch
+        watchState = .retired
+        await watch?.stop()
     }
 
     // MARK: - File watcher
@@ -264,11 +303,14 @@ actor BoardEngine {
     /// ``close()`` can run during each wait of the apply. After each wait, a closed engine stores nothing: it keeps
     /// no moved watch and no applied session, so a change applies nothing after ``close()``.
     ///
+    /// The apply reads files at the root path only while the folder of the engine is at that path, before the read and
+    /// after it (divergence.md §16, Gap 6). When a new repo is at the path, the engine retires and stores nothing.
+    ///
     /// - Parameter paths: The changed paths of the batch.
     /// - Throws: A ``BoardWatcherError`` when the watcher cannot move, or an ``EventLogError`` when a file cannot be
     ///   read.
     private func apply(_ paths: [URL]) async throws {
-        guard let watch = activeWatch else {
+        guard let watch = activeWatch, await readsRoot() else {
             return
         }
         let moved = try await movedWatch(watch)
@@ -278,7 +320,7 @@ actor BoardEngine {
         var updated = session
         let boardDirectory = updated.live.log.directory
         let applied = try await updated.apply(watchedPaths: moved == nil ? paths : paths + [boardDirectory])
-        guard !isClosed else {
+        guard await readsRoot() else {
             return
         }
         session = updated
@@ -288,17 +330,34 @@ actor BoardEngine {
         batchObserver?.didApply(changedPaths: applied)
     }
 
-    /// Stores the watch that a move of the watcher made, when the engine is not closed. A closed engine keeps no
-    /// watch: it stops the moved watch, so that no watcher runs after ``close()``.
+    /// Tells whether the engine still reads the files at its root path: the engine is not stopped, and its folder is
+    /// still at the path. An engine whose folder moved away retires, and tells the host, which lets go of the engine
+    /// (divergence.md §16, Gap 6). The caller holds ``gate``; the host does not wait for an engine gate.
     ///
-    /// The caller holds ``gate``, and the task of the moved watch can wait for the gate to give a batch. Thus a closed
+    /// - Returns: `true` when the engine reads the files at its root path.
+    private func readsRoot() async -> Bool {
+        guard !isStopped else {
+            return false
+        }
+        guard isAtRoot else {
+            await retire()
+            await reportRetirement(self)
+            return false
+        }
+        return true
+    }
+
+    /// Stores the watch that a move of the watcher made, when the engine is not stopped. A stopped engine (closed or
+    /// retired) keeps no watch: it stops the moved watch, so that no watcher runs after ``close()`` or ``retire()``.
+    ///
+    /// The caller holds ``gate``, and the task of the moved watch can wait for the gate to give a batch. Thus a stopped
     /// engine does not wait for the end of that task (``BoardWatch/stop()``, not ``BoardWatch/end()``). The task
-    /// gets the gate after the caller, and its batch applies nothing, because the engine is closed.
+    /// gets the gate after the caller, and its batch applies nothing, because the engine is stopped.
     ///
     /// - Parameter moved: The new watch.
-    /// - Returns: `true` when the engine keeps the watch, or `false` when the engine is closed.
+    /// - Returns: `true` when the engine keeps the watch, or `false` when the engine is stopped.
     func adopt(_ moved: BoardWatch) async -> Bool {
-        guard !isClosed else {
+        guard !isStopped else {
             await moved.stop()
             return false
         }
@@ -306,12 +365,14 @@ actor BoardEngine {
         return true
     }
 
-    /// `true` after ``close()``.
-    private var isClosed: Bool {
-        guard case .closed = watchState else {
-            return false
+    /// `true` after ``close()`` or ``retire()``: the engine applies no batch and keeps no watch.
+    private var isStopped: Bool {
+        switch watchState {
+        case .closed, .retired:
+            true
+        case .unwatched, .watching:
+            false
         }
-        return true
     }
 
     /// Moves the watcher from the repo directory to the `.kanban/` directory, when the watcher watches the repo
@@ -366,6 +427,9 @@ struct EngineLoad: Sendable {
 
     /// Sends the changes of a batch of the watcher to the session views.
     let publish: ChangePublisher
+
+    /// Tells the host that the engine retired because its folder moved away from its root path.
+    let reportRetirement: EngineRetirement
 
     /// Gives the key of the board: the known key, or the key that git gives (with the first commit of a repo with no
     /// commit, divergence.md §16 M8).
@@ -445,6 +509,11 @@ private enum EngineWatchState {
     /// ``BoardEngine/close()`` stopped the watcher. No watcher starts again, and a batch that comes now changes
     /// nothing.
     case closed
+
+    /// ``BoardEngine/retire()`` stopped the watcher, because the folder of the board moved away from its root path
+    /// (divergence.md §16, Gap 6). No watcher starts again, and a batch that comes now changes nothing. The change
+    /// feed stays open until ``BoardEngine/close()``.
+    case retired
 }
 
 /// A file watcher that started before its engine exists, and the directory that it watches. Its batches wait in the

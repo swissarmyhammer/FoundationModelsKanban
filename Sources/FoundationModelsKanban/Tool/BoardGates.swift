@@ -75,3 +75,11 @@ struct GateShortfall: Error {
     /// The engines whose gates the call needs and does not hold.
     let engines: [BoardEngine]
 }
+
+/// A call was to commit to a board whose folder moved away from its path, for example because a user moved the repo
+/// away and made a new repo at the same path (divergence.md §16, Gap 6). The call wrote nothing; the session view puts
+/// the engine of the folder that is now at the path in the place of the old engine, and runs the call again.
+struct MovedBoards: Error {
+    /// The root directory of each board of the commit whose folder moved away from it.
+    let roots: [URL]
+}

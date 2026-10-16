@@ -42,6 +42,13 @@ struct KanbanHostTests {
     /// The number of seconds in ``consumerHoldLimit``.
     private static let consumerHoldLimitSeconds = 30
 
+    /// The longest time that a test waits until the host lets go of the engine of a folder that moved away from its
+    /// path. The file watcher must first see a change of the new repo at the path.
+    static let retirementWaitLimit = Duration.seconds(retirementWaitLimitSeconds)
+
+    /// The number of seconds in ``retirementWaitLimit``.
+    private static let retirementWaitLimitSeconds = 20
+
     /// A query that counts the tasks of the board.
     static let countQuery = "{ board { tasks { totalCount } } }"
 
@@ -268,6 +275,31 @@ struct KanbanHostTests {
         #expect(isAdoptedFirst, "adopt waited for the task of the moved watch, so a wait for the gate never ends")
         #expect(!isAdopted)
         #expect(await !moved.watcher.isRunning)
+        await host.close()
+    }
+
+    @Test(
+        "An engine whose folder moved away applies no file of a new repo at its path, and the host lets the engine go",
+        .timeLimit(.minutes(1))
+    )
+    func movedEngineAppliesNoFileOfNewRepo() async throws {
+        let outside = try TemporaryDirectory()
+        let staging = try TemporaryDirectory()
+        let folder = try ScanPlace.makeRepoFolder(named: ScanCacheTests.newName, in: outside.url)
+        _ = try KanbanGraphTests.writeFixture(inRepoAt: folder)
+        let host = HostFixture.makeHost()
+        let engine = try await host.engine(ofBoardAt: folder)
+        let events = await engine.session.live.events.count
+        try FileManager.default.moveItem(at: folder, to: staging.url.appending(path: folder.lastPathComponent))
+        let newFolder = try ScanPlace.makeRepoFolder(named: ScanCacheTests.newName, in: outside.url)
+        var (task, ids) = try KanbanGraphTests.writeFixture(inRepoAt: newFolder)
+        try BoardWatcherTests.writeLaterTitle(to: task, mintingFrom: &ids, in: EventLog(repositoryAt: newFolder))
+        let isRetired = try await EventLogTests.becomesTrue(within: Self.retirementWaitLimit) {
+            await engine.activeWatch == nil
+        }
+        #expect(isRetired, "the engine of the old folder still watches the path of the new repo")
+        #expect(await engine.session.live.events.count == events)
+        #expect(await host.engineCount == 0)
         await host.close()
     }
 

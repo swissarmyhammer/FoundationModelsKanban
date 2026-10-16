@@ -77,8 +77,24 @@ comments:
     - evidence: local commit of BoardEngine.swift, KanbanHostTests.swift, and the .kanban/tasks/ files (including new task ^vm0j67z). Sha is in git log.
     - next: review
   timestamp: 2026-10-16T06:35:24.580476+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m51q21ggzq3yvcczxjx16dtd
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (7010ba3). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. 2 source files reviewed. The .reviewignore rule excluded 6 .kanban files.
+    - next: None. The task moved to done. Follow-up ^vm0j67z records the blocking flock risk.
+  timestamp: 2026-10-16T06:40:43.024171+00:00
+- actor: claude-code
+  id: 01m51q2ewnqvz5r50k61msq628
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — BoardEngine.swift (BoardWatch.stop, adopt on closed engine), KanbanHostTests.swift; hang reproduced and diagnosed with swift-inspect; 10/10 full runs green; follow-up ^vm0j67z
+    - test: green — swift test, 1563 passed; IntegrationTests 3 passed
+    - commit: 7010ba3
+    - review: clean — 0 findings
+  timestamp: 2026-10-16T06:40:56.725034+00:00
+position_column: done
+position_ordinal: ff9480
 title: Find why a full swift test run can hang at 0% CPU
 ---
 ## What

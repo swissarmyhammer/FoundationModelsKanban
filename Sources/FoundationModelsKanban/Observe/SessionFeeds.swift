@@ -53,6 +53,18 @@ final class SessionFeeds: Sendable {
         old?.moveSubscribers(ownedBy: owner, to: feed)
     }
 
+    /// Takes away the feed of a board that the view does not hold any more, and ends the stream of each subscriber of
+    /// the view on it, for example when the folder of a related board moved away from its path and no board can load
+    /// at the path now (divergence.md §16, Gap 6). The subscribers of the other views stay.
+    ///
+    /// - Parameter path: The canonical path of the repo directory of the board.
+    func remove(forBoardAt path: String) {
+        let old = table.withLock { feeds in
+            feeds.removeValue(forKey: path)
+        }
+        old?.finish(ownedBy: owner)
+    }
+
     /// Adds a subscriber of the view to the feed of a board.
     ///
     /// - Parameters:

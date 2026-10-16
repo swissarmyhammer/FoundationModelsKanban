@@ -177,18 +177,18 @@ struct EventLogTests {
     ///
     /// - Parameters:
     ///   - limit: The longest time that the wait continues.
-    ///   - condition: The check. It must not block.
+    ///   - condition: The check. It must not block. It can read an actor.
     /// - Returns: `true` when the check is true before the deadline, or `false` when the deadline passes first.
     /// - Throws: `CancellationError` when the test is cancelled during the wait.
-    static func becomesTrue(within limit: Duration, _ condition: () -> Bool) async throws -> Bool {
+    static func becomesTrue(within limit: Duration, _ condition: () async -> Bool) async throws -> Bool {
         let deadline = ContinuousClock.now + limit
         while ContinuousClock.now < deadline {
-            if condition() {
+            if await condition() {
                 return true
             }
             try await Task.sleep(for: retryPause)
         }
-        return condition()
+        return await condition()
     }
 
     /// Runs blocking work on a new thread of its own, and waits for the end of the work with no blocked thread. Work

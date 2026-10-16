@@ -42,6 +42,11 @@ public actor KanbanHost {
     /// The engine of each board, by the identity of its repo directory: loaded, or loading.
     private var engines: [FolderIdentity: EngineSlot] = [:]
 
+    /// Each engine that the host let go of because its folder moved away from its root path (divergence.md §16,
+    /// Gap 6). The host does not keep an engine alive: a session view that still holds the engine keeps it until the
+    /// view follows the move. ``close()`` closes each engine that is still alive, so that its subscriptions end.
+    private var retiredEngines: [WeakEngine] = []
+
     /// Each related board whose last load failed, by the identity of its repo directory (divergence.md Q7). A related
     /// load of such a board gives the same error again, with no read of a file, until the file watcher of the board
     /// sees a change.
@@ -217,7 +222,8 @@ public actor KanbanHost {
             embedder: embedder,
             startsWatcher: !isClosed,
             folderStreams: folderStreams,
-            publish: { [weak self] changed in await self?.publish(changed) }
+            publish: { [weak self] changed in await self?.publish(changed) },
+            reportRetirement: { [weak self] engine in await self?.retire(engine) }
         )
         let load = Task { try await BoardEngine.load(request) }
         engines[identity] = .loading(load)
@@ -228,11 +234,50 @@ public actor KanbanHost {
                 await engine.close()
             }
             await unloadableBoards.removeValue(forKey: identity)?.watch.end()
+            await retireEngines(replacedBy: engine)
             return engine
         } catch {
             engines[identity] = nil
             throw error
         }
+    }
+
+    // MARK: - Replaced repos
+
+    /// Lets go of each loaded engine whose folder is not at its root path any more, because a new engine loaded the
+    /// folder that is now at that path (divergence.md §16, Gap 6). For example, a user moved the repo away and made a
+    /// new repo at the same path.
+    ///
+    /// - Parameter engine: The engine of the folder that is now at the path.
+    private func retireEngines(replacedBy engine: BoardEngine) async {
+        let path = engine.root.canonicalPath
+        let replaced = loadedEngines.filter { other in
+            other.identity != engine.identity && other.root.canonicalPath == path && !other.isAtRoot
+        }
+        for other in replaced {
+            await retire(other)
+        }
+    }
+
+    /// Lets go of an engine whose folder is not at its root path any more (divergence.md §16, Gap 6). The host takes
+    /// the engine out of its table, and the engine stops its file watcher with ``BoardEngine/retire()``. Thus no engine
+    /// of the host reads the files of the new folder at the path except the engine of that folder. A later load of
+    /// the old folder at its new path makes a new engine with the new root path.
+    ///
+    /// Each session view that still holds the engine puts the engine of the path in its place at its next call or
+    /// change, and moves its subscribers to it (``KanbanGraph``). The feed of the retired engine stays open for that
+    /// move.
+    ///
+    /// The engine calls this method while it holds its serial gate, so the method waits for no engine gate:
+    /// ``BoardEngine/retire()`` does not wait for the task of the watch. A second call does nothing.
+    ///
+    /// - Parameter engine: The engine whose folder moved away from its root path.
+    func retire(_ engine: BoardEngine) async {
+        if case .loaded(let loaded) = engines[engine.identity], loaded === engine {
+            engines[engine.identity] = nil
+            retiredEngines = retiredEngines.filter { retired in retired.engine != nil } + [WeakEngine(engine: engine)]
+        }
+        await engine.retire()
     }
 
     // MARK: - Boards that cannot load
@@ -659,7 +704,8 @@ public actor KanbanHost {
     /// no watcher. With no watcher on its places, a scan index is not current any more. A board that could not load
     /// loads again at its next related load. The host forgets what git told about each folder that a path ref named:
     /// a ref with the key of such a board does not find it, and each path ref reads git again. The shared host stays
-    /// open for the life of the process; a test closes its own host.
+    /// open for the life of the process; a test closes its own host. Each retired engine that is still alive closes
+    /// too, so that its subscriptions end.
     func close() async {
         isClosed = true
         let watches =
@@ -677,6 +723,11 @@ public actor KanbanHost {
             case .loading(let load):
                 await (try? load.value)?.close()
             }
+        }
+        let retired = retiredEngines.compactMap(\.engine)
+        retiredEngines = []
+        for engine in retired {
+            await engine.close()
         }
     }
 }
@@ -801,4 +852,10 @@ private struct KnownFolder {
 private struct WeakView {
     /// The view, or `nil` after the view is gone.
     weak var view: KanbanGraph?
+}
+
+/// A retired engine that the host does not keep alive (divergence.md §16, Gap 6).
+private struct WeakEngine {
+    /// The engine, or `nil` after the engine is gone.
+    weak var engine: BoardEngine?
 }

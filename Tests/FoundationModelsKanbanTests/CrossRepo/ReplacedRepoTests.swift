@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 
 @testable import FoundationModelsKanban
@@ -81,6 +82,96 @@ struct ReplacedRepoTests {
         #expect(events == [Self.event(updating: first), Self.event(updating: second)])
         await repo.host.close()
     }
+
+    // MARK: - The engine of the old repo
+
+    @Test("After the replace, a write to the new board does not reach the engine of the old repo, and its watcher stops")
+    func oldEngineDoesNotApplyNewBoard() async throws {
+        let repo = try await PathRepo.make()
+        _ = try await PathBoardKeyTests.addTask(inFolderAt: repo.folder, on: repo.session)
+        let oldEngine = try await repo.host.relatedEngine(ofBoardAt: repo.folder, knownKey: nil)
+        let oldEvents = await oldEngine.session.live.events.count
+        _ = try await repo.replace()
+        _ = try await PathBoardKeyTests.addTask(inFolderAt: repo.folder, on: repo.session)
+        #expect(await oldEngine.activeWatch == nil)
+        #expect(await oldEngine.session.live.events.count == oldEvents)
+        await repo.host.close()
+    }
+
+    @Test("After a new repo replaces the repo of the working directory, a write goes to the board of the new repo")
+    func writeOfCurrentBoardGoesToNewRepo() async throws {
+        let repo = try await PathRepo.make()
+        let session = try await repo.host.session(workingDirectory: repo.folder, actor: KanbanHostTests.secondActor)
+        _ = try await CrossRepoFixture.addTask(with: "", on: session)
+        let newKey = try repo.moveAndMakeNewRepo()
+        let task = try await CrossRepoFixture.addTask(with: "", on: session)
+        #expect(task.hasPrefix(Self.uriPrefix(ofBoard: newKey)))
+        await repo.host.close()
+    }
+
+    @Test("A write whose repo is replaced during the call runs again on the board of the new repo")
+    func writeDuringReplaceGoesToNewRepo() async throws {
+        let repo = try await PathRepo.make()
+        let replacer = ReplaceOnFirstCall(repo: repo)
+        let view = try KanbanGraph(
+            host: repo.host,
+            owningHost: false,
+            workingDirectory: repo.folder,
+            actingAs: KanbanGraph.sessionActor(named: KanbanHostTests.secondActor),
+            locatedBy: await repo.host.locator,
+            reportingTo: replacer
+        )
+        try await view.prepareBoard()
+        let task = try await CrossRepoFixture.addTask(with: "", on: view)
+        let newKey = try #require(replacer.newKey)
+        #expect(task.hasPrefix(Self.uriPrefix(ofBoard: newKey)))
+        #expect(!FileManager.default.fileExists(atPath: EventLog(repositoryAt: repo.oldFolder).directory.path))
+        await repo.host.close()
+    }
+}
+
+/// Replaces the repo of a ``PathRepo`` at the start of the first call of a view: after the view took the serial gate
+/// of the engine of the old repo, and before the call commits.
+final class ReplaceOnFirstCall: KanbanCallObserver {
+    /// The repo folder to replace.
+    private let folder: URL
+
+    /// The folder that gets the old repo.
+    private let staging: URL
+
+    /// Gives the keys of the repos.
+    private let reader: ScanKeyReader
+
+    /// The key of the new repo after the replace, or `nil` before it, behind a lock, because the calls run on
+    /// different threads.
+    private let replacedKey = Mutex<String?>(nil)
+
+    /// Makes the observer.
+    ///
+    /// - Parameter repo: The repo to replace.
+    init(repo: PathRepo) {
+        folder = repo.folder
+        staging = repo.staging.url
+        reader = repo.reader
+    }
+
+    /// The key of the new repo after the replace, or `nil` before it.
+    var newKey: String? {
+        replacedKey.withLock { key in key }
+    }
+
+    /// Replaces the repo at the first call start. A later call start changes nothing.
+    func callDidStart() async {
+        let isFirst = replacedKey.withLock { key in key == nil }
+        guard isFirst else {
+            return
+        }
+        let key = try? PathRepo.moveAndMakeNewRepo(at: folder, movingOldRepoInto: staging, keyedBy: reader)
+        replacedKey.withLock { replaced in replaced = key }
+    }
+
+    /// Does nothing: the observer acts only at a call start.
+    func callDidFinish() {}
 }
 
 /// The repo of a path board ref of one test, outside the scan place of the current repo, and the session view of the
@@ -134,35 +225,66 @@ struct PathRepo {
         )
     }
 
+    /// The folder of the old repo in ``staging`` after a replace.
+    var oldFolder: URL {
+        staging.url.appending(path: folder.lastPathComponent)
+    }
+
     /// Moves the repo of the path ref into ``staging``, makes a new repo with a different key at the same path, and
     /// waits until the host gives the new key for the folder.
     ///
     /// - Returns: The key of the new repo.
     /// - Throws: An error when a folder cannot change, or when the host does not see the change in time.
     func replace() async throws -> String {
-        try PathRefCacheTests.replaceRepo(at: folder, movingOldRepoInto: staging.url)
-        reader.setOrigin(PathRefCacheTests.laterOrigin, ofRepoNamed: ScanCacheTests.newName)
-        let newKey = try CrossRepoFixture.keyText(of: PathRefCacheTests.laterOrigin)
+        let newKey = try moveAndMakeNewRepo()
         try await recorder.waitForChange(.place(outside.url.canonicalPath)) {
             try await host.board(ofFolderAt: folder).copy?.key.description == newKey
         }
         return newKey
     }
 
-    /// Gives each event of the board of the new repo as one change of the engine of the old repo, after
-    /// ``replace()``. This is what the file watcher of the engine of the old repo sends when it reads the files of the
-    /// new repo: that engine keeps the path of the folder, so its change has the same path as the board of the new
-    /// repo, and it names the nodes of the new board.
+    /// Moves the repo of the path ref into ``staging``, and makes a new repo with a different key at the same path,
+    /// with no wait for the host.
     ///
-    /// - Returns: The change of the engine of the old repo, by the canonical path of the root directory of that
-    ///   engine.
-    /// - Throws: An error when the host has no engine for a repo, or when the new board has no event.
+    /// - Returns: The key of the new repo.
+    /// - Throws: An error when a folder cannot change.
+    func moveAndMakeNewRepo() throws -> String {
+        try Self.moveAndMakeNewRepo(at: folder, movingOldRepoInto: staging.url, keyedBy: reader)
+    }
+
+    /// Moves a repo into a different folder, and makes a new repo with a different key at the same path, with no
+    /// wait for the host.
+    ///
+    /// - Parameters:
+    ///   - folder: The repo folder.
+    ///   - staging: The folder that gets the old repo.
+    ///   - reader: Gives the keys of the repos. It gets the origin of the new repo.
+    /// - Returns: The key of the new repo.
+    /// - Throws: An error when a folder cannot change.
+    static func moveAndMakeNewRepo(
+        at folder: URL,
+        movingOldRepoInto staging: URL,
+        keyedBy reader: ScanKeyReader
+    ) throws -> String {
+        try PathRefCacheTests.replaceRepo(at: folder, movingOldRepoInto: staging)
+        reader.setOrigin(PathRefCacheTests.laterOrigin, ofRepoNamed: ScanCacheTests.newName)
+        return try CrossRepoFixture.keyText(of: PathRefCacheTests.laterOrigin)
+    }
+
+    /// Gives each event of the board of the new repo as one change of the engine of the old repo, after
+    /// ``replace()``. This is what the file watcher of the engine of the old repo sent when it read the files of the
+    /// new repo: that engine kept the path of the folder, so its change has the same path as the board of the new
+    /// repo, and it names the nodes of the new board. The host lets go of the engine of the old repo, so the change
+    /// takes the identity of the old repo from its folder in ``staging``.
+    ///
+    /// - Returns: The change of the engine of the old repo, by the canonical path of the folder of the path ref.
+    /// - Throws: An error when the old folder cannot be read, when the host has no engine for the new repo, or when
+    ///   the new board has no event.
     func newBoardChangesOfOldEngine() async throws -> [String: BoardChanges] {
-        let oldFolder = staging.url.appending(path: folder.lastPathComponent)
-        let oldEngine = try await host.relatedEngine(ofBoardAt: oldFolder, knownKey: nil)
+        let oldIdentity = try FolderIdentity(of: oldFolder)
         let newSession = try await host.relatedEngine(ofBoardAt: folder, knownKey: nil).session
         let change = LiveGraphChange(before: Graph(), after: newSession.live.graph, events: newSession.live.events)
-        let changes = try #require(BoardChanges(of: newSession, changes: [change], madeBy: oldEngine.identity))
-        return [oldEngine.root.canonicalPath: changes]
+        let changes = try #require(BoardChanges(of: newSession, changes: [change], madeBy: oldIdentity))
+        return [folder.canonicalPath: changes]
     }
 }
