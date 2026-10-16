@@ -209,18 +209,14 @@ public actor KanbanGraph {
         operationName: String?,
         postingPlansTo context: ToolContext?
     ) async throws -> String {
-        try await followingMovedBoards { board in
-            try await holdingGates(startingWith: board) { held in
-                try await self.publishingChanges(of: held, postingPlansTo: context) {
-                    try await self.respond(
-                        to: query,
-                        variables: variables,
-                        operationName: operationName,
-                        on: board,
-                        holding: held
-                    )
-                }
-            }
+        try await runningOnBoard(postingPlansTo: context) { board, held in
+            try await self.respond(
+                to: query,
+                variables: variables,
+                operationName: operationName,
+                on: board,
+                holding: held
+            )
         }
     }
 
@@ -250,18 +246,14 @@ public actor KanbanGraph {
         operationName: String?
     ) async throws -> AsyncThrowingStream<String, Error> {
         await host.register(self)
-        return try await followingMovedBoards { board in
-            try await holdingGates(startingWith: board) { held in
-                try await self.publishingChanges(of: held, postingPlansTo: nil) {
-                    try await self.startSubscription(
-                        to: query,
-                        variables: variables,
-                        operationName: operationName,
-                        on: board,
-                        holding: held
-                    )
-                }
-            }
+        return try await runningOnBoard(postingPlansTo: nil) { board, held in
+            try await self.startSubscription(
+                to: query,
+                variables: variables,
+                operationName: operationName,
+                on: board,
+                holding: held
+            )
         }
     }
 
@@ -438,6 +430,31 @@ public actor KanbanGraph {
     }
 
     // MARK: - Calls
+
+    /// Runs an operation on the board of the working directory: the view follows each moved board
+    /// (``followingMovedBoards(_:)``), holds the serial gate of each board that the operation can write
+    /// (``holdingGates(startingWith:_:)``), and sends the changes of those boards after the operation
+    /// (``publishingChanges(of:postingPlansTo:_:)``). Each call of the view and each start of a subscription goes
+    /// through this order of steps.
+    ///
+    /// - Parameters:
+    ///   - context: The context of the tool call that gets the plans, or `nil` for no post.
+    ///   - operation: The operation. It gets the board of the working directory, or the error that stops each call,
+    ///     and the gates that it holds.
+    /// - Returns: The value of the result of the operation.
+    /// - Throws: The error of the operation, or the error of ``followingMovedBoards(_:)``.
+    private func runningOnBoard<Value: Sendable>(
+        postingPlansTo context: ToolContext?,
+        _ operation: @Sendable (Result<BoardEngine, any Error>, HeldGates) async throws -> CallResult<Value>
+    ) async throws -> Value {
+        try await followingMovedBoards { board in
+            try await holdingGates(startingWith: board) { held in
+                try await self.publishingChanges(of: held, postingPlansTo: context) {
+                    try await operation(board, held)
+                }
+            }
+        }
+    }
 
     /// Runs an operation while it holds the serial gate of each board that it can write, in the sort order of the
     /// board identities (divergence.md §16, locks across boards).

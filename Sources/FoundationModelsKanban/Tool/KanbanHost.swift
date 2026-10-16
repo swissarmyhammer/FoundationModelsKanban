@@ -45,7 +45,7 @@ public actor KanbanHost {
     /// Each engine that the host let go of because its folder moved away from its root path (divergence.md §16,
     /// Gap 6). The host does not keep an engine alive: a session view that still holds the engine keeps it until the
     /// view follows the move. ``close()`` closes each engine that is still alive, so that its subscriptions end.
-    private var retiredEngines: [WeakEngine] = []
+    private var retiredEngines: [Weak<BoardEngine>] = []
 
     /// Each related board whose last load failed, by the identity of its repo directory (divergence.md Q7). A related
     /// load of such a board gives the same error again, with no read of a file, until the file watcher of the board
@@ -69,7 +69,7 @@ public actor KanbanHost {
 
     /// The session views that get the changes of the boards, by their object identity. The host does not keep a view
     /// alive.
-    private var views: [ObjectIdentifier: WeakView] = [:]
+    private var views: [ObjectIdentifier: Weak<KanbanGraph>] = [:]
 
     /// `true` after ``close()``: no file watcher starts.
     private var isClosed = false
@@ -275,7 +275,7 @@ public actor KanbanHost {
     func retire(_ engine: BoardEngine) async {
         if case .loaded(let loaded) = engines[engine.identity], loaded === engine {
             engines[engine.identity] = nil
-            retiredEngines = retiredEngines.filter { retired in retired.engine != nil } + [WeakEngine(engine: engine)]
+            retiredEngines = retiredEngines.filter { retired in retired.object != nil } + [Weak(object: engine)]
         }
         await engine.retire()
     }
@@ -667,7 +667,7 @@ public actor KanbanHost {
     ///
     /// - Parameter view: The view.
     func register(_ view: KanbanGraph) {
-        views[ObjectIdentifier(view)] = WeakView(view: view)
+        views[ObjectIdentifier(view)] = Weak(object: view)
     }
 
     /// Forgets a session view: it gets no more changes.
@@ -683,7 +683,7 @@ public actor KanbanHost {
     /// - Parameter view: The view.
     /// - Returns: `true` when the host has the view registered.
     func hasView(_ view: KanbanGraph) -> Bool {
-        views[ObjectIdentifier(view)]?.view === view
+        views[ObjectIdentifier(view)]?.object === view
     }
 
     /// Sends the changes of some boards to each session view, so that each view sends them to its own subscribers
@@ -691,8 +691,8 @@ public actor KanbanHost {
     ///
     /// - Parameter changed: The changes of each board that changed, by the canonical path of its repo directory.
     func publish(_ changed: [String: BoardChanges]) async {
-        views = views.filter { _, entry in entry.view != nil }
-        for view in views.values.compactMap(\.view) {
+        views = views.filter { _, entry in entry.object != nil }
+        for view in views.values.compactMap(\.object) {
             await view.publish(changed)
         }
     }
@@ -724,7 +724,7 @@ public actor KanbanHost {
                 await (try? load.value)?.close()
             }
         }
-        let retired = retiredEngines.compactMap(\.engine)
+        let retired = retiredEngines.compactMap(\.object)
         retiredEngines = []
         for engine in retired {
             await engine.close()
@@ -848,14 +848,8 @@ private struct KnownFolder {
     let watch: BoardWatch
 }
 
-/// A session view that the host does not keep alive.
-private struct WeakView {
-    /// The view, or `nil` after the view is gone.
-    weak var view: KanbanGraph?
-}
-
-/// A retired engine that the host does not keep alive (divergence.md §16, Gap 6).
-private struct WeakEngine {
-    /// The engine, or `nil` after the engine is gone.
-    weak var engine: BoardEngine?
+/// An object that the host does not keep alive: a session view, or a retired engine (divergence.md §16, Gap 6).
+private struct Weak<Object: AnyObject> {
+    /// The object, or `nil` after the object is gone.
+    weak var object: Object?
 }

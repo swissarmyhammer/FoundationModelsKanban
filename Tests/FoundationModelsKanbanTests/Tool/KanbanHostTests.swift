@@ -287,13 +287,13 @@ struct KanbanHostTests {
         let staging = try TemporaryDirectory()
         let folder = try ScanPlace.makeRepoFolder(named: ScanCacheTests.newName, in: outside.url)
         _ = try KanbanGraphTests.writeFixture(inRepoAt: folder)
-        let host = HostFixture.makeHost()
+        let reader = ScanKeyReader()
+        let host = HostFixture.makeHost(readingKeyWith: reader.keyReader, findingTopWith: reader.topReader)
         let engine = try await host.engine(ofBoardAt: folder)
         let events = await engine.session.live.events.count
-        try FileManager.default.moveItem(at: folder, to: staging.url.appending(path: folder.lastPathComponent))
-        let newFolder = try ScanPlace.makeRepoFolder(named: ScanCacheTests.newName, in: outside.url)
-        var (task, ids) = try KanbanGraphTests.writeFixture(inRepoAt: newFolder)
-        try BoardWatcherTests.writeLaterTitle(to: task, mintingFrom: &ids, in: EventLog(repositoryAt: newFolder))
+        _ = try PathRepo.moveAndMakeNewRepo(at: folder, movingOldRepoInto: staging.url, keyedBy: reader)
+        var (task, ids) = try KanbanGraphTests.writeFixture(inRepoAt: folder)
+        try BoardWatcherTests.writeLaterTitle(to: task, mintingFrom: &ids, in: EventLog(repositoryAt: folder))
         let isRetired = try await EventLogTests.becomesTrue(within: Self.retirementWaitLimit) {
             await engine.activeWatch == nil
         }
