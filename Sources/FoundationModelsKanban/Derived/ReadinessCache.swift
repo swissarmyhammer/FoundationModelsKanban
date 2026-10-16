@@ -472,11 +472,7 @@ extension Graph {
     /// - Parameter key: The current key of the board.
     /// - Returns: The keys.
     func remoteDependencyKeys(inBoard key: String) -> Set<String> {
-        Set(
-            allSlots.compactMap { slot in node(at: slot, as: TaskNode.self) }
-                .flatMap { task in dependencies(of: task, inBoard: key) }
-                .compactMap(\.remoteBoardKey)
-        )
+        remoteBoardKeys { task in dependencies(of: task, inBoard: key) }
     }
 
     /// Gives the targets of the dependencies of a task as URIs: the `dependsOn` edges and the dependency markers, also

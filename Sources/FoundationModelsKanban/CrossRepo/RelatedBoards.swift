@@ -526,9 +526,18 @@ extension Graph {
     /// hold them. A move or a copy to a different board stores each assignee as the full URI of the actor on the old
     /// board (divergence.md Q21), and `Task.assignees` reads that actor from its own board.
     var remoteAssigneeKeys: Set<String> {
+        remoteBoardKeys(of: \.assignees)
+    }
+
+    /// Gives the board keys of the targets of one edge list of the tasks of the graph that are nodes of a different
+    /// board, as the URIs hold them. A slot or a local ref gives no key.
+    ///
+    /// - Parameter edges: Gives the edge list of a task, for example its assignees or the targets of its dependencies.
+    /// - Returns: The keys.
+    func remoteBoardKeys(of edges: (TaskNode) -> [EdgeTarget]) -> Set<String> {
         Set(
             allSlots.compactMap { slot in node(at: slot, as: TaskNode.self) }
-                .flatMap(\.assignees)
+                .flatMap(edges)
                 .compactMap(\.remoteBoardKey)
         )
     }

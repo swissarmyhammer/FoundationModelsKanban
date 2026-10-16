@@ -128,7 +128,18 @@ struct CrossRepoTransferTests {
     /// - Returns: The names.
     /// - Throws: An error when the value is not a list of objects.
     static func names(in tags: Any?) throws -> [String] {
-        try #require(tags as? [[String: Any]]).compactMap { tag in tag["name"] as? String }
+        try texts(of: "name", in: tags)
+    }
+
+    /// Gives the text value of one field of each object of a list of a response.
+    ///
+    /// - Parameters:
+    ///   - field: The name of the field of each object, for example `id` or `name`.
+    ///   - list: The list value of the response.
+    /// - Returns: The text values. An object with no text value for the field gives no value.
+    /// - Throws: An error when the value is not a list of objects.
+    static func texts(of field: String, in list: Any?) throws -> [String] {
+        try #require(list as? [[String: Any]]).compactMap { object in object[field] as? String }
     }
 
     /// Gives the key of the board of a full URI.
@@ -149,13 +160,16 @@ struct CrossRepoTransferTests {
         try #require(task["column"] as? [String: Any])["id"] as? String
     }
 
-    /// Gives the ids of the tasks of a `dependsOn` list of a response.
+    /// Gives the ids of the objects of one list field of a task object of a response, for example `dependsOn` or
+    /// `assignees`.
     ///
-    /// - Parameter task: The task object of the response, with a `dependsOn { id }` selection.
+    /// - Parameters:
+    ///   - task: The task object of the response, with an `id` selection in the list field.
+    ///   - key: The name of the list field.
     /// - Returns: The ids.
-    /// - Throws: An error when the task has no `dependsOn` list.
-    static func dependencyIDs(of task: [String: Any]) throws -> [String] {
-        try #require(task["dependsOn"] as? [[String: Any]]).compactMap { target in target["id"] as? String }
+    /// - Throws: An error when the task has no list of objects for the key.
+    static func ids(of task: [String: Any], under key: String) throws -> [String] {
+        try texts(of: "id", in: task[key])
     }
 
     /// Two repos side by side, and a task of the related repo that a move or a copy wrote there from the current repo.
@@ -180,14 +194,26 @@ struct CrossRepoTransferTests {
     static func makeAssignedTransfer(_ operation: String) async throws -> AssignedTransfer {
         let repos = try await CrossRepoFixture.SideBySide.make()
         let app = try GitGraphFixture.makeGraph(at: repos.app)
-        let actorInput = #"id: "\#(AddUpdateTaskTests.alice)", name: "\#(assigneeName)""#
-        _ = try await CommentTests.run("addActor(input: { \(actorInput) }) { id }", on: app)
-        let assignees = "assignees: " + AddUpdateTaskTests.list(of: [AddUpdateTaskTests.alice])
-        let old = try await CrossRepoFixture.addTask(with: assignees, on: app)
+        let old = try await makeAssignedOldTask(named: assigneeName, on: app)
         let written = try await transfer(operation, old, with: try libBoard(), on: app)
         await app.close()
         let actor = NodeURI(boardKey: try CrossRepoWriteTests.appKey(), ref: .actor(slug: AddUpdateTaskTests.alice))
         return AssignedTransfer(repos: repos, written: written, actor: actor.description)
+    }
+
+    /// Adds an actor with the slug ``AddUpdateTaskTests/alice`` to the current board, and a task with that actor as
+    /// its one assignee.
+    ///
+    /// - Parameters:
+    ///   - name: The name of the actor.
+    ///   - app: The engine of the current repo.
+    /// - Returns: The full URI of the task.
+    /// - Throws: An error when a call fails.
+    static func makeAssignedOldTask(named name: String, on app: KanbanGraph) async throws -> String {
+        let actorInput = #"id: "\#(AddUpdateTaskTests.alice)", name: "\#(name)""#
+        _ = try await CommentTests.run("addActor(input: { \(actorInput) }) { id }", on: app)
+        let assignees = "assignees: " + AddUpdateTaskTests.list(of: [AddUpdateTaskTests.alice])
+        return try await CrossRepoFixture.addTask(with: assignees, on: app)
     }
 
     /// Opens an engine on the related repo, so that the related board is the current board of each call.
@@ -217,15 +243,6 @@ struct CrossRepoTransferTests {
         let connection = try #require(board["tasks"] as? [String: Any], "\(response)")
         let edges = try #require(connection["edges"] as? [[String: Any]], "\(response)")
         return try edges.map { edge in try #require(edge["node"] as? [String: Any]) }
-    }
-
-    /// Gives the ids of the assignees of a task object of a response.
-    ///
-    /// - Parameter task: The task object, with an ``assigneesSelection`` selection.
-    /// - Returns: The ids.
-    /// - Throws: An error when the task has no `assignees` list.
-    static func assigneeIDs(of task: [String: Any]) throws -> [String] {
-        try #require(task["assignees"] as? [[String: Any]]).compactMap { actor in actor["id"] as? String }
     }
 
     // MARK: - Move
@@ -292,7 +309,7 @@ struct CrossRepoTransferTests {
         let selection = "{ ready unresolvedDependsOn dependsOn { id } }"
         let task = try await Self.task(written, selecting: selection, on: app)
         await app.close()
-        #expect(try Self.dependencyIDs(of: task) == [target])
+        #expect(try Self.ids(of: task, under: PropertyName.dependsOn) == [target])
         #expect((task["unresolvedDependsOn"] as? [String])?.isEmpty == true)
         #expect(task["ready"] as? Bool == false)
     }
@@ -312,7 +329,7 @@ struct CrossRepoTransferTests {
         let added = try #require(try CrossRepoWriteTests.events(ofTask: written, inRepoAt: repos.lib).first).patch.add
         let local = LocalRef.task(try AddUpdateTaskTests.firstTask(in: target))
         #expect(added[PropertyName.dependsOn] == [.local(local)])
-        #expect(try Self.dependencyIDs(of: task) == [target])
+        #expect(try Self.ids(of: task, under: PropertyName.dependsOn) == [target])
     }
 
     @Test("A task on the old board that depended on the moved task ignores the tombstone, and is ready")
@@ -455,9 +472,7 @@ struct CrossRepoTransferTests {
     func transferStoresAssigneeAsOldBoardURI(operation: String) async throws {
         let repos = try await CrossRepoFixture.SideBySide.make()
         let app = try GitGraphFixture.makeGraph(at: repos.app)
-        _ = try await CommentTests.run(#"addActor(input: { name: "\#(AddUpdateTaskTests.alice)" }) { id }"#, on: app)
-        let assignees = "assignees: " + AddUpdateTaskTests.list(of: [AddUpdateTaskTests.alice])
-        let old = try await CrossRepoFixture.addTask(with: assignees, on: app)
+        let old = try await Self.makeAssignedOldTask(named: AddUpdateTaskTests.alice, on: app)
         let written = try await Self.transfer(operation, old, with: try Self.libBoard(), on: app)
         await app.close()
         let added = try #require(try CrossRepoWriteTests.events(ofTask: written, inRepoAt: repos.lib).first).patch.add
@@ -474,7 +489,7 @@ struct CrossRepoTransferTests {
         let lib = try Self.makeLibGraph(in: transfer.repos)
         let task = try await Self.task(transfer.written, selecting: "{ \(Self.assigneesSelection) }", on: lib)
         await lib.close()
-        #expect(try Self.assigneeIDs(of: task) == [transfer.actor])
+        #expect(try Self.ids(of: task, under: PropertyName.assignees) == [transfer.actor])
         #expect(try Self.names(in: task["assignees"]) == [Self.assigneeName])
     }
 
@@ -489,7 +504,7 @@ struct CrossRepoTransferTests {
         let response = try await KanbanGraphTests.execute(Self.filteredTasksQuery("@" + actor), on: lib)
         await lib.close()
         let tasks = try Self.filteredTasks(in: response)
-        #expect(tasks.compactMap { task in task["id"] as? String } == [transfer.written])
+        #expect(try Self.texts(of: "id", in: tasks) == [transfer.written])
     }
 
     @Test("After a move, the @ filter with the full URI of the actor on the old board finds the new task")
@@ -499,7 +514,7 @@ struct CrossRepoTransferTests {
         let response = try await KanbanGraphTests.execute(Self.filteredTasksQuery("@" + transfer.actor), on: lib)
         await lib.close()
         let tasks = try Self.filteredTasks(in: response)
-        #expect(tasks.compactMap { task in task["id"] as? String } == [transfer.written])
+        #expect(try Self.texts(of: "id", in: tasks) == [transfer.written])
     }
 
     /// The `@` filter finds the task by the slug in the URI, `Task.assignees` leaves the actor out, and the response
@@ -515,8 +530,8 @@ struct CrossRepoTransferTests {
         )
         await lib.close()
         let tasks = try Self.filteredTasks(in: response)
-        #expect(tasks.compactMap { task in task["id"] as? String } == [transfer.written])
-        #expect(try tasks.map(Self.assigneeIDs(of:)) == [[]])
+        #expect(try Self.texts(of: "id", in: tasks) == [transfer.written])
+        #expect(try tasks.map { task in try Self.ids(of: task, under: PropertyName.assignees) } == [[]])
         let warnings = try ResponseWarningsTests.warnings(of: response)
         #expect(warnings.map(\.code) == [UnreadableRelatedBoardTests.warningCode])
         let message = try #require(warnings.first?.message)
