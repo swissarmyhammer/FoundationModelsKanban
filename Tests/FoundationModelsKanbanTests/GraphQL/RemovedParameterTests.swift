@@ -59,6 +59,18 @@ struct RemovedParameterTests {
     /// The warning text of `due` and `scheduled`, after the name in back quotes.
     private static let noDateText = " is removed, with no replacement: write the date in the body. The call ignored it."
 
+    /// The warning text of `exclude_done` and `excludeDone`, after the name in back quotes.
+    private static let excludeDoneText = " is removed, use the filter `!#DONE`. The call ignored it."
+
+    /// The warning text of `include_counts` and `INCLUDE_COUNTS`, after the name in back quotes.
+    private static let includeCountsText = " is removed, select `summary` (or `totalCount`). The call ignored it."
+
+    /// The warning text of the removed `due` parameter.
+    private static let dueWarning = "`due`" + noDateText
+
+    /// The warning text of the removed `page` argument.
+    private static let pageWarning = "`page` is removed, use `first` and `after` (cursor paging). The call ignored it."
+
     /// The removed `due` parameter and its value, as an `input` field.
     private static let removedDue = #"due: "2026-01-01""#
 
@@ -70,41 +82,23 @@ struct RemovedParameterTests {
 
     /// Each removed parameter, in each position where the agent writes it, with the text of its warning.
     static let cases: [RemovedParameterCase] = [
-        addTaskCase(field: #"due: "2026-01-01""#, warning: "`due`" + noDateText),
+        addTaskCase(field: removedDue, warning: dueWarning),
         addTaskCase(field: #"scheduled: "2026-01-01""#, warning: "`scheduled`" + noDateText),
         addTaskCase(field: #"project: "web""#, warning: "`project` is removed, use tags. The call ignored it."),
         addTaskCase(
             field: #"attachments: ["a.png"]"#,
             warning: "`attachments` is removed, with no replacement. The call ignored it."
         ),
-        tasksCase(
-            arguments: "exclude_done: true",
-            warning: "`exclude_done` is removed, use the filter `!#DONE`. The call ignored it."
-        ),
-        tasksCase(
-            arguments: "excludeDone: true",
-            warning: "`excludeDone` is removed, use the filter `!#DONE`. The call ignored it."
-        ),
-        tasksCase(
-            arguments: "first: 1, page: 2",
-            warning: "`page` is removed, use `first` and `after` (cursor paging). The call ignored it."
-        ),
+        tasksCase(arguments: "exclude_done: true", warning: "`exclude_done`" + excludeDoneText),
+        tasksCase(arguments: "excludeDone: true", warning: "`excludeDone`" + excludeDoneText),
+        tasksCase(arguments: "first: 1, page: 2", warning: pageWarning),
         tasksCase(
             arguments: #"detail: "full""#,
             warning: "`detail` is removed, choose the fields in the selection set. The call ignored it."
         ),
-        tasksCase(
-            arguments: "include_counts: true",
-            warning: "`include_counts` is removed, select `summary` (or `totalCount`). The call ignored it."
-        ),
-        tasksCase(
-            arguments: "INCLUDE_COUNTS: true",
-            warning: "`INCLUDE_COUNTS` is removed, select `summary` (or `totalCount`). The call ignored it."
-        ),
+        tasksCase(arguments: "include_counts: true", warning: "`include_counts`" + includeCountsText),
+        tasksCase(arguments: "INCLUDE_COUNTS: true", warning: "`INCLUDE_COUNTS`" + includeCountsText),
     ]
-
-    /// The warning text of the removed `due` parameter.
-    private static let dueWarning = "`due`" + noDateText
 
     /// Each removed parameter whose value is a variable. The removed `due` field of an `input` object: with no other
     /// use of the variable, with an other use in an argument, in a directive, or in a fragment that the operation
@@ -149,7 +143,7 @@ struct RemovedParameterTests {
             variables: ["p": 2],
             rewrittenText: "query  { board { tasks { totalCount } } }",
             resultKey: "board",
-            warning: "`page` is removed, use `first` and `after` (cursor paging). The call ignored it."
+            warning: pageWarning
         ),
     ]
 
@@ -308,11 +302,8 @@ struct RemovedParameterTests {
     func removedParameterGivesWarning(removed: RemovedParameterCase) async throws {
         try await Self.withFixture { graph in
             let response = try await KanbanGraphTests.execute(removed.document, on: graph)
-            #expect(try KanbanGraphTests.object(of: response)["errors"] == nil, "\(response)")
-            #expect(try KanbanGraphTests.data(of: response)[removed.resultKey] is [String: Any], "\(response)")
-            let warnings = try ResponseWarningsTests.warnings(of: response)
-            #expect(warnings.map(\.message) == [removed.warning], "\(response)")
-            #expect(warnings.map(\.code) == [Self.warningCode], "\(response)")
+            try Self.expectResult(at: removed.resultKey, in: response)
+            try Self.expectRemovedWarning(removed.warning, in: response)
         }
     }
 
@@ -322,10 +313,10 @@ struct RemovedParameterTests {
             let document = "mutation ($input: AddTaskInput!) { addTask(input: $input) { title } }"
             let input: Map = ["title": "x", "due": "2026-01-01"]
             let response = try await KanbanGraphTests.execute(document, variables: ["input": input], on: graph)
+            try Self.expectResult(at: "addTask", in: response)
             let added = try KanbanGraphTests.object(named: "addTask", in: response)
             #expect(added["title"] as? String == "x", "\(response)")
-            let warnings = try ResponseWarningsTests.warnings(of: response)
-            #expect(warnings.map(\.message) == ["`due`" + Self.noDateText], "\(response)")
+            try Self.expectRemovedWarning(Self.dueWarning, in: response)
         }
     }
 

@@ -97,8 +97,24 @@ comments:
     - evidence: commit "fix(observe): address review findings for the subscriber move (^0nkvw6d)" with ChangeFeed.swift, ChangeFeedTests.swift, and the task files. The sha is in the report of the caller.
     - next: Review the task again.
   timestamp: 2026-10-16T04:52:17.205289+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m51h6048qxs7y9sm12jfm63y
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (a68155b). 2 files reviewed, 7 validator runs, 0 failed. Counts: 0 findings, 0 confirmed, 0 refuted. The 2 items in "Review Findings (2026-10-15 23:28)" are checked.
+    - next: None. The task moved to done.
+  timestamp: 2026-10-16T04:58:01.224360+00:00
+- actor: claude-code
+  id: 01m51h6dq4etftnz671nx08ny5
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — ChangeFeed.swift (owner filter in Subscribers), ChangeFeedTests.swift (move event test)
+    - test: green — swift test, 1560 passed
+    - commit: a68155b
+    - review: clean — 0 findings
+  timestamp: 2026-10-16T04:58:15.140202+00:00
+position_column: done
+position_ordinal: ff9180
 title: Replace the related engine of a session view when a new repo is at the same path
 ---
 ## What
