@@ -104,6 +104,54 @@ comments:
     - not staged: Package.resolved, .kanban/mcp.17281.log
     - next: review
   timestamp: 2026-10-16T08:26:45.958132+00:00
+- actor: claude-code
+  id: 01m51xhvhntn213r0jjzqx4qdd
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (ac4a1d4). All 3 items of the 2026-10-16 02:23 section are checked. 1 new finding (1 confirmed, 1 refuted): Sources/FoundationModelsKanban/Tool/KanbanHost.swift:694 `reuse/reuse` — the prune of dead weak entries in the view table is a second copy of the prune of `retiredEngines`.
+    - next: Move the dead-entry prune into one shared helper (for example a method on `Weak` collections). Call it for the view table and for `retiredEngines`. Then run the review again. The task stays in review.
+  timestamp: 2026-10-16T08:34:12.661067+00:00
+- actor: claude-code
+  id: 01m51xj8rdkycdfh5dmvc172jd
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — KanbanGraph.swift (runningOnBoard helper), KanbanHost.swift (generic Weak), KanbanHostTests.swift (PathRepo helper)
+    - test: green — swift test, 1567 passed (second full run; first had only 60 s time limits under load)
+    - commit: ac4a1d4
+    - review: findings — Sources/FoundationModelsKanban/Tool/KanbanHost.swift:694
+  timestamp: 2026-10-16T08:34:26.189452+00:00
+- actor: claude-code
+  id: 01m51xzsaf9qvw2wrtdmeqrfap
+  text: |-
+    Review finding (2026-10-16 03:27) corrected. The item is now `- [x]`.
+
+    - KanbanHost.swift `reuse/reuse`: `Weak` now has `isAlive` (`object != nil`). This is the one shared test for a dead entry. Two `fileprivate` extensions use it: `Array.removeGoneObjects()` where `Element == Weak<Object>` (calls `removeAll`), and `Dictionary.removeGoneObjects()` where `Value == Weak<Object>` (keeps the live entries with `filter`). `retire(_:)` calls `retiredEngines.removeGoneObjects()` and then appends the new entry. `publish(_:)` calls `views.removeGoneObjects()`. No other prune of dead weak entries is in the file. `close()` reads `retiredEngines.compactMap(\.object)` and then sets the list to empty: that is a take of the live engines, not a prune, so it stays.
+    - `fileprivate` is necessary: `Weak` is private at file scope, and `KanbanHost` calls the methods from a different type, so `private` members of the extensions cannot compile.
+    - TDD: this is a refactor with no change of behavior. The current tests cover both prune paths (retired engines in ReplacedRepoTests and KanbanHostTests, views in each publish). No new test.
+
+    Tests: `swift build --build-tests` clean (only the allowed SwiftPM "missing creator" warning). KanbanHostTests and ReplacedRepoTests: 28 tests in 2 suites passed. Full `swift test` run 1: 1567 tests in 126 suites passed, 0 failures, no time-limit failures.
+  timestamp: 2026-10-16T08:41:49.135661+00:00
+- actor: claude-code
+  id: 01m51xztvf62qtgscezcmkx8m2
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Sources/FoundationModelsKanban/Tool/KanbanHost.swift. KanbanHostTests and ReplacedRepoTests: 28 tests in 2 suites passed. Full `swift test`: 1567 tests in 126 suites passed on the first run. Only the allowed "missing creator" warning. 1 of 1 open review finding checked.
+    - next: /review (the task stays in doing).
+  timestamp: 2026-10-16T08:41:50.703749+00:00
+- actor: claude-code
+  id: 01m51y5e1cm50kyfe5h0h7js5f
+  text: |-
+    ### test — green
+    - evidence: swift build exit 0. swift test exit 0. Swift Testing: 1567 tests in 126 suites passed (51.4 s). XCTest: 0 tests, 0 failures. 0 failed, 0 skipped, 0 issues. Only warning: the allowed SwiftPM "missing creator" warning. Log files: scratchpad build.log and test1.log.
+    - next: review
+  timestamp: 2026-10-16T08:44:54.188853+00:00
+- actor: claude-code
+  id: 01m51y60064vzc8d5nejkk8mq4
+  text: |-
+    ### commit — changed
+    - evidence: iteration 3 commit. Files: Sources/FoundationModelsKanban/Tool/KanbanHost.swift and the task files in .kanban/tasks/. The sha is in the git log subject "refactor(host): share the prune of dead weak entries (^1yg0p73)".
+    - next: /review
+  timestamp: 2026-10-16T08:45:12.582660+00:00
 position_column: doing
 position_ordinal: '80'
 title: Stop the engine of a replaced repo from reading the files of the new repo at the same path
@@ -143,3 +191,12 @@ When a user moves a repo away and makes a new repo at the same path, the host lo
 - [x] `Sources/FoundationModelsKanban/Tool/KanbanGraph.swift:253` `duplication/duplication` — The new nesting in `subscribe` repeats the nesting of `execute`: `followingMovedBoards { holdingGates(startingWith:) { publishingChanges(of:postingPlansTo:) { ... } } }`. Only the context argument (nil here, the caller's context in `execute`), the inner call, and the `host.register` line differ. The move-following and gate-holding logic can drift out of sync between the two copies, and a fix to one will miss the other. Extract a private helper, for example `runOnBoard(postingPlansTo:, _ operation: @Sendable (HeldGates, BoardEngine) async throws -> Value)`, that wraps `followingMovedBoards`, `holdingGates`, and `publishingChanges`. Call it from `execute` with the context and from `subscribe` with nil, passing only the inner call as the closure. Keep `host.register(self)` before the helper call in `subscribe`.
 - [x] `Sources/FoundationModelsKanban/Tool/KanbanHost.swift:858` `reuse/reuse` — WeakEngine reimplements the existing WeakView holder: the same single weak optional reference with the same doc shape. A second copy means two weak-holder types that must be kept in step, when one generic weak wrapper would serve both. Replace WeakEngine and WeakView with one generic holder, for example `private struct Weak<Object: AnyObject> { weak var object: Object? }`, and use `[Weak<BoardEngine>]` for retiredEngines (KanbanHost.swift:48). Keep WeakView's name at its call sites through a typealias if that reads better.
 - [x] `Tests/FoundationModelsKanbanTests/Tool/KanbanHostTests.swift:293` `reuse/reuse` — The new test moves the repo folder, makes a new repo folder, and writes a fixture into it by hand. A shared helper already does this sequence. Two copies of the same move-and-replace steps will drift apart when one is fixed. Call `PathRepo.moveAndMakeNewRepo` (or the `PathRepo` helper it uses) from ReplacedRepoTests.swift instead of the hand-written move and folder setup. If that helper does not fit the test's need for a separate staging directory, extend it with a parameter for the staging location, and call the extended helper.
+
+## Review Findings (2026-10-16 03:27)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Sources/FoundationModelsKanban/Tool/KanbanHost.swift:694` `reuse/reuse` — The view table is pruned of dead weak entries inline, the same way `retiredEngines` is pruned at line 278. This is a second copy of the same prune logic, not a call to a shared helper. Move the dead-entry prune into a helper shared with line 278, for example a method on `Weak` collections, and call it here.

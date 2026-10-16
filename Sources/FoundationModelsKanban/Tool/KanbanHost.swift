@@ -275,7 +275,8 @@ public actor KanbanHost {
     func retire(_ engine: BoardEngine) async {
         if case .loaded(let loaded) = engines[engine.identity], loaded === engine {
             engines[engine.identity] = nil
-            retiredEngines = retiredEngines.filter { retired in retired.object != nil } + [Weak(object: engine)]
+            retiredEngines.removeGoneObjects()
+            retiredEngines.append(Weak(object: engine))
         }
         await engine.retire()
     }
@@ -691,7 +692,7 @@ public actor KanbanHost {
     ///
     /// - Parameter changed: The changes of each board that changed, by the canonical path of its repo directory.
     func publish(_ changed: [String: BoardChanges]) async {
-        views = views.filter { _, entry in entry.object != nil }
+        views.removeGoneObjects()
         for view in views.values.compactMap(\.object) {
             await view.publish(changed)
         }
@@ -852,4 +853,25 @@ private struct KnownFolder {
 private struct Weak<Object: AnyObject> {
     /// The object, or `nil` after the object is gone.
     weak var object: Object?
+
+    /// `true` while the object is alive.
+    var isAlive: Bool {
+        object != nil
+    }
+}
+
+extension Array {
+    /// Removes each entry whose object is gone, so that the list of objects that the host does not keep alive does
+    /// not grow with dead entries.
+    fileprivate mutating func removeGoneObjects<Object>() where Element == Weak<Object> {
+        removeAll { entry in !entry.isAlive }
+    }
+}
+
+extension Dictionary {
+    /// Removes each entry whose object is gone, so that the table of objects that the host does not keep alive does
+    /// not grow with dead entries.
+    fileprivate mutating func removeGoneObjects<Object>() where Value == Weak<Object> {
+        self = filter { _, entry in entry.isAlive }
+    }
 }
