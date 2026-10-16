@@ -44,6 +44,59 @@ comments:
     - evidence: local commit with subject "fix(cross-repo): replace the related engine when a new repo is at the same path (^0nkvw6d)"; sha is in the final report of the commit step. Files: ChangeFeed.swift, ChangeRound.swift, SessionFeeds.swift, KanbanGraph.swift, BoardEngine.swift, ReplacedRepoTests.swift, ChangeFeedTests.swift, PathRefCacheTests.swift, ChangeBuilderTests.swift, SubscriptionTests.swift, divergence.md, and the changed .kanban/tasks files (including new task ^1yg0p73).
     - next: review. No push was done.
   timestamp: 2026-10-16T04:28:31.206171+00:00
+- actor: claude-code
+  id: 01m51g1c0pecv71n504sqr7dck
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (89eca2a) gave 2 findings (2 confirmed, 2 refuted). Sources/FoundationModelsKanban/Observe/ChangeFeed.swift:165 (reuse/reuse), Tests/FoundationModelsKanbanTests/Observe/ChangeFeedTests.swift:42 (completeness/inverse-operation-coverage).
+    - next: Do the 2 items in "Review Findings (2026-10-15 23:28)". Then review the task again. The task stays in review.
+  timestamp: 2026-10-16T04:38:00.982877+00:00
+- actor: claude-code
+  id: 01m51g1vs59cmgyxvycbvhhkj3
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — ChangeFeed, SessionFeeds, ChangeRound, KanbanGraph, BoardEngine, ReplacedRepoTests (new), ChangeFeedTests (new), divergence.md §16 Gap 5; follow-up ^1yg0p73
+    - test: green — swift test, 1559 passed; IntegrationTests 3 passed; new suites 5x clean
+    - commit: 89eca2a
+    - review: findings — Sources/FoundationModelsKanban/Observe/ChangeFeed.swift:165, Tests/FoundationModelsKanbanTests/Observe/ChangeFeedTests.swift:42
+  timestamp: 2026-10-16T04:38:17.125119+00:00
+- actor: claude-code
+  id: 01m51g9jdr3znqt2wmx8g9xem2
+  text: |-
+    Picked up for the 2 review findings (2026-10-15 23:28). Research:
+    - Finding 1: the owner filter is in 3 places in ChangeFeed.swift: the private feed method `subscribers(ownedBy:)` (`subscriber.owner == owner`), and in `Subscribers.remove(ownedBy:)` two times (`== owner` and `!= owner`). Plan: add `Subscribers.subscribers(ownedBy:)`, make the feed method call it, and make `remove(ownedBy:)` remove the ids of that result. Then the filter is in one place.
+    - Finding 2: the test can stay in memory. `ChangeFeed.publish` needs a `Change`, a `BoardView` and an `EventBoard`. The `QueryFixture` graph has a board node, so a `Change` with one `.board` update passes the empty filter. Each feed gets a change with a different `txn`. The test finishes both feeds, then reads each stream to its end, so a stream that stays on the old feed also gives its events.
+  timestamp: 2026-10-16T04:42:29.688013+00:00
+- actor: claude-code
+  id: 01m51gmtncjfm7xcf7ezw5zb95
+  text: |-
+    Both review findings are fixed.
+    - Finding 1 (reuse/reuse): `Subscribers.subscribers(ownedBy:)` is now the one place that tests the owner. The private feed method `ChangeFeed.subscribers(ownedBy:)` calls it under the lock. `Subscribers.remove(ownedBy:)` calls it and removes those ids. Thus the `!= owner` filter is also gone. The other code in the file has no owner filter.
+    - Finding 2 (completeness/inverse-operation-coverage): new test `ChangeFeedTests.movedSubscriberGetsEventsOfNewFeed`. It moves one owner, sends one change to each feed for each owner, finishes both feeds, and expects the moved stream to give only the transaction of the new feed, and the other owner to give only the transaction of the old feed. Proof that the test can fail: with `self.removeSubscriber(withID: id)` taken out of the move, the test failed at the moved-stream expectation (the stream also got the event of the old feed). The code was then put back.
+    - Helper note: `publishBoardChange` builds a `Change` with one `.board` update over the `QueryFixture` graph, and an in-memory `EventBoard`. No file is read.
+  timestamp: 2026-10-16T04:48:38.572564+00:00
+- actor: claude-code
+  id: 01m51gmx3m91m33b13sjyr7tv1
+  text: |-
+    ### implement — changed
+    - evidence: 2 files — Sources/FoundationModelsKanban/Observe/ChangeFeed.swift, Tests/FoundationModelsKanbanTests/Observe/ChangeFeedTests.swift. RED (fault injected): `swift test --filter ChangeFeedTests/movedSubscriberGetsEventsOfNewFeed` failed with 1 issue. `swift test --filter 'ChangeFeedTests|ReplacedRepoTests|SubscriptionTests'`: 17 tests in 3 suites passed. `swift test` (full): 1560 tests in 125 suites passed, 0 failures, only the accepted SwiftPM "missing creator" warning. Both findings of "Review Findings (2026-10-15 23:28)" are `- [x]`.
+    - next: /review
+  timestamp: 2026-10-16T04:48:41.076525+00:00
+- actor: claude-code
+  id: 01m51gtq14ejcf8qdpqsrm93nf
+  text: |-
+    ### test - green (iteration 2)
+    - evidence: swift build - Build complete, exit 0, one warning ("missing creator for mutated node", allowed). swift test (full, one run) - Test run with 1560 tests in 125 suites passed after 40.882 seconds. 0 failures, 0 issues, 0 skipped tests. Output saved to the scratchpad file test1.log.
+    - note: warning lines in the test output are log lines that the tests cause on purpose. They are not compiler warnings.
+    - next: review
+  timestamp: 2026-10-16T04:51:51.460938+00:00
+- actor: claude-code
+  id: 01m51gvg5nzqnq7pj26jztchws
+  text: |-
+    ### commit — changed
+    - evidence: commit "fix(observe): address review findings for the subscriber move (^0nkvw6d)" with ChangeFeed.swift, ChangeFeedTests.swift, and the task files. The sha is in the report of the caller.
+    - next: Review the task again.
+  timestamp: 2026-10-16T04:52:17.205289+00:00
 position_column: doing
 position_ordinal: '80'
 title: Replace the related engine of a session view when a new repo is at the same path
@@ -72,3 +125,16 @@ Seen in `PathRefCacheTests.replacedRepoIsReadAgain`: after the `.place` change, 
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-15 23:28)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 10 file(s) reviewed, 7 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `divergence.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsKanban/Observe/ChangeFeed.swift:165` `reuse/reuse` — The new feed method `subscribers(ownedBy:)` repeats the owner filter that `Subscribers.remove(ownedBy:)` already applies to the same `byID` table. Two copies of one owner-filter rule can drift apart, and a later fix to one would miss the other. Add `func subscribers(ownedBy owner: ObjectIdentifier) -> [Int: Subscriber]` to the `Subscribers` struct, next to `remove(ownedBy:)`. Have both the feed method and `remove(ownedBy:)` call it, so the owner filter exists once.
+- [x] `Tests/FoundationModelsKanbanTests/Observe/ChangeFeedTests.swift:42` `completeness/inverse-operation-coverage` — The move is tested only as bookkeeping. No test publishes an event to the new feed after the move and checks that the moved subscriber receives it, or that the old feed no longer delivers to it. The purpose of the move (divergence.md §16, the change feed uses the new engine) is therefore unproven. A move that updated the owner maps but left the stream attached to the old feed would pass every assertion in this file. Add a test that subscribes an owner to the old feed, calls moveSubscribers(ownedBy:to:), publishes one event to the new feed and one to the old feed, then reads the moved stream and expects exactly the event from the new feed. Assert that the other owner still gets the event from the old feed.

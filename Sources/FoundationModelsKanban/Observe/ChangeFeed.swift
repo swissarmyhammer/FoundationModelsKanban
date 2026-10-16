@@ -167,7 +167,7 @@ final class ChangeFeed: Sendable {
             guard case .open(let subscribers) = state else {
                 return [:]
             }
-            return subscribers.byID.filter { _, subscriber in subscriber.owner == owner }
+            return subscribers.subscribers(ownedBy: owner)
         }
     }
 
@@ -249,13 +249,23 @@ private struct Subscribers {
         return id
     }
 
+    /// Gives the subscribers of one owner. This is the one place that tests the owner of a subscriber.
+    ///
+    /// - Parameter owner: The owner.
+    /// - Returns: The subscribers of the owner, by their ids.
+    func subscribers(ownedBy owner: ObjectIdentifier) -> [Int: Subscriber] {
+        byID.filter { _, subscriber in subscriber.owner == owner }
+    }
+
     /// Removes each subscriber of one owner.
     ///
     /// - Parameter owner: The owner.
     /// - Returns: The removed subscribers.
     mutating func remove(ownedBy owner: ObjectIdentifier) -> [Subscriber] {
-        let removed = byID.filter { _, subscriber in subscriber.owner == owner }
-        byID = byID.filter { _, subscriber in subscriber.owner != owner }
+        let removed = subscribers(ownedBy: owner)
+        for id in removed.keys {
+            byID[id] = nil
+        }
         return Array(removed.values)
     }
 }
