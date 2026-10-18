@@ -363,9 +363,8 @@ final class UnreadableBoardRecorder: BoardLoadObserver {
         changeSink.yield(root)
     }
 
-    /// Waits until the host saw a change of a board that could not load, and the effect of the change shows. After
-    /// each change, the wait asks the condition, and it ends when the condition is `true`. Call it one time for each
-    /// recorder. The wait has the time limit of ``FolderEventWait``.
+    /// Waits until the host saw a change of a board that could not load, and the effect of the change shows
+    /// (``FolderEventWait/change(in:waitingFor:at:until:)``). Call it one time for each recorder.
     ///
     /// - Parameters:
     ///   - change: The change that the test waits for. The failure message at the time limit names it.
@@ -379,8 +378,6 @@ final class UnreadableBoardRecorder: BoardLoadObserver {
         at path: URL,
         until isShown: @escaping @Sendable () async throws -> Bool
     ) async throws -> Bool {
-        try await FolderEventWait.value(waitingFor: change, at: path.path) { [changes] in
-            try await changes.contains { _ in try await isShown() }
-        }
+        try await FolderEventWait.change(in: changes, waitingFor: change, at: path, until: isShown)
     }
 }

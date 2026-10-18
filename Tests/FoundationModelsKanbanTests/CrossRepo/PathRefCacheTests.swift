@@ -112,9 +112,7 @@ struct PathRefCacheTests {
         let session = try await host.session(workingDirectory: place.app, actor: KanbanHostTests.firstActor)
         #expect(try await !ScanCacheTests.hasBoard(of: folder.path, on: session))
         try await GitSandbox.initializeRepo(at: folder, withIdentity: false)
-        try await recorder.waitForChange(waitingFor: "a scan change after which the board is found", at: folder) {
-            try await ScanCacheTests.hasBoard(of: folder.path, on: session)
-        }
+        try await Self.waitUntilBoardFound(of: folder, on: session, recordedBy: recorder)
         #expect(try await CrossRepoReadTests.board("path", of: folder.path, on: session) == folder.path)
         await host.close()
     }
@@ -131,9 +129,7 @@ struct PathRefCacheTests {
         #expect(try await !ScanCacheTests.hasBoard(of: folder.path, on: session))
         reader.setOrigin(Self.laterOrigin, ofRepoNamed: ScanCacheTests.brokenName)
         try Self.makeFirstCommit(inRepoAt: folder)
-        try await recorder.waitForChange(waitingFor: "a scan change after which the board is found", at: folder) {
-            try await ScanCacheTests.hasBoard(of: folder.path, on: session)
-        }
+        try await Self.waitUntilBoardFound(of: folder, on: session, recordedBy: recorder)
         let key = try CrossRepoFixture.keyText(of: Self.laterOrigin)
         #expect(try await CrossRepoReadTests.board("key", of: folder.path, on: session) == key)
         await host.close()
@@ -152,6 +148,25 @@ struct PathRefCacheTests {
     }
 
     // MARK: - Helpers
+
+    /// Waits until the host saw a change of a folder that a path ref named, after which a call with the path ref finds
+    /// a board (``ScanRecorder/waitForChange(waitingFor:at:until:)``).
+    ///
+    /// - Parameters:
+    ///   - folder: The folder that the path ref names.
+    ///   - session: The session view of the current repo.
+    ///   - recorder: The recorder of the host of the session.
+    /// - Throws: ``FolderEventTimeout`` when no board is found before the time limit, or an error when a call cannot
+    ///   run.
+    static func waitUntilBoardFound(
+        of folder: URL,
+        on session: KanbanGraph,
+        recordedBy recorder: ScanRecorder
+    ) async throws {
+        try await recorder.waitForChange(waitingFor: "a scan change after which the board is found", at: folder) {
+            try await ScanCacheTests.hasBoard(of: folder.path, on: session)
+        }
+    }
 
     /// Writes the branch ref that the first commit of a repo writes, so that the file watcher sees new commits in the
     /// repo (``ScanChange/commits(inRepo:)``). The repo is a folder with an empty `.git` directory, so no git runs.

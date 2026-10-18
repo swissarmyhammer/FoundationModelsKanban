@@ -235,7 +235,36 @@ struct FileStamp: Hashable, Sendable {
         guard isDirectory, earlier.isDirectory else {
             return self == earlier
         }
-        return device == earlier.device && inode == earlier.inode
+        return isSameItem(as: earlier)
+    }
+
+    /// Tells if two stamps are the same: the same item, of the same kind, with the same size and the same times. A
+    /// write, a rename onto the path, or a new entry in a directory changes one of these, so the stamps are then not
+    /// the same.
+    ///
+    /// - Parameters:
+    ///   - lhs: A stamp.
+    ///   - rhs: The other stamp.
+    /// - Returns: `true` when the stamps are the same.
+    static func == (lhs: FileStamp, rhs: FileStamp) -> Bool {
+        lhs.isSameItem(as: rhs) && lhs.isDirectory == rhs.isDirectory && lhs.hasSameContent(as: rhs)
+    }
+
+    /// Tells if an earlier stamp is of the same item: the same device and the same inode.
+    ///
+    /// - Parameter earlier: The earlier stamp.
+    /// - Returns: `true` when the item is the same.
+    private func isSameItem(as earlier: FileStamp) -> Bool {
+        device == earlier.device && inode == earlier.inode
+    }
+
+    /// Tells if an earlier stamp has the same size, the same time of the last change of the content, and the same
+    /// time of the last change of the status.
+    ///
+    /// - Parameter earlier: The earlier stamp.
+    /// - Returns: `true` when the size and the times are the same.
+    private func hasSameContent(as earlier: FileStamp) -> Bool {
+        size == earlier.size && modified == earlier.modified && changed == earlier.changed
     }
 }
 
@@ -253,5 +282,15 @@ struct StampTime: Hashable, Sendable {
     init(_ time: timespec) {
         seconds = time.tv_sec
         nanoseconds = time.tv_nsec
+    }
+
+    /// Tells if two times are the same, to the nanosecond.
+    ///
+    /// - Parameters:
+    ///   - lhs: A time.
+    ///   - rhs: The other time.
+    /// - Returns: `true` when the seconds and the nanoseconds are the same.
+    static func == (lhs: StampTime, rhs: StampTime) -> Bool {
+        lhs.seconds == rhs.seconds && lhs.nanoseconds == rhs.nanoseconds
     }
 }

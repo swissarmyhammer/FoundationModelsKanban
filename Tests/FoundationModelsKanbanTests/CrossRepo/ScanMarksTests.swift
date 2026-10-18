@@ -30,8 +30,7 @@ struct ScanMarksTests {
     func changedConfigExpiresIndex() async throws {
         let place = try ScanPlace.make()
         var cache = try await Self.cache(afterScanOf: place)
-        let config = place.lib.appending(path: BoardKey.gitDirectoryName).appending(path: ScanCacheTests.gitConfigName)
-        try Data(Self.changedOrigin.utf8).write(to: config)
+        try ScanCacheTests.writeOrigin(Self.changedOrigin, intoConfigOfRepoAt: place.lib)
         cache.apply(.repo(place.lib.canonicalPath), inPlace: Self.placePath(of: place))
         #expect(cache.currentIndex(ofPlaces: Self.placesKey(of: place)) == nil)
     }
@@ -48,8 +47,7 @@ struct ScanMarksTests {
     func placeChangeForgetsOnlyChangedRepo() async throws {
         let place = try ScanPlace.make()
         var cache = try await Self.cache(afterScanOf: place)
-        let config = place.lib.appending(path: BoardKey.gitDirectoryName).appending(path: ScanCacheTests.gitConfigName)
-        try Data(Self.changedOrigin.utf8).write(to: config)
+        try ScanCacheTests.writeOrigin(Self.changedOrigin, intoConfigOfRepoAt: place.lib)
         cache.apply(.place(Self.placePath(of: place)), inPlace: Self.placePath(of: place))
         #expect(cache.currentIndex(ofPlaces: Self.placesKey(of: place)) == nil)
         #expect(try Self.copyPaths(of: cache, for: place) == [place.app.canonicalPath])
@@ -86,6 +84,27 @@ struct ScanMarksTests {
         #expect(cache.currentIndex(ofPlaces: key) != nil)
     }
 
+    // MARK: - Expiry of an index
+
+    @Test("Changes whose files did not change after the scan keep each key, and the index does not expire")
+    func unchangedFilesKeepEachKey() async throws {
+        let place = try ScanPlace.make()
+        let index = try await Self.scan(of: place)
+        let result = index.forgetting(expiredBy: [.repo(place.lib.canonicalPath), .place(Self.placePath(of: place))])
+        #expect(!result.isExpired)
+        #expect(Self.copyPaths(of: result.index) == [place.app.canonicalPath, place.lib.canonicalPath])
+    }
+
+    @Test("A place change after a write of the git config of one repo expires the index and forgets only that repo")
+    func changedConfigForgetsOnlyThatRepo() async throws {
+        let place = try ScanPlace.make()
+        let index = try await Self.scan(of: place)
+        try ScanCacheTests.writeOrigin(Self.changedOrigin, intoConfigOfRepoAt: place.lib)
+        let result = index.forgetting(expiredBy: [.repo(place.app.canonicalPath), .place(Self.placePath(of: place))])
+        #expect(result.isExpired)
+        #expect(Self.copyPaths(of: result.index) == [place.app.canonicalPath])
+    }
+
     // MARK: - Helpers
 
     /// Scans a place with a key reader that runs no git.
@@ -119,8 +138,15 @@ struct ScanMarksTests {
     /// - Returns: The paths.
     /// - Throws: An error when the cache has no index of the place.
     static func copyPaths(of cache: ScanCache, for place: ScanPlace) throws -> [String] {
-        let index = try #require(cache.index(ofPlaces: placesKey(of: place)))
-        return index.copies.map(\.directory.canonicalPath).sorted()
+        copyPaths(of: try #require(cache.index(ofPlaces: placesKey(of: place))))
+    }
+
+    /// Gives the canonical path of the directory of each copy of an index, sorted.
+    ///
+    /// - Parameter index: The index.
+    /// - Returns: The paths.
+    static func copyPaths(of index: BoardIndex) -> [String] {
+        index.copies.map(\.directory.canonicalPath).sorted()
     }
 
     /// Gives the canonical path of a place.

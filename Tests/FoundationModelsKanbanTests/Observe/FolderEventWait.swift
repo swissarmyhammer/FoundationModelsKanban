@@ -49,12 +49,70 @@ enum FolderEventWait {
                 throw FolderEventTimeout(change: change, path: path, limit: limit)
             }
             defer { group.cancelAll() }
-            // The group has two child tasks, so the first `next()` always gives a result or an error.
-            guard let first = try await group.next() else {
-                throw FolderEventTimeout(change: change, path: path, limit: limit)
-            }
-            return first
+            return try await firstResult(of: &group, waitingFor: change, at: path)
         }
+    }
+
+    /// Gives the first result of the task group of a wait: the value of the wait, or the error of the wait or of the
+    /// time limit.
+    ///
+    /// The group of ``value(waitingFor:at:within:of:)`` has two child tasks, so it always gives a first result. A
+    /// group that gives no result is a defect of the wait, not a late FSEvents event, so the error is
+    /// ``FolderEventWaitDefect`` and not ``FolderEventTimeout``.
+    ///
+    /// - Parameters:
+    ///   - group: The task group of the wait.
+    ///   - change: The change that the test waits for. The failure message names it.
+    ///   - path: The path of the file or folder of the change. The failure message names it.
+    /// - Returns: The first result.
+    /// - Throws: The first error of the group, or ``FolderEventWaitDefect`` when the group gives no result.
+    static func firstResult<Value: Sendable>(
+        of group: inout ThrowingTaskGroup<Value, any Error>,
+        waitingFor change: String,
+        at path: String
+    ) async throws -> Value {
+        guard let first = try await group.next() else {
+            throw FolderEventWaitDefect(change: change, path: path)
+        }
+        return first
+    }
+
+    /// Waits until a stream of changes gives a change after which the effect of the test action shows. After each
+    /// change, the wait asks the condition, and it ends when the condition is `true`. The wait has the time limit
+    /// ``timeLimit``. Each recorder of the tests that gives a stream of changes calls this wait.
+    ///
+    /// - Parameters:
+    ///   - changes: The changes that the host saw, in order.
+    ///   - change: The change that the test waits for. The failure message at the time limit names it.
+    ///   - path: The file or folder that the test changed. The failure message at the time limit names it.
+    ///   - isShown: Tells if the effect of the test action shows. The wait asks it after each change.
+    /// - Returns: `true` when the effect shows, and `false` when the changes end first.
+    /// - Throws: ``FolderEventTimeout`` when the effect does not show before the time limit, or an error that
+    ///   `isShown` throws.
+    static func change<Changes: AsyncSequence & Sendable>(
+        in changes: Changes,
+        waitingFor change: String,
+        at path: URL,
+        until isShown: @escaping @Sendable () async throws -> Bool
+    ) async throws -> Bool {
+        try await value(waitingFor: change, at: path.path) {
+            try await changes.contains { _ in try await isShown() }
+        }
+    }
+}
+
+/// The error of a wait whose task group gave no result. The group of a wait has two child tasks, so this is a defect of
+/// the wait, not a late FSEvents event.
+struct FolderEventWaitDefect: Error, CustomStringConvertible {
+    /// The change that the test waited for.
+    let change: String
+
+    /// The path of the file or folder of the change.
+    let path: String
+
+    /// The message of the test failure.
+    var description: String {
+        "The wait group gave no result. The test waited for \(change) at \(path)."
     }
 }
 

@@ -108,21 +108,17 @@ private struct ScanRecord {
     var changesDuringScans: [ScanChange] = []
 
     /// Applies a change to the index, and keeps it for each scan that runs now. A change of a place applies as the
-    /// change of each repo of the place whose files changed (``BoardIndex/resolving(_:)``).
+    /// change of each repo of the place whose files changed (``BoardIndex/forgetting(expiredBy:)``).
     ///
     /// - Parameter change: The change.
     mutating func apply(_ change: ScanChange) {
         if runningScans > 0 {
             changesDuringScans.append(change)
         }
-        guard let index else {
+        guard let result = index?.forgetting(expiredBy: [change]), result.isExpired else {
             return
         }
-        let expiring = index.resolving(change).filter(index.isExpired(by:))
-        guard !expiring.isEmpty else {
-            return
-        }
-        self.index = expiring.reduce(index) { index, change in index.forgetting(change) }
+        index = result.index
         isCurrent = false
     }
 
@@ -133,12 +129,11 @@ private struct ScanRecord {
     ///   - isWatched: `true` when each place has a running file watcher.
     /// - Returns: The stored index.
     mutating func finishScan(_ scanned: BoardIndex, isWatched: Bool) -> BoardIndex {
-        let expiring = changesDuringScans.flatMap(scanned.resolving).filter(scanned.isExpired(by:))
-        let stored = expiring.reduce(scanned) { index, change in index.forgetting(change) }
-        index = stored
-        isCurrent = isWatched && expiring.isEmpty
+        let result = scanned.forgetting(expiredBy: changesDuringScans)
+        index = result.index
+        isCurrent = isWatched && !result.isExpired
         endScan()
-        return stored
+        return result.index
     }
 
     /// Records that one running scan ended. The kept changes go when no scan runs.

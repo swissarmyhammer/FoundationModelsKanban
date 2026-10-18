@@ -696,20 +696,27 @@ final class LoadRecorder: BoardLoadObserver {
 
 // MARK: - Held consumer
 
-/// Makes the task of a watch that does not end until the test releases it. The task has no time limit. The task does
-/// not end when it is cancelled, the same as the task of an engine watch that waits for the serial gate of the engine.
+/// Makes the task of a watch that does not end until the test releases it. The wait of the task has no time limit. The
+/// task does not end when it is cancelled, the same as the task of an engine watch that waits for the serial gate of
+/// the engine.
 final class HeldConsumer: Sendable {
     /// The gate that the task waits at until ``release()``.
     private let gate = TestGate()
 
     /// Makes the task. The wait runs in an inner unstructured task, which does not get the cancel of the outer task,
-    /// so a cancel of the outer task does not end the wait. The task waits until ``release()``.
+    /// so a cancel of the outer task does not end the wait. The task waits until ``release()``. The type of the task
+    /// of a watch cannot throw, so an error of the wait is recorded as an issue of the test: the hold did not end at
+    /// the release, and the test fails.
     ///
     /// - Returns: The task.
     func makeTask() -> Task<Void, Never> {
         Task {
             await Task {
-                try? await self.gate.waitUntilReleased()
+                do {
+                    try await self.gate.waitUntilReleased()
+                } catch {
+                    Issue.record(error, "The held wait ended before the release of the test")
+                }
             }.value
         }
     }

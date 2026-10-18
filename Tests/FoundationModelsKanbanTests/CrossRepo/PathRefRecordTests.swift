@@ -31,8 +31,7 @@ struct PathRefRecordTests {
         let directory = try TemporaryDirectory()
         let repo = try ScanPlace.makeRepoFolder(named: Self.repoName, in: directory.url)
         let record = Self.record(of: .unreadableKey(top: repo), ofFolderAt: repo)
-        let config = repo.appending(path: BoardKey.gitDirectoryName).appending(path: ScanCacheTests.gitConfigName)
-        try Data(Self.changedOrigin.utf8).write(to: config)
+        try ScanCacheTests.writeOrigin(Self.changedOrigin, intoConfigOfRepoAt: repo)
         #expect(record.isExpired(by: .repo(repo.canonicalPath)))
     }
 
@@ -66,8 +65,7 @@ struct PathRefRecordTests {
     func firstCommitOfReadableKeyKeepsRecordAtPlaceChange() throws {
         let directory = try TemporaryDirectory()
         let repo = try ScanPlace.makeRepoFolder(named: Self.repoName, in: directory.url)
-        let key = try BoardKey(remoteURL: ScanCacheTests.libOrigin)
-        let record = Self.record(of: .board(BoardCopy(directory: repo, key: key)), ofFolderAt: repo)
+        let record = try Self.readableRecord(ofRepo: repo)
         try PathRefCacheTests.makeFirstCommit(inRepoAt: repo)
         #expect(!record.isExpired(by: .place(directory.url.canonicalPath)))
     }
@@ -76,10 +74,8 @@ struct PathRefRecordTests {
     func changedConfigExpiresRecordAtPlaceChange() throws {
         let directory = try TemporaryDirectory()
         let repo = try ScanPlace.makeRepoFolder(named: Self.repoName, in: directory.url)
-        let key = try BoardKey(remoteURL: ScanCacheTests.libOrigin)
-        let record = Self.record(of: .board(BoardCopy(directory: repo, key: key)), ofFolderAt: repo)
-        let config = repo.appending(path: BoardKey.gitDirectoryName).appending(path: ScanCacheTests.gitConfigName)
-        try Data(Self.changedOrigin.utf8).write(to: config)
+        let record = try Self.readableRecord(ofRepo: repo)
+        try ScanCacheTests.writeOrigin(Self.changedOrigin, intoConfigOfRepoAt: repo)
         #expect(record.isExpired(by: .place(directory.url.canonicalPath)))
     }
 
@@ -103,5 +99,16 @@ struct PathRefRecordTests {
     /// - Returns: The record.
     static func record(of board: FolderBoard, ofFolderAt folder: URL) -> PathRefRecord {
         PathRefRecord(board: board, ofFolderAt: folder, folderMark: RepoMark(ofRepoAt: folder))
+    }
+
+    /// Makes the record of a repo folder whose key git read: the board of the repo with the key of
+    /// ``ScanCacheTests/libOrigin``.
+    ///
+    /// - Parameter repo: The repo folder that the path ref named.
+    /// - Returns: The record.
+    /// - Throws: An error when the key cannot be made from the `origin`.
+    static func readableRecord(ofRepo repo: URL) throws -> PathRefRecord {
+        let key = try BoardKey(remoteURL: ScanCacheTests.libOrigin)
+        return record(of: .board(BoardCopy(directory: repo, key: key)), ofFolderAt: repo)
     }
 }

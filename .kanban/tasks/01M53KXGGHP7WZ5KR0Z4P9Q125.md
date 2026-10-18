@@ -115,8 +115,24 @@ comments:
     - evidence: 10 files — Tests/FoundationModelsKanbanTests/TestGate.swift (new), Tests/FoundationModelsKanbanTests/TestGateTests.swift (new), Tests/FoundationModelsKanbanTests/Observe/QuietFolderEvents.swift, Tests/FoundationModelsKanbanTests/Observe/FolderStreamsTests.swift, Tests/FoundationModelsKanbanTests/Observe/FolderStreamsPoolTests.swift, Tests/FoundationModelsKanbanTests/Tool/KanbanHostTests.swift, Tests/FoundationModelsKanbanTests/Search/SearchReadinessTests.swift, Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift, Tests/FoundationModelsKanbanTests/Events/LoaderTests.swift, Tests/FoundationModelsKanbanTests/Events/EventLogTests.swift. `swift test --filter TestGateTests`: RED 5 failed, GREEN 5 passed. `swift build --build-tests`: 0 errors, 0 warnings. Full `swift test` (one process): 1604 passed in 132 suites, 0 failed, 0 skipped.
     - next: /review. Both findings of 2026-10-18 12:36 are `- [x]`. Not committed. Task stays in doing.
   timestamp: 2026-10-18T17:49:25.676066+00:00
-position_column: doing
-position_ordinal: '8580'
+- actor: claude-code
+  id: 01m5828j1mcc4dkwrrphdvrd9e
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (e14c5ee). 10 files reviewed. 0 findings, 0 confirmed, 1 refuted. All prior findings are checked. The two prior findings are fixed: FolderStreamsTests.swift, FolderStreamsPoolTests.swift and KanbanHostTests.swift use `defer { hold.release() }`; StartHold is now `typealias StartHold = TestGate`, and the shared TestGate (Tests/FoundationModelsKanbanTests/TestGate.swift) replaces the gate copies in LoaderTests, SearchReadinessTests, KanbanHostTests and BoardLocatorTests. EventLogTests says in a comment why its record does not use TestGate.
+    - next: none. The task is in done.
+  timestamp: 2026-10-18T17:51:57.492220+00:00
+- actor: claude-code
+  id: 01m58290zytc9r63gyr2tqkt0x
+  text: |-
+    ### finish iteration 4 — clean
+    - implement: changed — TestGate.swift (new), TestGateTests.swift (5 tests), StartHold = TestGate, 5 helpers use TestGate, hold released on every path with defer
+    - test: green — swift test: 1604 passed, 0 failed, 0 skipped
+    - commit: e14c5ee
+    - review: clean — 0 findings; prior findings FolderStreamsTests.swift:210 and QuietFolderEvents.swift:79 fixed. Task is in done.
+  timestamp: 2026-10-18T17:52:12.798979+00:00
+position_column: done
+position_ordinal: ff9780
 title: Do not block the cooperative pool with the FSEvents calls of FolderStreams
 ---
 ## What

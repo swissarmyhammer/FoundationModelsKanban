@@ -120,8 +120,7 @@ struct ScanCacheTests {
         let newKey = try CrossRepoFixture.keyText(of: Self.newOrigin)
         _ = try await KanbanGraphTests.execute(#"{ board(id: "\#(newKey)") { name } }"#, on: session)
         reader.setOrigin(Self.newOrigin, ofRepoNamed: Self.libName)
-        let config = place.lib.appending(path: BoardKey.gitDirectoryName).appending(path: Self.gitConfigName)
-        try Data(Self.newOrigin.utf8).write(to: config)
+        let config = try Self.writeOrigin(Self.newOrigin, intoConfigOfRepoAt: place.lib)
         try await recorder.waitForChange(waitingFor: "a scan change after which the new key is found", at: config) {
             try await Self.hasBoard(of: newKey, on: session)
         }
@@ -149,6 +148,21 @@ struct ScanCacheTests {
     }
 
     // MARK: - Helpers
+
+    /// Writes an `origin` into the git config file of a repo folder, so that the files of the repo change the same as
+    /// at `git remote set-url`. The repo is a folder with a `.git` directory, so no git runs.
+    ///
+    /// - Parameters:
+    ///   - origin: The `origin` that the test writes.
+    ///   - repo: The repo folder.
+    /// - Returns: The git config file.
+    /// - Throws: An error from `Data` when the file cannot be written.
+    @discardableResult
+    static func writeOrigin(_ origin: String, intoConfigOfRepoAt repo: URL) throws -> URL {
+        let config = repo.appending(path: BoardKey.gitDirectoryName).appending(path: gitConfigName)
+        try Data(origin.utf8).write(to: config)
+        return config
+    }
 
     /// Tells if a call finds the board of a board key.
     ///
@@ -329,26 +343,21 @@ final class ScanRecorder: BoardScanObserver {
     /// that came before the test action, for example the make of the repo folders. The host tells only the first
     /// change that makes the record of a path ref out of date, and that change can be of a different kind than the
     /// change of the test action, for example when a late change and the change of the test action come in one batch.
-    /// Thus the wait does not compare the change. After each change, the wait asks the condition, and it ends when the
-    /// condition is `true`. The wait has the time limit of ``FolderEventWait``. Call it one time for each recorder.
+    /// Thus the wait does not compare the change (``FolderEventWait/change(in:waitingFor:at:until:)``). Call it one
+    /// time for each recorder.
     ///
     /// - Parameters:
     ///   - change: The change that the test waits for. The failure message at the time limit names it.
     ///   - path: The file or folder that the test changed. The failure message at the time limit names it.
     ///   - isShown: Tells if the effect of the test action shows. The wait asks it after each change.
-    /// - Throws: ``FolderEventTimeout`` when the effect does not show before the time limit, or an error that
-    ///   `isShown` throws.
+    /// - Throws: ``FolderEventTimeout`` when the effect does not show before the time limit, an error when the
+    ///   changes end before the effect shows, or an error that `isShown` throws.
     func waitForChange(
         waitingFor change: String,
         at path: URL,
         until isShown: @escaping @Sendable () async throws -> Bool
     ) async throws {
-        try await FolderEventWait.value(waitingFor: change, at: path.path) { [changes] in
-            for await _ in changes {
-                if try await isShown() {
-                    return
-                }
-            }
-        }
+        let isShownInTime = try await FolderEventWait.change(in: changes, waitingFor: change, at: path, until: isShown)
+        try #require(isShownInTime, "The changes of the host ended before \(change) at \(path.path)")
     }
 }

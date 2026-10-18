@@ -225,8 +225,78 @@ comments:
     - warnings in the output: one linker note (missing creator for mutated node, mlx-swift_Cmlx.bundle), and 4 "malformed" log lines per run from tests that load bad JSON on purpose.
     - next: none
   timestamp: 2026-10-18T15:30:32.416389+00:00
+- actor: claude-code
+  id: 01m582tqfj0r38vwn7km16995b
+  text: |-
+    ### review — findings
+    - evidence: review sha a35a913~1..a35a913, 19 findings (19 confirmed, 5 refuted). ScanCache.swift:125, ScanCache.swift:137, ScanMarks.swift:200, ScanMarks.swift:203, ScanMarks.swift:206, ScanMarks.swift:245, ScanMarks.swift:248, PathRefCacheTests.swift:134, PathRefRecordTests.swift:34, PathRefRecordTests.swift:79, PathRefRecordTests.swift:81 (2), ScanMarksTests.swift:33, ScanMarksTests.swift:51, UnreadableRelatedBoardTests.swift:377, BoardKeyTests.swift:583, BoardKeyTests.swift:591, FolderEventWait.swift:54, KanbanHostTests.swift:718 (now line 712 at HEAD).
+    - next: implement each finding in the 2026-10-18 12:52 Review Findings section. The task stays in review.
+  timestamp: 2026-10-18T18:01:52.882737+00:00
+- actor: claude-code
+  id: 01m582vqd3wfwgycxfgtwfxpam
+  text: |-
+    ### finish iteration 6 — findings
+    - implement: changed (iterations 2 to 5; work kept in the tree)
+    - test: green — swift test after the fseventsd restart: 1600 passed x2; at HEAD 1604 passed, 0 failed, 0 skipped
+    - commit: a35a913
+    - review: findings (19) — ScanCache.swift:125, :137; ScanMarks.swift:200, :203, :206, :245, :248; PathRefCacheTests.swift:134; PathRefRecordTests.swift:34, :79, :81 (2); ScanMarksTests.swift:33, :51; UnreadableRelatedBoardTests.swift:377; BoardKeyTests.swift:583, :591; FolderEventWait.swift:54; KanbanHostTests.swift:718 (712 at HEAD)
+  timestamp: 2026-10-18T18:02:25.571056+00:00
+- actor: claude-code
+  id: 01m583gy78p08v341w3tee33pn
+  text: |-
+    Implement of the 2026-10-18 12:52 review findings (17 of 19 fixed, not committed):
+    - ScanCache.swift:125 and :137: new `BoardIndex.forgetting(expiredBy:) -> (index:, isExpired:)` in ScanChange.swift. It resolves each change, keeps the changes that expire the index, and forgets them. `ScanRecord.apply` and `ScanRecord.finishScan` both call it. New tests ScanMarksTests.unchangedFilesKeepEachKey and changedConfigForgetsOnlyThatRepo (RED with a stub that gave `(self, false)`: changedConfigForgetsOnlyThatRepo failed on `isExpired` and on the copies; then GREEN).
+    - ScanMarks.swift `size`, `modified`, `changed`, `seconds`, `nanoseconds`: the user asked to remove them or to make the compare read them. The dead-code-swift rule says not to delete a property that the synthesized Hashable reads. I wrote an explicit `FileStamp.==` (same item, same kind, same size and times; helpers `isSameItem(as:)` and `hasSameContent(as:)`) and an explicit `StampTime.==`. The compare is the same as the synthesized one, so the ScanMarksTests rule tests still pass. `hash(into:)` stays synthesized and agrees with `==`.
+    - PathRefCacheTests.swift:134: new `waitUntilBoardFound(of:on:recordedBy:)`, called from gitInitFindsBoard and firstCommitFindsBoard.
+    - PathRefRecordTests.swift:34/:81 and ScanMarksTests.swift:33/:51 (and ScanCacheTests.changedRemoteIsReadAgain): new shared `ScanCacheTests.writeOrigin(_:intoConfigOfRepoAt:)`, which gives the config file. The origin value stays a parameter of each test.
+    - PathRefRecordTests.swift:79: new `readableRecord(ofRepo:)`, called from the two readable-key tests.
+    - UnreadableRelatedBoardTests.swift:377: new generic `FolderEventWait.change(in:waitingFor:at:until:) -> Bool` (an AsyncSequence and a condition, with the 60 s limit). UnreadableBoardRecorder.waitForChange and ScanRecorder.waitForChange are thin callers. ScanRecorder now fails the test with `#require` when the changes end before the effect shows (before, it returned with no signal). Tests FolderEventWaitTests.changeWaitEndsWhenConditionIsTrue (RED on a stub that gave `false`, then GREEN) and changeWaitGivesFalseAtEndOfChanges.
+    - FolderEventWait.swift:54: the nil branch moved into `FolderEventWait.firstResult(of:waitingFor:at:)`, which throws the new `FolderEventWaitDefect` (names the change and the path), not `FolderEventTimeout`. Test FolderEventWaitTests.groupWithNoResultIsDefect with an empty task group (RED: the stub threw FolderEventTimeout; then GREEN).
+    - KanbanHostTests.swift:712: HeldConsumer no longer uses `try?`. A wait error is recorded with `Issue.record`, so the test fails. The task type of a watch is `Task<Void, Never>`, so the error cannot be thrown out of the task. The doc comment now says that the wait has no time limit (TestGate.waitUntilReleased has no deadline; its only error is CancellationError).
+    - Not changed in KanbanHostTests: `try? await Task.sleep` in LoadRecorder. These are delays of a fake in non-throwing observer calls and not waits for a signal of the test.
+    - `swift build --build-tests`: 0 errors; the only warning is the mlx-swift "missing creator" linker note.
+  timestamp: 2026-10-18T18:14:00.680103+00:00
+- actor: claude-code
+  id: 01m583h31r3x92fsrgmw8t6gs6
+  text: |-
+    ### Conflict — BoardKeyTests.swift:583 and :591 (blocker)
+    - The two waits in BoardKeyTests.cancelledCommandStopsGit are `EventLogTests.waitUntil { Self.recordedPID(in: pidFile) != nil }` (git writes its PID file) and `EventLogTests.waitUntil { Self.isGone(pid) }` (the git process ended). Each polls a file or the process table. Neither waits for an FSEvents event, a watcher batch, or a change.
+    - Rule text (finding, completeness/invariant-propagation): "Bound this wait. Use a time-limited helper, for example the 60 s limit of `FolderEventWait` or a `childWaitLimit`-style deadline." and "Bound this wait with a deadline ... When the process is still alive at the limit, the test must fail and name the PID."
+    - User decision (2026-10-17, on the card): "Only those wait helpers get the limit, with one shared constant. No `.timeLimit` traits on suites or tests. Other waits (locks, search readiness, loads) keep no time limit." Only waits for an FSEvents event, batch, or change get the 60 s FolderEventWait limit.
+    - The finding and the decision cannot both be obeyed. I did not add a limit and did not change BoardKeyTests. The two items stay unchecked.
+    - next: a person decides. For example: (a) the decision allows a deadline for a wait on a child process, or (b) the finding is dropped for these two waits.
+  timestamp: 2026-10-18T18:14:05.624777+00:00
+- actor: claude-code
+  id: 01m583h6zqhb0s34t08phvsg6j
+  text: |-
+    ### implement — stuck
+    - evidence: 10 files changed — Sources/FoundationModelsKanban/CrossRepo/ScanChange.swift, ScanCache.swift, ScanMarks.swift; Tests/FoundationModelsKanbanTests/Observe/FolderEventWait.swift, FolderEventWaitTests.swift; CrossRepo/ScanCacheTests.swift, ScanMarksTests.swift, PathRefRecordTests.swift, PathRefCacheTests.swift, UnreadableRelatedBoardTests.swift; Tool/KanbanHostTests.swift. 17 of 19 findings checked. Targeted suites: 65 tests in 7 suites passed. Full `swift test` (one process): 1609 tests in 132 suites passed, 0 failed, 0 skipped, 43.2 s, exit 0. The acceptance item "The full `swift test` passes" is checked.
+    - conflict: BoardKeyTests.swift:583 and :591 stay unchecked. The finding says to bound the two waits; the user decision gives a limit only to FSEvents waits, and these two waits poll a PID file and a process. See the conflict comment.
+    - next: a person decides the conflict. Then /review. Not committed. The task stays in doing.
+  timestamp: 2026-10-18T18:14:09.655983+00:00
+- actor: claude-code
+  id: 01m583hj0asbdfqdd7re1d1f3d
+  text: 'Correction to the step record above: the count of changed files is 11, not 10 (`git status`: 3 in Sources/, 8 in Tests/). The list of files in the record is correct.'
+  timestamp: 2026-10-18T18:14:20.938854+00:00
+- actor: claude-code
+  id: 01m583qs5wderzszmsr4r6822j
+  text: |-
+    ### finish iteration 7 — stuck, then decision
+    - implement: changed — 17 of 19 findings fixed (BoardIndex.forgetting(expiredBy:), explicit == for FileStamp and StampTime, shared test helpers, FolderEventWait.change(in:waitingFor:at:until:), FolderEventWaitDefect, Issue.record in KanbanHostTests). 11 files.
+    - test: green — swift test: 1609 passed, 0 failed, 0 skipped, 43.2 s
+    - conflict: BoardKeyTests.swift:583 and :591 "Bound this wait" vs. the user rule (a time limit only for FSEvents waits). These waits poll a git PID file and a process end.
+    - decision — user: "No limit, drop the finding". The two items are not applicable, with the user decision as the reason.
+    - next: mark the two items not applicable, commit, review.
+  timestamp: 2026-10-18T18:17:44.892641+00:00
+- actor: claude-code
+  id: 01m583t658qm7wbb7athxe6gzm
+  text: |-
+    ### implement — changed
+    - evidence: the description of ^wphkeqk only. The two findings `BoardKeyTests.swift:583` and `BoardKeyTests.swift:591` are now `- [x]`, with the text struck through and " — NOT APPLICABLE: user decision 2026-10-18, a time limit is only for FSEvents waits; these waits poll a git PID file and a process end." added. User decision: "No limit, drop the finding". The update patch has one hunk with only these two lines. No code changed. No commit. Open findings: 0 of 19.
+    - next: review
+  timestamp: 2026-10-18T18:19:03.720930+00:00
 position_column: doing
-position_ordinal: '8480'
+position_ordinal: '8280'
 title: Decide what the watcher tests do when FSEvents gives no event
 ---
 ## What
@@ -257,4 +327,53 @@ Move the test folders out of the user temporary folder, to one shared root in /p
 - [x] A stream switch of FolderStreams loses no change: after each change of the stream, each folder that the old stream watched gets a compare batch (`EventRouter.reportLostEvents(inFoldersOf:)`), and the scan cache and the path-ref record resolve a compare into the precise changes (`RepoMark.changes(ofRepoAt:from:to:)`, `BoardIndex.resolving(_:)`).
 - [x] Fewer stream switches (iteration 4): a remove makes no new stream (the stream ends when no folder stays); an add makes a new stream only when the running stream does not watch the folder; the adds that wait while a stream starts share one new stream (waiting sinks in the router). divergence.md §16 Gap 4 states the rule. Tests with the FolderEventService fakes: FolderStreamsTests.removeMakesNoNewStream, addInWatchedFolderMakesNoNewStream, addOfRemovedFolderMakesNoNewStream, switchAfterRemoveLosesNoChange, waitingAddsShareOneStream (RED, then GREEN). FSEvents clients of the test process in a full run: 1124 and 1129 (2348 before).
 - [x] Test folders out of the user temporary folder (iteration 5): TemporaryDirectory and GitSandbox use `TestFolderRoot` (Tests/FoundationModelsKanbanTests/TestFolderRoot.swift), run folder `/tmp/fmk-tests/<UUID>` (FSEvents path `/private/tmp/fmk-tests/<UUID>`); IntegrationTests TemporaryGitRepo uses `/tmp/fmk-tests/integration-<UUID>`. The empty run folder is removed at exit. TestFolderRootTests (RED, then GREEN).
-- [ ] The full `swift test` passes. Iteration 5 (test folders in /tmp/fmk-tests): run 1 1600 tests, 8 failed (8 issues), 350.6 s; run 2 1600 tests, 15 failed (15 issues), 416.0 s. Each failure is the 60 s FolderEventWait limit at a path under /tmp/fmk-tests. FolderStreamsTests alone: 19 of 19 pass in 7.1 s. A probe with no package code after the runs: the same delay of 8.6 s in the user temporary folder and in /private/tmp. A person must decide the next step (see the step record of iteration 5).
+- [x] The full `swift test` passes. Implement after the 2026-10-18 12:52 review: one process, 1609 tests in 132 suites passed, 0 failed, 0 skipped, 43.2 s, exit code 0. Earlier, iteration 5 (test folders in /tmp/fmk-tests, before the fseventsd restart): run 1 1600 tests, 8 failed; run 2 1600 tests, 15 failed, each at the 60 s FolderEventWait limit.
+
+## Review Findings (2026-10-18 12:52)
+
+> Scope: `review sha a35a913~1..a35a913` — reviewed the diffs only — lines this change added or modified. 42 file(s) reviewed, 7 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `divergence.md` — no validator matches this file
+
+> ⚠️ tool rule 'code-hygiene/disallowed-constructs-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> disallowed-constructs-swift found no file at Tests/FoundationModelsKanbanTests/Observe/StreamWait.swift, so its constructs are unread
+
+> ⚠️ tool rule 'code-hygiene/function-length-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> function-length-swift found no file at Tests/FoundationModelsKanbanTests/Observe/StreamWait.swift, so its bodies are unread
+
+> ⚠️ tool rule 'code-hygiene/idioms-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> idioms-swift found no file at Tests/FoundationModelsKanbanTests/Observe/StreamWait.swift, so its declarations are unread
+
+> ⚠️ tool rule 'code-hygiene/magic-numbers-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> magic-numbers-swift found no file at Tests/FoundationModelsKanbanTests/Observe/StreamWait.swift, so its literals are unread
+
+> ⚠️ tool rule 'code-hygiene/missing-docs-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> missing-docs-swift found no file at Tests/FoundationModelsKanbanTests/Observe/StreamWait.swift, so its declarations are unread
+
+- [x] `Sources/FoundationModelsKanban/CrossRepo/ScanCache.swift:125` `duplication/duplication` — The filter-then-forget sequence is copied in two places in this file. Each site keeps the changes that expire the index, then removes their repos with forgetting(_:). A later change to one site can leave the other site behind. Add one BoardIndex method, for example `func forgetting(expiredBy changes: [ScanChange]) -> (index: BoardIndex, expired: Bool)`. It resolves each change, keeps the expired ones, and forgets them. Both ScanRecord.apply and finishScan call it, so the rule is kept in one place.
+- [x] `Sources/FoundationModelsKanban/CrossRepo/ScanCache.swift:137` `duplication/duplication` — The same expiry rule is written a second time in finishScan. The copy must match the rule in ScanRecord.apply, and the two copies can drift apart. Replace lines 136-137 with a call to the shared BoardIndex method described for line 125. Keep one copy of the resolve, filter, and forget steps.
+- [x] `Sources/FoundationModelsKanban/CrossRepo/ScanMarks.swift:200` `code-hygiene/dead-code-swift` — var.instance `size` is assignOnlyProperty.
+- [x] `Sources/FoundationModelsKanban/CrossRepo/ScanMarks.swift:203` `code-hygiene/dead-code-swift` — var.instance `modified` is assignOnlyProperty.
+- [x] `Sources/FoundationModelsKanban/CrossRepo/ScanMarks.swift:206` `code-hygiene/dead-code-swift` — var.instance `changed` is assignOnlyProperty.
+- [x] `Sources/FoundationModelsKanban/CrossRepo/ScanMarks.swift:245` `code-hygiene/dead-code-swift` — var.instance `seconds` is assignOnlyProperty.
+- [x] `Sources/FoundationModelsKanban/CrossRepo/ScanMarks.swift:248` `code-hygiene/dead-code-swift` — var.instance `nanoseconds` is assignOnlyProperty.
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/PathRefCacheTests.swift:134` `duplication/duplication` — The wait for a board in firstCommitFindsBoard is a near-verbatim copy of the wait in gitInitFindsBoard. The same label and the same board check are repeated, so a change to the wait would have to be made twice. Extract a helper such as `static func waitUntilBoardFound(of folder: URL, on session: KanbanGraph, recorder: ScanRecorder) async throws` in PathRefCacheTests and call it from both tests.
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/PathRefRecordTests.swift:34` `reuse/reuse` — The test builds the git config path of a repo and writes the changed origin into it. The same two lines appear again at line 81 of this file, and in ScanMarksTests.swift at lines 33 and 51. ScanCacheTests.changedRemoteIsReadAgain (ScanCacheTests.swift:123-124) also writes the same origin the same way. Each copy repeats the same behavior, so a fix to the path or the write has to be made in several places. Add one shared helper, for example ScanCacheTests.writeChangedOrigin(ofRepoAt:), that builds the config path and writes the origin. Call it from each of these tests. Keep the test-specific origin value as a parameter.
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/PathRefRecordTests.swift:79` `duplication/duplication` — The two-line setup that makes the BoardKey and the board record is copied verbatim between the two tests that use a readable key at a place change. Move the key and record construction into a helper, for example `static func readableRecord(ofRepo repo: URL) throws -> PathRefRecord`, and call it from both tests.
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/PathRefRecordTests.swift:81` `duplication/duplication` — The git config write in changedConfigExpiresRecordAtPlaceChange is a verbatim copy of the one in changedConfigExpiresRecord. If the config path or the written origin changes in one test, the other can drift out of sync. Extract a helper such as `static func writeChangedConfig(of repo: URL) throws` in PathRefRecordTests and call it from both tests.
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/PathRefRecordTests.swift:81` `reuse/reuse` — This is the second copy of the config-path and write code in this file. It repeats the code at lines 34-35 and is the same as the copies in ScanMarksTests.swift. Call the shared helper suggested for line 34 instead of repeating the path construction and the write.
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/ScanMarksTests.swift:33` `reuse/reuse` — The test builds the git config path and writes the changed origin inline. The same code appears in PathRefRecordTests.swift and at line 51 of this file. The existing ScanCacheTests.changedRemoteIsReadAgain also has this inline form. Call the shared config-write helper instead of repeating the path construction and the write.
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/ScanMarksTests.swift:51` `duplication/duplication` — The git config write in placeChangeForgetsOnlyChangedRepo is a verbatim copy of the write in changedConfigExpiresIndex. Both tests build the same path and write the same origin, so a change to one can leave the other out of step. Add a helper such as `static func writeChangedConfig(ofRepo repo: URL) throws` next to the other helpers in ScanMarksTests and call it from both tests.
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/UnreadableRelatedBoardTests.swift:377` `duplication/duplication` — UnreadableBoardRecorder.waitForChange repeats the wait logic of ScanRecorder.waitForChange: both pass a closure to FolderEventWait.value, read a change stream, and stop when the condition holds. Two copies of the time-limit and condition logic can drift apart. Move the shared wait into one generic helper, for example `FolderEventWait` or a free function that takes an AsyncSequence and a condition. Keep the stream-specific recorder as a thin caller of it.
+- [x] ~~`Tests/FoundationModelsKanbanTests/Identity/BoardKeyTests.swift:583` `completeness/invariant-propagation` — The test waits for the git PID file with `EventLogTests.waitUntil`, which has no deadline. If git never writes the PID file, the test does not fail. It hangs. The other waits that this change converted use `FolderEventWait` with a 60 s limit, so this site does not follow the same rule. The removed `childWaitLimit` shows that this wait had a bound before the change. Bound this wait. Use a time-limited helper, for example the 60 s limit of `FolderEventWait` or a `childWaitLimit`-style deadline. The test then fails with a clear message when git does not start, instead of hanging.~~ — NOT APPLICABLE: user decision 2026-10-18, a time limit is only for FSEvents waits; these waits poll a git PID file and a process end.
+- [x] ~~`Tests/FoundationModelsKanbanTests/Identity/BoardKeyTests.swift:591` `completeness/invariant-propagation` — The test waits for the git process to end with `EventLogTests.waitUntil { Self.isGone(pid) }`, which has no deadline. If the git process survives cancellation, the test hangs instead of failing. This is the case the test exists to catch, so the missing bound defeats the purpose of the test. Bound this wait with a deadline, the same as the wait at line 583. When the process is still alive at the limit, the test must fail and name the PID.~~ — NOT APPLICABLE: user decision 2026-10-18, a time limit is only for FSEvents waits; these waits poll a git PID file and a process end.
+- [x] `Tests/FoundationModelsKanbanTests/Observe/FolderEventWait.swift:54` `swift/preconditions` — The nil branch of `guard let first = try await group.next()` cannot run, because the group has two child tasks. When it does run, it throws `FolderEventTimeout`, so a defect in the task group is reported as a timeout. No assertion or log records the surprise. Call `assertionFailure("the wait group gave no result")` and write a log line in the same branch, then keep the throw so the release build still ends the wait. Alternatively, throw an error that names the group defect instead of `FolderEventTimeout`.
+- [x] `Tests/FoundationModelsKanbanTests/Tool/KanbanHostTests.swift:718` `test-integrity/no-test-cheating` — The held consumer uses `try?` on `EventLogTests.waitUntil`. If the wait times out, the error is discarded and the consumer task ends without any signal. The test cannot tell that its hold ended early, so a failed wait is hidden. The doc comment says the task has no time limit, which does not match a wait that can time out. Use `try await EventLogTests.waitUntil { self.isReleased }` so a timeout fails the task, or make the wait truly unlimited and say so in the comment. Do not discard the error.
+
+> Location at HEAD (e14c5ee): commit e14c5ee changed HeldConsumer. The `KanbanHostTests.swift:718` finding is now at `KanbanHostTests.swift:712`, `try? await self.gate.waitUntilReleased()`. The `try?` still discards the error, so the finding stays. The `FolderEventWait.swift:54` finding is the throw in the `guard let first = try await group.next() else` branch at line 53. The other lines are the same at HEAD.
+
+> Conflict (2026-10-18, implement): the two `BoardKeyTests.swift:583` and `:591` items stay open. The two waits poll the PID file of git and the end of the git process. They are not waits for an FSEvents event, batch, or change. The finding says "Bound this wait". The user decision of 2026-10-17 says that only the waits for an FSEvents event, batch, or change get the 60 s FolderEventWait limit, and that other waits keep no time limit. The two cannot both be obeyed. A person must decide (see the conflict comment).

@@ -212,6 +212,19 @@ extension BoardIndex {
         return changes
     }
 
+    /// Gives the index without the keys that a list of changes makes unknown. Each change is resolved
+    /// (``resolving(_:)``), only the resolved changes that expire the index (``isExpired(by:)``) are kept, and the
+    /// index forgets the repos of each kept change (``forgetting(_:)``). This is the one place of the expiry rule of a
+    /// change for the scan cache.
+    ///
+    /// - Parameter changes: The changes of the scan places of the index, in order.
+    /// - Returns: The index without the forgotten repos, and `true` when a change expired the index.
+    func forgetting(expiredBy changes: [ScanChange]) -> (index: BoardIndex, isExpired: Bool) {
+        let expiring = changes.flatMap(resolving).filter(isExpired(by:))
+        let index = expiring.reduce(self) { index, change in index.forgetting(change) }
+        return (index, !expiring.isEmpty)
+    }
+
     /// Gives the index without the keys that a change makes unknown, so that the next scan reads them again.
     ///
     /// - A changed repo forgets the repo and each copy with the same key, for example a worktree, whose key comes
