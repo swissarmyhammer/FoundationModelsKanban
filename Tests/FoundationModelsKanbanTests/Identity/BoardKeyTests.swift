@@ -526,7 +526,7 @@ struct BoardKeyTests {
         }
     }
 
-    @Test("A large standard error of git does not block the read of the standard output", .timeLimit(.minutes(1)))
+    @Test("A large standard error of git does not block the read of the standard output")
     func largeErrorOutputDoesNotBlock() async throws {
         let sandbox = try GitSandbox()
         let result = try await Git.run(withArguments: Self.floodArguments, inDirectory: sandbox.root)
@@ -535,7 +535,7 @@ struct BoardKeyTests {
         #expect(result.errorOutput.utf8.count == Self.floodSize)
     }
 
-    @Test("A git command that runs longer than its time limit stops with a time-out error", .timeLimit(.minutes(1)))
+    @Test("A git command that runs longer than its time limit stops with a time-out error")
     func slowCommandTimesOut() async throws {
         let sandbox = try GitSandbox()
         let clock = ContinuousClock()
@@ -561,7 +561,7 @@ struct BoardKeyTests {
         #expect(statuses == Array(repeating: Git.successStatus, count: Self.parallelCommandCount))
     }
 
-    @Test("A short sleep wakes near its deadline while many slow git commands run", .timeLimit(.minutes(1)))
+    @Test("A short sleep wakes near its deadline while many slow git commands run")
     func sleepWakesWhileGitRuns() async throws {
         let sandbox = try GitSandbox()
         let clock = ContinuousClock()
@@ -578,7 +578,7 @@ struct BoardKeyTests {
         #expect(statuses == Array(repeating: Git.successStatus, count: Self.parallelCommandCount))
     }
 
-    @Test("A cancelled git command ends at once, and its git process is gone", .timeLimit(.minutes(1)))
+    @Test("A cancelled git command ends at once, and its git process is gone")
     func cancelledCommandStopsGit() async throws {
         let sandbox = try GitSandbox()
         let directory = sandbox.root

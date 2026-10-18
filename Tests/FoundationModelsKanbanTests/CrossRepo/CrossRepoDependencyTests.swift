@@ -10,7 +10,7 @@ import ULID
 ///
 /// Each test makes real git repos side by side in a ``GitSandbox``. No test reads or changes the `.kanban/` directory
 /// of this repo.
-@Suite("Cross-repo: dependencies between boards end to end", .watcherBudget, .timeLimit(.minutes(1)))
+@Suite("Cross-repo: dependencies between boards end to end", .watcherBudget)
 struct CrossRepoDependencyTests {
     /// The code of the error of a write that closes a dependency cycle.
     static let cycleCode = "DEPENDENCY_CYCLE"

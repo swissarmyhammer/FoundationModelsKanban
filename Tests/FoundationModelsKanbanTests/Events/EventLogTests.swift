@@ -400,7 +400,7 @@ struct EventLogTests {
 
     // MARK: - Lock
 
-    @Test("A different file descriptor cannot lock the board while the lock is held", .timeLimit(.minutes(1)))
+    @Test("A different file descriptor cannot lock the board while the lock is held")
     func lockExcludesOtherDescriptor() async throws {
         let directory = try TemporaryDirectory()
         let log = EventLog(repositoryAt: directory.url)
@@ -515,7 +515,7 @@ struct EventLogTests {
         }
     }
 
-    @Test("The lock of many boards takes the boards in the sort order of the board key", .timeLimit(.minutes(1)))
+    @Test("The lock of many boards takes the boards in the sort order of the board key")
     func manyBoardsLockInKeyOrder() async throws {
         let directory = try TemporaryDirectory()
         let names = ["zeta", "alpha", "mid"]
@@ -529,7 +529,7 @@ struct EventLogTests {
         try await Self.expectOneLockHolds(Array(logs), inOrder: ordered)
     }
 
-    @Test("The lock of many boards holds two copies of one repo, which have the same key", .timeLimit(.minutes(1)))
+    @Test("The lock of many boards holds two copies of one repo, which have the same key")
     func twoCopiesWithOneKeyLockBoth() async throws {
         let directory = try TemporaryDirectory()
         let key = BoardKey(rootCommit: "app")

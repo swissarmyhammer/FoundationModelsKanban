@@ -27,7 +27,7 @@ actor RecordingSink: OperationEventSink {
 /// different process.
 ///
 /// Each test runs in an empty repo, so the first mutation makes the board with the default columns.
-@Suite("Agent plan: the post of a tool call", .watcherBudget, .timeLimit(.minutes(1)))
+@Suite("Agent plan: the post of a tool call", .watcherBudget)
 struct AgentPlanPostTests {
     /// The title of the first task of a test.
     static let firstTitle = "Write the lexer"

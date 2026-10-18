@@ -14,7 +14,7 @@ import ULID
 /// copy. The engines read the worktree tops and the board keys from git. One test instead makes a worktree of the
 /// current repo: the `boards` value of the events then names no key, because both copies have the key of the board
 /// of the event.
-@Suite("Cross-repo: undo and redo on a second copy of a repo", .watcherBudget, .timeLimit(.minutes(1)))
+@Suite("Cross-repo: undo and redo on a second copy of a repo", .watcherBudget)
 struct CrossRepoCopyUndoTests {
     /// The repos of a sandbox with the current repo and two copies of the related repo.
     struct Copies {

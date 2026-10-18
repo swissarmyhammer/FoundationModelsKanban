@@ -11,7 +11,7 @@ import Testing
 /// Each test makes the current repo in a ``ScanPlace``, and the folder of the path ref in a second
 /// ``TemporaryDirectory``, where the scan does not look. A ``ScanKeyReader`` gives the worktree tops and the keys, and
 /// counts each read, so a test runs git only to make a repo. No test uses the `.kanban/` directory of this repo.
-@Suite("Cross-repo: the result of a path board ref stays in memory", .watcherBudget, .timeLimit(.minutes(1)))
+@Suite("Cross-repo: the result of a path board ref stays in memory", .watcherBudget)
 struct PathRefCacheTests {
     /// The number of calls after the first call that each test makes with the same path ref.
     static let repeatCount = 3

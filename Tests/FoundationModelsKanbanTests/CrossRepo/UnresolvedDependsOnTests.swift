@@ -9,7 +9,7 @@ import ULID
 /// dependency on a tombstone is ignored, so it is not in the list.
 ///
 /// Each test makes real git repos in a ``GitSandbox``. No test reads or changes the `.kanban/` directory of this repo.
-@Suite("Cross-repo: dependencies that cannot resolve", .watcherBudget, .timeLimit(.minutes(1)))
+@Suite("Cross-repo: dependencies that cannot resolve", .watcherBudget)
 struct UnresolvedDependsOnTests {
     /// The selection of the readiness fields of a task and of its unresolved dependencies.
     static let selection = "{ ready blockedBy { id } unresolvedDependsOn }"

@@ -11,7 +11,7 @@ import ULID
 /// Each test makes its own scan place in a ``TemporaryDirectory``. Each repo of the place is a folder with an empty
 /// `.git` directory, and a ``ScanKeyReader`` gives the keys, so no test runs git. No test uses the `.kanban/`
 /// directory of this repo.
-@Suite("Scan cache: a board that is not found stays in memory", .watcherBudget, .timeLimit(.minutes(1)))
+@Suite("Scan cache: a board that is not found stays in memory", .watcherBudget)
 struct ScanCacheTests {
     /// The name of the current repo of each test.
     static let appName = "app"

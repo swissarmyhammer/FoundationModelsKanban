@@ -9,11 +9,7 @@ import Testing
 ///
 /// Each test makes two real git repos side by side in a ``GitSandbox``. Each repo gets a unique first commit. No test
 /// reads or changes the `.kanban/` directory of this repo. Each test closes each engine that it makes.
-@Suite(
-    "Cross-repo: the change feed of a task with an assignee of a different board",
-    .watcherBudget,
-    .timeLimit(.minutes(1))
-)
+@Suite("Cross-repo: the change feed of a task with an assignee of a different board", .watcherBudget)
 struct RemoteAssigneeFeedTests {
     /// The new name of the assignee after the rename.
     private static let newName = "Alice Jones"

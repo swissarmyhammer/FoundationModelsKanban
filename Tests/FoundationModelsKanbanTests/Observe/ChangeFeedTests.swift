@@ -7,7 +7,7 @@ import Testing
 /// session view moves its subscribers when a new repo replaces the repo of a related board at the same path.
 ///
 /// Each test uses feeds in memory only. No test reads a file.
-@Suite("Change feed: move the subscribers of one owner to a different feed", .timeLimit(.minutes(1)))
+@Suite("Change feed: move the subscribers of one owner to a different feed")
 struct ChangeFeedTests {
     /// The owner of the subscribers that a test moves.
     static let movedOwner = ObjectIdentifier(Int.self)

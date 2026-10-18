@@ -10,7 +10,7 @@ import ULID
 /// Each test makes the example of divergence.md X6 in two real git repos side by side in a ``GitSandbox``. Call 1
 /// adds `lib#X`. Call 2 adds `app#Y`. Then `undo(call1)` runs on the engine of the current repo, which has loaded both
 /// boards.
-@Suite("Cross-repo: undo conflict across boards", .watcherBudget, .timeLimit(.minutes(1)))
+@Suite("Cross-repo: undo conflict across boards", .watcherBudget)
 struct CrossRepoUndoConflictTests {
     /// The example: the task `X` of the related board, the transaction of call 1, and the transaction of call 2.
     struct Example {

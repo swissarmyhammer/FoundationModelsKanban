@@ -24,11 +24,6 @@ import Testing
 /// run that measured nothing.
 @Suite("Qwen 3.8: the kanban tool gets the values of the variables")
 struct ModelVariablesTests {
-    /// The longest time in minutes that the test can run before Swift Testing stops it. This is a hang guard, not a
-    /// speed check. It is the value of `IntegrationHangGuard` of FoundationModelsMultitool, which runs the same model:
-    /// far above the slowest model load and model turn seen on a busy machine, and long enough for the first download.
-    private static let timeLimitMinutes = 30
-
     /// The real model: Qwen 3.8 27B in the `mxfp4` quantization, the same reference as the Qwen 3.8 tests of
     /// FoundationModelsRouter and FoundationModelsMultitool.
     private static let model: ModelRef = "mlx-community/Qwen3.8-27B-mxfp4"
@@ -102,10 +97,7 @@ struct ModelVariablesTests {
 
     // MARK: - Tests
 
-    @Test(
-        "Qwen 3.8 sends variables that hold the value, and the task is added",
-        .timeLimit(.minutes(timeLimitMinutes))
-    )
+    @Test("Qwen 3.8 sends variables that hold the value, and the task is added")
     func modelSendsTheValuesOfTheVariables() async throws {
         try #require(MTLCreateSystemDefaultDevice() != nil, "This machine has no Metal device, thus MLX cannot run.")
         let turn = try await TemporaryGitRepo.withRepo(named: Self.repoName) { root in

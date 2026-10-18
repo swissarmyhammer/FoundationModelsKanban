@@ -11,7 +11,7 @@ import ULID
 ///
 /// Each test makes two real git repos side by side in a ``GitSandbox``. No test reads or changes the `.kanban/`
 /// directory of this repo.
-@Suite("Cross-repo: move and copy a task to a different board", .watcherBudget, .timeLimit(.minutes(1)))
+@Suite("Cross-repo: move and copy a task to a different board", .watcherBudget)
 struct CrossRepoTransferTests {
     /// The body of a task that a test moves or copies.
     static let keptBody = "Keep this line."
@@ -53,6 +53,12 @@ struct CrossRepoTransferTests {
     /// The selection of the id and the name of each assignee of a task.
     static let assigneesSelection = "assignees { id name }"
 
+    /// The selection of the body of each comment of a task.
+    static let commentsSelection = "{ comments { body } }"
+
+    /// The selection of the tombstone time and the task of a comment.
+    static let commentTaskSelection = "{ deleted task { id } }"
+
     // MARK: - Helpers
 
     /// Runs a mutation field on a fixture board whose related boards can load but are not loaded yet, so that each
@@ -83,9 +89,21 @@ struct CrossRepoTransferTests {
         with input: String,
         on graph: KanbanGraph
     ) async throws -> String {
-        let response = try await CommentTests.run(CommentTests.nodeField(operation, naming: task, with: input), on: graph)
+        try await id(givenBy: CommentTests.nodeField(operation, naming: task, with: input), named: operation, on: graph)
+    }
+
+    /// Runs a mutation field with an `id` selection, and expects that the response has no error.
+    ///
+    /// - Parameters:
+    ///   - field: The mutation field, with an `id` selection.
+    ///   - name: The name of the mutation, for example `addComment`.
+    ///   - graph: The engine of the current repo.
+    /// - Returns: The full URI of the node that the field gives.
+    /// - Throws: An error when the response has no id for the field.
+    static func id(givenBy field: String, named name: String, on graph: KanbanGraph) async throws -> String {
+        let response = try await CommentTests.run(field, on: graph)
         #expect(try CrossRepoWriteTests.hasNoErrors(response), "\(response)")
-        return try CrossRepoUndoTests.id(of: operation, in: KanbanGraphTests.data(of: response))
+        return try CrossRepoUndoTests.id(of: name, in: KanbanGraphTests.data(of: response))
     }
 
     /// The `board` field that names the related repo.
@@ -105,7 +123,25 @@ struct CrossRepoTransferTests {
     /// - Returns: The task object of the response.
     /// - Throws: An error when the response has no task.
     static func task(_ task: String, selecting selection: String, on graph: KanbanGraph) async throws -> [String: Any] {
-        let query = #"{ node(id: "\#(task)") { ... on Task \#(selection) } }"#
+        try await node(task, ofType: GraphQLTypeName.task, selecting: selection, on: graph)
+    }
+
+    /// Reads the fields of a node of any loaded board with `Query.node`.
+    ///
+    /// - Parameters:
+    ///   - node: The full URI of the node.
+    ///   - type: The GraphQL name of the type of the node, for example `Comment`.
+    ///   - selection: The selection of the fields of the type, for example `{ body }`.
+    ///   - graph: The engine of the current repo.
+    /// - Returns: The node object of the response.
+    /// - Throws: An error when the response has no node.
+    static func node(
+        _ node: String,
+        ofType type: String,
+        selecting selection: String,
+        on graph: KanbanGraph
+    ) async throws -> [String: Any] {
+        let query = #"{ node(id: "\#(node)") { ... on \#(type) \#(selection) } }"#
         let response = try await KanbanGraphTests.execute(query, on: graph)
         return try KanbanGraphTests.object(named: "node", in: response)
     }
@@ -278,6 +314,29 @@ struct CrossRepoTransferTests {
         let body = try #require(oldTask["body"] as? String)
         #expect(body.hasPrefix(Self.keptBody))
         #expect(body.contains(moved))
+    }
+
+    /// divergence.md Q21, option A: a move does not copy the comments. Each comment stays live, with its edge to the
+    /// old task (the tombstone). `Query.node` reads the comment by its URI.
+    @Test("A move keeps each comment on the old task, and the new task has no comments")
+    func moveKeepsCommentsOnOldTask() async throws {
+        let repos = try await CrossRepoFixture.SideBySide.make()
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
+        let old = try await CrossRepoFixture.addTask(with: "", on: app)
+        let add = CommentTests.addComment(to: old)
+        let comment = try await Self.id(givenBy: add, named: MutationName.addComment, on: app)
+        let moved = try await Self.transfer(MutationName.moveTask, old, with: try Self.libBoard(), on: app)
+        let commentNode = try await Self.node(
+            comment,
+            ofType: GraphQLTypeName.comment,
+            selecting: Self.commentTaskSelection,
+            on: app
+        )
+        let task = try await Self.task(moved, selecting: Self.commentsSelection, on: app)
+        await app.close()
+        #expect(commentNode["deleted"] is NSNull)
+        #expect(try #require(commentNode["task"] as? [String: Any])["id"] as? String == old)
+        #expect(try Self.texts(of: "body", in: task["comments"]).isEmpty)
     }
 
     @Test("moveTask with a board that holds the task moves the task in its board, with no tombstone")

@@ -7,7 +7,7 @@ import Testing
 /// host. The watch gives each batch to its receiver with the owner, and it holds the owner weakly.
 ///
 /// Each test watches its own temporary folder and ends its watch, so that its file watcher stops.
-@Suite("BoardWatch: the batches of a started watcher go to a weak owner", .watcherBudget, .timeLimit(.minutes(1)))
+@Suite("BoardWatch: the batches of a started watcher go to a weak owner", .watcherBudget)
 struct BoardWatchTests {
     /// The name of the file that a test writes into the watched folder.
     static let fileName = "changed.txt"

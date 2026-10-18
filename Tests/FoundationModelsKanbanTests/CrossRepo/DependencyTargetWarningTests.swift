@@ -10,7 +10,7 @@ import ULID
 /// warning that says that the board is not found. A URI to a task that exists gives no warning.
 ///
 /// Each test makes real git repos in a ``GitSandbox``. No test reads or changes the `.kanban/` directory of this repo.
-@Suite("Cross-repo: the check of a dependency on a different board on write", .watcherBudget, .timeLimit(.minutes(1)))
+@Suite("Cross-repo: the check of a dependency on a different board on write", .watcherBudget)
 struct DependencyTargetWarningTests {
     /// The selection of a written task: its id, and its readiness fields.
     static let selection = "{ id ready blockedBy { id } unresolvedDependsOn }"

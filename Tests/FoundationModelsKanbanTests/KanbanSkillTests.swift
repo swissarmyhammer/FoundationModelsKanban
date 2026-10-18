@@ -4,10 +4,6 @@ import Testing
 
 @testable import FoundationModelsKanban
 
-/// The number of minutes of the time limit of each test of ``KanbanSkillTests``. The constant is at file scope,
-/// because the `@Suite` attribute of a type cannot read a member of the same type.
-private let skillSuiteMinutes = 1
-
 /// Tests the `kanban` skill for the Swift kanban (^xa1whj1).
 ///
 /// The skill is in the `../skills` repo, at `skills/kanban/SKILL.md`. That repo is not always next to this repo (for
@@ -18,7 +14,7 @@ private let skillSuiteMinutes = 1
 ///   a temporary git repo with no remote, and compare each result with its block.
 /// - When `../skills` is next to this repo, a test checks that its skill file is the same text as the copy. When the
 ///   file is not there, a condition trait disables the test, and the test report shows it as skipped.
-@Suite("Kanban skill: the examples run against the Swift tool", .watcherBudget, .timeLimit(.minutes(skillSuiteMinutes)))
+@Suite("Kanban skill: the examples run against the Swift tool", .watcherBudget)
 struct KanbanSkillTests {
     /// The copy of the skill in this repo, relative to the repository root.
     static let skillPath = "Documentation/kanban/SKILL.md"

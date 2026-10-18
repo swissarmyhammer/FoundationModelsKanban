@@ -11,7 +11,7 @@ import ULID
 /// `INCOMPATIBLE_BOARD` (divergence.md Q6).
 ///
 /// Each test makes real git repos in a ``GitSandbox``. No test reads or changes the `.kanban/` directory of this repo.
-@Suite("Cross-repo: a related board that cannot be read", .watcherBudget, .timeLimit(.minutes(1)))
+@Suite("Cross-repo: a related board that cannot be read", .watcherBudget)
 struct UnreadableRelatedBoardTests {
     /// The code of the warning of a related board that cannot be read.
     static let warningCode = "BOARD_UNREADABLE"

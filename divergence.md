@@ -560,6 +560,10 @@ All 26 questions have a decision. Section 11 lists the changes to the code and t
   - The `@<slug>` filter matches a task whose assignee URI names an actor of a different board when the slug of the actor, or the slug of its name, is the slug of the value. `@<full actor URI>` of a different board matches each task with that assignee URI.
   - Forgiving: when the board of the actor cannot be read, the call continues with the BOARD_UNREADABLE warning (Q7). `Task.assignees` then leaves out that actor, and the `@<slug>` filter matches by the slug in the URI.
   - Change feed (task ^t3fzn6q): when a transaction of the board of the actor patches that actor (for example a rename, a delete, or an undelete), the change feed of the board of the task sends an update for each live task with that assignee URI, in the change of that transaction. The update comes also when no field value of the task changed (a rename keeps the actor id), so a subscriber reads the new values with `NodeUpdate.node`. A delete or an undelete also gives the `assignees` field change. This is the same path as the updates across boards for `blockedBy` and `ready` (plan.md §6.7).
+- **Comments after a move. DECIDED: option A** (task ^yf3bpss). Keep the current behavior. A move does not copy the comments. Each comment stays on the old task (the tombstone): the comment stays live, and its `task` edge stays the old task. The new task has no comments. The line with the new URI in the body of the old task connects the two tasks. (Option B, which copies each comment to the new task in the same transaction, is not done.)
+  - `Task.comments` of a tombstoned task gives an empty list (`S/Derived/BrokenMergeDisplay.swift`). Thus after a move, `Task.comments` of the old task is empty. To read a comment, use `Query.node` with the URI of the comment. `Comment.task` gives the old task. Test: `T/CrossRepo/CrossRepoTransferTests.swift` (`moveKeepsCommentsOnOldTask`).
+  - One `undo` of the move makes the old task live again. Then `Task.comments` of the old task gives the comments again.
+  - A copy also does not copy the comments. The old task stays live, with its comments.
 
 ### Storage and safety
 
@@ -649,6 +653,7 @@ Changes from decisions:
   - Change the code: a `board` field on `moveTask`, and a new `copyTask` mutation in `S/GraphQL/TaskOperationMutations.swift`. Write events on both boards in one transaction, under the locks of both boards. Change local refs to full URIs. Make each missing tag on the target board (E6). A move adds a line to the old task body that points to the new URI (E6).
   - Add tests: move and copy across two repos; dependencies still resolve after a move; dependents on the old board; undo of a move across boards.
   - Assignees (option A, see Q21): `Task.assignees` and the `@` filter read an assignee URI of a different board from the related board. Tests: `T/CrossRepo/CrossRepoTransferTests.swift`. The change feed sends an update for the task when the old board changes the actor (`S/Observe/ChangeBuilder.swift`). Tests: `T/CrossRepo/RemoteAssigneeFeedTests.swift`.
+  - Comments (option A, see Q21): no code change. A move keeps each comment on the old task (the tombstone), and the new task has no comments. Test: `moveKeepsCommentsOnOldTask` in `T/CrossRepo/CrossRepoTransferTests.swift`.
   - Change the plan: §4.2 and §6.6.
 - Q22: **NOT DONE (K10).** Rust boards are refused (Q6), so no existing board has the bad git files. The text below is history only. Fix the git files of a board.
   - Change the code: `S/Events/EventLog.swift:137-150` (`prepareDirectory`). Change the test `T/Events/EventLogTests.swift:270-279`, which now checks that an existing file is not changed.
@@ -798,6 +803,7 @@ The second check found these points. The decisions in sections 10 and 12 do not 
   - A move or a copy keeps all tags. Swift makes each missing tag on the target board (this is different from Rust, which drops them).
   - A move adds a line to the old task body that points to the new URI.
   - Add tests for both. Change the Q21 change list in section 11.
+- **Comments of a moved task. DECIDED: option A** (task ^yf3bpss, see Q21). The comments stay on the old task (the tombstone). A move copies no comment. The line with the new URI in the old task body lets a reader go from the old task to the new task.
 
 ---
 

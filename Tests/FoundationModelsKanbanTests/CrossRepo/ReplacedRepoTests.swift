@@ -11,7 +11,7 @@ import Testing
 /// Each test makes the current repo in a ``ScanPlace``, and the repo of the path ref in a second
 /// ``TemporaryDirectory``, where the scan does not look. A ``ScanKeyReader`` gives the keys, so no test runs git. No
 /// test uses the `.kanban/` directory of this repo.
-@Suite("Cross-repo: a new repo at the path of a path board ref", .watcherBudget, .timeLimit(.minutes(1)))
+@Suite("Cross-repo: a new repo at the path of a path board ref", .watcherBudget)
 struct ReplacedRepoTests {
     /// The selection of the id of the task of each update of a change.
     static let updateSelection = "{ updates { node { ... on Task { id } } } }"

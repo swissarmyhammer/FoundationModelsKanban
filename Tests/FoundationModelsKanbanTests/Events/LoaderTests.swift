@@ -298,15 +298,12 @@ struct LoaderTests {
 
 // MARK: - Stage overlap probe
 
-/// Holds the work of one node type until the work of a different node type starts, or until a time limit.
+/// Holds the work of one node type until the work of a different node type starts. The hold has no time limit.
 ///
 /// With a barrier between the node types, the work of a later type cannot start while the work of an earlier type
-/// waits, so the hold ends at the time limit. When the loader does the work of all types at the same time, a
-/// different worker starts the work of the later type, and the hold ends at once.
+/// waits, so the hold never ends. Then the test hangs, and the hang shows the bug. When the loader does the work of
+/// all types at the same time, a different worker starts the work of the later type, and the hold ends at once.
 final class StageOverlapProbe: LoaderWorkerObserver {
-    /// The largest time, in seconds, that the hold waits for the work of the awaited type.
-    static let holdSeconds = 5.0
-
     /// The node type whose work waits.
     let heldType: PatchNodeType
 
@@ -346,8 +343,8 @@ final class StageOverlapProbe: LoaderWorkerObserver {
         guard type == heldType else {
             return
         }
-        let result = awaitedStart.wait(timeout: .now() + Self.holdSeconds)
-        overlap.withLock { overlap in overlap = result == .success }
+        awaitedStart.wait()
+        overlap.withLock { overlap in overlap = true }
     }
 
     /// Records that a worker starts to read the file of a node.

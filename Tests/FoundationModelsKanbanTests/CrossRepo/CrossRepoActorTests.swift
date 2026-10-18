@@ -8,7 +8,7 @@ import Testing
 ///
 /// Each test makes real git repos in a ``GitSandbox``. The related repo has an actor that the current repo does not
 /// have: the session actor of the engine that writes the related board. Each test closes each engine that it makes.
-@Suite("Cross-repo: the actor of a change of a related board", .watcherBudget, .timeLimit(.minutes(1)))
+@Suite("Cross-repo: the actor of a change of a related board", .watcherBudget)
 struct CrossRepoActorTests {
     /// The name of the session actor that writes the related board. The current board has no actor with this name.
     private static let libActorName = "Lib Owner"

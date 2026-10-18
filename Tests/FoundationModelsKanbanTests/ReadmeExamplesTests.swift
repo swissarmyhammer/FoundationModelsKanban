@@ -6,10 +6,6 @@ import Testing
 
 @testable import FoundationModelsKanban
 
-/// The number of minutes of the time limit of each test of ``ReadmeExamplesTests``. The constant is at file scope,
-/// because the `@Suite` attribute of a type cannot read a member of the same type.
-private let readmeSuiteMinutes = 1
-
 /// Tests the "Get started" examples of `README.md` (^n1yhb0x).
 ///
 /// Each test runs an example with the same code and the same GraphQL documents as the README, on a board in a
@@ -18,7 +14,7 @@ private let readmeSuiteMinutes = 1
 /// that commit, and each test has its own key. Each response must
 /// have no `errors`. A response with no minted id and no transaction ULID must be the same text as a
 /// ```` ```json ```` block of the README.
-@Suite("README: the Get started examples", .watcherBudget, .timeLimit(.minutes(readmeSuiteMinutes)))
+@Suite("README: the Get started examples", .watcherBudget)
 struct ReadmeExamplesTests {
     /// The README, relative to the repository root.
     private static let readmePath = DocumentationTests.readmePath

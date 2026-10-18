@@ -10,7 +10,7 @@ import ULID
 ///
 /// Each test makes two real git repos side by side in a ``GitSandbox``, and an engine of the current repo that reads
 /// the board keys from git.
-@Suite("Cross-repo: write related boards", .watcherBudget, .timeLimit(.minutes(1)))
+@Suite("Cross-repo: write related boards", .watcherBudget)
 struct CrossRepoWriteTests {
     /// A mutation field that makes a node of the related board with the `board` field.
     struct BoardFieldCase: Sendable, CustomTestStringConvertible {

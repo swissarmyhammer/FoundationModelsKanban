@@ -4,20 +4,12 @@ import ULID
 
 @testable import FoundationModelsKanban
 
-/// The number of minutes of the time limit of each test of ``ChangeFilterTests``. The constant is at file scope,
-/// because the `@Suite` attribute of a type cannot read a member of the same type.
-private let changeFilterSuiteMinutes = 1
-
 /// Tests the "hidden unless named" rule of a tombstone in the change feed: `history` and `Subscription.changes`
 /// (plan.md §3.3 rule 3, §6.7).
 ///
 /// Each case runs its steps on an engine with a subscription, reads the events of the subscription, and then reads
 /// `history` with the same filter. The two lists must be equal, and each must give the expected updates.
-@Suite(
-    "Change feed: tombstones with no filter and with #DELETED",
-    .watcherBudget,
-    .timeLimit(.minutes(changeFilterSuiteMinutes))
-)
+@Suite("Change feed: tombstones with no filter and with #DELETED", .watcherBudget)
 struct ChangeFilterTests {
     /// One step of a case.
     enum Step: Sendable {

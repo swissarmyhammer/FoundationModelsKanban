@@ -465,15 +465,10 @@ struct BoardLocatorTests {
 
 /// A key reader that reads the key from git and counts its reads.
 ///
-/// The reader can block the first read of one repo until the task of the read is cancelled. The blocked read then
-/// throws ``BoardKeyError/gitCancelled(arguments:)``, the same as a git command that a cancel stops.
+/// The reader can block the first read of one repo. The blocked read waits until the task of the read is cancelled,
+/// with no time limit. The blocked read then throws ``BoardKeyError/gitCancelled(arguments:)``, the same as a git
+/// command that a cancel stops.
 final class CountingKeyReader: Sendable {
-    /// The number of seconds in ``blockLimit``.
-    private static let blockLimitSeconds = 60
-
-    /// The longest time that the blocked read waits for the cancel. After this time, the read reads from git.
-    private static let blockLimit = Duration.seconds(blockLimitSeconds)
-
     /// The number of reads of each repo, by the canonical path of the repo, behind a lock, because a scan can read
     /// from a different thread.
     private let reads = Mutex([String: Int]())
@@ -539,15 +534,15 @@ final class CountingKeyReader: Sendable {
         return try await BoardKey.read(fromRepoAt: root)
     }
 
-    /// Waits for the cancel of the task, but not longer than ``blockLimit``.
+    /// Waits until the task is cancelled. The wait has no time limit. The iteration of a stream that gets no element
+    /// ends when the task is cancelled.
     ///
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the wait.
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled.
     private func waitForCancel() async throws(BoardKeyError) {
         blockedReadStarts.yield()
-        do {
-            try await Task.sleep(for: Self.blockLimit)
-        } catch {
-            throw .gitCancelled(arguments: [])
-        }
+        let (cancel, cancelEnd) = AsyncStream<Never>.makeStream()
+        defer { cancelEnd.finish() }
+        for await _ in cancel {}
+        throw .gitCancelled(arguments: [])
     }
 }

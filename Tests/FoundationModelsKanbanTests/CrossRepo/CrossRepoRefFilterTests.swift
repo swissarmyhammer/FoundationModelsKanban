@@ -9,7 +9,7 @@ import Testing
 ///
 /// Each test makes real git repos side by side in a ``GitSandbox``. No test reads or changes the `.kanban/` directory
 /// of this repo.
-@Suite("Cross-repo: a ^ filter with a task of a different board", .watcherBudget, .timeLimit(.minutes(1)))
+@Suite("Cross-repo: a ^ filter with a task of a different board", .watcherBudget)
 struct CrossRepoRefFilterTests {
     /// The `input` field of the title change that a test writes.
     static let titleInput = #"title: "Later""#

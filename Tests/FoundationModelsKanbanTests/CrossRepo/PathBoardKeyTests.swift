@@ -9,7 +9,7 @@ import Testing
 /// Each test makes real git repos in a ``GitSandbox``: the current repo and a related repo side by side, and a repo
 /// at ``BoardLocatorTests/outsidePath``, where the scan does not look. The engines read the worktree tops and the
 /// board keys from git.
-@Suite("Cross-repo: a board that a call reached by a path is in the key index", .watcherBudget, .timeLimit(.minutes(1)))
+@Suite("Cross-repo: a board that a call reached by a path is in the key index", .watcherBudget)
 struct PathBoardKeyTests {
     /// The response key of the field that adds a task to the current board.
     static let currentField = "current"

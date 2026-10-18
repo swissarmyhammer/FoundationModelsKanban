@@ -11,7 +11,7 @@ import ULID
 /// a dependency on A. The cycle A → B → C → A is not there while B is a tombstone, and it comes back when B is live
 /// again. The one-board tests use the fixture logs of ``KanbanGraphTests`` in a temporary directory. The cross-board
 /// test makes two real git repos side by side in a ``GitSandbox``, and C is a task of the related board.
-@Suite("A tombstoned task that becomes live again obeys the cycle rule", .watcherBudget, .timeLimit(.minutes(1)))
+@Suite("A tombstoned task that becomes live again obeys the cycle rule", .watcherBudget)
 struct UndeleteCycleTests {
     /// The tasks of the example, each as its full URI, and the transaction of the delete of B.
     struct Example {

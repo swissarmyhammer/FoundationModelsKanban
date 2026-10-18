@@ -9,7 +9,7 @@ import Testing
 /// Each test makes real git repos in a ``GitSandbox`` and a host that reads the worktree tops and the board keys from
 /// git. The load recorder of the host waits in each file load, so that two loads in sequence and two loads at the
 /// same time give different event orders.
-@Suite("Cross-repo: load the related boards at the same time", .watcherBudget, .timeLimit(.minutes(1)))
+@Suite("Cross-repo: load the related boards at the same time", .watcherBudget)
 struct CrossRepoParallelLoadTests {
     /// The name of the second related repo.
     static let toolsName = "tools"

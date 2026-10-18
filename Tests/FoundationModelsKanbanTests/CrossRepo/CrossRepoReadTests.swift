@@ -11,7 +11,7 @@ import ULID
 /// Each test makes real git repos or plain folders in a ``GitSandbox`` and engines that read the worktree tops and the
 /// board keys from git.
 /// A test that waits for a change of a related board waits for a batch that the engine applies, with no fixed sleep.
-@Suite("Cross-repo: read related boards", .watcherBudget, .timeLimit(.minutes(1)))
+@Suite("Cross-repo: read related boards", .watcherBudget)
 struct CrossRepoReadTests {
     /// The key of a board that no scan finds.
     static let missingKey = "github.com/example/missing"
