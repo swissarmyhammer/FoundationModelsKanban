@@ -48,8 +48,41 @@ comments:
     - commit: not run. review: not run.
     - next: the user decides ^wphkeqk (how a watcher test ends when FSEvents gives no event, with no time limit). Then the full swift test runs again.
   timestamp: 2026-10-17T06:07:42.329089+00:00
+- actor: claude-code
+  id: 01m5810a2hjh7t73hz78egx45z
+  text: |-
+    ### review — findings
+    - evidence: review sha 6d957ec~1..6d957ec — 2 findings (2 confirmed, 2 refuted). Tests/FoundationModelsKanbanTests/Observe/HeldStartService.swift:10, Tests/FoundationModelsKanbanTests/Observe/HeldStartService.swift:36
+    - next: Remove the second fake. Put the hold on the first start into QuietFolderEvents, or into one shared fake that both suites use, and take currentEventID from that one fake. Then review again.
+  timestamp: 2026-10-18T17:29:58.609972+00:00
+- actor: claude-code
+  id: 01m5810w5fjd2fnksa1dspt43s
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed (work in the tree; FolderStreams code landed in a35a913 under ^wphkeqk)
+    - test: green — swift test: 1599 passed, 0 failed, 0 skipped
+    - commit: 6d957ec
+    - review: findings — Tests/FoundationModelsKanbanTests/Observe/HeldStartService.swift:10, Tests/FoundationModelsKanbanTests/Observe/HeldStartService.swift:36 (reuse/reuse: HeldStartService repeats QuietFolderEvents)
+  timestamp: 2026-10-18T17:30:17.135668+00:00
+- actor: claude-code
+  id: 01m581ba6wpgf9375a6yzf1z2g
+  text: |-
+    Implementation (review findings, reuse/reuse):
+    - One FolderEventService fake is in the test target now: QuietFolderEvents, in the new file Tests/FoundationModelsKanbanTests/Observe/QuietFolderEvents.swift (moved out of FolderStreamsTests.swift, with QuietStream). It has one event id counter.
+    - The hold of the first start is an option of that fake: `QuietFolderEvents(holdingFirstStartWith: StartHold?)`. The default is no hold. StartHold has the semaphore and the AsyncStream of the old fake: `waitForHeldStart()` and `release()`. The fake records the paths of the held start before it waits, so startCount counts the held start, as before.
+    - HeldStartService.swift is deleted. Users changed: FolderStreamsTests.waitingAddsShareOneStream, FolderStreamsPoolTests.heldStartHoldsNoPoolThread, KanbanHostTests.loadStartsWhileWatcherStartWaits. `import Synchronization` is removed from FolderStreamsTests.swift (no Mutex is left there). No text in the repo names HeldStartService now.
+    - Note: `swift test --filter Observe` runs no test ("No matching test cases were run"), because a test id holds the suite name, not the folder name. I ran `--filter 'FolderStreamsTests|FolderStreamsPoolTests|BoardWatcherTests|KanbanHostTests'` in its place: 54 tests in 4 suites passed.
+    - Acceptance check against HEAD code: FolderStreams is an actor whose `unownedExecutor` is its own DispatchSerialQueue `changes`; each call of `service.currentEventID()`, `service.startStream(...)` and `stream.end()` is in an actor-isolated method (`watchEachFolder`, `startStream`, `endStreamWithNoFolder`), and `removeWithoutWait` sends its end to that queue. FolderStreamsPoolTests holds the first start and proves that 4 x processor count other tasks end while it waits. The full swift test passes. FolderEventWait.timeLimit stays 60 s; no `.timeLimit` trait is in the tests.
+  timestamp: 2026-10-18T17:35:59.196813+00:00
+- actor: claude-code
+  id: 01m581bdwr65a88twjmxvebm60
+  text: |-
+    ### implement — changed
+    - evidence: 5 files — Tests/FoundationModelsKanbanTests/Observe/QuietFolderEvents.swift (new), Tests/FoundationModelsKanbanTests/Observe/HeldStartService.swift (deleted), Tests/FoundationModelsKanbanTests/Observe/FolderStreamsTests.swift, Tests/FoundationModelsKanbanTests/Observe/FolderStreamsPoolTests.swift, Tests/FoundationModelsKanbanTests/Tool/KanbanHostTests.swift. `swift test --filter Observe`: 0 tests matched. `swift test --filter 'FolderStreamsTests|FolderStreamsPoolTests|BoardWatcherTests|KanbanHostTests'`: 54 passed in 4 suites, 0 failed, 0 skipped. Full `swift test` (one process): 1599 passed in 131 suites, 0 failed, 0 skipped. No source warnings (only the build-system note "missing creator for mutated node" of the mlx-swift_Cmlx bundle).
+    - next: /review. Both findings and the 3 acceptance items are `- [x]`. Not committed. Task stays in doing.
+  timestamp: 2026-10-18T17:36:02.968967+00:00
 position_column: doing
-position_ordinal: '8380'
+position_ordinal: '8580'
 title: Do not block the cooperative pool with the FSEvents calls of FolderStreams
 ---
 ## What
@@ -60,6 +93,16 @@ title: Do not block the cooperative pool with the FSEvents calls of FolderStream
 - When the test process stopped, fseventsd answered other clients again.
 
 ## Acceptance Criteria
-- [ ] No FSEvents call of `FolderStreams` runs on a thread of the cooperative pool. The calls run on a thread or queue of their own, and the async caller waits with no blocked pool thread.
-- [ ] A test proves it. Example: a fake FSEvents seam that blocks the start, and many tasks that do other work and must all end while the start is blocked.
-- [ ] The full `swift test` run passes.
+- [x] No FSEvents call of `FolderStreams` runs on a thread of the cooperative pool. The calls run on a thread or queue of their own, and the async caller waits with no blocked pool thread.
+- [x] A test proves it. Example: a fake FSEvents seam that blocks the start, and many tasks that do other work and must all end while the start is blocked.
+- [x] The full `swift test` run passes.
+
+## Review Findings (2026-10-18 12:28)
+
+> Scope: `review sha 6d957ec~1..6d957ec` — reviewed the diffs only — lines this change added or modified. 2 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Tests/FoundationModelsKanbanTests/Observe/HeldStartService.swift:10` `reuse/reuse` — HeldStartService is a near-copy of the existing test fake QuietFolderEvents. It repeats the FolderEventService conformance and the quiet stream, and only adds a hold on the first start. The hold should be a parameter of QuietFolderEvents, not a second fake. Two fakes of one protocol drift apart. Give QuietFolderEvents an optional hold on the first start (a semaphore and an AsyncStream, as in HeldStartService), or move one shared fake into a common test file and have both suites use it. Then delete the second fake.
+- [x] `Tests/FoundationModelsKanbanTests/Observe/HeldStartService.swift:36` `reuse/reuse` — HeldStartService.currentEventID repeats the body of QuietFolderEvents.currentEventID. The fake should reuse the existing quiet fake, or the shared fake that replaces it, and not define its own event id counter. Take the event id from the shared fake (see the finding on the class at line 10), so that one implementation provides the id for both suites.

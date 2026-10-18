@@ -355,15 +355,16 @@ struct KanbanHostTests {
         let directory = try TemporaryDirectory()
         _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
         let recorder = LoadRecorder()
-        let service = HeldStartService()
+        let hold = StartHold()
+        let service = QuietFolderEvents(holdingFirstStartWith: hold)
         let host = HostFixture.makeHost(observingLoadsWith: recorder, watchingWith: service)
         let root = directory.url
         let session = Task { try await host.session(workingDirectory: root, actor: Self.firstActor) }
-        await service.waitForHeldStart()
+        await hold.waitForHeldStart()
         // When the load waits for the start of the watcher, this wait never ends, because the test lets the start go
         // only after the load started.
         await recorder.waitForLoadStart()
-        service.releaseHeldStart()
+        hold.release()
         let view = try await session.value
         #expect(try await KanbanGraphTests.execute(Self.countQuery, on: view) == Self.countResponse(of: 1))
         await host.close()

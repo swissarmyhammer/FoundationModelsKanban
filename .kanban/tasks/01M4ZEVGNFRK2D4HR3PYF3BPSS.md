@@ -149,8 +149,24 @@ comments:
     - other uncommitted work is kept (CrossRepoTransferTests.swift, CrossRepoUndoTests.swift, the card files). No commit.
     - next: commit, then /review.
   timestamp: 2026-10-18T17:26:27.842336+00:00
-position_column: doing
-position_ordinal: '8580'
+- actor: claude-code
+  id: 01m580x0djbqd4zj5ybmcq2ykf
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (b320ebb). 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed. 3 files reviewed. 2 .kanban files not reviewed (ignore rule). The prior finding at CrossRepoTransferTests.swift (reuse/reuse) is fixed: CrossRepoUndoTests.runWithNoErrors(_:on:) is @discardableResult and returns the response text, and id(givenBy:named:on:) calls it. All prior items are checked. Full swift test: 1599/1599 passed, 0 skipped.
+    - next: none. The task is in done.
+  timestamp: 2026-10-18T17:28:10.418804+00:00
+- actor: claude-code
+  id: 01m580xdq6ay4m63a4y0gwqfx4
+  text: |-
+    ### finish iteration 6 — clean
+    - implement: changed — KanbanSkillTests.copyIsSkillsRepoFile removed (user decision)
+    - test: green — swift test: 1599 passed, 0 failed, 0 skipped, 43.8 s
+    - commit: b320ebb
+    - review: clean — 0 findings; prior finding CrossRepoTransferTests.swift:104 fixed. Task is in done.
+  timestamp: 2026-10-18T17:28:24.038329+00:00
+position_column: done
+position_ordinal: ff9680
 title: Decide what moveTask(board:) does with the comments of the moved task
 ---
 ## What

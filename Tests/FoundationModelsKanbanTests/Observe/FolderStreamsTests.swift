@@ -1,6 +1,5 @@
 import CoreServices
 import Foundation
-import Synchronization
 import Testing
 
 @testable import FoundationModelsKanban
@@ -196,18 +195,19 @@ struct FolderStreamsTests {
 
     @Test("The adds that wait while a stream starts share one new stream")
     func waitingAddsShareOneStream() async throws {
-        let service = HeldStartService()
+        let hold = StartHold()
+        let service = QuietFolderEvents(holdingFirstStartWith: hold)
         let streams = FolderStreams(service: service)
         let held = RouterSink(named: "held")
         let waiting = (0..<Self.waitingAddCount).map { index in RouterSink(named: "waiting-\(index)") }
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask { try await held.add(to: streams) }
-            await service.waitForHeldStart()
+            await hold.waitForHeldStart()
             for sink in waiting {
                 group.addTask { try await sink.add(to: streams) }
             }
             try await EventLogTests.waitUntil { streams.folderCount == waiting.count + 1 }
-            service.releaseHeldStart()
+            hold.release()
             try await group.waitForAll()
         }
         #expect(service.startCount == 2)
@@ -398,55 +398,5 @@ private struct RouterSink {
     func finishedBatches() async -> [[URL]] {
         sink.finish()
         return await batches.reduce(into: []) { batches, batch in batches.append(batch) }
-    }
-}
-
-// MARK: - Quiet service
-
-/// A fake FSEvents service whose streams give no events, also at their end. It is the same as a stream of a
-/// fseventsd that is behind: the old stream holds an event that occurred before the start of the new stream, and it
-/// does not give the event at its end. Each start returns at once. The fake records the folders of each start, so a
-/// test can count the streams that a change of the set of folders makes.
-final class QuietFolderEvents: FolderEventService {
-    /// The last event id that the service gave, behind a lock.
-    private let lastEventID = Mutex<FSEventStreamEventId>(0)
-
-    /// The paths of the folders of each started stream, in the order of the starts, behind a lock.
-    private let starts = Mutex<[[String]]>([])
-
-    /// The paths of the folders of each started stream, in the order of the starts.
-    var startedPaths: [[String]] {
-        starts.withLock { starts in starts }
-    }
-
-    /// The number of started streams.
-    var startCount: Int {
-        startedPaths.count
-    }
-
-    /// Gives the next event id of the fake.
-    ///
-    /// - Returns: The id.
-    func currentEventID() -> FSEventStreamEventId {
-        lastEventID.withLock { id in
-            id += 1
-            return id
-        }
-    }
-
-    /// Records the paths of the folders, and gives a stream that gives no events.
-    ///
-    /// - Parameters:
-    ///   - paths: The paths of the folders. The fake records them.
-    ///   - router: The router that gets each group of events. The fake gives it no events.
-    ///   - queue: The queue of the events. The fake ignores it.
-    /// - Returns: The stream.
-    func startStream(
-        watching paths: [String],
-        routingTo router: EventRouter,
-        on queue: DispatchQueue
-    ) -> (any FolderEventStream)? {
-        starts.withLock { starts in starts.append(paths) }
-        return QuietStream()
     }
 }
