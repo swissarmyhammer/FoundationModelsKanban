@@ -295,8 +295,24 @@ comments:
     - evidence: the description of ^wphkeqk only. The two findings `BoardKeyTests.swift:583` and `BoardKeyTests.swift:591` are now `- [x]`, with the text struck through and " — NOT APPLICABLE: user decision 2026-10-18, a time limit is only for FSEvents waits; these waits poll a git PID file and a process end." added. User decision: "No limit, drop the finding". The update patch has one hunk with only these two lines. No code changed. No commit. Open findings: 0 of 19.
     - next: review
   timestamp: 2026-10-18T18:19:03.720930+00:00
-position_column: doing
-position_ordinal: '8280'
+- actor: claude-code
+  id: 01m583yqhk97q090bh7bpd64k7
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 2fdd959). 11 files reviewed, 4 .kanban files not reviewed (ignore rule). Counts: 0 findings, 0 confirmed, 0 refuted, 14 attempted, 0 failed, 0 skipped. All 19 items of the 2026-10-18 12:52 section are checked: 17 fixed, and 2 (BoardKeyTests.swift:583 and :591) NOT APPLICABLE by the user decision of 2026-10-18. Full `swift test`: 1609 of 1609 passed, 0 skipped.
+    - next: none. The task moved to done.
+  timestamp: 2026-10-18T18:21:32.595142+00:00
+- actor: claude-code
+  id: 01m583z3rcwf3d6cd99b1n81pj
+  text: |-
+    ### finish iteration 8 — clean
+    - implement: changed — 2 findings marked NOT APPLICABLE (user decision)
+    - test: green — swift test: 1609 passed, 0 failed, 0 skipped
+    - commit: 2fdd959
+    - review: clean — 0 findings; 17 prior findings fixed, 2 not applicable. Task is in done.
+  timestamp: 2026-10-18T18:21:45.100892+00:00
+position_column: done
+position_ordinal: ff9880
 title: Decide what the watcher tests do when FSEvents gives no event
 ---
 ## What
