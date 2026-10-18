@@ -112,7 +112,7 @@ struct PathRefCacheTests {
         let session = try await host.session(workingDirectory: place.app, actor: KanbanHostTests.firstActor)
         #expect(try await !ScanCacheTests.hasBoard(of: folder.path, on: session))
         try await GitSandbox.initializeRepo(at: folder, withIdentity: false)
-        try await recorder.waitForChange(.repo(folder.canonicalPath)) {
+        try await recorder.waitForChange(waitingFor: "a scan change after which the board is found", at: folder) {
             try await ScanCacheTests.hasBoard(of: folder.path, on: session)
         }
         #expect(try await CrossRepoReadTests.board("path", of: folder.path, on: session) == folder.path)
@@ -131,7 +131,7 @@ struct PathRefCacheTests {
         #expect(try await !ScanCacheTests.hasBoard(of: folder.path, on: session))
         reader.setOrigin(Self.laterOrigin, ofRepoNamed: ScanCacheTests.brokenName)
         try Self.makeFirstCommit(inRepoAt: folder)
-        try await recorder.waitForChange(.commits(inRepo: folder.canonicalPath)) {
+        try await recorder.waitForChange(waitingFor: "a scan change after which the board is found", at: folder) {
             try await ScanCacheTests.hasBoard(of: folder.path, on: session)
         }
         let key = try CrossRepoFixture.keyText(of: Self.laterOrigin)

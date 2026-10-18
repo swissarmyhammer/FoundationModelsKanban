@@ -108,7 +108,7 @@ struct PathBoardKeyTests {
         #expect(try await CrossRepoReadTests.board("path", of: outside.path, on: graph) == outside.path)
         #expect(try await ScanCacheTests.hasBoard(of: key, on: graph))
         try await GitSandbox.runGit(withArguments: ["remote", "set-url", "origin", Self.movedOrigin], in: outside)
-        try await recorder.waitForChange(.repo(outside.canonicalPath)) {
+        try await recorder.waitForChange(waitingFor: "a scan change after which the old key is gone", at: outside) {
             try await !ScanCacheTests.hasBoard(of: key, on: graph)
         }
         #expect(try await !ScanCacheTests.hasBoard(of: key, on: graph))

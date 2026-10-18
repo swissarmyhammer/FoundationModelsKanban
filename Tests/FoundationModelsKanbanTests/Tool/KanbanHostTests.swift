@@ -28,27 +28,6 @@ struct KanbanHostTests {
     /// The POSIX permissions of a log file that no user can read, so that the load of its board fails.
     static let unreadablePermissions = 0o000
 
-    /// The longest time that the test of a closed engine waits for `adopt` to return while the task of the moved
-    /// watch is held.
-    static let adoptionWaitLimit = Duration.seconds(adoptionWaitLimitSeconds)
-
-    /// The number of seconds in ``adoptionWaitLimit``.
-    private static let adoptionWaitLimitSeconds = 10
-
-    /// The longest time that a ``HeldConsumer`` holds its task. It is longer than ``adoptionWaitLimit``, so that the
-    /// test releases the task first.
-    static let consumerHoldLimit = Duration.seconds(consumerHoldLimitSeconds)
-
-    /// The number of seconds in ``consumerHoldLimit``.
-    private static let consumerHoldLimitSeconds = 30
-
-    /// The longest time that a test waits until the host lets go of the engine of a folder that moved away from its
-    /// path. The file watcher must first see a change of the new repo at the path.
-    static let retirementWaitLimit = Duration.seconds(retirementWaitLimitSeconds)
-
-    /// The number of seconds in ``retirementWaitLimit``.
-    private static let retirementWaitLimitSeconds = 20
-
     /// A query that counts the tasks of the board.
     static let countQuery = "{ board { tasks { totalCount } } }"
 
@@ -198,7 +177,11 @@ struct KanbanHostTests {
         let document = SubscriptionTests.subscription(SubscriptionTests.taskArguments)
         let stream = try await SubscriptionTests.subscribe(document, on: first)
         _ = try await CrossRepoFixture.addTask(with: "", on: second)
-        let events = try await SubscriptionTests.events(SubscriptionTests.oneEvent, of: stream)
+        let events = try await SubscriptionTests.events(
+            SubscriptionTests.oneEvent,
+            of: stream,
+            afterChangeAt: directory.url
+        )
         #expect(events.count == SubscriptionTests.oneEvent)
         await host.close()
     }
@@ -234,7 +217,7 @@ struct KanbanHostTests {
         let engine = try await host.engine(ofBoardAt: directory.url)
         await engine.close()
         let moved = BoardWatch(
-            watcher: try BoardWatcher(watching: directory.url, in: host.folderStreams),
+            watcher: try await BoardWatcher(watching: directory.url, in: host.folderStreams),
             directory: directory.url,
             consumer: Task {}
         )
@@ -245,8 +228,7 @@ struct KanbanHostTests {
     }
 
     @Test(
-        "A closed engine ends a moved watch with no wait for the task of the watch, which can wait for the engine gate",
-        .timeLimit(.minutes(1))
+        "A closed engine ends a moved watch with no wait for the task of the watch, which can wait for the engine gate"
     )
     func closedEngineDoesNotWaitForMovedConsumer() async throws {
         let directory = try TemporaryDirectory()
@@ -256,9 +238,9 @@ struct KanbanHostTests {
         await engine.close()
         let consumer = HeldConsumer()
         let moved = BoardWatch(
-            watcher: try BoardWatcher(watching: directory.url, in: host.folderStreams),
+            watcher: try await BoardWatcher(watching: directory.url, in: host.folderStreams),
             directory: directory.url,
-            consumer: consumer.makeTask(heldAtMost: Self.consumerHoldLimit)
+            consumer: consumer.makeTask()
         )
         let isAdoptionDone = Mutex(false)
         let adoption = Task {
@@ -266,21 +248,19 @@ struct KanbanHostTests {
             isAdoptionDone.withLock { isDone in isDone = true }
             return isAdopted
         }
-        let isAdoptedFirst = try await EventLogTests.becomesTrue(within: Self.adoptionWaitLimit) {
-            isAdoptionDone.withLock { isDone in isDone }
-        }
+        // When `adopt` waits for the task of the moved watch, this wait never ends, because the test releases the
+        // task only after `adopt` returns.
+        try await EventLogTests.waitUntil { isAdoptionDone.withLock { isDone in isDone } }
         consumer.release()
         let isAdopted = await adoption.value
         await moved.consumer.value
-        #expect(isAdoptedFirst, "adopt waited for the task of the moved watch, so a wait for the gate never ends")
         #expect(!isAdopted)
         #expect(await !moved.watcher.isRunning)
         await host.close()
     }
 
     @Test(
-        "An engine whose folder moved away applies no file of a new repo at its path, and the host lets the engine go",
-        .timeLimit(.minutes(1))
+        "An engine whose folder moved away applies no file of a new repo at its path, and the host lets the engine go"
     )
     func movedEngineAppliesNoFileOfNewRepo() async throws {
         let outside = try TemporaryDirectory()
@@ -294,10 +274,10 @@ struct KanbanHostTests {
         _ = try PathRepo.moveAndMakeNewRepo(at: folder, movingOldRepoInto: staging.url, keyedBy: reader)
         var (task, ids) = try KanbanGraphTests.writeFixture(inRepoAt: folder)
         try BoardWatcherTests.writeLaterTitle(to: task, mintingFrom: &ids, in: EventLog(repositoryAt: folder))
-        let isRetired = try await EventLogTests.becomesTrue(within: Self.retirementWaitLimit) {
-            await engine.activeWatch == nil
+        let change = "the stop of the watch after the move of the repo folder"
+        try await FolderEventWait.value(waitingFor: change, at: folder.path) {
+            try await EventLogTests.waitUntil { await engine.activeWatch == nil }
         }
-        #expect(isRetired, "the engine of the old folder still watches the path of the new repo")
         #expect(await engine.session.live.events.count == events)
         #expect(await host.engineCount == 0)
         await host.close()
@@ -370,6 +350,25 @@ struct KanbanHostTests {
         await host.close()
     }
 
+    @Test("The file load of a board starts while the start of its file watcher waits")
+    func loadStartsWhileWatcherStartWaits() async throws {
+        let directory = try TemporaryDirectory()
+        _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
+        let recorder = LoadRecorder()
+        let service = HeldStartService()
+        let host = HostFixture.makeHost(observingLoadsWith: recorder, watchingWith: service)
+        let root = directory.url
+        let session = Task { try await host.session(workingDirectory: root, actor: Self.firstActor) }
+        await service.waitForHeldStart()
+        // When the load waits for the start of the watcher, this wait never ends, because the test lets the start go
+        // only after the load started.
+        await recorder.waitForLoadStart()
+        service.releaseHeldStart()
+        let view = try await session.value
+        #expect(try await KanbanGraphTests.execute(Self.countQuery, on: view) == Self.countResponse(of: 1))
+        await host.close()
+    }
+
     // MARK: - Worktrees
 
     @Test("Two worktrees of one repo are two engines with the same key")
@@ -427,9 +426,9 @@ struct KanbanHostTests {
         }
         let places = await host.locator.places(around: place.app)
         #expect(host.folderStreams.folderCount == boards.count + places.count + 1)
-        #expect(host.folderStreams.streamCount == 1)
+        #expect(await host.folderStreams.streamCount == 1)
         await host.close()
-        #expect(host.folderStreams.streamCount == 0)
+        #expect(await host.folderStreams.streamCount == 0)
     }
 
     @Test("A manual edit of a board while a second board loads reaches the first board")
@@ -445,7 +444,15 @@ struct KanbanHostTests {
         _ = try await host.engine(ofBoardAt: second.url)
         let expected = KanbanGraphTests.boardResponse(withTask: task, titled: KanbanGraphTests.laterTitle)
         let query = KanbanGraphTests.boardQuery
-        #expect(try await BoardWatcherTests.query(query, reaches: expected, on: session, recordedBy: recorder))
+        #expect(
+            try await BoardWatcherTests.query(
+                query,
+                reaches: expected,
+                on: session,
+                recordedBy: recorder,
+                afterChangeAt: first.url
+            )
+        )
         await host.close()
     }
 
@@ -463,7 +470,15 @@ struct KanbanHostTests {
         try BoardWatcherTests.writeLaterTitle(to: task, mintingFrom: &ids, in: firstLog)
         let expected = KanbanGraphTests.boardResponse(withTask: task, titled: KanbanGraphTests.laterTitle)
         let query = KanbanGraphTests.boardQuery
-        #expect(try await BoardWatcherTests.query(query, reaches: expected, on: firstSession, recordedBy: recorder))
+        #expect(
+            try await BoardWatcherTests.query(
+                query,
+                reaches: expected,
+                on: firstSession,
+                recordedBy: recorder,
+                afterChangeAt: firstLog.directory
+            )
+        )
         let unchanged = KanbanGraphTests.boardResponse(withTask: secondTask, titled: KanbanGraphTests.taskTitle)
         #expect(try await KanbanGraphTests.execute(query, on: secondSession) == unchanged)
         let boardPath = firstLog.directory.canonicalPath + "/"
@@ -508,6 +523,7 @@ enum HostFixture {
     ///   - embedder: The embedder of the search of each board, or `nil` for BM25 and trigram only.
     ///   - scanObserver: Gets a call when each scan starts and when a scan place changes, or `nil` for no calls.
     ///   - batchObserver: Gets a call when a file watcher applies a batch, or `nil` for no calls.
+    ///   - folderEvents: The FSEvents calls of the file watchers. The default is the FSEvents service of the system.
     /// - Returns: The host.
     static func makeHost(
         readingKeyWith keyReader: @escaping BoardKeyReader = KanbanGraphTests.fakeKey,
@@ -517,7 +533,8 @@ enum HostFixture {
         reportingWorkersTo workerObserver: (any LoaderWorkerObserver)? = nil,
         embeddingWith embedder: (any PooledEmbedding)? = nil,
         observingScansWith scanObserver: (any BoardScanObserver)? = nil,
-        observingBatchesWith batchObserver: (any LiveGraphObserver)? = nil
+        observingBatchesWith batchObserver: (any LiveGraphObserver)? = nil,
+        watchingWith folderEvents: any FolderEventService = SystemFolderEvents()
     ) -> KanbanHost {
         KanbanHost(
             configuration: HostConfiguration(
@@ -529,7 +546,8 @@ enum HostFixture {
                 batchObserver: batchObserver,
                 loadObserver: loadObserver,
                 workerObserver: workerObserver,
-                scanObserver: scanObserver
+                scanObserver: scanObserver,
+                folderEvents: folderEvents
             )
         )
     }
@@ -541,7 +559,11 @@ enum HostFixture {
     ///   ``KanbanGraphTests/mutationIDs``.
     /// - Returns: The host.
     static func makeGitHost(mintingFrom ids: any ULIDSource = KanbanGraphTests.mutationIDs) -> KanbanHost {
-        makeHost(readingKeyWith: BoardKey.read(fromRepoAt:), findingTopWith: BoardKey.worktreeTop(of:), mintingFrom: ids)
+        makeHost(
+            readingKeyWith: BoardKey.read(fromRepoAt:),
+            findingTopWith: BoardKey.worktreeTop(of:),
+            mintingFrom: ids
+        )
     }
 
     /// Commits the `.kanban/` directory of a worktree to its branch.
@@ -591,11 +613,25 @@ final class LoadRecorder: BoardLoadObserver {
     /// loads in sequence from two loads at the same time.
     private let loadDelay: Duration
 
+    /// Gives one element at the start of each file load.
+    private let loadStartSignals: AsyncStream<Void>
+
+    /// Gives the elements of ``loadStartSignals``.
+    private let loadStartSink: AsyncStream<Void>.Continuation
+
     /// Makes a recorder.
     ///
     /// - Parameter loadDelay: The time that each file load waits after its start is recorded. The default is no wait.
     init(waitingInEachLoad loadDelay: Duration = .zero) {
         self.loadDelay = loadDelay
+        (loadStartSignals, loadStartSink) = AsyncStream.makeStream()
+    }
+
+    /// Waits until a file load starts. The wait has no time limit. Call it one time for each recorder.
+    func waitForLoadStart() async {
+        for await _ in loadStartSignals {
+            return
+        }
     }
 
     /// The recorded events, in the order that they happened.
@@ -613,11 +649,13 @@ final class LoadRecorder: BoardLoadObserver {
         roots(of: .loadDidFinish)
     }
 
-    /// Records the start of a file load, and then waits for the load delay of the recorder.
+    /// Records the start of a file load, tells it to ``waitForLoadStart()``, and then waits for the load delay of the
+    /// recorder.
     ///
     /// - Parameter root: The root folder of the board.
     func boardLoadDidStart(at root: URL) async {
         record(LoadEvent(kind: .loadDidStart, root: root))
+        loadStartSink.yield()
         try? await Task.sleep(for: loadDelay)
     }
 
@@ -659,9 +697,8 @@ final class LoadRecorder: BoardLoadObserver {
 
 // MARK: - Held consumer
 
-/// Makes the task of a watch that does not end until the test releases it, or until a time limit passes. The task
-/// does not end when it is cancelled, the same as the task of an engine watch that waits for the serial gate of the
-/// engine.
+/// Makes the task of a watch that does not end until the test releases it. The task has no time limit. The task does
+/// not end when it is cancelled, the same as the task of an engine watch that waits for the serial gate of the engine.
 final class HeldConsumer: Sendable {
     /// `true` after ``release()``, behind a lock, because the task reads it on a different thread.
     private let releaseState = Mutex(false)
@@ -672,14 +709,13 @@ final class HeldConsumer: Sendable {
     }
 
     /// Makes the task. The wait runs in an inner unstructured task, which does not get the cancel of the outer task,
-    /// so a cancel of the outer task does not end the wait.
+    /// so a cancel of the outer task does not end the wait. The task waits until ``release()``.
     ///
-    /// - Parameter limit: The longest time that the task waits for the release.
     /// - Returns: The task.
-    func makeTask(heldAtMost limit: Duration) -> Task<Void, Never> {
+    func makeTask() -> Task<Void, Never> {
         Task {
             await Task {
-                _ = try? await EventLogTests.becomesTrue(within: limit) { self.isReleased }
+                try? await EventLogTests.waitUntil { self.isReleased }
             }.value
         }
     }

@@ -20,7 +20,8 @@ enum ScanChange: Hashable, Sendable {
     /// now. The text is the canonical path of the repo folder.
     case commits(inRepo: String)
 
-    /// The scan place itself changed, or the file watcher lost events: each repo of the place must be read again.
+    /// The scan place itself changed, or the file watcher lost events: each repo of the place must be compared with
+    /// the files that the scan or the record saw (``BoardIndex/resolving(_:)``, ``PathRefRecord/isExpired(by:)``).
     /// The text is the canonical path of the place.
     case place(String)
 }
@@ -113,24 +114,18 @@ struct WatchedPlace: Hashable, Sendable {
 
 /// One rule of the changes of a repo folder: a path inside the repo and the change that it gives.
 private struct ScanChangeRule: Sendable {
-    /// The `refs` directory of the `.git` directory.
-    private static let refsName = "refs"
-
-    /// The file of the packed refs of the `.git` directory.
-    private static let packedRefsName = "packed-refs"
-
-    /// The git config file of the `.git` directory.
-    private static let configName = "config"
-
     /// The rules, in order. The first rule that matches gives the change.
     private static let rules: [ScanChangeRule] = [
         ScanChangeRule(exactly: [], make: ScanChange.repo),
         ScanChangeRule(exactly: [BoardKey.gitDirectoryName], make: ScanChange.repo),
-        ScanChangeRule(exactly: [BoardKey.gitDirectoryName, configName], make: ScanChange.repo),
+        ScanChangeRule(exactly: [BoardKey.gitDirectoryName, GitEntryName.config], make: ScanChange.repo),
         ScanChangeRule(exactly: [EventLog.directoryName], make: ScanChange.board(inRepo:)),
         ScanChangeRule(exactly: [EventLog.directoryName, EventLog.boardFileName], make: ScanChange.board(inRepo:)),
-        ScanChangeRule(under: [BoardKey.gitDirectoryName, refsName], make: ScanChange.commits(inRepo:)),
-        ScanChangeRule(exactly: [BoardKey.gitDirectoryName, packedRefsName], make: ScanChange.commits(inRepo:)),
+        ScanChangeRule(under: [BoardKey.gitDirectoryName, GitEntryName.refs], make: ScanChange.commits(inRepo:)),
+        ScanChangeRule(
+            exactly: [BoardKey.gitDirectoryName, GitEntryName.packedRefs],
+            make: ScanChange.commits(inRepo:)
+        ),
     ]
 
     /// The path components inside the repo folder.
@@ -186,16 +181,35 @@ private struct ScanChangeRule: Sendable {
 // MARK: - Index
 
 extension BoardIndex {
-    /// Tells if a change makes the index out of date, so that the next call that needs the index scans again.
+    /// Tells if a change makes the index out of date, so that the next call that needs the index scans again. A change
+    /// whose files are the same as the scan saw them (``marks``) does not: FSEvents can give a change after the scan
+    /// that occurred before the scan.
     ///
     /// - Parameter change: The change of a scan place of the index.
-    /// - Returns: `true` for each change of a repo, of a board log, or of the place, and for new commits of a repo
-    ///   whose key read failed.
+    /// - Returns: `true` when the files of the change are not the same as the scan saw them, and the change is a change
+    ///   of a repo, of a board log, or of the place, or new commits of a repo whose key read failed.
     func isExpired(by change: ScanChange) -> Bool {
-        switch change {
+        guard marks?.isChanged(by: change) ?? true else {
+            return false
+        }
+        return switch change {
         case .repo, .board, .place: true
         case .commits(let repo): unreadable.contains(repo)
         }
+    }
+
+    /// Gives the changes that one change stands for in the index. A change of a place itself, or a batch of lost events
+    /// of a place, stands for the change of each repo of the place whose files are not the same as the scan saw them
+    /// (``ScanMarks/changes(inPlaceAt:)``): a compare of each file gives the same changes as the events of the files.
+    /// Each other change, and a change of a place that the scan did not read, stands for itself.
+    ///
+    /// - Parameter change: The change of a scan place of the index.
+    /// - Returns: The changes.
+    func resolving(_ change: ScanChange) -> [ScanChange] {
+        guard case .place(let place) = change, let changes = marks?.changes(inPlaceAt: place) else {
+            return [change]
+        }
+        return changes
     }
 
     /// Gives the index without the keys that a change makes unknown, so that the next scan reads them again.
@@ -238,7 +252,12 @@ extension BoardIndex {
         copies isKeptCopy: (BoardCopy) -> Bool,
         unreadable isKeptPath: (String) -> Bool
     ) -> BoardIndex {
-        BoardIndex(places: places, copies: copies.filter(isKeptCopy), unreadable: unreadable.filter(isKeptPath))
+        BoardIndex(
+            places: places,
+            copies: copies.filter(isKeptCopy),
+            unreadable: unreadable.filter(isKeptPath),
+            marks: marks
+        )
     }
 
     /// Tells if a repo folder is one level down in a place.
@@ -274,7 +293,7 @@ protocol BoardScanObserver: Sendable {
     /// Tells that the host saw a change that can change the result of a path ref, after the host forgot what git told
     /// about the folder of the path ref (divergence.md §16, Gap 1; divergence.md X4).
     ///
-    /// - Parameter change: The change (``FolderBoard/isExpired(by:ofRepoAt:)``): ``ScanChange/repo(_:)`` of the
+    /// - Parameter change: The change (``PathRefRecord/isExpired(by:)``): ``ScanChange/repo(_:)`` of the
     ///   watched repo folder, ``ScanChange/commits(inRepo:)`` of a repo whose key read failed, or
     ///   ``ScanChange/place(_:)`` of the parent folder of the watched repo folder.
     func pathRefDidChange(_ change: ScanChange)

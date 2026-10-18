@@ -48,19 +48,29 @@ struct CrossRepoReadTests {
     }
 
     /// Waits until the query of the `ready` field of a task gives `true`. The query runs again after each batch that
-    /// the engine applies.
+    /// the engine applies. The wait has the time limit of ``FolderEventWait``.
     ///
     /// - Parameters:
     ///   - query: The query of the `ready` field of the task.
     ///   - graph: The engine.
     ///   - recorder: The batch recorder of the engine.
-    /// - Returns: `true` when the task is ready before the time limit ends.
+    ///   - path: The file or folder that the test changed. The failure message at the time limit names it.
+    /// - Returns: `true` when the task is ready, or `false` when the stream of batches ends first.
+    /// - Throws: ``FolderEventTimeout`` when the task is not ready before the time limit, or an error when the query
+    ///   cannot run.
     static func becomesReady(
         _ query: String,
         on graph: KanbanGraph,
-        recordedBy recorder: BatchRecorder
+        recordedBy recorder: BatchRecorder,
+        afterChangeAt path: URL
     ) async throws -> Bool {
-        try await BoardWatcherTests.query(query, reaches: readyResponse(true), on: graph, recordedBy: recorder)
+        try await BoardWatcherTests.query(
+            query,
+            reaches: readyResponse(true),
+            on: graph,
+            recordedBy: recorder,
+            afterChangeAt: path
+        )
     }
 
     /// Reads one field of the board that a board ref names.
@@ -103,7 +113,8 @@ struct CrossRepoReadTests {
         let query = try Self.query(of: task, selecting: Self.readySelection)
         #expect(try await KanbanGraphTests.execute(query, on: app) == Self.readyResponse(false))
         _ = try await CommentTests.run(CommentTests.nodeField(MutationName.completeTask, naming: target), on: lib)
-        #expect(try await Self.becomesReady(query, on: app, recordedBy: recorder))
+        let board = EventLog(repositoryAt: repos.lib).directory
+        #expect(try await Self.becomesReady(query, on: app, recordedBy: recorder, afterChangeAt: board))
         await app.close()
         await lib.close()
     }
@@ -125,8 +136,9 @@ struct CrossRepoReadTests {
             set: [PropertyName.column: .ref(.local(.column(slug: done)))]
         )
         var ids = FixedULIDSource(at: ReplayTests.date(atStep: CommitTests.callStep))
-        try KanbanGraphTests.append(patch, mintingFrom: &ids, to: EventLog(repositoryAt: repos.lib))
-        #expect(try await Self.becomesReady(query, on: app, recordedBy: recorder))
+        let log = EventLog(repositoryAt: repos.lib)
+        try KanbanGraphTests.append(patch, mintingFrom: &ids, to: log)
+        #expect(try await Self.becomesReady(query, on: app, recordedBy: recorder, afterChangeAt: log.directory))
         await app.close()
     }
 
@@ -247,7 +259,7 @@ struct CrossRepoReadTests {
         let moved = sandbox.root.appending(path: Self.newRepoName, directoryHint: .isDirectory)
         try FileManager.default.moveItem(at: built, to: moved)
         let newKey = try CrossRepoFixture.keyText(of: BoardLocatorTests.newOrigin)
-        try await recorder.waitForChange(.repo(moved.canonicalPath)) {
+        try await recorder.waitForChange(waitingFor: "a scan change after which the new repo is found", at: moved) {
             try await ScanCacheTests.hasBoard(of: newKey, on: graph)
         }
         #expect(try await Self.board("path", of: newKey, on: graph) == moved.path)

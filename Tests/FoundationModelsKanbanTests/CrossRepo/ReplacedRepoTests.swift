@@ -64,7 +64,11 @@ struct ReplacedRepoTests {
         let stream = try await SubscriptionTests.subscribe(Self.taskChanges(ofBoardAt: repo.folder), on: repo.session)
         let newKey = try await repo.replace()
         let task = try await PathBoardKeyTests.addTask(inFolderAt: repo.folder, on: repo.session)
-        let events = try await SubscriptionTests.events(SubscriptionTests.oneEvent, of: stream)
+        let events = try await SubscriptionTests.events(
+            SubscriptionTests.oneEvent,
+            of: stream,
+            afterChangeAt: repo.folder
+        )
         #expect(task.hasPrefix(Self.uriPrefix(ofBoard: newKey)))
         #expect(events == [Self.event(updating: task)])
         await repo.host.close()
@@ -78,7 +82,11 @@ struct ReplacedRepoTests {
         let first = try await PathBoardKeyTests.addTask(inFolderAt: repo.folder, on: repo.session)
         await repo.host.publish(try await repo.newBoardChangesOfOldEngine())
         let second = try await PathBoardKeyTests.addTask(inFolderAt: repo.folder, on: repo.session)
-        let events = try await SubscriptionTests.events(SubscriptionTests.twoEvents, of: stream)
+        let events = try await SubscriptionTests.events(
+            SubscriptionTests.twoEvents,
+            of: stream,
+            afterChangeAt: repo.folder
+        )
         #expect(events == [Self.event(updating: first), Self.event(updating: second)])
         await repo.host.close()
     }
@@ -231,13 +239,15 @@ struct PathRepo {
     }
 
     /// Moves the repo of the path ref into ``staging``, makes a new repo with a different key at the same path, and
-    /// waits until the host gives the new key for the folder.
+    /// waits until the host gives the new key for the folder. The wait has the time limit of ``FolderEventWait``.
     ///
     /// - Returns: The key of the new repo.
-    /// - Throws: An error when a folder cannot change, or when the host does not see the change in time.
+    /// - Throws: An error when a folder cannot change, or ``FolderEventTimeout`` when the host does not see the change
+    ///   before the time limit.
     func replace() async throws -> String {
         let newKey = try moveAndMakeNewRepo()
-        try await recorder.waitForChange(.place(outside.url.canonicalPath)) {
+        let change = "a scan change after which the host gives the key of the new repo"
+        try await recorder.waitForChange(waitingFor: change, at: folder) { [host, folder] in
             try await host.board(ofFolderAt: folder).copy?.key.description == newKey
         }
         return newKey

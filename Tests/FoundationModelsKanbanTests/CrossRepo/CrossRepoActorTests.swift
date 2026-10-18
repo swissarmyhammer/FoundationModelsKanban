@@ -55,7 +55,10 @@ struct CrossRepoActorTests {
         let stream = try await SubscriptionTests.subscribe(document, on: watcher)
         _ = try await CommentTests.run(CommentTests.nodeField(MutationName.completeTask, naming: target), on: lib)
         let expected = #"{"data":{"changes":\#(Self.libActorChange)}}"#
-        #expect(try await SubscriptionTests.events(SubscriptionTests.oneEvent, of: stream) == [expected])
+        let events = try await SubscriptionTests.events(
+            SubscriptionTests.oneEvent, of: stream, afterChangeAt: repos.lib
+        )
+        #expect(events == [expected])
         await lib.close()
         await watcher.close()
     }

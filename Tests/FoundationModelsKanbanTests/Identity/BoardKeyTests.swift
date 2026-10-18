@@ -432,13 +432,6 @@ struct BoardKeyTests {
     /// The number of milliseconds in ``shortGitLimit``.
     private static let shortGitLimitMilliseconds = 300
 
-    /// The time limit of each git command in the test that runs many git commands at the same time. A git command
-    /// that can run ends in much less time.
-    static let parallelGitLimit = Duration.seconds(parallelGitLimitSeconds)
-
-    /// The number of seconds in ``parallelGitLimit``.
-    private static let parallelGitLimitSeconds = 10
-
     /// The number of git commands for each processor in the tests that run many git commands at the same time. A
     /// command that blocked the thread of its task would thus block each thread of Swift concurrency.
     static let commandsPerProcessor = 4
@@ -457,13 +450,6 @@ struct BoardKeyTests {
 
     /// The number of milliseconds in ``shortSleep``.
     private static let shortSleepMilliseconds = 100
-
-    /// The longest time that a test waits for a git process to start or to end. A git process that can start or
-    /// end does so in much less time.
-    static let childWaitLimit = Duration.seconds(childWaitLimitSeconds)
-
-    /// The number of seconds in ``childWaitLimit``.
-    private static let childWaitLimitSeconds = 10
 
     /// The name of the file where the slow command writes the process id of git.
     static let pidFileName = "git.pid"
@@ -556,7 +542,7 @@ struct BoardKeyTests {
         let (_, statuses) = try await Self.runningGitInParallel(
             withArguments: Self.versionArguments,
             inDirectory: sandbox.root,
-            timeLimit: Self.parallelGitLimit
+            timeLimit: Git.defaultTimeLimit
         ) {}
         #expect(statuses == Array(repeating: Git.successStatus, count: Self.parallelCommandCount))
     }
@@ -594,10 +580,7 @@ struct BoardKeyTests {
                     return .failure(error)
                 }
             }
-            let isStarted = try await EventLogTests.becomesTrue(within: Self.childWaitLimit) {
-                Self.recordedPID(in: pidFile) != nil
-            }
-            #expect(isStarted, "git did not start in \(Self.childWaitLimit)")
+            try await EventLogTests.waitUntil { Self.recordedPID(in: pidFile) != nil }
             group.cancelAll()
             return try await group.next()
         }
@@ -605,7 +588,7 @@ struct BoardKeyTests {
         let result = try #require(outcome)
         #expect(throws: BoardKeyError.gitCancelled(arguments: arguments)) { try result.get() }
         let pid = try #require(Self.recordedPID(in: pidFile))
-        #expect(try await EventLogTests.becomesTrue(within: Self.childWaitLimit) { Self.isGone(pid) })
+        try await EventLogTests.waitUntil { Self.isGone(pid) }
     }
 }
 
@@ -659,12 +642,13 @@ final class GitSandbox {
     /// The temporary directory of the sandbox.
     let root: URL
 
-    /// Makes an empty temporary directory.
+    /// Makes an empty temporary directory in the folder of the ``TestFolderGroup/gitSandboxes`` group of the run folder
+    /// of ``TestFolderRoot``.
     ///
     /// - Throws: An error from `FileManager` when the directory cannot be made.
     init() throws {
         let name = "BoardKeyTests-\(UUID().uuidString)"
-        root = FileManager.default.temporaryDirectory.appending(path: name, directoryHint: .isDirectory)
+        root = try TestFolderRoot.folder(of: .gitSandboxes).appending(path: name, directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     }
 

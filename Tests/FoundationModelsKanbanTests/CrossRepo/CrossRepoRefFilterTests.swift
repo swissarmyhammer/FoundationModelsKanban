@@ -94,7 +94,10 @@ struct CrossRepoRefFilterTests {
             operation: MutationName.updateTask,
             updates: [SubscriptionTests.update(ofNode: tasks.dependent, kind: .updated)]
         )
-        #expect(try await SubscriptionTests.events(SubscriptionTests.oneEvent, of: stream) == [expected])
+        let events = try await SubscriptionTests.events(
+            SubscriptionTests.oneEvent, of: stream, afterChangeAt: repos.app
+        )
+        #expect(events == [expected])
         await app.close()
     }
 }

@@ -30,38 +30,42 @@ actor BoardWatcher {
     ///   - directory: The directory. It must exist.
     ///   - folderStreams: The FSEvents stream of the host.
     /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when FSEvents cannot make or start the stream.
-    init(watching directory: URL, in folderStreams: FolderStreams) throws(BoardWatcherError) {
+    init(watching directory: URL, in folderStreams: FolderStreams) async throws(BoardWatcherError) {
         let (batches, continuation) = AsyncStream<[URL]>.makeStream()
         let sink = BatchSink(watching: directory, feeding: continuation)
-        try folderStreams.add(sink)
+        try await folderStreams.add(sink)
         self.batches = batches
         self.folderStreams = folderStreams
         self.sink = sink
     }
 
-    /// Stops the watcher and ends ``batches``. A second call does nothing.
-    func stop() {
+    /// Gives one batch that holds the watched directory, the same as a batch of lost events. The receiver then
+    /// compares each file of the directory. After ``stop()``, the call gives nothing.
+    ///
+    /// FSEvents gives a folder only the events after the start of a stream that watches the folder. Thus a change
+    /// between a read of the files and the start of the watcher gives no event. A caller that read the files before
+    /// the start calls this one time after the start, so that the compare finds that change: a board engine after its
+    /// load, and a host after it records what git told about a folder that a path ref named.
+    nonisolated func compareEachFile() {
+        sink.receive([], losingEvents: true)
+    }
+
+    /// Stops the watcher and ends ``batches``. After the call returns, the FSEvents stream of the host does not watch
+    /// the directory for this watcher any more. A second call does nothing.
+    func stop() async {
         guard isRunning else {
             return
         }
         isRunning = false
-        Self.end(sink, in: folderStreams)
+        await folderStreams.remove(sink)
+        sink.finish()
     }
 
     isolated deinit {
         guard isRunning else {
             return
         }
-        Self.end(sink, in: folderStreams)
-    }
-
-    /// Takes the directory of a sink from the FSEvents stream, and ends the batches of the sink.
-    ///
-    /// - Parameters:
-    ///   - sink: The sink.
-    ///   - folderStreams: The FSEvents stream of the host.
-    private static func end(_ sink: BatchSink, in folderStreams: FolderStreams) {
-        folderStreams.remove(sink)
+        folderStreams.removeWithoutWait(sink)
         sink.finish()
     }
 }

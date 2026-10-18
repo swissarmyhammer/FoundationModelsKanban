@@ -205,7 +205,9 @@ struct UnreadableRelatedBoardTests {
         let document = SubscriptionTests.subscription(SubscriptionTests.taskArguments)
         let stream = try await SubscriptionTests.subscribe(document, on: app)
         _ = try await CrossRepoFixture.addTask(with: "", on: app)
-        let events = try await SubscriptionTests.events(SubscriptionTests.oneEvent, of: stream)
+        let events = try await SubscriptionTests.events(
+            SubscriptionTests.oneEvent, of: stream, afterChangeAt: dependency.repos.app
+        )
         await app.close()
         let event = try #require(events.first, "The subscriber got no event")
         #expect(try KanbanGraphTests.data(of: event)["changes"] != nil, "\(event)")
@@ -220,7 +222,7 @@ struct UnreadableRelatedBoardTests {
         let app = try GitGraphFixture.makeGraph(at: dependency.repos.app)
         let document = SubscriptionTests.subscription(#"(board: "\#(try CrossRepoWriteTests.libKey())")"#)
         let stream = try await SubscriptionTests.subscribe(document, on: app)
-        let events = try #require(try await SubscriptionTests.allEvents(of: stream), "The stream did not end")
+        let events = try await SubscriptionTests.allEvents(of: stream)
         await app.close()
         let event = try #require(events.first, "The subscription ended with no response")
         let error = try #require(try NameRewriteTests.errors(of: event).first, "\(event)")
@@ -244,8 +246,11 @@ struct UnreadableRelatedBoardTests {
             add: [PropertyName.dependsOn: [.remote(try NodeURI(parsing: target))]]
         )
         var ids = FixedULIDSource(at: ReplayTests.date(atStep: CommitTests.callStep))
-        try KanbanGraphTests.append(patch, mintingFrom: &ids, to: EventLog(repositoryAt: repos.app))
-        let events = try await SubscriptionTests.events(SubscriptionTests.oneEvent, of: stream)
+        let log = EventLog(repositoryAt: repos.app)
+        try KanbanGraphTests.append(patch, mintingFrom: &ids, to: log)
+        let events = try await SubscriptionTests.events(
+            SubscriptionTests.oneEvent, of: stream, afterChangeAt: log.directory
+        )
         await app.close()
         #expect(events.count == SubscriptionTests.oneEvent)
     }
@@ -304,13 +309,11 @@ struct UnreadableRelatedBoardTests {
         let first = try await KanbanGraphTests.execute(KanbanGraphTests.nameQuery, on: app)
         try Self.expectUnreadableWarning(in: first, for: dependency.repos)
         try breakage.repair(broken)
-        let isRead = try await StreamWait.value {
-            try await recorder.waitForChange {
-                try Self.hasNoWarning(try await KanbanGraphTests.execute(KanbanGraphTests.nameQuery, on: app))
-            }
+        let isRead = try await recorder.waitForChange(waitingFor: "a change of the repaired board", at: broken) {
+            try Self.hasNoWarning(try await KanbanGraphTests.execute(KanbanGraphTests.nameQuery, on: app))
         }
         await host.close()
-        #expect(isRead == true)
+        #expect(isRead)
     }
 }
 
@@ -362,12 +365,22 @@ final class UnreadableBoardRecorder: BoardLoadObserver {
 
     /// Waits until the host saw a change of a board that could not load, and the effect of the change shows. After
     /// each change, the wait asks the condition, and it ends when the condition is `true`. Call it one time for each
-    /// recorder.
+    /// recorder. The wait has the time limit of ``FolderEventWait``.
     ///
-    /// - Parameter isShown: Tells if the effect of the change shows. The wait asks it after each change.
-    /// - Returns: `true` when the effect shows.
-    /// - Throws: An error that `isShown` throws.
-    func waitForChange(until isShown: () async throws -> Bool) async throws -> Bool {
-        try await changes.contains { _ in try await isShown() }
+    /// - Parameters:
+    ///   - change: The change that the test waits for. The failure message at the time limit names it.
+    ///   - path: The file or folder that the test changed. The failure message at the time limit names it.
+    ///   - isShown: Tells if the effect of the change shows. The wait asks it after each change.
+    /// - Returns: `true` when the effect shows, and `false` when the changes end first.
+    /// - Throws: ``FolderEventTimeout`` when the effect does not show before the time limit, or an error that
+    ///   `isShown` throws.
+    func waitForChange(
+        waitingFor change: String,
+        at path: URL,
+        until isShown: @escaping @Sendable () async throws -> Bool
+    ) async throws -> Bool {
+        try await FolderEventWait.value(waitingFor: change, at: path.path) { [changes] in
+            try await changes.contains { _ in try await isShown() }
+        }
     }
 }

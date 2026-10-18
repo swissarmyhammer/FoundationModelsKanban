@@ -1,6 +1,7 @@
 import CoreServices
 import Darwin
 import Foundation
+import OrderedCollections
 import Synchronization
 
 /// The one FSEvents stream of all the folders that the file watchers of one host watch (divergence.md §16).
@@ -9,19 +10,35 @@ import Synchronization
 /// stream for each watched folder. Each ``BoardWatcher`` of the host adds its folder here, one stream watches all the
 /// folders, and an ``EventRouter`` gives each group of events to each watcher whose folder holds a path of the group.
 ///
-/// When the set of folders changes, the stream of the new set starts first, and then the old stream stops. The new
-/// stream starts at the last event that the router got, so FSEvents gives it each later event from its history, also
-/// an event that the old stream did not give yet. Thus no event is lost. Until the new stream gave its history, an
-/// event that both streams give goes to the watchers one time only. A folder gets no event from before its add.
-final class FolderStreams: Sendable {
-    /// The time in seconds that FSEvents collects events before it gives a group. A short time keeps the live graph
-    /// current; the events of one write still come in one group.
-    private static let groupingLatency: CFTimeInterval = 0.05
+/// Each stream starts at "now" and reads no history of FSEvents. A volume can have no event log, and then a history
+/// read gives no events, and a change during the history read is lost. FSEvents gives a folder each event that occurs
+/// after the start of a stream that watches the folder.
+///
+/// Each change of the stream can lose an event, and each FSEvents call gives work to fseventsd. Thus the stream changes
+/// only when a folder that it does not watch is added:
+/// - A remove makes no new stream. The stream keeps the path of the removed folder, and the router gives no event of
+///   that path, because no sink has it. When no folder is watched, the stream ends.
+/// - An add of a folder that the stream watches makes no new stream: a folder in a watched folder, or a removed folder
+///   whose path the stream keeps.
+/// - The adds that wait while a stream starts share the next new stream (``add(_:)``).
+///
+/// When the stream changes, the new stream watches the folder of each sink, and starts first. Then the old stream gives
+/// each event that FSEvents already sent to it, and stops. An event that both streams give has one id, and the router
+/// gives it to the watchers one time only. A folder gets no event from before its add. When fseventsd is behind, the
+/// old stream can stop before it gets an event that occurred before the start of the new stream, and the new stream
+/// does not get that event. Thus after each change of the stream, each folder that the old stream watched gets one
+/// batch with the folder itself, the same as a batch of lost events, and its receiver compares each file of the folder.
+///
+/// Each FSEvents call is a synchronous message to fseventsd, and fseventsd can be slow to answer. Thus the actor runs
+/// on its own serial queue, not on the Swift cooperative pool: each change of the set of folders, and each FSEvents
+/// call of the change, runs on that queue. An async caller waits for the change with no blocked thread of the pool,
+/// so a slow fseventsd does not stop the other tasks of the process.
+actor FolderStreams {
+    /// The FSEvents calls.
+    private let service: any FolderEventService
 
-    /// The flags of the stream: one event for each file, and the paths as a `CFArray` of `CFString` values.
-    private static let streamFlags = FSEventStreamCreateFlags(
-        kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes
-    )
+    /// The queue of each change of the set of folders: the executor of the actor.
+    private let changes = DispatchSerialQueue(label: "FoundationModelsKanban.FolderStreams.changes")
 
     /// Gives each group of events to the sinks of the folders.
     private let router = EventRouter()
@@ -30,60 +47,71 @@ final class FolderStreams: Sendable {
     /// one at a time.
     private let queue = DispatchQueue(label: "FoundationModelsKanban.FolderStreams")
 
-    /// The running stream and its folders, behind a lock. The lock also lets one change of the set of folders run at
-    /// a time.
-    private let state = Mutex(StreamState())
+    /// The running stream and its folders.
+    private var state = StreamState()
+
+    /// Makes the streams of a host.
+    ///
+    /// - Parameter service: The FSEvents calls. A test gives a fake.
+    init(service: any FolderEventService = SystemFolderEvents()) {
+        self.service = service
+    }
+
+    /// The executor of the actor: the serial queue ``changes``, so that no FSEvents call runs on the cooperative pool.
+    nonisolated var unownedExecutor: UnownedSerialExecutor {
+        changes.asUnownedSerialExecutor()
+    }
 
     /// The number of FSEvents streams that run: 1 while a folder is watched, else 0. A test reads it to prove that a
-    /// host holds one stream for all its folders.
+    /// host holds one stream for all its folders, and that a remove makes no new stream.
     var streamCount: Int {
-        state.withLock { state in state.stream == nil ? 0 : 1 }
+        state.stream == nil ? 0 : 1
     }
 
     /// The number of watched folders: one for each running ``BoardWatcher``. A test reads it to prove that the one
     /// stream serves each folder.
-    var folderCount: Int {
+    nonisolated var folderCount: Int {
         router.sinkCount
     }
 
     /// Adds the folder of a sink to the stream. Only the events after the add go to the sink.
     ///
+    /// The router keeps the sink before the add waits for the actor, as a sink that gets no event yet. Thus each add
+    /// that waits while a slow stream start runs is in the router, and the next change of the stream watches the
+    /// folders of all of them: the adds that come at the same time share one new stream, with no added delay. The
+    /// later adds then find their folders watched, and make no stream.
+    ///
     /// - Parameter sink: The sink. Its directory is the folder.
     /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when FSEvents cannot make or start the stream of the new
     ///   set of folders. Then the old stream stays, and the sink gets no events.
-    func add(_ sink: BatchSink) throws(BoardWatcherError) {
-        try state.withLock { state throws(BoardWatcherError) in
-            let addedAfter = FSEventsGetCurrentEventId()
-            router.insert(sink, at: Self.eventPath(of: sink.directory), after: addedAfter)
-            do throws(BoardWatcherError) {
-                try replaceStream(in: &state, changing: sink.directory, addedAfter: addedAfter)
-            } catch {
-                router.remove(sink)
-                throw error
-            }
+    nonisolated func add(_ sink: BatchSink) async throws(BoardWatcherError) {
+        router.insert(sink, at: Self.eventPath(of: sink.directory))
+        do throws(BoardWatcherError) {
+            try await watchEachFolder(adding: sink.directory)
+        } catch {
+            router.remove(sink)
+            throw error
         }
     }
 
-    /// Removes the folder of a sink from the stream. After the call returns, the sink gets no events. A second call
-    /// does nothing.
-    ///
-    /// When FSEvents cannot start the stream of the smaller set of folders, the old stream stays, and the host
-    /// records the failure with swift-log. The old stream watches more folders than needed; no folder loses events.
+    /// Removes the folder of a sink. After the call returns, the sink gets no events. The call makes no new stream:
+    /// the stream keeps the path of the folder until it changes for an add. When no folder is watched, the stream
+    /// ends. A second call does nothing.
     ///
     /// - Parameter sink: The sink.
     func remove(_ sink: BatchSink) {
-        state.withLock { state in
-            guard router.remove(sink) else {
-                return
-            }
-            do {
-                try replaceStream(in: &state, changing: sink.directory)
-            } catch {
-                Log.kanban.warning(
-                    "The FSEvents stream of the smaller set of folders cannot start, so the old stream stays",
-                    metadata: ["path": "\(sink.directory.path)", "error": "\(error)"]
-                )
-            }
+        router.remove(sink)
+        endStreamWithNoFolder()
+    }
+
+    /// Removes the folder of a sink with no wait, for a caller that cannot wait, for example a `deinit`. After the call
+    /// returns, the sink gets no events. When no folder is watched, the stream ends later, on the queue of the actor.
+    ///
+    /// - Parameter sink: The sink.
+    nonisolated func removeWithoutWait(_ sink: BatchSink) {
+        router.remove(sink)
+        changes.async { [self] in
+            assumeIsolated { streams in streams.endStreamWithNoFolder() }
         }
     }
 
@@ -110,129 +138,81 @@ final class FolderStreams: Sendable {
 
     // MARK: - Stream change
 
-    /// Replaces the running stream with a stream of the current set of folders, when the set changed. The caller holds
-    /// the lock of ``state``.
+    /// Ends the stream when the router has no sink. Else the stream stays: a remove makes no new stream.
+    private func endStreamWithNoFolder() {
+        guard router.sinkCount == 0, let stream = state.stream else {
+            return
+        }
+        stream.end()
+        state = StreamState()
+    }
+
+    /// Makes the stream watch the folder of each sink of the router, after an add.
     ///
-    /// The first stream starts at the current event of the system. Each later stream starts at the last event that
-    /// the router got, or at the start of the old stream, and FSEvents gives it the events after that from its
-    /// history. Thus an event that FSEvents did not give the old stream yet, when the old stream stops, comes from the
-    /// new stream. The new stream starts before the old stream stops. Until the new stream gave its history, the
-    /// router drops an event that it gave before. No call here waits for FSEvents to give events, so the change does
-    /// not hold a thread.
+    /// First each sink that waits gets the id of the last event before this call: from then on it gets the later
+    /// events. When the running stream watches each folder of the router, the call makes no new stream. Else a new
+    /// stream of the folders of the router starts first, and then the old stream ends. The new stream does not watch
+    /// the paths of removed folders. Each stream starts at "now" and reads no history of FSEvents. The new stream gives
+    /// each event that FSEvents reads after its start. The end of the old stream gives each event that FSEvents already
+    /// sent (``FolderEventStream/end()``). The router gives an event that both streams give one time only.
     ///
-    /// The new stream also starts no later than the add of a new folder. Thus an event of the new folder after its
-    /// add comes from the new stream, also when the old stream gave a later event of another folder before the start.
+    /// When fseventsd is behind, it can hold an event that it read before the start of the new stream, and that it did
+    /// not send to the old stream yet. The end of the old stream does not wait for that event, and the new stream does
+    /// not get it, so the event is lost. Thus after the end of the old stream, each folder that the old stream watched
+    /// gets one batch with the folder itself, the same as a batch of lost events
+    /// (``EventRouter/reportLostEvents(inFoldersOf:)``). Its receiver then compares each file of the folder, and finds
+    /// the change of the lost event: that change occurred before the start of the new stream. A folder that the old
+    /// stream did not watch gets no such batch: no event of the old stream is an event of it.
     ///
-    /// - Parameters:
-    ///   - state: The running stream and its folders.
-    ///   - directory: The folder that was added or removed. The error names it.
-    ///   - addedAfter: For an add, the id of the last event before the add of the folder; for a remove, `nil`.
+    /// - Parameter directory: The added folder. The error names it.
     /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when FSEvents cannot make or start the new stream. Then
     ///   the old stream stays.
-    private func replaceStream(
-        in state: inout StreamState,
-        changing directory: URL,
-        addedAfter: FSEventStreamEventId? = nil
-    ) throws(BoardWatcherError) {
+    private func watchEachFolder(adding directory: URL) throws(BoardWatcherError) {
+        router.startWaitingSinks(after: service.currentEventID())
         let paths = router.watchedPaths
-        guard paths != state.paths else {
+        guard !state.watchesEach(of: paths) else {
             return
         }
-        guard let old = state.stream else {
-            state = try startStream(watching: paths, since: FSEventsGetCurrentEventId(), adding: directory)
-            return
-        }
-        let next =
-            paths.isEmpty
-            ? StreamState()
-            : try startOverlappingStream(after: state, notAfter: addedAfter, watching: paths, directory)
-        Self.end(old)
+        let next = try startStream(watching: paths, adding: directory)
+        let old = state
+        old.stream?.end()
         state = next
+        router.reportLostEvents(inFoldersOf: old.paths)
     }
 
-    /// Starts the stream that replaces a running stream, at the last event that the router got, or at the start of
-    /// the running stream. The router drops each event that it gave before, until the new stream gave its history.
-    ///
-    /// - Parameters:
-    ///   - running: The running stream.
-    ///   - latest: The latest event to start at, or `nil` for no limit.
-    ///   - paths: The paths of the folders of the new stream.
-    ///   - directory: The folder that was added or removed. The error names it.
-    /// - Returns: The state of the new stream.
-    /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when FSEvents cannot make or start the new stream. Then
-    ///   the router drops no event.
-    private func startOverlappingStream(
-        after running: StreamState,
-        notAfter latest: FSEventStreamEventId?,
-        watching paths: [String],
-        _ directory: URL
-    ) throws(BoardWatcherError) -> StreamState {
-        router.beginOverlap()
-        do throws(BoardWatcherError) {
-            let since = min(max(router.lastEventID, running.since), latest ?? .max)
-            return try startStream(watching: paths, since: since, adding: directory)
-        } catch {
-            router.endOverlap()
-            throw error
-        }
-    }
-
-    /// Makes and starts an FSEvents stream of some folders. The stream gives its events on ``queue``.
+    /// Makes and starts an FSEvents stream of some folders, at "now". The stream gives its events on ``queue``.
     ///
     /// - Parameters:
     ///   - paths: The paths of the folders.
-    ///   - since: The id of the last event before the stream: FSEvents gives each later event of the folders, also an
-    ///     event from before the start of the stream.
-    ///   - directory: The folder that was added or removed. The error names it.
+    ///   - directory: The added folder. The error names it.
     /// - Returns: The state of the started stream.
     /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when FSEvents cannot make or start the stream.
     private func startStream(
         watching paths: [String],
-        since: FSEventStreamEventId,
         adding directory: URL
     ) throws(BoardWatcherError) -> StreamState {
-        var context = router.makeContext()
-        let created = FSEventStreamCreate(
-            kCFAllocatorDefault,
-            EventRouter.receiveEvents,
-            &context,
-            paths as CFArray,
-            since,
-            Self.groupingLatency,
-            Self.streamFlags
-        )
-        guard let stream = created else {
+        guard let stream = service.startStream(watching: paths, routingTo: router, on: queue) else {
             throw .streamNotStarted(path: directory.path)
         }
-        FSEventStreamSetDispatchQueue(stream, queue)
-        guard FSEventStreamStart(stream) else {
-            FSEventStreamInvalidate(stream)
-            FSEventStreamRelease(stream)
-            throw .streamNotStarted(path: directory.path)
-        }
-        return StreamState(stream: stream, paths: paths, since: since)
-    }
-
-    /// Stops, invalidates, and releases a stream.
-    ///
-    /// - Parameter stream: The stream.
-    private static func end(_ stream: FSEventStreamRef) {
-        FSEventStreamStop(stream)
-        FSEventStreamInvalidate(stream)
-        FSEventStreamRelease(stream)
+        return StreamState(stream: stream, paths: paths)
     }
 }
 
-/// The running FSEvents stream of a ``FolderStreams``, the paths of its folders, and the event that it started at.
+/// The running FSEvents stream of a ``FolderStreams`` and the paths of its folders.
 private struct StreamState {
     /// The running stream, or `nil` when no folder is watched.
-    var stream: FSEventStreamRef?
+    var stream: (any FolderEventStream)?
 
-    /// The paths of the folders of ``stream``, sorted.
+    /// The paths of the folders of ``stream``, sorted. After a remove, the paths keep the removed folder.
     var paths: [String] = []
 
-    /// The id of the last event before ``stream``: the stream gives only the later events.
-    var since: FSEventStreamEventId = 0
+    /// Tells if the stream watches each of some folders: each path is a folder of the stream, or a path in one.
+    ///
+    /// - Parameter candidates: The paths of the folders.
+    /// - Returns: `true` when the stream watches each folder. `false` when no stream runs and a folder is given.
+    func watchesEach(of candidates: [String]) -> Bool {
+        candidates.allSatisfy { candidate in Route.oneOf(paths, holds: candidate) }
+    }
 }
 
 // MARK: - Router
@@ -280,35 +260,43 @@ final class EventRouter: Sendable {
         release(context: info)
     }
 
-    /// The sink of each folder, by the identity of the sink, and the ids of the events while two streams run, behind
-    /// a lock.
+    /// The sink of each folder, by the identity of the sink, and the ids of the recent events, behind a lock.
     private let table = Mutex(RouteTable())
 
-    /// The number of sinks.
+    /// The number of sinks, the sinks that wait included.
     var sinkCount: Int {
-        table.withLock { table in table.routes.count }
+        table.withLock { table in table.routes.count + table.waiting.count }
     }
 
-    /// The path of each folder, sorted, with no repeat: the paths that the stream watches.
+    /// The path of each folder, sorted, with no repeat: the paths that the stream must watch. The folders of the
+    /// sinks that wait are included.
     var watchedPaths: [String] {
-        table.withLock { table in Set(table.routes.values.map(\.path)).sorted() }
+        table.withLock { table in
+            Set(table.routes.values.map(\.path) + table.waiting.values.map(\.path)).sorted()
+        }
     }
 
-    /// The id of the last event that the router got, or 0 before the first event. A new stream starts at it.
-    var lastEventID: FSEventStreamEventId {
-        table.withLock { table in table.lastEventID }
-    }
-
-    /// Adds the sink of a folder. The sink gets only the events after the add, also when a new stream gives an older
-    /// event from its history.
+    /// Adds the sink of a folder as a sink that waits: it gets no event until ``startWaitingSinks(after:)``.
     ///
     /// - Parameters:
     ///   - sink: The sink.
     ///   - path: The path of the folder, as FSEvents gives it (``FolderStreams/eventPath(of:)``).
-    ///   - since: The id of the last event before the add.
-    func insert(_ sink: BatchSink, at path: String, after since: FSEventStreamEventId) {
-        let route = Route(sink: sink, path: path, since: since)
-        table.withLock { table in table.routes[ObjectIdentifier(sink)] = route }
+    func insert(_ sink: BatchSink, at path: String) {
+        let waiting = WaitingSink(sink: sink, path: path)
+        table.withLock { table in table.waiting[ObjectIdentifier(sink)] = waiting }
+    }
+
+    /// Gives each sink that waits the events after an id, also when a stream gives an older event later.
+    ///
+    /// - Parameter since: The id of the last event before the start.
+    func startWaitingSinks(after since: FSEventStreamEventId) {
+        table.withLock { table in
+            let started = table.waiting.mapValues { waiting in
+                Route(sink: waiting.sink, path: waiting.path, since: since)
+            }
+            table.routes.merge(started) { _, route in route }
+            table.waiting.removeAll()
+        }
     }
 
     /// Removes the sink of a folder. After the call returns, the router gives the sink no batch.
@@ -317,36 +305,40 @@ final class EventRouter: Sendable {
     /// - Returns: `true` when the router had the sink.
     @discardableResult
     func remove(_ sink: BatchSink) -> Bool {
-        table.withLock { table in table.routes.removeValue(forKey: ObjectIdentifier(sink)) != nil }
+        let key = ObjectIdentifier(sink)
+        return table.withLock { table in
+            let route = table.routes.removeValue(forKey: key)
+            let waiting = table.waiting.removeValue(forKey: key)
+            return route != nil || waiting != nil
+        }
     }
 
-    /// Starts to drop each event whose id the router gave before: two streams run, and both give the events that
-    /// they both see.
-    func beginOverlap() {
-        table.withLock { table in table.overlap = .overlapping(delivered: []) }
-    }
-
-    /// Stops to drop repeated events: one stream runs again.
-    func endOverlap() {
-        table.withLock { table in table.overlap = .single }
+    /// Gives each sink whose folder an old stream watched one batch with its own folder, the same as a batch of lost
+    /// events. The receiver of each batch then compares each file of the folder. ``FolderStreams`` calls it after the
+    /// end of an old stream, because the old stream can lose an event when fseventsd is behind. A sink that waits, and
+    /// a sink whose folder the old stream did not watch, get no batch.
+    ///
+    /// - Parameter oldPaths: The paths of the folders of the old stream.
+    func reportLostEvents(inFoldersOf oldPaths: [String]) {
+        let sinks = table.withLock { table in
+            table.routes.values.filter { route in Route.oneOf(oldPaths, holds: route.path) }.map(\.sink)
+        }
+        for sink in sinks {
+            sink.receive([], losingEvents: true)
+        }
     }
 
     /// Gives one group of events to the sinks: to each sink, the paths in its folder, as one batch.
     ///
-    /// The mark that a new stream gave each event of its history is no change of a file, so the router skips it. After
-    /// the mark, the old stream is gone and the new stream gives only new events, so the router stops to drop
-    /// repeated events.
+    /// FSEvents gives each event one id. Thus an id that the router gave before is the same event from a second
+    /// stream, and the router drops it (``RecentEventIDs``). The mark that a stream gave each event of its history is
+    /// no change of a file, so the router skips it.
     ///
     /// - Parameter group: The events of the group, in order.
     func route(_ group: [FolderEvent]) {
         let events = group.filter { event in event.flags & Self.historyDoneFlag == 0 }
-        let isHistoryDone = events.count < group.count
         let deliveries = table.withLock { table in
-            table.lastEventID = events.map(\.id).reduce(table.lastEventID, max)
-            let fresh = table.overlap.firstDeliveries(of: events)
-            if isHistoryDone {
-                table.overlap = .single
-            }
+            let fresh = table.recent.firstDeliveries(of: events)
             return table.routes.values.compactMap { route in route.delivery(of: fresh) }
         }
         for delivery in deliveries {
@@ -416,36 +408,52 @@ final class EventRouter: Sendable {
     }
 }
 
-/// The sinks of an ``EventRouter`` and its state of the stream change.
+/// The sinks of an ``EventRouter`` and the ids of the events that it gave last.
 private struct RouteTable {
-    /// The sink of each folder, by the identity of the sink.
+    /// The sink of each folder that gets events, by the identity of the sink.
     var routes: [ObjectIdentifier: Route] = [:]
 
-    /// Whether two streams run, and the ids of the events that the router gave while they run.
-    var overlap = StreamOverlap.single
+    /// The sink of each folder that waits for the change of the stream of its add, by the identity of the sink. It
+    /// gets no event yet.
+    var waiting: [ObjectIdentifier: WaitingSink] = [:]
 
-    /// The id of the last event that the router got, or 0 before the first event.
-    var lastEventID: FSEventStreamEventId = 0
+    /// The ids of the events that the router gave last.
+    var recent = RecentEventIDs()
 }
 
-/// Whether one stream runs, or an old and a new stream run while the set of folders changes.
-private enum StreamOverlap {
-    /// One stream runs. FSEvents gives each event one time.
-    case single
+/// The sink of one folder in an ``EventRouter`` that waits for the change of the stream of its add.
+private struct WaitingSink {
+    /// The sink.
+    let sink: BatchSink
 
-    /// Two streams run. The router gave the events with these ids, and drops them when the other stream gives them.
-    case overlapping(delivered: Set<FSEventStreamEventId>)
+    /// The path of the folder, as FSEvents gives it.
+    let path: String
+}
 
-    /// Keeps the events that the router did not give yet, and records their ids while two streams run.
+/// The ids of the last events that an ``EventRouter`` gave, so that it gives an event one time only.
+///
+/// While the set of folders changes, an old and a new stream run, and both give the events that they both see. Each
+/// event has one id, so a repeated id is the same event. The set keeps only the last ``capacity`` ids, so that its
+/// size has a limit.
+struct RecentEventIDs {
+    /// The maximum number of ids that the set keeps. It is much larger than the number of events that two streams
+    /// both give while the set of folders changes.
+    static let capacity = 4096
+
+    /// The ids, from the oldest to the newest.
+    private var ids = OrderedSet<FSEventStreamEventId>()
+
+    /// Keeps each event whose id the set does not have, and records its id. Above ``capacity``, the set forgets the
+    /// oldest ids.
     ///
     /// - Parameter events: The events of one group.
     /// - Returns: The events to give.
     mutating func firstDeliveries(of events: [FolderEvent]) -> [FolderEvent] {
-        guard case .overlapping(var delivered) = self else {
-            return events
+        let fresh = events.filter { event in ids.append(event.id).inserted }
+        let excess = ids.count - Self.capacity
+        if excess > 0 {
+            ids.removeFirst(excess)
         }
-        let fresh = events.filter { event in delivered.insert(event.id).inserted }
-        self = .overlapping(delivered: delivered)
         return fresh
     }
 }
@@ -508,6 +516,16 @@ private struct Route {
     private static func folder(_ folder: String, holds candidate: String) -> Bool {
         let prefix = folder.hasSuffix("/") ? folder : folder + "/"
         return candidate == folder || candidate.hasPrefix(prefix)
+    }
+
+    /// Tells if one of some folders holds a path: the path is one of the folders, or a path in one.
+    ///
+    /// - Parameters:
+    ///   - folders: The paths of the folders.
+    ///   - candidate: The path.
+    /// - Returns: `true` when a folder holds the path.
+    static func oneOf(_ folders: [String], holds candidate: String) -> Bool {
+        folders.contains { folder in Self.folder(folder, holds: candidate) }
     }
 }
 

@@ -200,6 +200,8 @@ struct ChangeFilterTests {
     ///   - directory: The repo directory of the engine.
     ///   - recorder: The batch recorder of the engine.
     ///   - ids: The ULID source of the patch lines of the different process.
+    /// - Throws: An error when the mutation or the write fails, or ``FolderEventTimeout`` when no batch holds the
+    ///   changed file before the time limit of ``FolderEventWait``.
     static func run(
         _ step: Step,
         on task: ULID,
@@ -216,9 +218,7 @@ struct ChangeFilterTests {
             let log = EventLog(repositoryAt: directory)
             try BoardWatcherTests.writeLaterTitle(to: task, mintingFrom: &ids, in: log)
             let file = log.fileURL(for: .task(task))
-            #expect(try await BoardWatcherTests.hasBatch(in: recorder.batches) { batch in
-                BoardWatcherTests.batch(batch, holds: file)
-            })
+            #expect(try await BoardWatcherTests.hasBatch(in: recorder.batches, holding: file))
         }
     }
 
@@ -250,10 +250,17 @@ struct ChangeFilterTests {
         let stream = try await SubscriptionTests.subscribe(document, on: graph)
         var ids = GitGraphFixture.secondEngineIDs
         for step in feedCase.steps {
-            try await Self.run(step, on: task, in: graph, atRepo: directory.url, recordedBy: recorder, mintingFrom: &ids)
+            try await Self.run(
+                step,
+                on: task,
+                in: graph,
+                atRepo: directory.url,
+                recordedBy: recorder,
+                mintingFrom: &ids
+            )
         }
         let expected = feedCase.expected(task)
-        let events = try await SubscriptionTests.events(expected.count, of: stream)
+        let events = try await SubscriptionTests.events(expected.count, of: stream, afterChangeAt: directory.url)
         let changes = try events.map { event in
             try JSONDecoder().decode(EventResponse.self, from: Data(event.utf8)).data.changes
         }

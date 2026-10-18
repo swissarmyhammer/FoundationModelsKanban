@@ -24,8 +24,7 @@ struct CrossRepoEventBoardTests {
     /// related board gets a change with the update of its task.
     ///
     /// - Parameter selection: The selection of each change.
-    /// - Returns: The response of the first event, in a list. The list is empty when no event comes before the time
-    ///   limit.
+    /// - Returns: The response of the first event, in a list. The list is empty when the stream ends with no event.
     /// - Throws: An error when a repo, an engine, or a call fails.
     private static func eventOfRelatedBoard(selecting selection: String) async throws -> [String] {
         let repos = try await CrossRepoFixture.SideBySide.make()
@@ -39,7 +38,9 @@ struct CrossRepoEventBoardTests {
         let document = #"subscription { changes(board: "\#(libKey)", filter: "~task") \#(selection) }"#
         let stream = try await SubscriptionTests.subscribe(document, on: app)
         _ = try await CommentTests.run(CommentTests.nodeField(MutationName.completeTask, naming: target), on: app)
-        let events = try await SubscriptionTests.events(SubscriptionTests.oneEvent, of: stream)
+        let events = try await SubscriptionTests.events(
+            SubscriptionTests.oneEvent, of: stream, afterChangeAt: repos.app
+        )
         await app.close()
         return events
     }

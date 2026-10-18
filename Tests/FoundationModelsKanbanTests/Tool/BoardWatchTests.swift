@@ -16,15 +16,13 @@ struct BoardWatchTests {
     func watchSendsBatchToOwner() async throws {
         let directory = try TemporaryDirectory()
         let owner = BatchOwner()
-        let started = try StartedWatcher(watching: directory.url, in: FolderStreams())
+        let started = try await StartedWatcher(watching: directory.url, in: FolderStreams())
         let watch = BoardWatch(of: started, heldWeaklyBy: owner) { owner, paths in
             await owner.record(paths)
         }
         let file = directory.url.appendingPathComponent(Self.fileName)
         try Data().write(to: file)
-        let isFound = try await BoardWatcherTests.hasBatch(in: owner.batches) { batch in
-            BoardWatcherTests.batch(batch, holds: file)
-        }
+        let isFound = try await BoardWatcherTests.hasBatch(in: owner.batches, holding: file)
         await watch.end()
         #expect(isFound)
     }
@@ -35,7 +33,7 @@ struct BoardWatchTests {
         var owner: BatchOwner? = BatchOwner()
         weak let released = owner
         let watch = BoardWatch(
-            of: try StartedWatcher(watching: directory.url, in: FolderStreams()),
+            of: try await StartedWatcher(watching: directory.url, in: FolderStreams()),
             heldWeaklyBy: try #require(owner)
         ) { owner, paths in
             await owner.record(paths)

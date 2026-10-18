@@ -4,17 +4,13 @@ import ULID
 
 @testable import FoundationModelsKanban
 
-/// The number of minutes of the time limit of each test of ``SubscriptionTests``. The constant is at file scope,
-/// because the `@Suite` attribute of a type cannot read a member of the same type.
-private let subscriptionSuiteMinutes = 1
-
 /// Tests the change feed of the engine: `Subscription.changes` and `KanbanGraph.subscribe` (plan.md §6.7, §12 item
 /// 17).
 ///
-/// Each test reads the events of a subscription with ``StreamWait``, so a test that waits for an event that does not
-/// come stops at the time limit. A test that must show that a change sends only one event makes a second change, and
-/// expects the event of the second change next. Each test closes each engine that it makes.
-@Suite("Subscriptions: the change feed", .watcherBudget, .timeLimit(.minutes(subscriptionSuiteMinutes)))
+/// Each test reads the events of a subscription until the events that it expects come. A test that must show that a
+/// change sends only one event makes a second change, and expects the event of the second change next. Each read of
+/// the expected events has the time limit of ``FolderEventWait``. Each test closes each engine that it makes.
+@Suite("Subscriptions: the change feed", .watcherBudget)
 struct SubscriptionTests {
     /// The number of events that a test reads when it expects the event of one change.
     static let oneEvent = 1
@@ -101,28 +97,32 @@ struct SubscriptionTests {
         try await graph.subscribe(query: document, variables: [:], operationName: nil)
     }
 
-    /// Reads the next events of a stream, and stops at the time limit.
+    /// Reads the next events of a stream. The read waits until the events come, or until the stream ends. The read
+    /// has the time limit of ``FolderEventWait``.
     ///
     /// - Parameters:
     ///   - count: The number of events to read.
     ///   - stream: The stream of a subscription.
-    /// - Returns: The events, in the order of the stream. The list is shorter when the stream ends or the time limit
-    ///   ends first.
-    static func events(_ count: Int, of stream: AsyncThrowingStream<String, Error>) async throws -> [String] {
-        let events = try await StreamWait.value {
+    ///   - path: The file or folder of the change that sends the events. For a change in this process, it is the
+    ///     folder of the board of the engine. The failure message at the time limit names it.
+    /// - Returns: The events, in the order of the stream. The list is shorter when the stream ends first.
+    /// - Throws: ``FolderEventTimeout`` when the events do not come before the time limit, or the error of the stream.
+    static func events(
+        _ count: Int,
+        of stream: AsyncThrowingStream<String, Error>,
+        afterChangeAt path: URL
+    ) async throws -> [String] {
+        try await FolderEventWait.value(waitingFor: "\(count) events of the change feed", at: path.path) {
             try await stream.prefix(count).reduce(into: [String]()) { events, event in events.append(event) }
         }
-        return events ?? []
     }
 
-    /// Reads each event of a stream until the stream ends, and stops at the time limit.
+    /// Reads each event of a stream. The read waits until the stream ends.
     ///
     /// - Parameter stream: The stream of a subscription.
-    /// - Returns: The events, or `nil` when the stream does not end before the time limit.
-    static func allEvents(of stream: AsyncThrowingStream<String, Error>) async throws -> [String]? {
-        try await StreamWait.value {
-            try await stream.reduce(into: [String]()) { events, event in events.append(event) }
-        }
+    /// - Returns: The events, in the order of the stream.
+    static func allEvents(of stream: AsyncThrowingStream<String, Error>) async throws -> [String] {
+        try await stream.reduce(into: [String]()) { events, event in events.append(event) }
     }
 
     /// Reads each event of a subscription that cannot start, and gives the code of the first error of its first
@@ -131,12 +131,11 @@ struct SubscriptionTests {
     /// - Parameter stream: The stream of the subscription.
     /// - Returns: The number of events before the stream ends, and the `extensions.code` of the first error of the
     ///   first event.
-    /// - Throws: An error when the stream does not end before the time limit, or when the first event has no error
-    ///   with `extensions`.
+    /// - Throws: An error when the stream has no event, or when the first event has no error with `extensions`.
     static func errorCode(
         of stream: AsyncThrowingStream<String, Error>
     ) async throws -> (eventCount: Int, code: String?) {
-        let events = try #require(try await allEvents(of: stream))
+        let events = try await allEvents(of: stream)
         let errors = try NameRewriteTests.errors(of: try #require(events.first))
         let extensions = try #require(errors.first?["extensions"] as? [String: Any])
         return (events.count, extensions["code"] as? String)
@@ -293,7 +292,7 @@ struct SubscriptionTests {
         let stream = try await Self.subscribe(Self.subscription(Self.taskArguments), on: graph)
         let first = try await Self.changeTitle(of: task, to: KanbanGraphTests.laterTitle, on: graph)
         let second = try await Self.changeTitle(of: task, to: KanbanGraphTests.taskTitle, on: graph)
-        #expect(try await Self.events(Self.twoEvents, of: stream) == [first, second])
+        #expect(try await Self.events(Self.twoEvents, of: stream, afterChangeAt: directory.url) == [first, second])
         await graph.close()
     }
 
@@ -311,7 +310,7 @@ struct SubscriptionTests {
             _ = try await CrossRepoFixture.addTask(with: "", on: graph)
         }
         let expected = try await Self.changeTitle(of: task, to: KanbanGraphTests.laterTitle, on: graph)
-        #expect(try await Self.events(Self.oneEvent, of: stream) == [expected])
+        #expect(try await Self.events(Self.oneEvent, of: stream, afterChangeAt: directory.url) == [expected])
         await graph.close()
     }
 
@@ -324,7 +323,8 @@ struct SubscriptionTests {
         let firstDelete = try await Self.deleteTask(task, on: graph)
         _ = try await CommentTests.run(TaskOperationTests.taskField(MutationName.undeleteTask, of: task), on: graph)
         let secondDelete = try await Self.deleteTask(task, on: graph)
-        #expect(try await Self.events(Self.twoEvents, of: stream) == [firstDelete, secondDelete])
+        let events = try await Self.events(Self.twoEvents, of: stream, afterChangeAt: directory.url)
+        #expect(events == [firstDelete, secondDelete])
         await graph.close()
     }
 
@@ -337,11 +337,13 @@ struct SubscriptionTests {
         let graph = try KanbanGraphTests.makeGraph(at: directory.url)
         let stream = try await Self.subscribe(Self.subscription(Self.taskArguments), on: graph)
         let lineTxn = Self.nextTxn(of: ids)
-        try BoardWatcherTests.writeLaterTitle(to: task, mintingFrom: &ids, in: EventLog(repositoryAt: directory.url))
+        let log = EventLog(repositoryAt: directory.url)
+        try BoardWatcherTests.writeLaterTitle(to: task, mintingFrom: &ids, in: log)
         let lineEvent = Self.titleEvent(of: task, txn: lineTxn, operation: KanbanGraphTests.fixtureOperation)
-        #expect(try await Self.events(Self.oneEvent, of: stream) == [lineEvent])
+        let file = log.fileURL(for: .task(task))
+        #expect(try await Self.events(Self.oneEvent, of: stream, afterChangeAt: file) == [lineEvent])
         let laterEvent = try await Self.changeTitle(of: task, to: KanbanGraphTests.taskTitle, on: graph)
-        #expect(try await Self.events(Self.oneEvent, of: stream) == [laterEvent])
+        #expect(try await Self.events(Self.oneEvent, of: stream, afterChangeAt: directory.url) == [laterEvent])
         await graph.close()
     }
 
@@ -352,7 +354,7 @@ struct SubscriptionTests {
         let graph = try KanbanGraphTests.makeGraph(at: directory.url)
         let stream = try await Self.subscribe(Self.subscription(Self.taskArguments), on: graph)
         let ownEvent = try await Self.changeTitle(of: task, to: KanbanGraphTests.laterTitle, on: graph)
-        #expect(try await Self.events(Self.oneEvent, of: stream) == [ownEvent])
+        #expect(try await Self.events(Self.oneEvent, of: stream, afterChangeAt: directory.url) == [ownEvent])
         let branch = try TemporaryDirectory()
         let branchTxn = Self.nextTxn(of: ids)
         try BoardWatcherTests.writeLaterTitle(to: task, mintingFrom: &ids, in: EventLog(repositoryAt: branch.url))
@@ -365,9 +367,9 @@ struct SubscriptionTests {
         let merged = mergedLines.map { line in "\(line)\n" }.joined()
         try merged.write(to: file, atomically: true, encoding: .utf8)
         let branchEvent = Self.titleEvent(of: task, txn: branchTxn, operation: KanbanGraphTests.fixtureOperation)
-        #expect(try await Self.events(Self.oneEvent, of: stream) == [branchEvent])
+        #expect(try await Self.events(Self.oneEvent, of: stream, afterChangeAt: file) == [branchEvent])
         let laterEvent = try await Self.changeTitle(of: task, to: KanbanGraphTests.taskTitle, on: graph)
-        #expect(try await Self.events(Self.oneEvent, of: stream) == [laterEvent])
+        #expect(try await Self.events(Self.oneEvent, of: stream, afterChangeAt: directory.url) == [laterEvent])
         await graph.close()
     }
 
@@ -395,7 +397,8 @@ struct SubscriptionTests {
         ]
         // FSEvents can give the two writes in one batch or in two batches, and two batches can come in either order.
         // Each Change has the same updates in each case, so the test compares the events and not their order.
-        #expect(try await Self.events(Self.twoEvents, of: stream).sorted() == expected.sorted())
+        let events = try await Self.events(Self.twoEvents, of: stream, afterChangeAt: log.directory)
+        #expect(events.sorted() == expected.sorted())
         await graph.close()
     }
 
@@ -416,8 +419,10 @@ struct SubscriptionTests {
         let stream = try await Self.subscribe(document, on: watcher)
         var ids = GitGraphFixture.thirdEngineIDs
         let txn = Self.nextTxn(of: ids)
-        try Self.writeDoneMove(of: target, mintingFrom: &ids, in: EventLog(repositoryAt: repos.lib))
-        let event = try #require(try await Self.events(Self.oneEvent, of: stream).first)
+        let libLog = EventLog(repositoryAt: repos.lib)
+        try Self.writeDoneMove(of: target, mintingFrom: &ids, in: libLog)
+        let events = try await Self.events(Self.oneEvent, of: stream, afterChangeAt: libLog.directory)
+        let event = try #require(events.first)
         #expect(event.contains(#""txn":"\#(txn)""#))
         #expect(event.contains(#""id":"\#(task)","kind":"\#(UpdateKind.updated.rawValue)""#))
         #expect(event.contains(#"{"after":true,"before":false,"name":"ready"}"#))

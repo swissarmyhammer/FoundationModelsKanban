@@ -103,7 +103,7 @@ struct ScanCacheTests {
         let built = try ScanPlace.makeRepoFolder(named: Self.newName, in: staging.url)
         let moved = place.directory.url.appending(path: Self.newName, directoryHint: .isDirectory)
         try FileManager.default.moveItem(at: built, to: moved)
-        try await recorder.waitForChange(.repo(moved.canonicalPath)) {
+        try await recorder.waitForChange(waitingFor: "a scan change after which the new repo is found", at: moved) {
             try await Self.hasBoard(of: newKey, on: session)
         }
         #expect(try await CrossRepoReadTests.board("path", of: newKey, on: session) == moved.path)
@@ -122,7 +122,7 @@ struct ScanCacheTests {
         reader.setOrigin(Self.newOrigin, ofRepoNamed: Self.libName)
         let config = place.lib.appending(path: BoardKey.gitDirectoryName).appending(path: Self.gitConfigName)
         try Data(Self.newOrigin.utf8).write(to: config)
-        try await recorder.waitForChange(.repo(place.lib.canonicalPath)) {
+        try await recorder.waitForChange(waitingFor: "a scan change after which the new key is found", at: config) {
             try await Self.hasBoard(of: newKey, on: session)
         }
         #expect(try await CrossRepoReadTests.board("path", of: newKey, on: session) == place.lib.path)
@@ -138,8 +138,10 @@ struct ScanCacheTests {
         let enabled = "(enabled: true)"
         #expect(try await CrossRepoReadTests.boardPaths(with: enabled, on: session) == [place.app.path])
         _ = try KanbanGraphTests.writeFixture(inRepoAt: place.lib)
-        try await recorder.waitForChange(.board(inRepo: place.lib.canonicalPath)) {
-            try await CrossRepoReadTests.boardPaths(with: enabled, on: session).contains(place.lib.path)
+        let lib = place.lib
+        let board = EventLog(repositoryAt: lib).directory
+        try await recorder.waitForChange(waitingFor: "a scan change after which the new board is enabled", at: board) {
+            try await CrossRepoReadTests.boardPaths(with: enabled, on: session).contains(lib.path)
         }
         let paths = try await CrossRepoReadTests.boardPaths(with: enabled, on: session)
         #expect(paths == [place.app.path, place.lib.path])
@@ -323,19 +325,29 @@ final class ScanRecorder: BoardScanObserver {
         scanPlaceDidChange(change)
     }
 
-    /// Waits until the host saw a change, and the effect of the change shows. The file watcher can tell a change that
-    /// came before the test action, for example the make of the repo folders, so the first change that is equal to
-    /// `expected` is not always the change of the test action. After each change that is equal to `expected`, the
-    /// wait asks the condition, and it ends when the condition is `true`. Call it one time for each recorder.
+    /// Waits until the host saw a change, and the effect of the test action shows. The file watcher can tell a change
+    /// that came before the test action, for example the make of the repo folders. The host tells only the first
+    /// change that makes the record of a path ref out of date, and that change can be of a different kind than the
+    /// change of the test action, for example when a late change and the change of the test action come in one batch.
+    /// Thus the wait does not compare the change. After each change, the wait asks the condition, and it ends when the
+    /// condition is `true`. The wait has the time limit of ``FolderEventWait``. Call it one time for each recorder.
     ///
     /// - Parameters:
-    ///   - expected: The change.
-    ///   - isShown: Tells if the effect of the test action shows. The wait asks it after each equal change.
-    /// - Throws: An error that `isShown` throws.
-    func waitForChange(_ expected: ScanChange, until isShown: () async throws -> Bool) async throws {
-        for await change in changes where change == expected {
-            if try await isShown() {
-                return
+    ///   - change: The change that the test waits for. The failure message at the time limit names it.
+    ///   - path: The file or folder that the test changed. The failure message at the time limit names it.
+    ///   - isShown: Tells if the effect of the test action shows. The wait asks it after each change.
+    /// - Throws: ``FolderEventTimeout`` when the effect does not show before the time limit, or an error that
+    ///   `isShown` throws.
+    func waitForChange(
+        waitingFor change: String,
+        at path: URL,
+        until isShown: @escaping @Sendable () async throws -> Bool
+    ) async throws {
+        try await FolderEventWait.value(waitingFor: change, at: path.path) { [changes] in
+            for await _ in changes {
+                if try await isShown() {
+                    return
+                }
             }
         }
     }

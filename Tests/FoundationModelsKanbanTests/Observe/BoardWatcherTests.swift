@@ -10,10 +10,10 @@ import ULID
 /// the file signatures, and `close()` (plan.md §5.6, §12 item 25).
 ///
 /// FSEvents gives a batch some milliseconds after a write. Each test waits for a definite signal: a batch that the
-/// engine applies, or a batch of a second watcher. The time limit only stops a test that would wait forever. A test
-/// that expects no batch does not wait for one: it reads the watch state of the engine directly (the active watch,
-/// and if its watcher runs), because the time of an FSEvents batch has no upper limit.
-@Suite("Live graph: FSEvents watcher and batches", .watcherBudget, .timeLimit(.minutes(1)))
+/// engine applies, or a batch of a second watcher. The wait ends when the signal comes, or it fails at the time limit
+/// of ``FolderEventWait``. A test that expects no batch does not wait for one: it reads the watch state of the engine
+/// directly (the active watch, and if its watcher runs), because no wait can show that a batch does not come.
+@Suite("Live graph: FSEvents watcher and batches", .watcherBudget)
 struct BoardWatcherTests {
     /// The arguments of a `searchTasks` query for a word of ``KanbanGraphTests/laterTitle``, with no filter. The
     /// column of the fixture is the terminal column, so its tasks are done, and the search also finds them.
@@ -35,44 +35,60 @@ struct BoardWatcherTests {
 
     // MARK: - Fixture
 
-    /// Waits for the first batch that satisfies a condition.
+    /// Waits for the first batch that satisfies a condition. The wait has the time limit of ``FolderEventWait``.
     ///
     /// - Parameters:
     ///   - batches: The batches, for example of a ``BatchRecorder`` or of a ``BoardWatcher``.
+    ///   - change: The change that the test waits for. The failure message at the time limit names it.
+    ///   - path: The file or folder of the change. The failure message at the time limit names it.
     ///   - condition: Tells if a batch is the batch that the test waits for. The condition can run a query.
-    /// - Returns: `true` when a batch satisfies the condition, `false` when the batches end or the time limit ends
-    ///   first.
+    /// - Returns: `true` when a batch satisfies the condition, `false` when the batches end first.
+    /// - Throws: ``FolderEventTimeout`` when no batch satisfies the condition before the time limit, or an error that
+    ///   the condition throws.
     static func hasBatch(
         in batches: AsyncStream<[URL]>,
+        waitingFor change: String,
+        at path: URL,
         satisfying condition: @escaping @Sendable ([URL]) async throws -> Bool
     ) async throws -> Bool {
-        let isFound = try await StreamWait.value {
-            for await batch in batches {
-                if try await condition(batch) {
-                    return true
-                }
-            }
-            return false
+        try await FolderEventWait.value(waitingFor: change, at: path.path) {
+            try await batches.contains { batch in try await condition(batch) }
         }
-        return isFound ?? false
+    }
+
+    /// Waits for the first batch that holds a file. The wait has the time limit of ``FolderEventWait``.
+    ///
+    /// - Parameters:
+    ///   - batches: The batches, for example of a ``BatchRecorder`` or of a ``BoardWatcher``.
+    ///   - file: The file that the test changed.
+    /// - Returns: `true` when a batch holds the file, `false` when the batches end first.
+    /// - Throws: ``FolderEventTimeout`` when no batch holds the file before the time limit.
+    static func hasBatch(in batches: AsyncStream<[URL]>, holding file: URL) async throws -> Bool {
+        try await hasBatch(in: batches, waitingFor: "a batch that holds the changed file", at: file) { batch in
+            Self.batch(batch, holds: file)
+        }
     }
 
     /// Waits until a query on an engine gives an expected response. The query runs again after each batch that the
-    /// engine applies.
+    /// engine applies. The wait has the time limit of ``FolderEventWait``.
     ///
     /// - Parameters:
     ///   - query: The GraphQL document.
     ///   - expected: The expected response.
     ///   - graph: The engine.
     ///   - recorder: The batch recorder of the engine.
-    /// - Returns: `true` when the query gives the expected response before the time limit ends.
+    ///   - path: The file or folder that the test changed. The failure message at the time limit names it.
+    /// - Returns: `true` when the query gives the expected response, `false` when the batches end first.
+    /// - Throws: ``FolderEventTimeout`` when the query does not give the expected response before the time limit.
     static func query(
         _ query: String,
         reaches expected: String,
         on graph: KanbanGraph,
-        recordedBy recorder: BatchRecorder
+        recordedBy recorder: BatchRecorder,
+        afterChangeAt path: URL
     ) async throws -> Bool {
-        try await hasBatch(in: recorder.batches) { _ in
+        let change = "a batch after which the query \(query) gives \(expected)"
+        return try await hasBatch(in: recorder.batches, waitingFor: change, at: path) { _ in
             try await KanbanGraphTests.execute(query, on: graph) == expected
         }
     }
@@ -134,9 +150,12 @@ struct BoardWatcherTests {
         let graph = try KanbanGraphTests.makeGraph(at: directory.url, observingBatchesWith: recorder)
         let before = try await KanbanGraphTests.execute(KanbanGraphTests.boardQuery, on: graph)
         #expect(before == KanbanGraphTests.boardResponse(withTask: task, titled: KanbanGraphTests.taskTitle))
-        try Self.writeLaterTitle(to: task, mintingFrom: &ids, in: EventLog(repositoryAt: directory.url))
+        let log = EventLog(repositoryAt: directory.url)
+        try Self.writeLaterTitle(to: task, mintingFrom: &ids, in: log)
         let expected = KanbanGraphTests.boardResponse(withTask: task, titled: KanbanGraphTests.laterTitle)
-        #expect(try await Self.query(KanbanGraphTests.boardQuery, reaches: expected, on: graph, recordedBy: recorder))
+        let file = log.fileURL(for: .task(task))
+        let query = KanbanGraphTests.boardQuery
+        #expect(try await Self.query(query, reaches: expected, on: graph, recordedBy: recorder, afterChangeAt: file))
         await graph.close()
     }
 
@@ -147,9 +166,12 @@ struct BoardWatcherTests {
         let recorder = BatchRecorder()
         let graph = try KanbanGraphTests.makeGraph(at: directory.url, observingBatchesWith: recorder)
         #expect(try await TaskSearchTests.hits(searchingWith: Self.laterTitleSearch, on: graph).isEmpty)
-        try Self.writeLaterTitle(to: task, mintingFrom: &ids, in: EventLog(repositoryAt: directory.url))
+        let log = EventLog(repositoryAt: directory.url)
+        try Self.writeLaterTitle(to: task, mintingFrom: &ids, in: log)
         let id = NodeURI(boardKey: KanbanGraphTests.boardKey.description, ref: .task(task)).description
-        let isFound = try await Self.hasBatch(in: recorder.batches) { _ in
+        let change = "a batch after which the search finds the task"
+        let file = log.fileURL(for: .task(task))
+        let isFound = try await Self.hasBatch(in: recorder.batches, waitingFor: change, at: file) { _ in
             try await TaskSearchTests.hits(searchingWith: Self.laterTitleSearch, on: graph).map(\.task.id) == [id]
         }
         #expect(isFound)
@@ -176,7 +198,8 @@ struct BoardWatcherTests {
         let mergedTask = #"{"column":{"name":"\#(done)"},"title":"\#(KanbanGraphTests.laterTitle)"}"#
         let merged = #"{"data":{"board":{"task":\#(mergedTask)}}}"#
         let query = CommentTests.taskQuery(of: task, selecting: Self.titleAndColumnSelection)
-        #expect(try await Self.query(query, reaches: merged, on: graph, recordedBy: recorder))
+        let file = log.fileURL(for: .task(task))
+        #expect(try await Self.query(query, reaches: merged, on: graph, recordedBy: recorder, afterChangeAt: file))
         let expected = [(addTxn, UpdateKind.created), (titleTxn, .updated), (doneTxn, .updated)].map { txn, kind in
             let update = ChangeFilterTests.UpdateRow(type: NodeType.task.rawValue, kind: kind.rawValue, id: id)
             return ChangeFilterTests.ChangeRow(txn: txn, updates: [update])
@@ -198,7 +221,7 @@ struct BoardWatcherTests {
         _ = try await KanbanGraphTests.execute(update, on: graph)
         let marker = try KanbanGraphTests.writeTask(titled: KanbanGraphTests.taskTitle, mintingFrom: &ids, to: log)
         let markerFile = log.fileURL(for: .task(marker))
-        #expect(try await Self.hasBatch(in: recorder.batches) { batch in Self.batch(batch, holds: markerFile) })
+        #expect(try await Self.hasBatch(in: recorder.batches, holding: markerFile))
         let applied = recorder.appliedBatches
         #expect(!applied.isEmpty)
         #expect(applied.allSatisfy { batch in batch == [markerFile] })
@@ -217,13 +240,16 @@ struct BoardWatcherTests {
         #expect(rootWatch.directory == root)
         var (task, ids) = try KanbanGraphTests.writeFixture(inRepoAt: root)
         let loaded = KanbanGraphTests.boardResponse(withTask: task, titled: KanbanGraphTests.taskTitle)
-        #expect(try await Self.query(KanbanGraphTests.boardQuery, reaches: loaded, on: graph, recordedBy: recorder))
         let log = EventLog(repositoryAt: root)
+        let query = KanbanGraphTests.boardQuery
+        let board = log.directory
+        #expect(try await Self.query(query, reaches: loaded, on: graph, recordedBy: recorder, afterChangeAt: board))
         #expect(await graph.activeWatch?.directory == log.directory)
         #expect(await !rootWatch.watcher.isRunning)
         try Self.writeLaterTitle(to: task, mintingFrom: &ids, in: log)
         let edited = KanbanGraphTests.boardResponse(withTask: task, titled: KanbanGraphTests.laterTitle)
-        #expect(try await Self.query(KanbanGraphTests.boardQuery, reaches: edited, on: graph, recordedBy: recorder))
+        let file = log.fileURL(for: .task(task))
+        #expect(try await Self.query(query, reaches: edited, on: graph, recordedBy: recorder, afterChangeAt: file))
         await graph.close()
     }
 
@@ -242,10 +268,10 @@ struct BoardWatcherTests {
         try #require(await !watch.watcher.isRunning)
         #expect(watch.consumer.isCancelled)
         #expect(await graph.activeWatch == nil)
-        let probe = try BoardWatcher(watching: log.directory, in: FolderStreams())
+        let probe = try await BoardWatcher(watching: log.directory, in: FolderStreams())
         let task = try KanbanGraphTests.writeTask(titled: KanbanGraphTests.laterTitle, mintingFrom: &ids, to: log)
         let taskFile = log.fileURL(for: .task(task))
-        #expect(try await Self.hasBatch(in: probe.batches) { batch in Self.batch(batch, holds: taskFile) })
+        #expect(try await Self.hasBatch(in: probe.batches, holding: taskFile))
         await probe.stop()
         #expect(recorder.appliedBatches.isEmpty)
     }
@@ -258,7 +284,8 @@ struct BoardWatcherTests {
         let (batches, continuation) = AsyncStream<[URL]>.makeStream()
         let sink = BatchSink(watching: log.directory, feeding: continuation)
         let router = EventRouter()
-        router.insert(sink, at: log.directory.path, after: FolderStreamsTests.beforeAllEvents)
+        router.insert(sink, at: log.directory.path)
+        router.startWaitingSinks(after: FolderStreamsTests.beforeAllEvents)
         let flags = FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs)
         router.route([FolderEvent(path: file.path, flags: flags, id: FolderStreamsTests.firstEventID)])
         sink.finish()
@@ -319,11 +346,14 @@ struct BoardWatcherTests {
         let graph = try KanbanGraphTests.makeGraph(at: directory.url, observingBatchesWith: recorder)
         let before = try await KanbanGraphTests.execute(KanbanGraphTests.boardQuery, on: graph)
         #expect(before == KanbanGraphTests.boardResponse(withTask: task, titled: KanbanGraphTests.taskTitle))
-        try Self.replaceLogDirectory(holding: .task(task), in: EventLog(repositoryAt: directory.url)) { moved in
+        let log = EventLog(repositoryAt: directory.url)
+        try Self.replaceLogDirectory(holding: .task(task), in: log) { moved in
             try Self.writeLaterTitle(to: task, mintingFrom: &ids, in: moved)
         }
         let expected = KanbanGraphTests.boardResponse(withTask: task, titled: KanbanGraphTests.laterTitle)
-        #expect(try await Self.query(KanbanGraphTests.boardQuery, reaches: expected, on: graph, recordedBy: recorder))
+        let folder = log.fileURL(for: .task(task)).deletingLastPathComponent()
+        let query = KanbanGraphTests.boardQuery
+        #expect(try await Self.query(query, reaches: expected, on: graph, recordedBy: recorder, afterChangeAt: folder))
         await graph.close()
     }
 }

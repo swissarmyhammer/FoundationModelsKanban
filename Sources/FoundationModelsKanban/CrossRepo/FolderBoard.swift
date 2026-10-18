@@ -4,7 +4,8 @@ import Foundation
 ///
 /// The host keeps it in memory, so that a later call with the same path ref runs no `git` (divergence.md §16, Gap 1).
 /// A change of the folder, of its `.git` entry, or of its git config makes the host forget it
-/// (``isExpired(by:ofRepoAt:)``).
+/// (``isExpired(by:ofRepoAt:)``), when the files of the change are not the same as the record saw them
+/// (``PathRefRecord/isExpired(by:)``).
 enum FolderBoard: Hashable, Sendable {
     /// The folder is in a git repo whose key git can read: the copy at the top folder of its worktree.
     case board(BoardCopy)

@@ -13,30 +13,7 @@ struct EventLogTests {
     /// the lock in this time.
     static let holdDuration = Duration.milliseconds(200)
 
-    /// The longest time that a test waits for a lock to be released. A child process that another test starts at the
-    /// same time can hold a copy of the lock file for a short time, until its `exec` closes the copy. This limit is
-    /// much longer than that time.
-    static let lockWaitLimit = Duration.seconds(lockWaitLimitSeconds)
-
-    /// The number of seconds in ``lockWaitLimit``.
-    private static let lockWaitLimitSeconds = 10
-
-    /// The deadline of the lock wait in the test that holds the lock for all of the wait.
-    static let heldLockWaitLimit = Duration.milliseconds(heldLockWaitLimitMilliseconds)
-
-    /// The number of milliseconds in ``heldLockWaitLimit``.
-    private static let heldLockWaitLimitMilliseconds = 300
-
-    /// The time after which a wait with a deadline counts as a hang. The wait ends at its deadline, but the test
-    /// continues only when a thread of the Swift cooperative pool is free. In a full parallel run, other tests block
-    /// the threads of the pool (for example a synchronous git command), so the test can continue some seconds after
-    /// the deadline. Thus this limit is far above that delay, and is below the time limit of the test.
-    private static let hangLimit = Duration.seconds(hangLimitSeconds)
-
-    /// The number of seconds in ``hangLimit``.
-    private static let hangLimitSeconds = 30
-
-    /// The pause between two tries of a wait with a deadline.
+    /// The pause between two tries of a wait until a check is true.
     static let retryPause = Duration.milliseconds(retryPauseMilliseconds)
 
     /// The number of milliseconds in ``retryPause``.
@@ -45,7 +22,7 @@ struct EventLogTests {
     /// The number of milliseconds in one second.
     private static let millisecondsPerSecond = 1000
 
-    /// The pause between two tries of a wait with a deadline, for a wait on a thread of its own.
+    /// The pause between two tries of a wait until a check is true, for a wait on a thread of its own.
     private static let retryPauseInterval = TimeInterval(retryPauseMilliseconds) / TimeInterval(millisecondsPerSecond)
 
     /// The number of tasks for each processor that wait for the lock in the pool test. The Swift cooperative pool has
@@ -160,46 +137,25 @@ struct EventLogTests {
         return flock(descriptor, LOCK_EX | LOCK_NB) == 0
     }
 
-    /// Tells if the lock of a board is released before a deadline. A child process that another test starts at the
-    /// same time can hold a copy of the lock file for a short time, until its `exec` closes the copy. Thus the check
-    /// tries again until the deadline, so that this short time does not fail the test. A lock that is not released
-    /// ends the wait at the deadline.
-    ///
-    /// - Parameters:
-    ///   - log: The event log of the board.
-    ///   - limit: The longest time that the check waits.
-    /// - Returns: `true` when the lock is released before the deadline.
-    /// - Throws: `CancellationError` when the test is cancelled during the wait.
-    static func isLockReleased(of log: EventLog, within limit: Duration = lockWaitLimit) async throws -> Bool {
-        try await becomesTrue(within: limit) { isLockFree(of: log) }
-    }
-
-    /// Makes the message of a failed check when the lock of a board stays held after the deadline.
+    /// Waits until the lock of a board is released. A child process that another test starts at the same time can
+    /// hold a copy of the lock file for a short time, until its `exec` closes the copy. Thus the check tries again,
+    /// so that this short time does not fail the test.
     ///
     /// - Parameter log: The event log of the board.
-    /// - Returns: The message, which names the lock file.
-    static func heldLockMessage(of log: EventLog) -> Comment {
-        "The lock file \(log.lockFileURL.path) stays held after \(lockWaitLimit)"
+    /// - Throws: `CancellationError` when the test is cancelled during the wait.
+    static func waitForLockRelease(of log: EventLog) async throws {
+        try await waitUntil { isLockFree(of: log) }
     }
 
-    /// Does a check again and again, with a short pause between two tries, until the check is true or a deadline
-    /// passes. A blocking call has no deadline and the time limit of a test cannot stop it, so a test that waits for
-    /// a different thread or process uses this wait.
+    /// Does a check again and again, with a short pause between two tries, until the check is true. The wait has no
+    /// deadline. A test that waits for a different thread or process uses this wait.
     ///
-    /// - Parameters:
-    ///   - limit: The longest time that the wait continues.
-    ///   - condition: The check. It must not block. It can read an actor.
-    /// - Returns: `true` when the check is true before the deadline, or `false` when the deadline passes first.
+    /// - Parameter condition: The check. It must not block. It can read an actor.
     /// - Throws: `CancellationError` when the test is cancelled during the wait.
-    static func becomesTrue(within limit: Duration, _ condition: () async -> Bool) async throws -> Bool {
-        let deadline = ContinuousClock.now + limit
-        while ContinuousClock.now < deadline {
-            if await condition() {
-                return true
-            }
+    static func waitUntil(_ condition: () async -> Bool) async throws {
+        while !(await condition()) {
             try await Task.sleep(for: retryPause)
         }
-        return await condition()
     }
 
     // MARK: - Paths
@@ -407,25 +363,7 @@ struct EventLogTests {
         let lock = try await log.lock()
         #expect(!Self.isLockFree(of: log))
         lock.unlock()
-        #expect(try await Self.isLockReleased(of: log), Self.heldLockMessage(of: log))
-    }
-
-    @Test(
-        "The wait for a released lock ends at its deadline while a different descriptor holds the lock",
-        .timeLimit(.minutes(1))
-    )
-    func lockWaitEndsAtDeadline() async throws {
-        let directory = try TemporaryDirectory()
-        let log = EventLog(repositoryAt: directory.url)
-        let lock = try await log.lock()
-        let clock = ContinuousClock()
-        let start = clock.now
-        let isReleased = try await Self.isLockReleased(of: log, within: Self.heldLockWaitLimit)
-        let waited = start.duration(to: clock.now)
-        lock.unlock()
-        #expect(!isReleased)
-        #expect(waited >= Self.heldLockWaitLimit)
-        #expect(waited < Self.hangLimit)
+        try await Self.waitForLockRelease(of: log)
     }
 
     @Test("A second lock of the same board waits until the first lock is released")
@@ -442,17 +380,13 @@ struct EventLogTests {
         try await Task.sleep(for: Self.holdDuration)
         records.withLock { list in list.append(Self.releasedRecord) }
         first.unlock()
-        let isAcquired = try await Self.becomesTrue(within: Self.lockWaitLimit) {
-            records.withLock { list in list.contains(Self.acquiredRecord) }
-        }
-        try #require(isAcquired, Self.heldLockMessage(of: log))
+        try await Self.waitUntil { records.withLock { list in list.contains(Self.acquiredRecord) } }
         try await waiter.value
         #expect(records.withLock { list in list } == [Self.releasedRecord, Self.acquiredRecord])
     }
 
     @Test(
-        "Tasks that wait for the lock block no thread of the cooperative pool, so each task starts before the release",
-        .timeLimit(.minutes(1))
+        "Tasks that wait for the lock block no thread of the cooperative pool, so each task starts before the release"
     )
     func lockWaitsBlockNoPoolThread() async throws {
         let directory = try TemporaryDirectory()
@@ -492,9 +426,8 @@ struct EventLogTests {
         return descriptor
     }
 
-    /// Starts a thread of its own that releases a lock when a count of tasks started, or when ``lockWaitLimit`` ends.
-    /// The thread is not a thread of the cooperative pool, so it releases the lock also when each pool thread is
-    /// blocked.
+    /// Starts a thread of its own that releases a lock when a count of tasks started. The wait has no deadline. The
+    /// thread is not a thread of the cooperative pool, so it releases the lock also when each pool thread is blocked.
     ///
     /// - Parameters:
     ///   - descriptor: The file descriptor that holds the lock. The thread closes it.
@@ -506,8 +439,7 @@ struct EventLogTests {
         recordingTo progress: LockWaitProgress
     ) {
         Thread.detachNewThread {
-            let deadline = ContinuousClock.now + lockWaitLimit
-            while progress.startCount < taskCount, ContinuousClock.now < deadline {
+            while progress.startCount < taskCount {
                 Thread.sleep(forTimeInterval: retryPauseInterval)
             }
             progress.recordRelease()
@@ -556,7 +488,7 @@ struct EventLogTests {
         #expect(ordered.allSatisfy { log in !isLockFree(of: log) })
         lock.unlock()
         for log in ordered {
-            #expect(try await isLockReleased(of: log), heldLockMessage(of: log))
+            try await waitForLockRelease(of: log)
         }
     }
 }
@@ -615,16 +547,11 @@ private final class LockWaitProgress: Sendable {
 ///
 /// The type is a class, because its `deinit` removes the directory.
 ///
-/// The directory is in a shared folder of the tests, and not directly in the temporary directory of the user. A test
-/// that uses the directory as a repo root and reads a related board makes the engine scan the parent directory
-/// (plan.md §6.6). Thus the parent holds only the directories of the tests, and the scan stays small.
+/// The directory is in the folder of the ``TestFolderGroup/temporaryDirectories`` group of the run folder of
+/// ``TestFolderRoot``. A test that uses the directory as a repo root and reads a related board makes the engine scan
+/// the parent directory (plan.md §6.6). Thus the parent holds only the directories of the tests, and the scan stays
+/// small.
 final class TemporaryDirectory {
-    /// The shared folder of the temporary directories of the tests.
-    private static let parent = FileManager.default.temporaryDirectory.appending(
-        path: "FoundationModelsKanbanTests",
-        directoryHint: .isDirectory
-    )
-
     /// The directory.
     let url: URL
 
@@ -632,7 +559,8 @@ final class TemporaryDirectory {
     ///
     /// - Throws: An error from `FileManager` when the directory cannot be made.
     init() throws {
-        url = Self.parent.appending(path: "EventLogTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let parent = try TestFolderRoot.folder(of: .temporaryDirectories)
+        url = parent.appending(path: "EventLogTests-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     }
 

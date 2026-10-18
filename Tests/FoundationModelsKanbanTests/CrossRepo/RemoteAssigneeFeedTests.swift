@@ -28,7 +28,7 @@ struct RemoteAssigneeFeedTests {
         /// The full URI of the assignee on the old board.
         let actor: String
 
-        /// The next event of the subscription after the mutation, or `nil` when no event came before the time limit.
+        /// The next event of the subscription after the mutation, or `nil` when the stream ended with no event.
         let event: String?
     }
 
@@ -49,7 +49,9 @@ struct RemoteAssigneeFeedTests {
         let field = CommentTests.nodeField(operation, naming: transfer.actor, with: input)
         let response = try await CommentTests.run(field, on: app)
         #expect(try CrossRepoWriteTests.hasNoErrors(response), "\(response)")
-        let events = try await SubscriptionTests.events(SubscriptionTests.oneEvent, of: stream)
+        let events = try await SubscriptionTests.events(
+            SubscriptionTests.oneEvent, of: stream, afterChangeAt: transfer.repos.app
+        )
         await app.close()
         await lib.close()
         return FeedRun(task: transfer.written, actor: transfer.actor, event: events.first)

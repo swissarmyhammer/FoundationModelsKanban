@@ -172,7 +172,7 @@ struct SharedShortIDTests {
             let rename = CommentTests.nodeField("updateTask", naming: task.ulidString, with: #"title: "x""#)
             _ = try await KanbanGraphTests.execute(AddUpdateTaskTests.mutation(of: rename), on: graph)
         }
-        let events = try await SubscriptionTests.events(Self.ownerCount, of: stream)
+        let events = try await SubscriptionTests.events(Self.ownerCount, of: stream, afterChangeAt: directory.url)
         #expect(events.count == Self.ownerCount)
         #expect(events.first?.contains(Self.id(of: second)) == true)
         #expect(events.last?.contains(Self.id(of: first)) == true)
@@ -192,7 +192,9 @@ struct SharedShortIDTests {
         let merged = try Self.ulid(sharingShortIDOf: fixture.task)
         let log = EventLog(repositoryAt: board.url)
         try KanbanGraphTests.writeTask(merged, titled: Self.secondTitle, mintingFrom: &fixture.ids, to: log)
-        let events = try await SubscriptionTests.events(SubscriptionTests.oneEvent, of: stream)
+        let events = try await SubscriptionTests.events(
+            SubscriptionTests.oneEvent, of: stream, afterChangeAt: log.directory
+        )
         #expect(events.count == SubscriptionTests.oneEvent)
         #expect(events.first?.contains(Self.id(of: merged)) == true)
         await graph.close()

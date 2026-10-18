@@ -282,9 +282,7 @@ struct AgentPlanPostTests {
         var ids = GitGraphFixture.secondEngineIDs
         let task = try KanbanGraphTests.writeTask(titled: OtherProcessClock.title, mintingFrom: &ids, to: log)
         let taskFile = log.fileURL(for: .task(task))
-        #expect(try await BoardWatcherTests.hasBatch(in: recorder.batches) { batch in
-            BoardWatcherTests.batch(batch, holds: taskFile)
-        })
+        #expect(try await BoardWatcherTests.hasBatch(in: recorder.batches, holding: taskFile))
         try await harness.call(KanbanGraphTests.nameQuery)
         #expect(await harness.sink.events.count == Self.firstCallPosts)
         await harness.graph.close()

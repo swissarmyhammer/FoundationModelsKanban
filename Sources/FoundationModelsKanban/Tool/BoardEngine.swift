@@ -145,13 +145,19 @@ actor BoardEngine {
 
     // MARK: - Load
 
-    /// Loads a board: it starts the file watcher, and reads the key and the log files of the board at the same time
-    /// (divergence.md §16, L1). The log does not store the key, so the file load does not wait for it.
+    /// Loads a board: it starts the file watcher, and reads the key and the log files of the board, all at the same
+    /// time (divergence.md §16, L1). The log does not store the key, so the file load does not wait for it.
     ///
-    /// The watcher starts first, so a change during the load is not lost: its batch waits until the engine is made,
-    /// and then compares the files with the signatures of the load. The load checks first that the `.kanban/`
-    /// directory is not a board of the old Rust kanban (divergence.md Q6), so the engine reads and writes nothing of
-    /// an incompatible board. When the load fails, the watcher stops.
+    /// The load does not wait for the start of the watcher. Each watcher start of the host runs on one serial queue,
+    /// and each start is a synchronous FSEvents call that can take a long time. Thus a load that waits for its watcher
+    /// also waits for the watcher starts of the other loads, and the boards do not load at the same time. A change
+    /// during the load is not lost: after the load and the start, the watcher gives one batch that holds its
+    /// directory, so the engine compares each file of the board with the signatures of the load. A change after the
+    /// start gives its own batch, which waits until the engine is made.
+    ///
+    /// The load checks first that the `.kanban/` directory is not a board of the old Rust kanban (divergence.md Q6),
+    /// so the engine reads and writes nothing of an incompatible board. When the load fails, the watcher stops. When
+    /// the watcher cannot start, the load fails.
     ///
     /// The function is not isolated to an actor, so the host does not wait for it, and boards load at the same time
     /// (divergence.md §16, L6).
@@ -162,26 +168,40 @@ actor BoardEngine {
     ///   ``EventLogError`` when a file cannot be read, a ``BoardKeyError`` when git cannot give the key, or a
     ///   ``BoardWatcherError`` when the watcher cannot start.
     static func load(_ request: EngineLoad) async throws -> BoardEngine {
-        let started =
-            request.startsWatcher ? try BoardWatcher.started(onBoardAt: request.root, in: request.folderStreams) : nil
+        async let starting = startedWatcher(for: request)
+        let session: CommitSession
         do {
-            let session = try await request.session()
-            let engine = BoardEngine(
-                identity: request.identity,
-                root: request.root,
-                session: session,
-                observingBatchesWith: request.configuration.batchObserver,
-                publishingTo: request.publish,
-                reportingRetirementTo: request.reportRetirement
-            )
-            if let started {
-                await engine.consume(started)
-            }
-            return engine
+            session = try await request.session()
         } catch {
-            await started?.watcher.stop()
+            await (try? await starting)?.watcher.stop()
             throw error
         }
+        let started = try await starting
+        let engine = BoardEngine(
+            identity: request.identity,
+            root: request.root,
+            session: session,
+            observingBatchesWith: request.configuration.batchObserver,
+            publishingTo: request.publish,
+            reportingRetirementTo: request.reportRetirement
+        )
+        if let started {
+            await engine.consume(started)
+            started.watcher.compareEachFile()
+        }
+        return engine
+    }
+
+    /// Starts the file watcher of a board that loads, when the load starts a watcher.
+    ///
+    /// - Parameter request: What to load, and the parts of the host that the engine uses.
+    /// - Returns: The started watcher, or `nil` when the load starts no watcher.
+    /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when the watcher cannot start.
+    private static func startedWatcher(for request: EngineLoad) async throws(BoardWatcherError) -> StartedWatcher? {
+        guard request.startsWatcher else {
+            return nil
+        }
+        return try await BoardWatcher.started(onBoardAt: request.root, in: request.folderStreams)
     }
 
     // MARK: - Session
@@ -331,8 +351,10 @@ actor BoardEngine {
     }
 
     /// Tells whether the engine still reads the files at its root path: the engine is not stopped, and its folder is
-    /// still at the path. An engine whose folder moved away retires, and tells the host, which lets go of the engine
-    /// (divergence.md §16, Gap 6). The caller holds ``gate``; the host does not wait for an engine gate.
+    /// still at the path. An engine whose folder moved away tells the host, which lets go of the engine and retires it
+    /// (divergence.md §16, Gap 6). Then the engine retires, also when no host holds it; a second retire does nothing.
+    /// The host lets go of the engine before the watcher stops, so no caller sees a stopped watch of an engine that
+    /// the host still holds. The caller holds ``gate``; the host does not wait for an engine gate.
     ///
     /// - Returns: `true` when the engine reads the files at its root path.
     private func readsRoot() async -> Bool {
@@ -340,8 +362,8 @@ actor BoardEngine {
             return false
         }
         guard isAtRoot else {
-            await retire()
             await reportRetirement(self)
+            await retire()
             return false
         }
         return true
@@ -391,7 +413,7 @@ actor BoardEngine {
             return nil
         }
         let moved = BoardWatch(
-            of: try StartedWatcher(watching: boardDirectory, in: watch.watcher.folderStreams),
+            of: try await StartedWatcher(watching: boardDirectory, in: watch.watcher.folderStreams),
             heldWeaklyBy: self,
             sendingBatchesTo: Self.batchDidArrive
         )
@@ -531,8 +553,8 @@ struct StartedWatcher: Sendable {
     ///   - directory: The directory to watch.
     ///   - folderStreams: The FSEvents stream of the host.
     /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when the watcher cannot start.
-    init(watching directory: URL, in folderStreams: FolderStreams) throws(BoardWatcherError) {
-        watcher = try BoardWatcher(watching: directory, in: folderStreams)
+    init(watching directory: URL, in folderStreams: FolderStreams) async throws(BoardWatcherError) {
+        watcher = try await BoardWatcher(watching: directory, in: folderStreams)
         self.directory = directory
     }
 }
@@ -549,8 +571,8 @@ extension BoardWatcher {
     static func started(
         onBoardAt root: URL,
         in folderStreams: FolderStreams
-    ) throws(BoardWatcherError) -> StartedWatcher {
-        try StartedWatcher(watching: existingBoardDirectory(ofBoardAt: root) ?? root, in: folderStreams)
+    ) async throws(BoardWatcherError) -> StartedWatcher {
+        try await StartedWatcher(watching: existingBoardDirectory(ofBoardAt: root) ?? root, in: folderStreams)
     }
 
     /// Gives the `.kanban/` directory of a board when it is there.

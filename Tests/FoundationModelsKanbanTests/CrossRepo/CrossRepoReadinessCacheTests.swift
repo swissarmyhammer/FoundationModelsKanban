@@ -12,22 +12,27 @@ import Testing
 /// of this repo.
 @Suite("Cross-repo: the readiness cache follows a related board", .watcherBudget)
 struct CrossRepoReadinessCacheTests {
-    /// Waits until a batch of a file watcher gives a task the expected `ready` value.
+    /// Waits until a batch of a file watcher gives a task the expected `ready` value. The wait has the time limit of
+    /// ``FolderEventWait``.
     ///
     /// - Parameters:
     ///   - task: The full URI of the task.
     ///   - ready: The expected `ready` value.
     ///   - graph: The engine of the board of the task.
     ///   - recorder: Records each batch that the file watchers of the engine apply.
-    /// - Returns: `true` when a batch gave the task the value, `false` when the time limit ended first.
-    /// - Throws: An error when a read fails.
+    ///   - path: The file or folder that the test changed. The failure message at the time limit names it.
+    /// - Returns: `true` when a batch gave the task the value, `false` when the stream of batches ended first.
+    /// - Throws: ``FolderEventTimeout`` when no batch gives the task the value before the time limit, or an error when
+    ///   a read fails.
     static func task(
         _ task: String,
         becomesReady ready: Bool,
         on graph: KanbanGraph,
-        recordedBy recorder: BatchRecorder
+        recordedBy recorder: BatchRecorder,
+        afterChangeAt path: URL
     ) async throws -> Bool {
-        try await BoardWatcherTests.hasBatch(in: recorder.batches) { _ in
+        let change = "a batch after which the ready value of the task is \(ready)"
+        return try await BoardWatcherTests.hasBatch(in: recorder.batches, waitingFor: change, at: path) { _ in
             try await UnresolvedDependsOnTests.fields(of: task, on: graph)["ready"] as? Bool == ready
         }
     }
@@ -46,7 +51,8 @@ struct CrossRepoReadinessCacheTests {
         let lib = try GitGraphFixture.makeGraph(at: repos.lib, mintingFrom: GitGraphFixture.secondEngineIDs)
         try await CrossRepoCycleReadinessTests.complete(dependency, on: lib)
         await lib.close()
-        #expect(try await Self.task(task, becomesReady: true, on: app, recordedBy: recorder))
+        let board = EventLog(repositoryAt: repos.lib).directory
+        #expect(try await Self.task(task, becomesReady: true, on: app, recordedBy: recorder, afterChangeAt: board))
         await app.close()
     }
 
@@ -61,7 +67,8 @@ struct CrossRepoReadinessCacheTests {
         let before = try await UnresolvedDependsOnTests.fields(of: task, on: app)
         #expect(before["ready"] as? Bool == true, "\(before)")
         try CrossRepoCycleReadinessTests.logEdge(from: dependency, to: task, inRepoAt: repos.lib)
-        #expect(try await Self.task(task, becomesReady: false, on: app, recordedBy: recorder))
+        let board = EventLog(repositoryAt: repos.lib).directory
+        #expect(try await Self.task(task, becomesReady: false, on: app, recordedBy: recorder, afterChangeAt: board))
         CrossRepoCycleReadinessTests.expectBlocked(
             by: dependency,
             in: try await UnresolvedDependsOnTests.fields(of: task, on: app)

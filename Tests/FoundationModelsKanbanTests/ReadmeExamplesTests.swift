@@ -338,7 +338,9 @@ struct ReadmeExamplesTests {
         let subscription = DocumentationTests.bugOrCommentSubscription
         let stream = try await SubscriptionTests.subscribe(subscription, on: board.graph)
         try Self.expectNoErrors(try await KanbanGraphTests.execute(Self.secondBugMutation, on: board.graph))
-        let events = try await SubscriptionTests.events(SubscriptionTests.oneEvent, of: stream)
+        let events = try await SubscriptionTests.events(
+            SubscriptionTests.oneEvent, of: stream, afterChangeAt: board.boardDirectory
+        )
         await board.graph.close()
         let rest = try await SubscriptionTests.allEvents(of: stream)
         let prefix = try await Self.taskIDPrefix(inBoardAt: board.root)
@@ -390,7 +392,7 @@ struct ReadmeExamplesTests {
         let board = try await ExampleBoard()
         try Self.expectNoErrors(try await Self.addFirstTask(on: board.graph))
         for block in blocks {
-            try Self.expectNoErrors(try await Self.response(to: block, on: board.graph))
+            try Self.expectNoErrors(try await Self.response(to: block, on: board.graph, boardAt: board.boardDirectory))
         }
         await board.graph.close()
         #expect(!blocks.isEmpty)
@@ -404,16 +406,23 @@ struct ReadmeExamplesTests {
     /// - Parameters:
     ///   - document: The GraphQL document.
     ///   - graph: The engine.
+    ///   - board: The board folder of the engine. The failure message at the time limit of ``FolderEventWait`` names
+    ///     it.
     /// - Returns: The response, or the first event of a subscription.
-    /// - Throws: An error when a subscription sends no event.
-    private static func response(to document: String, on graph: KanbanGraph) async throws -> String {
+    /// - Throws: An error when a subscription sends no event, or ``FolderEventTimeout`` when the event does not come
+    ///   before the time limit.
+    private static func response(
+        to document: String,
+        on graph: KanbanGraph,
+        boardAt board: URL
+    ) async throws -> String {
         let operation = try #require(try parse(source: document).definitions.first as? OperationDefinition)
         guard operation.operation == .subscription else {
             return try await KanbanGraphTests.execute(document, on: graph)
         }
         let stream = try await SubscriptionTests.subscribe(document, on: graph)
         try expectNoErrors(try await KanbanGraphTests.execute(secondBugMutation, on: graph))
-        let events = try await SubscriptionTests.events(SubscriptionTests.oneEvent, of: stream)
+        let events = try await SubscriptionTests.events(SubscriptionTests.oneEvent, of: stream, afterChangeAt: board)
         return try #require(events.first, "the subscription \(document) must send one event")
     }
 }

@@ -9,11 +9,18 @@ import Testing
 /// local identity of the author, and no commit signatures. A `KanbanGraph` on the repo gives an empty board with the
 /// name of the repo directory.
 enum TemporaryGitRepo {
-    /// The shared folder of the temporary repos of the integration tests.
-    private static let parent = FileManager.default.temporaryDirectory.appending(
-        path: "FoundationModelsKanbanIntegrationTests",
-        directoryHint: .isDirectory
-    )
+    /// The base folder of the run folders of the tests. It is not in the temporary folder of the user
+    /// (`/var/folders/…/T`), because FSEvents can give the events of that folder 60 s or more late. The path starts
+    /// with the symbolic link `/tmp`, the form of each path that the package gives (`/private` removed). The unit
+    /// tests of the root package use the same base folder (`TestFolderRoot`).
+    private static let basePath = "/tmp/fmk-tests"
+
+    /// The prefix of the name of the run folder of this package. The rest of the name is the run id.
+    private static let runFolderPrefix = "integration-"
+
+    /// The run folder of this test process, the shared folder of its temporary repos, or the error that stopped its
+    /// make. The folder is made at the first use.
+    private static let parent = Result { try makeRunFolder() }
 
     /// The program that finds `git` on the `PATH`.
     private static let launcherPath = "/usr/bin/env"
@@ -83,7 +90,7 @@ enum TemporaryGitRepo {
         named names: [String],
         _ body: ([URL]) async throws -> Value
     ) async throws -> Value {
-        let container = parent.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        let container = try parent.get().appending(path: UUID().uuidString, directoryHint: .isDirectory)
         defer {
             try? FileManager.default.removeItem(at: container)
         }
@@ -92,6 +99,28 @@ enum TemporaryGitRepo {
             try await makeRepo(at: root)
         }
         return try await body(roots)
+    }
+
+    /// Makes the run folder of this test process, and removes it at the exit of the process when it is empty.
+    ///
+    /// - Returns: The run folder.
+    /// - Throws: An error from `FileManager` when the folder cannot be made.
+    private static func makeRunFolder() throws -> URL {
+        let folder = URL(filePath: basePath, directoryHint: .isDirectory).appending(
+            path: runFolderPrefix + UUID().uuidString,
+            directoryHint: .isDirectory
+        )
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        atexit { TemporaryGitRepo.removeRunFolderIfEmpty() }
+        return folder
+    }
+
+    /// Removes the run folder when it is empty. `rmdir(2)` removes no folder that holds an entry.
+    private static func removeRunFolderIfEmpty() {
+        guard case .success(let folder) = parent else {
+            return
+        }
+        rmdir(folder.path)
     }
 
     /// Makes one new git repo with the local identity of ``identityConfig``, and with an empty root commit whose

@@ -49,6 +49,9 @@ public struct BoardLocator: Sendable {
     /// it in ``BoardIndex/unreadable``, and the scan records it with swift-log. A cancel of the task is not such a
     /// failure: it stops the scan, and the scan gives no index.
     ///
+    /// The scan records the ``ScanMarks`` of the repos before it reads the keys, so that a later change of a scan
+    /// place can tell if its files are the same as the scan saw them.
+    ///
     /// - Parameters:
     ///   - root: The root directory of the current repo.
     ///   - earlier: The index of the earlier scan, or `nil` for the first scan. A repo of the earlier scan keeps its
@@ -69,14 +72,16 @@ public struct BoardLocator: Sendable {
             uniquingKeysWith: { first, _ in first }
         )
         let knownFailures = earlier?.unreadable ?? []
-        let directories = places.flatMap(Self.repos(in:))
+        let listings = places.map { place in (place: place, repos: Self.repos(in: place)) }
+        let marks = ScanMarks(listing: listings)
+        let directories = listings.flatMap(\.repos)
         let readable = directories.filter { directory in !knownFailures.contains(directory.canonicalPath) }
         let keys = try await Self.keys(ofReposAt: readable, knowing: knownKeys, readingKeysWith: keyReader)
         let copies = directories.compactMap { directory in
             keys[directory.canonicalPath].map { key in BoardCopy(directory: directory, key: key) }
         }
         let unreadable = Set(directories.map(\.canonicalPath)).subtracting(keys.keys)
-        return BoardIndex(places: places, copies: copies, unreadable: unreadable)
+        return BoardIndex(places: places, copies: copies, unreadable: unreadable, marks: marks)
     }
 
     /// Reads with git the board of the folder that a path ref names, also when the scan does not look in that folder
@@ -129,7 +134,9 @@ public struct BoardLocator: Sendable {
     /// - Parameter place: The place.
     /// - Returns: The root directory of each repo, in the sort order of the names. A place that cannot be read gives
     ///   no repo, and the scan records it with swift-log.
-    private static func repos(in place: URL) -> [URL] {
+    ///
+    /// ``ScanMarks`` lists a place again with it, to compare the repos of the place with the repos that the scan found.
+    static func repos(in place: URL) -> [URL] {
         let names: [String]
         do {
             names = try FileManager.default.contentsOfDirectory(atPath: place.path)
@@ -265,6 +272,10 @@ struct BoardIndex: Sendable {
     /// keys again; only a change of the scan place makes the host forget one (``ScanChange``).
     let unreadable: Set<String>
 
+    /// The state of the files that the scan read, recorded before the scan read the keys, or `nil` for an index that
+    /// no scan made. A change whose files are the same as these marks does not expire the index (``isExpired(by:)``).
+    let marks: ScanMarks?
+
     /// Finds the board that a board ref names (plan.md §6.6, board refs).
     ///
     /// - A board key, or the URI of a board: the current key gives the current board, and a different key gives the
@@ -365,6 +376,18 @@ struct BoardIndex: Sendable {
             return .current
         }
         return copies.first { copy in copy.directory.canonicalPath == path }.map(BoardResolution.copy)
+    }
+}
+
+extension BoardIndex {
+    /// Makes an index with no marks: each change of its places expires it.
+    ///
+    /// - Parameters:
+    ///   - places: The places that the scan looked in, in scan order.
+    ///   - copies: The copies that the scan found, in scan order.
+    ///   - unreadable: The canonical path of each repo whose key read failed.
+    init(places: [URL], copies: [BoardCopy], unreadable: Set<String>) {
+        self.init(places: places, copies: copies, unreadable: unreadable, marks: nil)
     }
 }
 
