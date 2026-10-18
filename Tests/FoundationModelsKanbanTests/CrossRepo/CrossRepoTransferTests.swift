@@ -101,8 +101,7 @@ struct CrossRepoTransferTests {
     /// - Returns: The full URI of the node that the field gives.
     /// - Throws: An error when the response has no id for the field.
     static func id(givenBy field: String, named name: String, on graph: KanbanGraph) async throws -> String {
-        let response = try await CommentTests.run(field, on: graph)
-        #expect(try CrossRepoWriteTests.hasNoErrors(response), "\(response)")
+        let response = try await CrossRepoUndoTests.runWithNoErrors(field, on: graph)
         return try CrossRepoUndoTests.id(of: name, in: KanbanGraphTests.data(of: response))
     }
 
@@ -487,10 +486,9 @@ struct CrossRepoTransferTests {
         let old = try await CrossRepoFixture.addTask(with: "", on: app)
         let board = #"toBoard: "\#(try CrossRepoWriteTests.libKey())""#
         let input = #"task: "\#(old)", \#(board), toColumn: "\#(Self.doingSlug)""#
-        let response = try await CommentTests.run("\(MutationName.copyTask)(input: { \(input) }) { id }", on: app)
+        let field = "\(MutationName.copyTask)(input: { \(input) }) { id }"
+        let copy = try await Self.id(givenBy: field, named: MutationName.copyTask, on: app)
         await app.close()
-        #expect(try CrossRepoWriteTests.hasNoErrors(response), "\(response)")
-        let copy = try CrossRepoUndoTests.id(of: MutationName.copyTask, in: KanbanGraphTests.data(of: response))
         #expect(try Self.boardKey(of: copy) == CrossRepoWriteTests.libKey())
     }
 

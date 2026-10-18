@@ -69,10 +69,13 @@ struct CrossRepoUndoTests {
     /// - Parameters:
     ///   - field: The mutation field.
     ///   - graph: The engine.
+    /// - Returns: The response JSON text.
     /// - Throws: An error when the response is not a JSON object.
-    static func runWithNoErrors(_ field: String, on graph: KanbanGraph) async throws {
+    @discardableResult
+    static func runWithNoErrors(_ field: String, on graph: KanbanGraph) async throws -> String {
         let response = try await CommentTests.run(field, on: graph)
         #expect(try CrossRepoWriteTests.hasNoErrors(response), "\(response)")
+        return response
     }
 
     /// Adds one task to the related board with a first engine of the current repo, and then closes that engine.

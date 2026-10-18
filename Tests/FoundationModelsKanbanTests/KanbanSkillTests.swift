@@ -7,22 +7,15 @@ import Testing
 /// Tests the `kanban` skill for the Swift kanban (^xa1whj1).
 ///
 /// The skill is in the `../skills` repo, at `skills/kanban/SKILL.md`. That repo is not always next to this repo (for
-/// example on CI). Thus this repo keeps a copy of the skill at ``skillPath``, and the tests read the copy:
+/// example on CI). Thus this repo keeps a copy of the skill at ``skillPath``, and the tests read the copy.
 ///
-/// - Each ```` ```js ```` block of the skill is a code-mode script that calls `tools.kanban(...)`. The next block is a
-///   ```` ```json ```` block with the result of the script. The tests run each script in skill order, on one board in
-///   a temporary git repo with no remote, and compare each result with its block.
-/// - When `../skills` is next to this repo, a test checks that its skill file is the same text as the copy. When the
-///   file is not there, a condition trait disables the test, and the test report shows it as skipped.
+/// Each ```` ```js ```` block of the skill is a code-mode script that calls `tools.kanban(...)`. The next block is a
+/// ```` ```json ```` block with the result of the script. The tests run each script in skill order, on one board in a
+/// temporary git repo with no remote, and compare each result with its block.
 @Suite("Kanban skill: the examples run against the Swift tool", .watcherBudget)
 struct KanbanSkillTests {
     /// The copy of the skill in this repo, relative to the repository root.
     static let skillPath = "Documentation/kanban/SKILL.md"
-
-    /// The skill file in the `../skills` repo: the repo `skills` next to this repo.
-    private static let skillsRepoFile = RepositoryFile.root
-        .deletingLastPathComponent()
-        .appending(path: "skills/skills/kanban/SKILL.md")
 
     /// The keys of the frontmatter of a skill, in order, as `skills/commit/SKILL.md` of the `../skills` repo has
     /// them. The kanban skill has no `agent` key, because no agent runs it.
@@ -247,19 +240,6 @@ struct KanbanSkillTests {
         let examples = try Self.examples()
         #expect(!examples.isEmpty)
         #expect(examples.filter { example in example.result == nil }.map(\.script) == [])
-    }
-
-    @Test(
-        "The skill file of ../skills is the same text as the copy in this repo",
-        .enabled(
-            if: FileManager.default.fileExists(atPath: KanbanSkillTests.skillsRepoFile.path),
-            "the ../skills repo is not next to this repo, so there is no skill file to compare"
-        )
-    )
-    func copyIsSkillsRepoFile() throws {
-        let copy = try Self.skillText()
-        let skillsRepoText = try String(contentsOf: Self.skillsRepoFile, encoding: .utf8)
-        #expect(skillsRepoText == copy, "\(Self.skillsRepoFile.path) must be the same as \(Self.skillPath)")
     }
 
     // MARK: - The examples

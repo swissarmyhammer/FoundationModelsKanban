@@ -103,8 +103,54 @@ comments:
     - commit: not run. review: not run.
     - next: ^4p9q125 moves the FSEvents calls off the cooperative pool. Then the full swift test runs again on this task.
   timestamp: 2026-10-17T00:25:13.403567+00:00
+- actor: claude-code
+  id: 01m57ty5gcrs6ztbx0jnb7y88e
+  text: |-
+    ### review — findings
+    - evidence: `review sha 5d572af~1..5d572af` — 1 finding (1 confirmed, 1 refuted, 35 files reviewed). Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoTransferTests.swift:104 (`reuse/reuse`).
+    - next: Make `id(givenBy:named:on:)` use `CrossRepoUndoTests.runWithNoErrors`, and make that helper return the response text. Then run the review again.
+  timestamp: 2026-10-18T15:43:56.940956+00:00
+- actor: claude-code
+  id: 01m57tyxh4g65g4zy0wyfg7wha
+  text: |-
+    ### finish iteration 4 — findings
+    - implement: changed (iterations 2 and 3; work kept in the tree)
+    - test: green — swift test x2 after the fseventsd restart: 1600 passed, 0 failed, 44.9 s and 45.4 s
+    - commit: 5d572af
+    - review: findings — Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoTransferTests.swift:104 (reuse/reuse: id(givenBy:named:on:) repeats CrossRepoUndoTests.runWithNoErrors(_:on:))
+  timestamp: 2026-10-18T15:44:21.540729+00:00
+- actor: claude-code
+  id: 01m57v3ebrqvxwngpe0y49a24j
+  text: |-
+    ### implement — changed
+    - Finding `reuse/reuse` (CrossRepoTransferTests.swift `id(givenBy:named:on:)`): `CrossRepoUndoTests.runWithNoErrors(_:on:)` now has `@discardableResult` and gives the response text. It keeps the `#expect`. `id(givenBy:named:on:)` now calls it.
+    - Same cause in the file: `copyAcceptsAliases` had one more copy of the run-then-expect-no-errors-then-id body. It now calls `Self.id(givenBy:named:on:)`. The engine now closes after the id read. The test checks the same things.
+    - Other calls of `CommentTests.run` in the file are not copies: `makeAssignedOldTask` has no expect, and `transferToRustBoardWritesNothing` compares the full error response.
+    - The existing callers of `runWithNoErrors` in 5 other files discard the result and compile with no warning.
+    - Finding flipped to `- [x]`.
+    - evidence: 2 files — Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoUndoTests.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoTransferTests.swift. `swift test --filter CrossRepo`: 102 tests in 14 suites passed, 0 failed. One build-system warning ("missing creator for mutated node" on the mlx-swift_Cmlx.bundle) comes from the package build, not from these files.
+    - next: /review
+  timestamp: 2026-10-18T15:46:49.848451+00:00
+- actor: claude-code
+  id: 01m580nw8xv093wrn08ynhx3kp
+  text: |-
+    ### finish iteration 5 — stuck
+    - implement: changed — finding fixed: CrossRepoUndoTests.runWithNoErrors returns the response (@discardableResult); id(givenBy:named:on:) and copyAcceptsAliases call it. swift test --filter CrossRepo: 102 passed.
+    - test: stuck — swift test: 1600 tests, 1599 passed, 0 failed, 1 skipped (KanbanSkillTests.copyIsSkillsRepoFile: ../skills/skills/kanban/SKILL.md does not exist on the current skills branch, commit 1941497).
+    - decision — user: "remove this test".
+    - next: /implement removes KanbanSkillTests.copyIsSkillsRepoFile, then test, commit, review.
+  timestamp: 2026-10-18T17:24:16.797094+00:00
+- actor: claude-code
+  id: 01m580sw82qjvragvg27wsza96
+  text: |-
+    ### test — green
+    - change: removed the test `KanbanSkillTests.copyIsSkillsRepoFile` ("The skill file of ../skills is the same text as the copy in this repo") and the constant `skillsRepoFile` (only that test used it). The type doc comment no longer tells about the compare test. No other file names these symbols. The other 8 tests of the file stay.
+    - evidence: 1 file — Tests/FoundationModelsKanbanTests/KanbanSkillTests.swift. Full `swift test` (one process, 68 s wall, 43.8 s test run): 1599 tests in 131 suites, 1599 passed, 0 failed, 0 skipped. No `.timeLimit` trait added; the 60 s FolderEventWait limit is not changed. One build-system warning stays: "missing creator for mutated node" on .build/out/Products/Debug/mlx-swift_Cmlx.bundle/Contents/MacOS. It comes from the mlx-swift package build, not from a source file of this repo (the same warning is in the earlier step records).
+    - other uncommitted work is kept (CrossRepoTransferTests.swift, CrossRepoUndoTests.swift, the card files). No commit.
+    - next: commit, then /review.
+  timestamp: 2026-10-18T17:26:27.842336+00:00
 position_column: doing
-position_ordinal: '8280'
+position_ordinal: '8580'
 title: Decide what moveTask(board:) does with the comments of the moved task
 ---
 ## What
@@ -121,3 +167,15 @@ The user chose option A (see the comments).
 - [x] The user decides. divergence.md records the decision. (Q21, E6, and the Q21 change list in section 11.)
 - [x] Option A: a test with two temporary git repos shows that the comment stays live on the old task, and that the new task has no comments (`moveKeepsCommentsOnOldTask` in `Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoTransferTests.swift`).
 - [x] ~~For option B: a test with two temporary git repos shows the comments on the new task, and one `undo` removes them.~~ NOT APPLICABLE: the user chose option A.
+
+## Review Findings (2026-10-18 10:39)
+
+> Scope: `review sha 5d572af~1..5d572af` — reviewed the diffs only — lines this change added or modified. 35 file(s) reviewed, 3 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `divergence.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoTransferTests.swift:104` `reuse/reuse` — The new function `id(givenBy:named:on:)` repeats the body of the existing helper `CrossRepoUndoTests.runWithNoErrors(_:on:)`. Both call `CommentTests.run(field, on: graph)` and then `#expect(try CrossRepoWriteTests.hasNoErrors(response), ...)`. Two copies of this check can drift apart, and a later fix must be made in both places. Change `runWithNoErrors` so it returns the response text, with the `#expect` kept, for example `static func runWithNoErrors(_ field: String, on graph: KanbanGraph) async throws -> String`. Then `id(givenBy:named:on:)` calls it with `let response = try await CrossRepoUndoTests.runWithNoErrors(field, on: graph)`. Existing callers that discard the result still compile if the result is marked `@discardableResult`, or they can be left as they are.
