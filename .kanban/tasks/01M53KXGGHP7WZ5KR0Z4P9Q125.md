@@ -81,6 +81,40 @@ comments:
     - evidence: 5 files — Tests/FoundationModelsKanbanTests/Observe/QuietFolderEvents.swift (new), Tests/FoundationModelsKanbanTests/Observe/HeldStartService.swift (deleted), Tests/FoundationModelsKanbanTests/Observe/FolderStreamsTests.swift, Tests/FoundationModelsKanbanTests/Observe/FolderStreamsPoolTests.swift, Tests/FoundationModelsKanbanTests/Tool/KanbanHostTests.swift. `swift test --filter Observe`: 0 tests matched. `swift test --filter 'FolderStreamsTests|FolderStreamsPoolTests|BoardWatcherTests|KanbanHostTests'`: 54 passed in 4 suites, 0 failed, 0 skipped. Full `swift test` (one process): 1599 passed in 131 suites, 0 failed, 0 skipped. No source warnings (only the build-system note "missing creator for mutated node" of the mlx-swift_Cmlx bundle).
     - next: /review. Both findings and the 3 acceptance items are `- [x]`. Not committed. Task stays in doing.
   timestamp: 2026-10-18T17:36:02.968967+00:00
+- actor: claude-code
+  id: 01m581fq5tn0ng2ashf2ex5csk
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (8fa55b1); 2 findings, 2 confirmed, 0 refuted — Tests/FoundationModelsKanbanTests/Observe/FolderStreamsTests.swift:210, Tests/FoundationModelsKanbanTests/Observe/QuietFolderEvents.swift:79. The two prior findings (HeldStartService.swift:10 and :36) are fixed: the file is removed, and the hold is now in QuietFolderEvents.
+    - next: release the hold on all paths in FolderStreamsTests, FolderStreamsPoolTests and KanbanHostTests; put one shared test gate under StartHold and the other gate helpers where the contract fits.
+  timestamp: 2026-10-18T17:38:23.546491+00:00
+- actor: claude-code
+  id: 01m581gh7fsg0c5qx53ww6yf1r
+  text: |-
+    ### finish iteration 3 — findings
+    - implement: changed — QuietFolderEvents.swift (shared fake, StartHold option), HeldStartService.swift deleted, 3 users updated
+    - test: green — swift test: 1599 passed, 0 failed, 0 skipped
+    - commit: 8fa55b1
+    - review: findings — Tests/FoundationModelsKanbanTests/Observe/FolderStreamsTests.swift:210 (completeness/inverse-operation-coverage: hold released only on the success path), Tests/FoundationModelsKanbanTests/Observe/QuietFolderEvents.swift:79 (reuse/reuse: StartHold repeats the gates in LoadRecorder, CountingKeyReader, GatedEmbedder). Prior findings :10 and :36 fixed.
+  timestamp: 2026-10-18T17:38:50.223838+00:00
+- actor: claude-code
+  id: 01m5823swwt9zydvtg0e4fhwmf
+  text: |-
+    Implementation (review findings of 2026-10-18 12:36):
+    - New shared gate: Tests/FoundationModelsKanbanTests/TestGate.swift (`TestGate`). API: `recordArrival()`, `waitForArrival()` (returns at once after an earlier arrival, can be called many times, a cancel ends it), `release()` (permanent, a second call does nothing), `waitUntilReleased()` (async, throws CancellationError on cancel), `blockUntilReleased()` (sync; a semaphore that each passed thread signals again, so the release stays permanent). Tests: TestGateTests.swift, 5 tests. RED: 5 of 5 failed against an empty scaffold. GREEN: 5 of 5 passed.
+    - Moved onto TestGate: StartHold (now `typealias StartHold = TestGate`; QuietFolderEvents calls `recordArrival()` and then `blockUntilReleased()`), LoadRecorder (load start arrival), CountingKeyReader (blocked read arrival; the gate gets no release, so only the cancel ends the wait), GatedEmbedder (arrival count = start count, async release), HeldConsumer (async release), StageOverlapProbe in LoaderTests (the awaited type releases, the held type blocks).
+    - Kept separate, with a comment that says why: LockWaitProgress in EventLogTests. It holds no call and waits for nothing; each start must read the release flag and count itself in one lock. ScanRecorder and UnreadableBoardRecorder are streams of observed change values, not gates, so they stay as they are.
+    - Release on every path: `defer { hold.release() }` in FolderStreamsPoolTests.heldStartHoldsNoPoolThread and KanbanHostTests.loadStartsWhileWatcherStartWaits; in FolderStreamsTests.waitingAddsShareOneStream the defer is inside the task group body, because the group waits for each child before it ends, also when the body throws. Same cause removed in the other gate users: `defer { consumer.release() }` in KanbanHostTests.closedEngineDoesNotWaitForMovedConsumer, and `defer { embedder.release() }` in the 3 SearchReadinessTests tests. The explicit releases in the bodies stay, because the tests check state before the release.
+    - Discovery: the BoardLoader workers are task group tasks on the cooperative pool, so StageOverlapProbe blocks one pool thread until a different worker starts the awaited type (this was the same before the change; the comment now says so).
+    - FolderEventWait.timeLimit stays 60 s. No `.timeLimit` trait is in the tests.
+  timestamp: 2026-10-18T17:49:21.692735+00:00
+- actor: claude-code
+  id: 01m5823xsctmvy2bvxtygxsq9y
+  text: |-
+    ### implement — changed
+    - evidence: 10 files — Tests/FoundationModelsKanbanTests/TestGate.swift (new), Tests/FoundationModelsKanbanTests/TestGateTests.swift (new), Tests/FoundationModelsKanbanTests/Observe/QuietFolderEvents.swift, Tests/FoundationModelsKanbanTests/Observe/FolderStreamsTests.swift, Tests/FoundationModelsKanbanTests/Observe/FolderStreamsPoolTests.swift, Tests/FoundationModelsKanbanTests/Tool/KanbanHostTests.swift, Tests/FoundationModelsKanbanTests/Search/SearchReadinessTests.swift, Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift, Tests/FoundationModelsKanbanTests/Events/LoaderTests.swift, Tests/FoundationModelsKanbanTests/Events/EventLogTests.swift. `swift test --filter TestGateTests`: RED 5 failed, GREEN 5 passed. `swift build --build-tests`: 0 errors, 0 warnings. Full `swift test` (one process): 1604 passed in 132 suites, 0 failed, 0 skipped.
+    - next: /review. Both findings of 2026-10-18 12:36 are `- [x]`. Not committed. Task stays in doing.
+  timestamp: 2026-10-18T17:49:25.676066+00:00
 position_column: doing
 position_ordinal: '8580'
 title: Do not block the cooperative pool with the FSEvents calls of FolderStreams
@@ -106,3 +140,28 @@ title: Do not block the cooperative pool with the FSEvents calls of FolderStream
 
 - [x] `Tests/FoundationModelsKanbanTests/Observe/HeldStartService.swift:10` `reuse/reuse` — HeldStartService is a near-copy of the existing test fake QuietFolderEvents. It repeats the FolderEventService conformance and the quiet stream, and only adds a hold on the first start. The hold should be a parameter of QuietFolderEvents, not a second fake. Two fakes of one protocol drift apart. Give QuietFolderEvents an optional hold on the first start (a semaphore and an AsyncStream, as in HeldStartService), or move one shared fake into a common test file and have both suites use it. Then delete the second fake.
 - [x] `Tests/FoundationModelsKanbanTests/Observe/HeldStartService.swift:36` `reuse/reuse` — HeldStartService.currentEventID repeats the body of QuietFolderEvents.currentEventID. The fake should reuse the existing quiet fake, or the shared fake that replaces it, and not define its own event id counter. Take the event id from the shared fake (see the finding on the class at line 10), so that one implementation provides the id for both suites.
+
+## Review Findings (2026-10-18 12:36)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 5 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> ⚠️ tool rule 'code-hygiene/disallowed-constructs-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> disallowed-constructs-swift found no file at Tests/FoundationModelsKanbanTests/Observe/HeldStartService.swift, so its constructs are unread
+
+> ⚠️ tool rule 'code-hygiene/function-length-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> function-length-swift found no file at Tests/FoundationModelsKanbanTests/Observe/HeldStartService.swift, so its bodies are unread
+
+> ⚠️ tool rule 'code-hygiene/idioms-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> idioms-swift found no file at Tests/FoundationModelsKanbanTests/Observe/HeldStartService.swift, so its declarations are unread
+
+> ⚠️ tool rule 'code-hygiene/magic-numbers-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> magic-numbers-swift found no file at Tests/FoundationModelsKanbanTests/Observe/HeldStartService.swift, so its literals are unread
+
+> ⚠️ tool rule 'code-hygiene/missing-docs-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> missing-docs-swift found no file at Tests/FoundationModelsKanbanTests/Observe/HeldStartService.swift, so its declarations are unread
+
+- [x] `Tests/FoundationModelsKanbanTests/Observe/FolderStreamsTests.swift:210` `completeness/inverse-operation-coverage` — The hold is released only on the success path. If EventLogTests.waitUntil throws at line 209, hold.release() never runs. The child task blocked in StartHold.wait() (a DispatchSemaphore) cannot be cancelled, so withThrowingTaskGroup cannot finish. The test then hangs instead of reporting the failure. Release the hold on every path. Use `defer { hold.release() }` after the hold is created, or release before the wait in a catch block. Apply the same guard in Tests/FoundationModelsKanbanTests/Observe/FolderStreamsPoolTests.swift:40 and Tests/FoundationModelsKanbanTests/Tool/KanbanHostTests.swift:367, so a failed wait does not leave a blocked thread.
+- [x] `Tests/FoundationModelsKanbanTests/Observe/QuietFolderEvents.swift:79` `reuse/reuse` — StartHold reimplements a test gate that already exists in several test helpers: an AsyncStream signals that the blocked call began, and a blocking wait lets the test release it. The same shape appears in LoadRecorder (loadStartSignals, waitForLoadStart), CountingKeyReader (blockedReads, waitForBlockedRead), and GatedEmbedder (waitForStart). Each copy carries its own signal stream, sink, and release logic, so a fix to the gate must be made in each copy. Extract one shared test gate, for example a generic `StartGate` with `yieldArrival()`, `waitUntilReleased()`, and `waitForArrival()`, in a shared test file. Make StartHold a typealias or thin wrapper over it, and move the other helpers onto it where their contract fits. If a helper's contract does not fit (for example, GatedEmbedder is an embedder, not a generic hold), keep it separate and say so in a comment.

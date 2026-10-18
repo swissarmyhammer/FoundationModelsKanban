@@ -499,6 +499,10 @@ struct EventLogTests {
 /// release of the lock. The tasks and the thread that releases the lock share one record.
 ///
 /// The type is a class, because the tasks and the thread share one value. A mutex keeps its state safe.
+///
+/// The record does not use the shared ``TestGate``. It holds no call and waits for nothing: each start must read the
+/// release flag and count itself in one lock, so that a start is late exactly when it comes after the release. Two
+/// locks, one of a gate and one of the counts, cannot give that order.
 private final class LockWaitProgress: Sendable {
     /// The state of the record.
     private struct State {

@@ -24,12 +24,13 @@ struct FolderStreamsPoolTests {
     @Test("Other tasks run to the end while the start of a stream waits for fseventsd")
     func heldStartHoldsNoPoolThread() async throws {
         let hold = StartHold()
+        defer { hold.release() }
         let streams = FolderStreams(service: QuietFolderEvents(holdingFirstStartWith: hold))
         let count = Self.taskCount
         let adds = (0..<count).map { index in
             Task { try await streams.add(Self.makeSink(named: "folder-\(index)")) }
         }
-        await hold.waitForHeldStart()
+        await hold.waitForArrival()
         let finished = await withTaskGroup(of: Int.self) { group in
             for index in 0..<count {
                 group.addTask { index }

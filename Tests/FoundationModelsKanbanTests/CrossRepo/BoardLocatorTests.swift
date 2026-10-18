@@ -476,11 +476,9 @@ final class CountingKeyReader: Sendable {
     /// The canonical path of the repo whose first read blocks, or `nil` for no blocked read.
     private let blockedPath: String?
 
-    /// Gets one element when the blocked read starts to wait for the cancel.
-    private let blockedReads: AsyncStream<Void>
-
-    /// Gives the element of ``blockedReads``.
-    private let blockedReadStarts: AsyncStream<Void>.Continuation
+    /// The gate that the blocked read waits at. The reader never releases it, so only the cancel of the task ends the
+    /// wait of the blocked read.
+    private let blockedRead = TestGate()
 
     /// Makes a reader.
     ///
@@ -488,7 +486,6 @@ final class CountingKeyReader: Sendable {
     ///   `nil` for no blocked read.
     init(blockingFirstReadOf blocked: URL? = nil) {
         blockedPath = blocked?.canonicalPath
-        (blockedReads, blockedReadStarts) = AsyncStream.makeStream()
     }
 
     /// The reader as a ``BoardKeyReader`` for a scan or a graph: each call gives ``key(ofRepoAt:)``.
@@ -511,8 +508,7 @@ final class CountingKeyReader: Sendable {
 
     /// Waits until the blocked read starts to wait for the cancel.
     func waitForBlockedRead() async {
-        var starts = blockedReads.makeAsyncIterator()
-        await starts.next()
+        await blockedRead.waitForArrival()
     }
 
     /// Reads the key of a repo from git, and counts the read. The first read of the blocked repo waits for the cancel
@@ -534,15 +530,13 @@ final class CountingKeyReader: Sendable {
         return try await BoardKey.read(fromRepoAt: root)
     }
 
-    /// Waits until the task is cancelled. The wait has no time limit. The iteration of a stream that gets no element
-    /// ends when the task is cancelled.
+    /// Waits until the task is cancelled. The wait has no time limit. The gate gets no release, so its wait ends only
+    /// with the `CancellationError` of the cancel.
     ///
     /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled.
     private func waitForCancel() async throws(BoardKeyError) {
-        blockedReadStarts.yield()
-        let (cancel, cancelEnd) = AsyncStream<Never>.makeStream()
-        defer { cancelEnd.finish() }
-        for await _ in cancel {}
+        blockedRead.recordArrival()
+        try? await blockedRead.waitUntilReleased()
         throw .gitCancelled(arguments: [])
     }
 }

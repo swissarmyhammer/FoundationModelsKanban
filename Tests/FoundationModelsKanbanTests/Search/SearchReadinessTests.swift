@@ -25,6 +25,7 @@ struct SearchReadinessTests {
         let directory = try TemporaryDirectory()
         _ = try TaskSearchTests.writeFixture(inRepoAt: directory.url)
         let embedder = GatedEmbedder()
+        defer { embedder.release() }
         let probe = MergeProbe(waitingFor: embedder)
         let host = HostFixture.makeHost(observingLoadsWith: probe, embeddingWith: embedder)
         _ = try await host.session(workingDirectory: directory.url, actor: KanbanHostTests.firstActor)
@@ -38,6 +39,7 @@ struct SearchReadinessTests {
         let directory = try TemporaryDirectory()
         let task = try TaskSearchTests.writeFixture(inRepoAt: directory.url)
         let embedder = GatedEmbedder()
+        defer { embedder.release() }
         let host = HostFixture.makeHost(embeddingWith: embedder)
         let session = try await host.session(workingDirectory: directory.url, actor: KanbanHostTests.firstActor)
         let finishedEmbeds = embedder.finishCount
@@ -54,6 +56,7 @@ struct SearchReadinessTests {
         let directory = try TemporaryDirectory()
         let task = try TaskSearchTests.writeFixture(inRepoAt: directory.url)
         let embedder = GatedEmbedder()
+        defer { embedder.release() }
         let recorder = LoadRecorder()
         let host = HostFixture.makeHost(observingLoadsWith: recorder, embeddingWith: embedder)
         let session = try await host.session(workingDirectory: directory.url, actor: KanbanHostTests.firstActor)
@@ -76,37 +79,28 @@ struct SearchReadinessTests {
 /// An embedder that holds each embed until the test releases it. The hold has no time limit. It counts the embeds
 /// that started and the embeds that finished.
 final class GatedEmbedder: PooledEmbedding {
-    /// The counts and the release of the embedder.
-    private struct State {
-        /// `true` after ``release()``.
-        var isReleased = false
+    /// The gate that each embed waits at. Each embed that starts records its arrival at it.
+    private let gate = TestGate()
 
-        /// The number of embeds that started.
-        var startCount = 0
-
-        /// The number of embeds that finished.
-        var finishCount = 0
-    }
-
-    /// The state, behind a lock, because the embeds run on different threads.
-    private let state = Mutex(State())
+    /// The number of embeds that finished, behind a lock, because the embeds run on different threads.
+    private let finished = Mutex(0)
 
     /// Makes an embedder that holds each embed until ``release()``.
     init() {}
 
     /// The number of embeds that started.
     var startCount: Int {
-        state.withLock { state in state.startCount }
+        gate.arrivalCount
     }
 
     /// The number of embeds that finished.
     var finishCount: Int {
-        state.withLock { state in state.finishCount }
+        finished.withLock { finished in finished }
     }
 
-    /// Lets each held embed and each later embed finish at once.
+    /// Lets each held embed and each later embed finish at once. A second call does nothing.
     func release() {
-        state.withLock { state in state.isReleased = true }
+        gate.release()
     }
 
     /// Waits until the release, and then gives the vectors of ``TaskSearchTests/FakeEmbedder``.
@@ -115,15 +109,15 @@ final class GatedEmbedder: PooledEmbedding {
     /// - Returns: One vector for each text.
     /// - Throws: `CancellationError` when the task of the embed is cancelled.
     func embed(texts: [String]) async throws -> [[Float]] {
-        state.withLock { state in state.startCount += 1 }
-        try await EventLogTests.waitUntil { self.state.withLock { state in state.isReleased } }
-        state.withLock { state in state.finishCount += 1 }
+        gate.recordArrival()
+        try await gate.waitUntilReleased()
+        finished.withLock { finished in finished += 1 }
         return try await TaskSearchTests.FakeEmbedder().embed(texts: texts)
     }
 
     /// Waits until the first embed starts. The wait has no time limit. A cancel of the task ends the wait.
     func waitForStart() async {
-        try? await EventLogTests.waitUntil { self.startCount > 0 }
+        await gate.waitForArrival()
     }
 }
 

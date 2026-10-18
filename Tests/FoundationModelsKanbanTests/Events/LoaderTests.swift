@@ -310,8 +310,9 @@ final class StageOverlapProbe: LoaderWorkerObserver {
     /// The node type whose work ends the hold.
     let awaitedType: PatchNodeType
 
-    /// Gets a signal when the work of the awaited type starts.
-    private let awaitedStart = DispatchSemaphore(value: 0)
+    /// The gate that the work of the held type blocks at. The start of the work of the awaited type releases it. The
+    /// block holds the pool thread of one worker until a different worker starts the work of the awaited type.
+    private let awaitedStart = TestGate()
 
     /// Tells if the work of the awaited type started while the work of the held type waited. A lock keeps it,
     /// because the workers run on different threads.
@@ -338,12 +339,12 @@ final class StageOverlapProbe: LoaderWorkerObserver {
     /// - Parameter type: The node type of the work.
     func reach(_ type: PatchNodeType) {
         if type == awaitedType {
-            awaitedStart.signal()
+            awaitedStart.release()
         }
         guard type == heldType else {
             return
         }
-        awaitedStart.wait()
+        awaitedStart.blockUntilReleased()
         overlap.withLock { overlap in overlap = true }
     }
 

@@ -51,7 +51,7 @@ final class QuietFolderEvents: FolderEventService {
     }
 
     /// Records the paths of the folders, and gives a stream that gives no events. When the service has a hold, the
-    /// first call waits until ``StartHold/release()``.
+    /// first call records its arrival at the hold, and then waits until ``TestGate/release()``.
     ///
     /// - Parameters:
     ///   - paths: The paths of the folders. The fake records them.
@@ -67,48 +67,18 @@ final class QuietFolderEvents: FolderEventService {
             starts.append(paths)
             return starts.count == 1
         }
-        if isFirstStart {
-            firstStartHold?.wait()
+        if isFirstStart, let firstStartHold {
+            firstStartHold.recordArrival()
+            firstStartHold.blockUntilReleased()
         }
         return QuietStream()
     }
 }
 
-/// A hold on a stream start of a ``QuietFolderEvents``. The held start blocks its thread until the test lets it go,
-/// the same as an FSEvents call that waits for a slow fseventsd.
-final class StartHold: Sendable {
-    /// Lets the held start go.
-    private let releaseSignal = DispatchSemaphore(value: 0)
-
-    /// Gives one element when the held start begins to wait.
-    private let heldStarts: AsyncStream<Void>
-
-    /// Gives the elements of ``heldStarts``.
-    private let heldStartSink: AsyncStream<Void>.Continuation
-
-    /// Makes a hold that holds no start yet.
-    init() {
-        (heldStarts, heldStartSink) = AsyncStream.makeStream()
-    }
-
-    /// Tells the test that the start waits, and blocks the thread of the start until ``release()``.
-    func wait() {
-        heldStartSink.yield()
-        releaseSignal.wait()
-    }
-
-    /// Waits until the held start begins to wait.
-    func waitForHeldStart() async {
-        for await _ in heldStarts {
-            return
-        }
-    }
-
-    /// Lets the held start go.
-    func release() {
-        releaseSignal.signal()
-    }
-}
+/// A hold on a stream start of a ``QuietFolderEvents``: the shared ``TestGate`` of the test target. The held start
+/// records its arrival, and then blocks its thread until the release, the same as an FSEvents call that waits for a
+/// slow fseventsd. No cancel ends that block, so a test releases the hold in a `defer`.
+typealias StartHold = TestGate
 
 /// A stream of the fake service. It gives no events.
 final class QuietStream: FolderEventStream {

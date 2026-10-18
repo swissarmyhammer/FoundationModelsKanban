@@ -237,6 +237,7 @@ struct KanbanHostTests {
         let engine = try await host.engine(ofBoardAt: directory.url)
         await engine.close()
         let consumer = HeldConsumer()
+        defer { consumer.release() }
         let moved = BoardWatch(
             watcher: try await BoardWatcher(watching: directory.url, in: host.folderStreams),
             directory: directory.url,
@@ -356,11 +357,12 @@ struct KanbanHostTests {
         _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
         let recorder = LoadRecorder()
         let hold = StartHold()
+        defer { hold.release() }
         let service = QuietFolderEvents(holdingFirstStartWith: hold)
         let host = HostFixture.makeHost(observingLoadsWith: recorder, watchingWith: service)
         let root = directory.url
         let session = Task { try await host.session(workingDirectory: root, actor: Self.firstActor) }
-        await hold.waitForHeldStart()
+        await hold.waitForArrival()
         // When the load waits for the start of the watcher, this wait never ends, because the test lets the start go
         // only after the load started.
         await recorder.waitForLoadStart()
@@ -614,25 +616,21 @@ final class LoadRecorder: BoardLoadObserver {
     /// loads in sequence from two loads at the same time.
     private let loadDelay: Duration
 
-    /// Gives one element at the start of each file load.
-    private let loadStartSignals: AsyncStream<Void>
-
-    /// Gives the elements of ``loadStartSignals``.
-    private let loadStartSink: AsyncStream<Void>.Continuation
+    /// Records an arrival at the start of each file load. The recorder never releases it: the gate gives only the
+    /// arrival signal, and a load does not wait at it.
+    private let loadStart = TestGate()
 
     /// Makes a recorder.
     ///
     /// - Parameter loadDelay: The time that each file load waits after its start is recorded. The default is no wait.
     init(waitingInEachLoad loadDelay: Duration = .zero) {
         self.loadDelay = loadDelay
-        (loadStartSignals, loadStartSink) = AsyncStream.makeStream()
     }
 
-    /// Waits until a file load starts. The wait has no time limit. Call it one time for each recorder.
+    /// Waits until a file load starts. When a load started before, the wait returns at once. The wait has no time
+    /// limit.
     func waitForLoadStart() async {
-        for await _ in loadStartSignals {
-            return
-        }
+        await loadStart.waitForArrival()
     }
 
     /// The recorded events, in the order that they happened.
@@ -656,7 +654,7 @@ final class LoadRecorder: BoardLoadObserver {
     /// - Parameter root: The root folder of the board.
     func boardLoadDidStart(at root: URL) async {
         record(LoadEvent(kind: .loadDidStart, root: root))
-        loadStartSink.yield()
+        loadStart.recordArrival()
         try? await Task.sleep(for: loadDelay)
     }
 
@@ -701,13 +699,8 @@ final class LoadRecorder: BoardLoadObserver {
 /// Makes the task of a watch that does not end until the test releases it. The task has no time limit. The task does
 /// not end when it is cancelled, the same as the task of an engine watch that waits for the serial gate of the engine.
 final class HeldConsumer: Sendable {
-    /// `true` after ``release()``, behind a lock, because the task reads it on a different thread.
-    private let releaseState = Mutex(false)
-
-    /// `true` after ``release()``.
-    private var isReleased: Bool {
-        releaseState.withLock { isReleased in isReleased }
-    }
+    /// The gate that the task waits at until ``release()``.
+    private let gate = TestGate()
 
     /// Makes the task. The wait runs in an inner unstructured task, which does not get the cancel of the outer task,
     /// so a cancel of the outer task does not end the wait. The task waits until ``release()``.
@@ -716,14 +709,14 @@ final class HeldConsumer: Sendable {
     func makeTask() -> Task<Void, Never> {
         Task {
             await Task {
-                try? await EventLogTests.waitUntil { self.isReleased }
+                try? await self.gate.waitUntilReleased()
             }.value
         }
     }
 
-    /// Lets the task end.
+    /// Lets the task end. A second call does nothing.
     func release() {
-        releaseState.withLock { isReleased in isReleased = true }
+        gate.release()
     }
 }
 

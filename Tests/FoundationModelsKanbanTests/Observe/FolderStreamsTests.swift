@@ -201,8 +201,11 @@ struct FolderStreamsTests {
         let held = RouterSink(named: "held")
         let waiting = (0..<Self.waitingAddCount).map { index in RouterSink(named: "waiting-\(index)") }
         try await withThrowingTaskGroup(of: Void.self) { group in
+            // The group waits for each child task before it ends, also when the body throws, and the held start
+            // blocks its thread with no cancel. So the release must run before the body ends, on each path.
+            defer { hold.release() }
             group.addTask { try await held.add(to: streams) }
-            await hold.waitForHeldStart()
+            await hold.waitForArrival()
             for sink in waiting {
                 group.addTask { try await sink.add(to: streams) }
             }
