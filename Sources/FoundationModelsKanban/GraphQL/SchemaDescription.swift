@@ -36,6 +36,12 @@ enum SchemaDescription {
     /// The `id` argument of `Query.board`.
     static let boardToRead = "The board to read. \(boardForms) No value reads the current board."
 
+    /// The `boards` argument of `Query.checkLinks`.
+    static let boardsToCheck = """
+        The boards whose links to check. Each item is a board ref. \(boardForms) No value, or an empty list, checks \
+        the current board.
+        """
+
     /// The `board` argument of `Subscription.changes`.
     static let boardToObserve = "The board to observe. \(boardForms) No value observes the current board."
 
@@ -220,5 +226,42 @@ enum SchemaDescription {
     static let commentTask = """
         The task of the comment. The comment id alone names the comment. When this task is not the task of the \
         comment, the call gives NOT_FOUND and changes nothing.
+        """
+
+    // MARK: - Link checks
+
+    /// The `Query.checkLinks` field (divergence.md M9).
+    static let checkLinks = """
+        Reads each stored link of the boards and gives its class. The links are the dependsOn edges, the assignee \
+        URIs, and the task URLs in the body of each live task, and the moved line of each tombstone. Reads only. \
+        A link with an old board name still works, and the response gives the warning \(OldBoardName.warningCode).
+        """
+
+    /// The `LinkCheck.board` field.
+    static let linkBoard = "The current key of the board that holds the link."
+
+    /// The `LinkCheck.node` field.
+    static let linkNode = "The full URI of the task that holds the link."
+
+    /// The `LinkCheck.field` field.
+    static let linkField = """
+        Where the task holds the link: \(LinkField.dependsOn.rawValue), \(LinkField.assignee.rawValue), \
+        \(LinkField.body.rawValue) (a task URL in the body), or \(LinkField.tombstone.rawValue) (the line of a moved \
+        task).
+        """
+
+    /// The `LinkCheck.target` field.
+    static let linkTarget = "The link as the board stores it: a full kanban:// URI."
+
+    /// The `LinkCheck.status` field.
+    static let linkStatus = """
+        \(LinkStatus.ok.rawValue): the board and the node are found. \(LinkStatus.oldName.rawValue): the link names \
+        the board by an old name; currentName gives the name now. \(LinkStatus.dangling.rawValue): no reachable \
+        board has the name. \(LinkStatus.missingNode.rawValue): the board is found, the node is not.
+        """
+
+    /// The `LinkCheck.currentName` field.
+    static let linkCurrentName = """
+        The current key of the board that the link names. Null for a \(LinkStatus.dangling.rawValue) link.
         """
 }

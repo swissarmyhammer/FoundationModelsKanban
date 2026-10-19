@@ -358,6 +358,18 @@ struct RelatedBoards: Sendable {
         return byPath.keys.sorted().compactMap { path in byPath[path] }
     }
 
+    /// Each board ref of the run that names a loaded board by an old name (divergence.md M9): a ref of the call, a
+    /// cross-board dependency, or an assignee URI. Each old name is one time in the list, in the sort order of the
+    /// name.
+    var oldBoardNames: [OldBoardName] {
+        let named = resolutions.compactMap { reference, resolution in
+            BoardIndex.boardKey(in: reference.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { key in
+                board(resolvedAs: resolution)?.oldName(named: key)
+            }
+        }
+        return Set(named).sorted { lhs, rhs in lhs.name < rhs.name }
+    }
+
     /// Finds the task of a stored ref to a node of a different board.
     ///
     /// - Parameter ref: The stored ref.

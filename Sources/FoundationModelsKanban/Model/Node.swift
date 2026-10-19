@@ -22,10 +22,15 @@ enum EdgeTarget: Hashable, Sendable {
 
     /// The board key of a target of a different board, as its URI holds it, or `nil` for a slot or a local ref.
     var remoteBoardKey: String? {
+        remoteURI?.boardKey
+    }
+
+    /// The URI of a target of a different board, as the edge holds it, or `nil` for a slot or a local ref.
+    var remoteURI: NodeURI? {
         guard case .unresolved(.remote(let uri)) = self else {
             return nil
         }
-        return uri.boardKey
+        return uri
     }
 }
 

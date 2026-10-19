@@ -195,9 +195,18 @@ struct BoardIDTests {
     /// - Throws: An error when a call or a git command fails.
     static func moveAppToNewRemote(in repos: CrossRepoFixture.SideBySide) async throws -> String {
         _ = try await Self.initBoard(inRepoAt: repos.app)
-        let arguments = ["remote", "set-url", "origin", BoardLocatorTests.newOrigin]
-        try await GitSandbox.runGit(withArguments: arguments, in: repos.app)
+        try await Self.setNewRemote(ofRepoAt: repos.app)
         return try CrossRepoFixture.keyText(of: BoardLocatorTests.appOrigin)
+    }
+
+    /// Sets the `origin` of a repo to ``BoardLocatorTests/newOrigin``. The next scan reads the new git key, and the
+    /// git key that the board log recorded is then an old name of the board.
+    ///
+    /// - Parameter repo: The root directory of the repo.
+    /// - Throws: An error when the git command fails.
+    static func setNewRemote(ofRepoAt repo: URL) async throws {
+        let arguments = ["remote", "set-url", "origin", BoardLocatorTests.newOrigin]
+        try await GitSandbox.runGit(withArguments: arguments, in: repo)
     }
 
     @Test("A write after a remote change records the old git key, and a URI with the old key still resolves")

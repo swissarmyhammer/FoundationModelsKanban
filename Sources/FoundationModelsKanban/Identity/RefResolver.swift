@@ -363,7 +363,7 @@ extension RefResolver {
     /// The names of this board: the current key, and the board IDs and the old names of the board node of the graph
     /// (divergence.md M9).
     private var boardNames: BoardNames {
-        BoardNames(key: boardKey, board: graph.boardNode)
+        graph.boardNames(currentKey: boardKey)
     }
 
     /// Gives the stored ref of a URI to a node of a different board.

@@ -126,6 +126,7 @@ enum GraphQLFieldAliases {
     /// so its aliases come from the mutation.
     private static let byField: [String: [String: [String]]] = [
         "Query.board": ["id": ["path", "board", "key", "repo"]],
+        "Query.checkLinks": ["boards": ["board", "ids", "id", "keys", "key", "repos", "repo", "paths", "path"]],
         "Query.node": ["id": ["task", "column", "actor", "tag", "comment", "ref", "uri", "key", "nodeId"]],
         "Board.task": ["id": taskID],
         "Board.tasks": ["first": pageSize, "after": ["cursor"]],

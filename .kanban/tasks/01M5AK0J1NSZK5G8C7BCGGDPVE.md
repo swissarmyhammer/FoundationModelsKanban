@@ -28,8 +28,24 @@ comments:
     - evidence: `swift test` 1636 tests in 135 suites passed; no warning except the accepted mlx "missing creator". RED first: PathRefCacheTests/gitInitReadsGitKey (key was the board ID) and gitInitWriteRecordsBareKey (no gitKey). Files: Sources/FoundationModelsKanban/Tool/Commit.swift, Tool/BoardEngine.swift, Tool/KanbanHost.swift, GraphQL/MutationResolvers.swift, divergence.md, Tests/FoundationModelsKanbanTests/CrossRepo/PathRefCacheTests.swift, Tests/FoundationModelsKanbanTests/Tool/CommitTests.swift, Tests/FoundationModelsKanbanTests/Tool/BoardKeyChangeTests.swift (new).
     - next: /review
   timestamp: 2026-10-19T17:50:52.562794+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5amqyvj2ebxf93y64b7eq9y
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (ec26f20). 0 findings, 0 confirmed, 0 refuted. 7 files attempted, 0 failed. The ignore rule excluded 6 .kanban files. No validator matched divergence.md.
+    - next: none. The task is in done.
+  timestamp: 2026-10-19T17:53:25.362936+00:00
+- actor: claude-code
+  id: 01m5amr8skjpv4pz1b98fk5r5d
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 8 files
+    - test: green — swift test, 1636 passed
+    - commit: ec26f20
+    - review: clean — 0 findings
+  timestamp: 2026-10-19T17:53:35.539615+00:00
+position_column: done
+position_ordinal: ff9f80
 title: Give a loaded engine the git key after git init in its bare folder
 ---
 ## What

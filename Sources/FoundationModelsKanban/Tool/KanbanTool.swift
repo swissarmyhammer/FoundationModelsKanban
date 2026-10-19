@@ -40,9 +40,9 @@ public struct KanbanTool: Tool {
     /// with introspection (plan.md §12 item 10).
     public let description = """
         Reads and changes the kanban task graph of this repo with GraphQL. Send one GraphQL document in query. \
-        The root query fields are board, boards, node, and nodes. Mutations, for example addTask and moveTask, \
-        change the board. To learn the schema, query __schema or __type. Send the variables as a JSON object, \
-        or as a string that holds a JSON object. Example: \(KanbanTool.exampleQuery) \
+        The root query fields are board, boards, node, nodes, and checkLinks. Mutations, for example addTask and \
+        moveTask, change the board. To learn the schema, query __schema or __type. Send the variables as a JSON \
+        object, or as a string that holds a JSON object. Example: \(KanbanTool.exampleQuery) \
         To see the changes, query board history. Its filter keeps the updates whose node matches: ~task for a node \
         type, ^id for one node. Example: \(KanbanTool.historyExample) \
         A task can depend on a task in a different repo: put the full \(SchemaDescription.taskURIForm) URI in \
@@ -53,6 +53,9 @@ public struct KanbanTool: Tool {
         a title slug, and in node(id:) each other slug wins over it. When two tasks share a short id or a title \
         slug, the call uses the first and gives a warning. A filter takes ^id, ^^short, or ^<title slug>, and \
         matches each task that has it. Task.unresolvedDependsOn shows each dependency that no loaded board has. \
+        checkLinks gives the class of each stored link: \
+        \(LinkStatus.allCases.map(\.rawValue).joined(separator: ", ")). A link with an old board name still works, \
+        and the response gives the warning \(OldBoardName.warningCode). \
         Read the warnings in extensions.warnings. The board is in .kanban at the top of a git worktree. Outside git, \
         the board is in the nearest folder up that has a .kanban folder, else in the working directory, and its key \
         is its board ID. A .kanban folder of the old Rust kanban gives INCOMPATIBLE_BOARD. \

@@ -650,6 +650,7 @@ public actor KanbanGraph {
                     await lastRun.record(context.warnings)
                     try await Self.checkUnreadableBoards(of: store, in: context)
                     await Self.addPlaceWarnings(of: store, subfolderBoard: subfolderBoard, in: context)
+                    await Self.addOldNameWarnings(of: store, in: context)
                     return try await call(context)
                 }
             )
@@ -702,6 +703,18 @@ public actor KanbanGraph {
         }
         for shared in await store.sharedBoardIDs {
             await context.warnings.add(shared.warningMessage, code: SharedBoardID.warningCode)
+        }
+    }
+
+    /// Adds one warning to the response of a run for each old board name that a board ref or a stored link of the
+    /// run used (divergence.md M9). The ref works: it reads the board that has the old name now.
+    ///
+    /// - Parameters:
+    ///   - store: The store of the run. Its related boards hold the resolved board refs.
+    ///   - context: The context of the run, whose warnings become `extensions.warnings` of the response.
+    private static func addOldNameWarnings(of store: BoardStore, in context: KanbanContext) async {
+        for oldName in await store.oldBoardNames {
+            await context.warnings.add(oldName.warningMessage, code: OldBoardName.warningCode)
         }
     }
 

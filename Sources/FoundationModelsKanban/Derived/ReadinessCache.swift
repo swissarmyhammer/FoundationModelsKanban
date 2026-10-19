@@ -487,11 +487,20 @@ extension Graph {
         guard let task = slot(for: ref).flatMap({ slot in node(at: slot, as: TaskNode.self) }) else {
             return []
         }
-        return dependencies(of: task, inBoard: key).compactMap { target in
-            switch target {
-            case .slot(let slot): node(at: slot).map { node in NodeURI(boardKey: key, ref: node.ref) }
-            case .unresolved(let stored): stored.uri(inBoard: key)
-            }
+        return dependencies(of: task, inBoard: key).compactMap { target in uri(of: target, inBoard: key) }
+    }
+
+    /// Gives the URI of the target of one edge of a node of the graph. A target of this board has the key of this
+    /// board, and a target of a different board keeps the key that its URI holds.
+    ///
+    /// - Parameters:
+    ///   - target: The target of the edge.
+    ///   - key: The current key of the board.
+    /// - Returns: The URI, or `nil` for a slot that holds no node.
+    func uri(of target: EdgeTarget, inBoard key: String) -> NodeURI? {
+        switch target {
+        case .slot(let slot): node(at: slot).map { node in NodeURI(boardKey: key, ref: node.ref) }
+        case .unresolved(let stored): stored.uri(inBoard: key)
         }
     }
 }

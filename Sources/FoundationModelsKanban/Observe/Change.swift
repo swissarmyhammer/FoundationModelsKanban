@@ -274,7 +274,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     ///
     /// - Parameter type: The Swift enum. The raw value of each case is the GraphQL name of the value.
     /// - Returns: The enum type.
-    private static func enumType<Cases: CaseIterable & Encodable & RawRepresentable>(
+    static func enumType<Cases: CaseIterable & Encodable & RawRepresentable>(
         _ type: Cases.Type
     ) -> Graphiti.Enum<KanbanResolver, KanbanContext, Cases> where Cases.RawValue == String {
         Graphiti.Enum(type) {

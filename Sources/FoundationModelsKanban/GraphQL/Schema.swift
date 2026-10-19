@@ -289,6 +289,27 @@ actor BoardStore {
         related.sharedBoardIDs
     }
 
+    /// Each board ref of the run that names a loaded board by an old name (divergence.md M9). The response of the run
+    /// has one warning for each of them.
+    var oldBoardNames: [OldBoardName] {
+        reading.oldBoardNames
+    }
+
+    /// Finds the board that the board key of a stored link names, as the run sees it (divergence.md M9). A key that
+    /// no board has is not an error here: the link is dangling.
+    ///
+    /// - Parameter key: The board key of the link, as the URI holds it.
+    /// - Returns: The board, or `nil` when the engine did not resolve or load the board yet. The store then records
+    ///   the request, and the call runs again after the load.
+    func linkedBoard(named key: String) -> LinkedBoard? {
+        let resolution = related.resolution(ofBoard: key)
+        let linked = resolution.flatMap { resolution in LinkedBoard(resolution, reading: reading) }
+        if linked == nil {
+            requests.insert(.board(key))
+        }
+        return linked
+    }
+
     /// Tells if a board ref names a related board that cannot be read (divergence.md Q7).
     ///
     /// - Parameter reference: The board ref.
@@ -867,6 +888,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             .addBoardTypes()
             .addTaskTypes()
             .addChangeTypes()
+            .addLinkCheckTypes()
             .addQuery {
                 Field("board", at: KanbanResolver.board) {
                     Argument("id", at: \.id).description(SchemaDescription.boardToRead)
@@ -880,6 +902,10 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Field("boards", at: KanbanResolver.boards) {
                     Argument("enabled", at: \.enabled)
                 }
+                Field("checkLinks", at: KanbanResolver.checkLinks) {
+                    Argument("boards", at: \.boards).description(SchemaDescription.boardsToCheck)
+                }
+                .description(SchemaDescription.checkLinks)
             }
     }
 

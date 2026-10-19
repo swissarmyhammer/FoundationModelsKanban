@@ -322,9 +322,6 @@ extension BoardStore {
 // MARK: - Patches
 
 extension WorkingCopy {
-    /// The text before the URI of the new task in the line that a move adds to the body of the old task.
-    private static let movedLinePrefix = "Moved to "
-
     /// The text between the body of the old task and the line that a move adds, when the body ends with a newline.
     private static let lineBreak = "\n"
 
@@ -414,7 +411,7 @@ extension WorkingCopy {
     /// - Throws: An ``EventError`` when a patch breaks a rule of the log.
     fileprivate mutating func retire(_ ref: LocalRef, movedTo uri: NodeURI, at time: DateTime) throws(EventError) {
         let oldBody = graph.body(of: ref)
-        let line = Self.movedLinePrefix + uri.description
+        let line = MovedTaskLine.text(pointingTo: uri)
         let separator = oldBody.hasSuffix(Self.lineBreak) ? Self.lineBreak : Self.paragraphBreak
         let newBody = oldBody.isEmpty ? line : oldBody + separator + line
         try apply(PatchInput(changing: ref, updating: [:], body: .changed(newBody), from: oldBody), at: time)

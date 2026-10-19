@@ -4,7 +4,7 @@ extension CommitSession {
     /// The names of the board of the session (divergence.md M9): its current key, and the board IDs and the old names
     /// of the board node of the live graph. A call reads them from memory, with no read of a file.
     var names: BoardNames {
-        BoardNames(key: key, board: live.graph.boardNode)
+        live.graph.boardNames(currentKey: key.description)
     }
 
     /// Gives the copy of the board of the session, as the board refs of a call see the current board.

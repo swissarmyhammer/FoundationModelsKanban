@@ -126,6 +126,17 @@ extension BoardNames {
     }
 }
 
+extension Graph {
+    /// Gives the names of the board of the graph: the current key, and the board IDs and the old names of the board
+    /// node of the graph (divergence.md M9).
+    ///
+    /// - Parameter key: The current key of the board.
+    /// - Returns: The names of the board.
+    func boardNames(currentKey key: String) -> BoardNames {
+        BoardNames(key: key, board: boardNode)
+    }
+}
+
 // MARK: - Board name refs
 
 extension StoredRef {
