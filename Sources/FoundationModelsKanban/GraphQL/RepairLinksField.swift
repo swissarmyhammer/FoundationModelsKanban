@@ -83,10 +83,9 @@ extension BoardStore {
                 BoardRepairs(target: target, repairs: links.compactMap(LinkRepair.init(of:checked:)))
             }
         }
-        guard found.allSatisfy({ board in board != nil }) else {
+        guard let boards = found.allValues() else {
             return nil
         }
-        let boards = found.compactMap(\.self)
         if arguments.dryRun != true {
             try write(boards, at: time)
         }
@@ -104,14 +103,10 @@ extension BoardStore {
             try target(of: .named(reference))
         }
         let reached = arguments.reach == true ? reachableTargets() : []
-        guard let reached, named.allSatisfy({ target in target != nil }) else {
+        guard let reached, let named = named.allValues() else {
             return nil
         }
-        let boards = OrderedDictionary(
-            (named.compactMap(\.self) + reached).map { target in (target.relatedPath, target) },
-            uniquingKeysWith: { first, _ in first }
-        )
-        return Array(boards.values)
+        return (named + reached).firstByKey(\.relatedPath)
     }
 
     /// Writes the rewrites of the links of some boards in one transaction of the call. A board with no link to

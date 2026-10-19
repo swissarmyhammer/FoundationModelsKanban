@@ -1,5 +1,4 @@
 import Graphiti
-import OrderedCollections
 
 /// The arguments of `Query.checkLinks` (divergence.md M9).
 struct CheckLinksArguments: Codable, Sendable {
@@ -39,15 +38,11 @@ extension BoardStore {
         let views = try Self.boardReferences(references).map { reference throws(KanbanError) in
             try view(ofBoard: reference)
         }
-        let boards = OrderedDictionary(
-            views.compactMap(\.self).map { view in (view.boardKey, view) },
-            uniquingKeysWith: { first, _ in first }
-        )
-        let checks = boards.values.map(checkedLinks(of:))
-        guard views.allSatisfy({ view in view != nil }), checks.allSatisfy({ links in links != nil }) else {
+        let checks = views.compactMap(\.self).firstByKey(\.boardKey).map(checkedLinks(of:))
+        guard views.allValues() != nil, let boards = checks.allValues() else {
             return nil
         }
-        return checks.compactMap(\.self).flatMap { links in links.map(\.check) }
+        return boards.flatMap { links in links.map(\.check) }
     }
 
     /// Gives the board refs of a field that names the boards of its links: `checkLinks` and `repairLinks`
@@ -67,13 +62,10 @@ extension BoardStore {
     ///   did not resolve or load the board of a link yet. The store then records the requests, and the call runs again
     ///   after the load.
     func checkedLinks(of view: BoardView) -> [(link: StoredLink, check: LinkCheck)]? {
-        let checked = view.graph.storedLinks(inBoard: view.boardKey).map { link in
+        view.graph.storedLinks(inBoard: view.boardKey).map { link in
             check(link, in: view).map { check in (link: link, check: check) }
         }
-        guard checked.allSatisfy({ link in link != nil }) else {
-            return nil
-        }
-        return checked.compactMap(\.self)
+        .allValues()
     }
 
     /// Checks one stored link of a board. A link with the current key of its own board reads the graph of that board.

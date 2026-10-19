@@ -304,12 +304,12 @@ struct RelatedReads: Sendable {
             return nil
         }
         let changes = newBoards.map { rawKey, board in boards[rawKey].flatMap(board.changedPositions(since:)) }
-        guard changes.allSatisfy({ positions in positions != nil }) else {
+        guard let changes = changes.allValues() else {
             return nil
         }
         var reads = self
         reads.boards = newBoards
-        return (reads, Set(changes.compactMap(\.self).joined()))
+        return (reads, Set(changes.joined()))
     }
 
     /// Gives the position of the target of a cross-board ref: the URI with the current key of the board that the key

@@ -75,6 +75,108 @@ struct RepairLinksTests {
         NodeURI(boardKey: key, ref: try NodeURI(parsing: uri).ref).description
     }
 
+    /// Gives the current git key of a related board after ``BoardIDTests/setNewRemote(ofRepoAt:)``.
+    ///
+    /// - Returns: The text of the key of ``BoardLocatorTests/newOrigin``.
+    /// - Throws: An error when the URL is not a valid remote.
+    static func newOriginKey() throws -> String {
+        try CrossRepoFixture.keyText(of: BoardLocatorTests.newOrigin)
+    }
+
+    /// Gives the URI of a new task of the related board with its old git key, and the URI of the same task with the
+    /// current git key after the change of the remote.
+    ///
+    /// - Returns: The old URI and the new URI.
+    /// - Throws: An error when a remote URL is not valid.
+    static func renamedTaskURIs() throws -> (old: NodeURI, new: NodeURI) {
+        let old = NodeURI(boardKey: try CrossRepoWriteTests.libKey(), ref: .task(ULID()))
+        let new = try NodeURI(parsing: uri(old.description, withKey: try newOriginKey()))
+        return (old, new)
+    }
+
+    /// Two repos side by side, and the engine of the board whose stored link has an old board name.
+    struct OldNameBoard {
+        /// The repos. The sandbox of the repos removes them when the test ends.
+        let repos: CrossRepoFixture.SideBySide
+
+        /// The engine of the board that holds the link. The caller closes it.
+        let graph: KanbanGraph
+    }
+
+    /// Moves a new task of the current board to the related board, and then changes the `origin` of the related repo.
+    /// The line of the tombstone of the moved task thus has the old git key of the related board.
+    ///
+    /// - Returns: The repos, and the engine of the current repo, opened after the change of the remote.
+    /// - Throws: An error when a git command fails, or when a call fails.
+    static func makeMovedLineWithOldName() async throws -> OldNameBoard {
+        let repos = try await CrossRepoFixture.SideBySide.make()
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
+        _ = try await CheckLinksTests.moveNewTaskToLib(on: app)
+        await app.close()
+        try await BoardIDTests.setNewRemote(ofRepoAt: repos.lib)
+        return OldNameBoard(repos: repos, graph: try GitGraphFixture.makeGraph(at: repos.app))
+    }
+
+    /// Moves an assigned task to the related board, and then changes the `origin` of the current repo. The assignee
+    /// URI of the moved task thus has the old git key of the board of the actor.
+    ///
+    /// - Returns: The repos, and the engine of the related repo, opened after the change of the remote.
+    /// - Throws: An error when a git command fails, or when a call fails.
+    static func makeAssigneeWithOldName() async throws -> OldNameBoard {
+        let transfer = try await CrossRepoTransferTests.makeAssignedTransfer(MutationName.moveTask)
+        try await BoardIDTests.setNewRemote(ofRepoAt: transfer.repos.app)
+        return OldNameBoard(repos: transfer.repos, graph: try CrossRepoTransferTests.makeLibGraph(in: transfer.repos))
+    }
+
+    /// Moves a task whose body names a different task of the current board to the related board, and then changes
+    /// the `origin` of the current repo. The task URL in the body of the moved task thus has the old git key of the
+    /// current board. The move also assigns the session actor of the current board to the task, so the assignee URI
+    /// of the moved task also has the old git key.
+    ///
+    /// - Returns: The repos, and the engine of the related repo, opened after the change of the remote.
+    /// - Throws: An error when a git command fails, or when a call fails.
+    static func makeMovedBodyLinkWithOldName() async throws -> OldNameBoard {
+        let repos = try await CrossRepoFixture.SideBySide.make()
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
+        let target = try await CrossRepoFixture.addTask(with: "", on: app)
+        let task = try await CrossRepoFixture.addTask(with: CheckLinksTests.bodyInput(target), on: app)
+        _ = try await CrossRepoTransferTests.transfer(
+            MutationName.moveTask,
+            task,
+            with: try CrossRepoTransferTests.libBoard(),
+            on: app
+        )
+        await app.close()
+        try await BoardIDTests.setNewRemote(ofRepoAt: repos.app)
+        return OldNameBoard(repos: repos, graph: try CrossRepoTransferTests.makeLibGraph(in: repos))
+    }
+
+    /// Runs `repairLinks` and then one `undo` on a board whose links have one old board name, and expects that the
+    /// undo puts back each link: `checkLinks` after the undo gives the same links as before the repair.
+    ///
+    /// - Parameter graph: The engine of the board that holds the links.
+    /// - Returns: The links before the repair, and the response of the repair.
+    /// - Throws: An error when a call fails.
+    @discardableResult
+    static func expectUndoPutsBack(
+        on graph: KanbanGraph
+    ) async throws -> (before: [CheckLinksTests.Check], repaired: [Repair]) {
+        let before = try await CheckLinksTests.checks(on: graph)
+        let repaired = try await repairs(on: graph)
+        try await CrossRepoUndoTests.runWithNoErrors(CrossRepoUndoTests.undoField, on: graph)
+        let after = try await CheckLinksTests.checks(on: graph)
+        #expect(
+            !before.checks.isEmpty && before.checks.allSatisfy { link in link.status == LinkStatus.oldName.rawValue },
+            "\(before.response)"
+        )
+        #expect(
+            !repaired.repairs.isEmpty && repaired.repairs.allSatisfy { repair in repair.newTarget != nil },
+            "\(repaired.response)"
+        )
+        #expect(after.checks == before.checks, "\(after.response)")
+        return (before.checks, repaired.repairs)
+    }
+
     /// Gives a checked link with a different target and class.
     ///
     /// - Parameters:
@@ -143,23 +245,45 @@ struct RepairLinksTests {
 
     @Test("repairLinks rewrites the line of a moved task with an old board name to the current name")
     func repairsMovedLine() async throws {
-        let repos = try await CrossRepoFixture.SideBySide.make()
-        let app = try GitGraphFixture.makeGraph(at: repos.app)
-        _ = try await CheckLinksTests.moveNewTaskToLib(on: app)
-        await app.close()
-        try await BoardIDTests.setNewRemote(ofRepoAt: repos.lib)
-        let reopened = try GitGraphFixture.makeGraph(at: repos.app)
-        try await Self.expectRepair(on: reopened, toKey: try CrossRepoFixture.keyText(of: BoardLocatorTests.newOrigin))
-        await reopened.close()
+        let board = try await Self.makeMovedLineWithOldName()
+        try await Self.expectRepair(on: board.graph, toKey: try Self.newOriginKey())
+        await board.graph.close()
     }
 
     @Test("repairLinks rewrites an assignee URI with an old board name to the current name")
     func repairsAssignee() async throws {
-        let transfer = try await CrossRepoTransferTests.makeAssignedTransfer(MutationName.moveTask)
-        try await BoardIDTests.setNewRemote(ofRepoAt: transfer.repos.app)
-        let lib = try CrossRepoTransferTests.makeLibGraph(in: transfer.repos)
-        try await Self.expectRepair(on: lib, toKey: try CrossRepoFixture.keyText(of: BoardLocatorTests.newOrigin))
-        await lib.close()
+        let board = try await Self.makeAssigneeWithOldName()
+        try await Self.expectRepair(on: board.graph, toKey: try Self.newOriginKey())
+        await board.graph.close()
+    }
+
+    @Test("repairLinks rewrites a task URL with an old board name in the body of a moved task to the current name")
+    func repairsBodyURLOfMovedTask() async throws {
+        let board = try await Self.makeMovedBodyLinkWithOldName()
+        try await Self.expectRepair(on: board.graph, toKey: try Self.newOriginKey())
+        await board.graph.close()
+    }
+
+    @Test("repairLinks rewrites only the link with an old board name, and keeps a correct link beside it")
+    func correctLinkStaysTheSame() async throws {
+        let renamed = try await CheckLinksTests.makeRenamedLib(completingTarget: false)
+        let newTarget = try Self.uri(renamed.target, withKey: renamed.newKey)
+        let app = try GitGraphFixture.makeGraph(at: renamed.repos.app)
+        _ = try await CrossRepoFixture.addTask(dependingOn: newTarget, on: app)
+        let before = try await CheckLinksTests.checks(on: app)
+        let result = try await Self.repairs(on: app)
+        let after = try await CheckLinksTests.checks(on: app)
+        await app.close()
+        let statuses = before.checks.map(\.status)
+        #expect(statuses == [LinkStatus.oldName, LinkStatus.ok].map(\.rawValue), "\(before.response)")
+        let oldNameLinks = before.checks.filter { link in link.status == LinkStatus.oldName.rawValue }
+        let expected = oldNameLinks.map { link in Repair(check: link, newTarget: newTarget) }
+        #expect(result.repairs == expected, "\(result.response)")
+        let repaired = before.checks.map { link in
+            link.status == LinkStatus.oldName.rawValue
+                ? Self.check(link, target: newTarget, status: LinkStatus.ok.rawValue) : link
+        }
+        #expect(after.checks == repaired, "\(after.response)")
     }
 
     // MARK: - Undo and dry run
@@ -170,16 +294,36 @@ struct RepairLinksTests {
             CrossRepoFixture.dependsOnInput(target) + ", " + CheckLinksTests.bodyInput(target)
         }
         let app = try GitGraphFixture.makeGraph(at: renamed.repos.app)
-        let before = try await CheckLinksTests.checks(on: app)
-        let repaired = try await Self.repairs(on: app)
-        try await CrossRepoUndoTests.runWithNoErrors(CrossRepoUndoTests.undoField, on: app)
-        let after = try await CheckLinksTests.checks(on: app)
+        let result = try await Self.expectUndoPutsBack(on: app)
         await app.close()
         let fields = [LinkField.dependsOn, LinkField.body].map(\.rawValue)
-        #expect(before.checks.map(\.field) == fields, "\(before.response)")
+        #expect(result.before.map(\.field) == fields)
         let newTarget = try Self.uri(renamed.target, withKey: renamed.newKey)
-        #expect(repaired.repairs.map(\.newTarget) == [newTarget, newTarget], "\(repaired.response)")
-        #expect(after.checks == before.checks, "\(after.response)")
+        #expect(result.repaired.map(\.newTarget) == [newTarget, newTarget])
+    }
+
+    @Test("One undo puts back the line of a moved task that repairLinks rewrote")
+    func undoPutsBackMovedLine() async throws {
+        let board = try await Self.makeMovedLineWithOldName()
+        let result = try await Self.expectUndoPutsBack(on: board.graph)
+        await board.graph.close()
+        #expect(result.before.map(\.field) == [LinkField.tombstone.rawValue])
+    }
+
+    @Test("One undo puts back an assignee URI that repairLinks rewrote")
+    func undoPutsBackAssignee() async throws {
+        let board = try await Self.makeAssigneeWithOldName()
+        let result = try await Self.expectUndoPutsBack(on: board.graph)
+        await board.graph.close()
+        #expect(result.before.map(\.field) == [LinkField.assignee.rawValue])
+    }
+
+    @Test("One undo puts back a task URL in the body of a moved task, and its assignee URI, that repairLinks rewrote")
+    func undoPutsBackBodyURLOfMovedTask() async throws {
+        let board = try await Self.makeMovedBodyLinkWithOldName()
+        let result = try await Self.expectUndoPutsBack(on: board.graph)
+        await board.graph.close()
+        #expect(result.before.map(\.field) == [LinkField.assignee, LinkField.body].map(\.rawValue))
     }
 
     @Test("repairLinks(dryRun: true) writes nothing, and lists the same changes as the call that writes")
@@ -249,8 +393,7 @@ struct RepairLinksTests {
 
     @Test("The body rewrite changes each task URL of the old URI, and keeps a URL in a code block")
     func bodyRewriteKeepsCodeBlock() throws {
-        let old = NodeURI(boardKey: try CrossRepoWriteTests.libKey(), ref: .task(ULID()))
-        let new = NodeURI(boardKey: try CrossRepoFixture.keyText(of: BoardLocatorTests.newOrigin), ref: old.ref)
+        let (old, new) = try Self.renamedTaskURIs()
         let body = "See \(old) and \(old).\n```\n\(old)\n```\n"
         let expected = "See \(new) and \(new).\n```\n\(old)\n```\n"
         #expect(DependencyMarkers.replacing(markersOf: old, with: new, in: body) == expected)
@@ -258,8 +401,7 @@ struct RepairLinksTests {
 
     @Test("The moved line rewrite keeps the line break of the line, also CRLF, and each other line")
     func movedLineRewriteKeepsLineBreak() throws {
-        let old = NodeURI(boardKey: try CrossRepoWriteTests.libKey(), ref: .task(ULID()))
-        let new = NodeURI(boardKey: try CrossRepoFixture.keyText(of: BoardLocatorTests.newOrigin), ref: old.ref)
+        let (old, new) = try Self.renamedTaskURIs()
         let body = "Notes.\r\n\r\n\(MovedTaskLine.text(pointingTo: old))\r\nMoved to the next sprint."
         let expected = "Notes.\r\n\r\n\(MovedTaskLine.text(pointingTo: new))\r\nMoved to the next sprint."
         #expect(MovedTaskLine.replacing(old, with: new, in: body) == expected)

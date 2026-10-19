@@ -78,11 +78,8 @@ struct SharedBoardID: Hashable, BoardWarning {
             copy.names.ids.map { id in (id: id, directory: copy.directory) }
         }
         return OrderedDictionary(grouping: named, by: \.id).compactMap { id, entries in
-            let folders = OrderedDictionary(
-                entries.map { entry in (entry.directory.canonicalPath, entry.directory) },
-                uniquingKeysWith: { first, _ in first }
-            )
-            return folders.count < sharedFolderCount ? nil : SharedBoardID(id: id, directories: Array(folders.values))
+            let folders = entries.map(\.directory).firstByKey(\.canonicalPath)
+            return folders.count < sharedFolderCount ? nil : SharedBoardID(id: id, directories: folders)
         }
     }
 

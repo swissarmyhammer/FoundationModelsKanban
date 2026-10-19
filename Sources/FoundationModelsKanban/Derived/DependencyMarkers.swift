@@ -72,6 +72,18 @@ extension DependencyMarkers {
         }
     }
 
+    /// Finds the range of each marker of one task in the text of one line.
+    ///
+    /// The remove and the replace of the markers of a task both use it, so the two edits find the same markers.
+    ///
+    /// - Parameters:
+    ///   - uri: The URI of the task whose markers to find.
+    ///   - text: The text of the line, without its line break.
+    /// - Returns: The ranges, in text order. The result is empty when the line has no marker of the task.
+    private static func markerRanges(of uri: NodeURI, inLine text: Substring) -> [Range<String.Index>] {
+        markers(inLine: text).filter { marker in marker.uri == uri }.map(\.range)
+    }
+
     /// Finds the range of each URL text that starts with the scheme.
     ///
     /// - Parameter body: The text to search. Its indices are the indices of the body.
@@ -131,7 +143,7 @@ extension DependencyMarkers {
     /// - Returns: The changed line with its line break, or `nil` when the line has no marker of the task.
     private static func editedLine(_ line: Substring, removingMarkersOf uri: NodeURI) -> String? {
         let text = BodyLines.content(of: line)
-        let ranges = markers(inLine: text).filter { marker in marker.uri == uri }.map(\.range)
+        let ranges = markerRanges(of: uri, inLine: text)
         guard !ranges.isEmpty else {
             return nil
         }
@@ -174,7 +186,7 @@ extension DependencyMarkers {
         with new: NodeURI
     ) -> String? {
         let text = BodyLines.content(of: line)
-        let ranges = markers(inLine: text).filter { marker in marker.uri == old }.map(\.range)
+        let ranges = markerRanges(of: old, inLine: text)
         guard let last = ranges.last else {
             return nil
         }

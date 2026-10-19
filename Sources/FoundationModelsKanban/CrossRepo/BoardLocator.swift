@@ -1,5 +1,4 @@
 import Foundation
-import OrderedCollections
 
 /// Reads the key of the board of a repo, for example ``BoardKey/read(fromRepoAt:)``.
 typealias BoardKeyReader = @Sendable (URL) async throws(BoardKeyError) -> BoardKey
@@ -35,12 +34,7 @@ public struct BoardLocator: Sendable {
     /// - Parameter root: The root directory of the current repo.
     /// - Returns: The parent directory of the current repo, then each search root in config order.
     func places(around root: URL) -> [URL] {
-        let candidates = [root.deletingLastPathComponent()] + searchRoots
-        let unique = OrderedDictionary(
-            candidates.map { place in (place.canonicalPath, place) },
-            uniquingKeysWith: { first, _ in first }
-        )
-        return Array(unique.values)
+        ([root.deletingLastPathComponent()] + searchRoots).firstByKey(\.canonicalPath)
     }
 
     /// Scans the places for repos.

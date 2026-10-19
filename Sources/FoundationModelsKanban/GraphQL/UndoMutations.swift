@@ -203,9 +203,7 @@ extension BoardStore {
     /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for a ref. Each
     ///   other error of ``target(of:)``, unchanged.
     private func targets(namedBy references: [String]) throws(KanbanError) -> [MutationTarget]? {
-        let targets = try references.map { reference throws(KanbanError) in try target(of: .named(reference)) }
-        let loaded = targets.compactMap(\.self)
-        return loaded.count == targets.count ? loaded : nil
+        try references.map { reference throws(KanbanError) in try target(of: .named(reference)) }.allValues()
     }
 
     /// Gives each board that a transaction changed: the board where the field found it, and each copy of a board that
@@ -231,20 +229,10 @@ extension BoardStore {
         let found = try keys.map { key throws(KanbanError) in
             try copies(ofKey: key, holding: txn, among: named)
         }
-        let reached = found.compactMap(\.self)
-        guard reached.count == found.count else {
+        guard let reached = found.allValues() else {
             return nil
         }
-        return eachOnce([home] + reached.joined())
-    }
-
-    /// Gives each board of a list one time.
-    ///
-    /// - Parameter boards: The boards. The same board can be in the list more than one time.
-    /// - Returns: The boards, in the order of their first place in the list.
-    private func eachOnce(_ boards: [MutationTarget]) -> [MutationTarget] {
-        var seen: Set<String?> = []
-        return boards.filter { board in seen.insert(board.relatedPath).inserted }
+        return ([home] + reached.joined()).firstByKey(\.relatedPath)
     }
 
     /// Lists the later transactions of each loaded board that refer to a node of a different board that the undo of
@@ -262,7 +250,7 @@ extension BoardStore {
     /// - Throws: An ``EventError`` from ``UndoLog/inverses(of:)``. A valid log gives no error.
     private func laterReferences(to txn: ULID, tombstonedIn boards: [MutationTarget]) throws -> [ULID] {
         let tombstoned = try boards.flatMap { board in try tombstonedURIs(of: txn, in: board) }
-        return eachOnce(loadedTargets + boards).flatMap { board in
+        return (loadedTargets + boards).firstByKey(\.relatedPath).flatMap { board in
             let key = BoardKey.normalizedText(of: self.key(of: board))
             let others = Set(tombstoned.filter { uri in uri.boardKey != key })
             return UndoLog(of: workingCopy(of: board).liveEvents).references(to: others, after: txn)

@@ -391,13 +391,13 @@ actor BoardStore {
             return nil
         }
         let boards = copies.map(\.board).filter { board in board != .notFound && board.unreadableBoard == nil }
-        let targets = boards.map { board -> MutationTarget? in
+        return boards.map { board -> MutationTarget? in
             guard case .copy(let copy) = board else {
                 return .current
             }
             return relatedTarget(of: copy, namedBy: copy.directory.path)
         }
-        return targets.allSatisfy { target in target != nil } ? targets.compactMap(\.self) : nil
+        .allValues()
     }
 
     /// Gives the working copy of a board of a mutation field as the run sees it now.
