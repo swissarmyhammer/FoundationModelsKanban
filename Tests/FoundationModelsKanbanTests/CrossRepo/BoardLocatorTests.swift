@@ -105,18 +105,22 @@ struct BoardLocatorTests {
         try BoardKey(remoteURL: origin)
     }
 
-    /// Scans the places around a current repo, with the keys from git.
+    /// Scans the places around a current repo. The default reads the keys from git.
     ///
     /// - Parameters:
     ///   - root: The root directory of the current repo.
     ///   - locator: The locator. The default looks only in the parent directory.
+    ///   - earlier: The index of the earlier scan, or `nil` for the first scan.
+    ///   - keyReader: Reads the key of a repo that the earlier scan did not find. The default reads the key from git.
     /// - Returns: The index.
     /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the test is cancelled during the scan.
     static func scan(
         around root: URL,
-        with locator: BoardLocator = .default
+        with locator: BoardLocator = .default,
+        reusing earlier: BoardIndex? = nil,
+        readingKeysWith keyReader: @escaping BoardKeyReader = BoardKey.read(fromRepoAt:)
     ) async throws(BoardKeyError) -> BoardIndex {
-        try await locator.scan(around: root, readingKeysWith: BoardKey.read(fromRepoAt:))
+        try await locator.scan(around: root, reusing: earlier, readingKeysWith: keyReader)
     }
 
     /// Gives a key reader that reads the key from git, and gives one fixed board ID key for a folder that is not in a
@@ -260,10 +264,7 @@ struct BoardLocatorTests {
         let lib = try GitSandbox.makeFolder(named: Self.libName, in: sandbox.root)
         _ = try KanbanGraphTests.writeFixture(inRepoAt: lib)
         let bareKey = BoardKey(boardID: ULID())
-        let index = try await BoardLocator.default.scan(
-            around: app,
-            readingKeysWith: Self.bareFolderKeyReader(giving: bareKey)
-        )
+        let index = try await Self.scan(around: app, readingKeysWith: Self.bareFolderKeyReader(giving: bareKey))
         #expect(Self.names(in: index) == [Self.appName, Self.libName])
         #expect(try Self.copy(at: lib, in: index).key == bareKey)
     }
@@ -315,10 +316,10 @@ struct BoardLocatorTests {
         _ = try await sandbox.makeRepo(named: Self.libName, origin: Self.libOrigin)
         let reader = CountingKeyReader()
         let readKey: BoardKeyReader = reader.keyReader
-        let first = try await BoardLocator.default.scan(around: app, readingKeysWith: readKey)
+        let first = try await Self.scan(around: app, readingKeysWith: readKey)
         #expect(reader.readCount == Self.firstScanReads)
         let newRepo = try await sandbox.makeRepo(named: "new-lib", origin: Self.newOrigin)
-        let second = try await BoardLocator.default.scan(around: app, reusing: first, readingKeysWith: readKey)
+        let second = try await Self.scan(around: app, reusing: first, readingKeysWith: readKey)
         #expect(reader.readCount == Self.firstScanReads + 1)
         #expect(try Self.copy(at: newRepo, in: second).key == Self.key(of: Self.newOrigin))
     }
@@ -327,13 +328,9 @@ struct BoardLocatorTests {
     func rescanSkipsUnreadableRepo() async throws {
         let place = try ScanPlace.make()
         let reader = ScanKeyReader()
-        let first = try await BoardLocator.default.scan(around: place.app, readingKeysWith: reader.keyReader)
+        let first = try await Self.scan(around: place.app, readingKeysWith: reader.keyReader)
         let reads = reader.count
-        let second = try await BoardLocator.default.scan(
-            around: place.app,
-            reusing: first,
-            readingKeysWith: reader.keyReader
-        )
+        let second = try await Self.scan(around: place.app, reusing: first, readingKeysWith: reader.keyReader)
         let broken = place.directory.url.appending(path: ScanCacheTests.brokenName, directoryHint: .isDirectory)
         #expect(reader.count == reads)
         #expect(first.unreadable == [broken.canonicalPath])

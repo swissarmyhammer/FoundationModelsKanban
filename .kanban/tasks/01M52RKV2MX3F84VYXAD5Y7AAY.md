@@ -57,6 +57,31 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift. `swift test`: 1629 tests in 134 suites pass. The only warning is the accepted SwiftPM "missing creator" warning.
     - next: review
   timestamp: 2026-10-19T17:31:25.231898+00:00
+- actor: claude-code
+  id: 01m5akn682rgcd2jpqz07kv5dj
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (fe04806). 1 finding (1 confirmed, 1 refuted). Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift:263 reuse/reuse. The 2 prior findings are checked.
+    - next: Add a key reader parameter with a default value to Self.scan, and call Self.scan at the call site. Then run the review again.
+  timestamp: 2026-10-19T17:34:26.050822+00:00
+- actor: claude-code
+  id: 01m5aknkxnz9crcqfmy2rkd8vw
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 1 file (BoardLocatorTests.swift)
+    - test: green — swift test, 1629 passed
+    - commit: fe04806
+    - review: findings — BoardLocatorTests.swift:263
+  timestamp: 2026-10-19T17:34:40.053340+00:00
+- actor: claude-code
+  id: 01m5akrmng6pft7bb4mj8f04cw
+  text: |-
+    Fixed the `reuse/reuse` finding at BoardLocatorTests.swift:263. The test helper `BoardLocatorTests.scan` now has two more parameters with default values: `reusing earlier: BoardIndex? = nil` and `readingKeysWith keyReader: BoardKeyReader = BoardKey.read(fromRepoAt:)`. I removed the same cause from the whole file: all 5 direct `BoardLocator.default.scan` calls now use `Self.scan` (in `folderWithBoardAndNoGitIsCopy`, `rescanReadsKeyOfNewRepoOnly` (2 calls), and `rescanSkipsUnreadableRepo` (2 calls)). The `reusing` parameter is necessary because the rescan tests give the earlier index. No direct `BoardLocator.default.scan` call stays in the file. Production code did not change.
+
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift. `swift test --filter BoardLocatorTests`: 26 tests in 1 suite pass. The only warning is the accepted SwiftPM "missing creator" warning.
+    - next: test, then review
+  timestamp: 2026-10-19T17:36:19.120230+00:00
 depends_on:
 - 01M52RKMDD8RJ7TNTQVE65466D
 position_column: doing
@@ -94,3 +119,12 @@ divergence.md M9 "where the board is". A board can be in a folder that is not in
 
 - [x] `Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift:248` `reuse/reuse` — The test makes its own key reader for bare folders. It uses the same do/catch pattern as the other bare-folder test. It does not use one shared helper. If the rule for bare-folder keys changes, the two tests can drift apart. Move the closure to one test helper that takes the bare key as a parameter. Call it from both tests. Or build the reader once from the production `boardKeyReader` with a fixed bare-ID source.
 - [x] `Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift:424` `reuse/reuse` — The bare-folder key reader in this test repeats the closure in `folderWithBoardAndNoGitIsCopy` (line 248). The same logic is in two places in the file. Use one shared helper for the bare-folder key reader, as in the finding at line 248. Then both tests call the helper.
+
+## Review Findings (2026-10-19 12:33)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 1 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift:263` `reuse/reuse` — The new call in folderWithBoardAndNoGitIsCopy calls BoardLocator.default.scan directly, not through the test's own scan helper. The helper Self.scan(around:with:) is a near-match that already wraps this call, but it has no key reader parameter. The test therefore builds a parallel call instead of extending the helper. Add a defaulted `readingKeysWith keyReader: BoardKeyReader = BoardKey.read(fromRepoAt:)` parameter to Self.scan, and call Self.scan(around: app, readingKeysWith: Self.bareFolderKeyReader(giving: bareKey)) at the call site.
