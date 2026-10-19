@@ -37,8 +37,24 @@ comments:
     - evidence: `swift test` 1686 tests in 140 suites passed; `swift build --build-tests` gives no warning except the accepted SwiftPM "missing creator". RED first: SessionGitInitTests (2 tests) failed with FolderEventTimeout. Files: Sources/FoundationModelsKanban/Tool/KanbanHost.swift, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift, Sources/FoundationModelsKanban/Tool/BoardEngine.swift, Sources/FoundationModelsKanban/CrossRepo/ScanChange.swift, divergence.md, Tests/FoundationModelsKanbanTests/CrossRepo/ScanCacheTests.swift, Tests/FoundationModelsKanbanTests/Tool/SessionGitInitTests.swift (new).
     - next: /review
   timestamp: 2026-10-19T19:54:26.786136+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5avw9753jjdwv07azfk1n1j
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (eaec804). 0 findings, 0 confirmed, 3 refuted, 7 attempted, 0 failed. 6 files reviewed. 4 .kanban files are excluded by .reviewignore. No validator matches divergence.md.
+    - next: none. The task is in done.
+  timestamp: 2026-10-19T19:58:07.077887+00:00
+- actor: claude-code
+  id: 01m5avwhnnddq0zyrp84knsbdh
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 7 files
+    - test: green — swift test, 1686 passed
+    - commit: eaec804
+    - review: clean — 0 findings
+  timestamp: 2026-10-19T19:58:15.733304+00:00
+position_column: done
+position_ordinal: ffa280
 title: Give the current board of a session the git key after git init in its bare folder
 ---
 ## What

@@ -243,6 +243,104 @@ struct ScanChangeTests {
         #expect(cache.currentIndex(ofPlaces: Self.placesKey).map(Self.paths(in:)) == Self.paths(in: index))
     }
 
+    // MARK: - Board log
+
+    /// The board name that a test writes into a board log. A board name is not a name that a board ref uses.
+    static let newBoardName = "Renamed board"
+
+    /// An old name that a test adds to a board log, the same as the `collected` patch of `collectBoards`.
+    static let collectedName = "github.com/example/collected"
+
+    @Test("A board log write that keeps the names of the board keeps the index current")
+    func boardLogWriteWithSameNamesKeepsIndex() throws {
+        let place = try TemporaryDirectory()
+        let (scanned, repo) = try Self.currentCache(withBoardIn: place)
+        var cache = scanned
+        let rename = try PatchInput(node: .board, set: [PropertyName.name: .json(.string(Self.newBoardName))])
+        try Self.append(rename, toBoardLogOfRepoAt: repo)
+        cache.apply(.board(inRepo: repo.canonicalPath), inPlace: place.url.canonicalPath)
+        let index = try #require(cache.currentIndex(ofPlaces: [place.url.canonicalPath]))
+        #expect(index.copies.map(\.names) == [BoardNames(key: try BoardKey(remoteURL: ScanCacheTests.libOrigin))])
+    }
+
+    @Test("A board log write that adds a name gives the copy the new name and keeps the index current")
+    func boardLogWriteWithNewNameUpdatesIndex() throws {
+        let place = try TemporaryDirectory()
+        let (scanned, repo) = try Self.currentCache(withBoardIn: place)
+        var cache = scanned
+        try Self.append(try Self.collectedPatch(), toBoardLogOfRepoAt: repo)
+        cache.apply(.board(inRepo: repo.canonicalPath), inPlace: place.url.canonicalPath)
+        let index = try #require(cache.currentIndex(ofPlaces: [place.url.canonicalPath]))
+        #expect(index.copies.map(\.names.oldNames) == [[Self.collectedName]])
+    }
+
+    @Test("A board log write during a scan gives the result of the scan the new name, and the result is current")
+    func boardLogWriteDuringScanUpdatesResult() throws {
+        let place = try TemporaryDirectory()
+        let (scanned, repo) = try Self.currentCache(withBoardIn: place)
+        var cache = scanned
+        let places = [place.url.canonicalPath]
+        let begun = cache.beginScan(ofPlaces: places)
+        let earlier = try #require(begun)
+        try Self.append(try Self.collectedPatch(), toBoardLogOfRepoAt: repo)
+        cache.apply(.board(inRepo: repo.canonicalPath), inPlace: place.url.canonicalPath)
+        _ = cache.finishScan(earlier, ofPlaces: places, isWatched: true)
+        let index = try #require(cache.currentIndex(ofPlaces: places))
+        #expect(index.copies.map(\.names.oldNames) == [[Self.collectedName]])
+    }
+
+    @Test("A removed board log in a repo keeps the index current and makes the copy not enabled")
+    func removedBoardLogDisablesCopy() throws {
+        let place = try TemporaryDirectory()
+        let (scanned, repo) = try Self.currentCache(withBoardIn: place)
+        var cache = scanned
+        try FileManager.default.removeItem(at: EventLog(repositoryAt: repo).directory)
+        cache.apply(.board(inRepo: repo.canonicalPath), inPlace: place.url.canonicalPath)
+        let index = try #require(cache.currentIndex(ofPlaces: [place.url.canonicalPath]))
+        #expect(index.copies.map(\.isEnabled) == [false])
+    }
+
+    /// Makes a cache whose current index holds one repo on the disk with a board, as a scan of its place reads it.
+    ///
+    /// - Parameter place: The scan place.
+    /// - Returns: The cache, and the root directory of the repo.
+    /// - Throws: An error from `FileManager` when a folder or a log file cannot be made.
+    static func currentCache(withBoardIn place: TemporaryDirectory) throws -> (cache: ScanCache, repo: URL) {
+        let repo = try ScanPlace.makeRepoFolder(named: ScanCacheTests.libName, in: place.url)
+        _ = try KanbanGraphTests.writeFixture(inRepoAt: repo)
+        let index = BoardIndex(
+            places: [place.url],
+            copies: [BoardCopy.read(fromRepoAt: repo, key: try BoardKey(remoteURL: ScanCacheTests.libOrigin))],
+            unreadable: [],
+            marks: ScanMarks(listing: [(place: place.url, repos: [repo])])
+        )
+        var cache = ScanCache()
+        let places = [place.url.canonicalPath]
+        _ = cache.beginScan(ofPlaces: places)
+        _ = cache.finishScan(index, ofPlaces: places, isWatched: true)
+        return (cache, repo)
+    }
+
+    /// Gives a patch of the board node that adds ``collectedName`` as an old name, the same as the `collected` patch
+    /// of `collectBoards`.
+    ///
+    /// - Returns: The patch.
+    /// - Throws: An error when the patch is not valid.
+    static func collectedPatch() throws -> PatchInput {
+        try PatchInput(node: .board, add: [PropertyName.oldNames: [StoredRef.board(named: collectedName)]])
+    }
+
+    /// Writes one patch of the board node to the board log of a repo.
+    ///
+    /// - Parameters:
+    ///   - patch: The patch.
+    ///   - repo: The root directory of the repo.
+    /// - Throws: An error when the log file cannot be written.
+    static func append(_ patch: PatchInput, toBoardLogOfRepoAt repo: URL) throws {
+        var ids = GitGraphFixture.secondEngineIDs
+        try KanbanGraphTests.append(patch, mintingFrom: &ids, to: EventLog(repositoryAt: repo))
+    }
+
     // MARK: - Unexpected scan ends
 
     /// An index with no copy. It cannot throw, so only an assertion can stop the child process of an exit test.

@@ -453,7 +453,9 @@ public actor KanbanHost {
     /// (divergence.md §16, Gap 1).
     ///
     /// The index is current after a scan while the file watcher of each place runs, until the watcher sees a new or
-    /// removed repo folder, a new `.git`, a changed git config, or a new board log in a place. Thus a ref that names no
+    /// removed repo folder, a new `.git`, a changed git config, or a new board in a folder that the index has no copy
+    /// of. A changed board log of a copy keeps the index current: the index reads the names and the enabled state of
+    /// that copy again (``BoardIndex/forgetting(expiredBy:)``). Thus a ref that names no
     /// board of a current index is not found, with no scan and no `git`. A new scan reuses each key that no change
     /// made unknown, and does not read again a key whose read failed.
     ///

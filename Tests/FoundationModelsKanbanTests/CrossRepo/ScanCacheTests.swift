@@ -66,9 +66,9 @@ struct ScanCacheTests {
     }
 
     /// The board of the current repo has its board names before the host starts (divergence.md M9). A board with no
-    /// board ID gets its board names patch at its first write. That write changes the board log, and the change makes
-    /// the next call that needs the index scan again (``RepoMark``). The test is about the reads after the first scan,
-    /// so the call of the test must not change the board log.
+    /// board ID gets its board names patch at its first write. That write changes the board log, and the index then
+    /// reads the names of the board again (``RepoMark``). The test is about the reads after the first scan, so the
+    /// call of the test must not change the board log.
     @Test("Reads that reach an unknown key run no git and no scan after the first scan")
     func readsRunNoGit() async throws {
         let place = try ScanPlace.make()
@@ -206,6 +206,26 @@ struct ScanCacheTests {
         }
         let paths = try await CrossRepoReadTests.boardPaths(with: enabled, on: session)
         #expect(paths == [place.app.path, place.lib.path])
+        await host.close()
+    }
+
+    @Test("A new board ID in the board log of a related repo resolves with no new scan")
+    func newBoardIDResolvesWithNoScan() async throws {
+        let place = try ScanPlace.make()
+        var (_, ids) = try KanbanGraphTests.writeFixture(inRepoAt: place.lib)
+        let recorder = ScanRecorder()
+        let host = Self.makeHost(reading: ScanKeyReader(), recordedBy: recorder)
+        let session = try await host.session(workingDirectory: place.app, actor: KanbanHostTests.firstActor)
+        _ = try await KanbanGraphTests.execute(Self.missingQuery, on: session)
+        let scans = recorder.scanCount
+        let libID = BoardIDTests.lowestID
+        let names = try PatchInput(node: .board, add: [PropertyName.boardIDs: [StoredRef.board(named: libID)]])
+        try KanbanGraphTests.append(names, mintingFrom: &ids, to: EventLog(repositoryAt: place.lib))
+        let boardLog = EventLog.boardLogURL(inRepositoryAt: place.lib)
+        try await recorder.waitForChange(waitingFor: "the new board ID of the related board", at: boardLog) {
+            try await Self.hasBoard(of: libID, on: session)
+        }
+        #expect(recorder.scanCount == scans)
         await host.close()
     }
 

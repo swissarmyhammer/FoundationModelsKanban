@@ -53,14 +53,15 @@ struct ScanMarksTests {
         #expect(try Self.copyPaths(of: cache, for: place) == [place.app.canonicalPath])
     }
 
-    @Test("A change of the place after a new board log in one repo makes the index stale and forgets no key")
+    @Test("A change of the place after a new board log in one repo keeps the index current and enables the copy")
     func placeChangeAfterBoardLogKeepsKeys() async throws {
         let place = try ScanPlace.make()
         var cache = try await Self.cache(afterScanOf: place)
         _ = try KanbanGraphTests.writeFixture(inRepoAt: place.lib)
         cache.apply(.place(Self.placePath(of: place)), inPlace: Self.placePath(of: place))
-        #expect(cache.currentIndex(ofPlaces: Self.placesKey(of: place)) == nil)
-        #expect(try Self.copyPaths(of: cache, for: place) == [place.app.canonicalPath, place.lib.canonicalPath])
+        let index = try #require(cache.currentIndex(ofPlaces: Self.placesKey(of: place)))
+        #expect(Self.copyPaths(of: index) == [place.app.canonicalPath, place.lib.canonicalPath])
+        #expect(index.copies.filter(\.isEnabled).map(\.directory.canonicalPath).sorted() == Self.copyPaths(of: index))
     }
 
     @Test("A new repo folder in the place after the scan makes the index stale")

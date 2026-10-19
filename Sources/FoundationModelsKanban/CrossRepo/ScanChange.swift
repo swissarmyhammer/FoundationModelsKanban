@@ -12,8 +12,9 @@ enum ScanChange: Hashable, Sendable {
     /// folder.
     case repo(String)
 
-    /// The `.kanban/` directory or the board log of a repo changed: the enabled state of its copy can change. The
-    /// text is the canonical path of the repo folder.
+    /// The `.kanban/` directory or the board log of a repo changed: the names and the enabled state of its copy can
+    /// change. The index reads the copy again with no scan (``BoardIndex/forgetting(expiredBy:)``). The text is the
+    /// canonical path of the repo folder.
     case board(inRepo: String)
 
     /// The refs of a repo changed, for example after its first commit. A repo whose key read failed can have a key
@@ -181,9 +182,10 @@ private struct ScanChangeRule: Sendable {
 // MARK: - Index
 
 extension BoardIndex {
-    /// Tells if a change makes the index out of date, so that the next call that needs the index scans again. A change
-    /// whose files are the same as the scan saw them (``marks``) does not: FSEvents can give a change after the scan
-    /// that occurred before the scan.
+    /// Tells if a change makes the index out of date. A change whose files are the same as the scan saw them
+    /// (``marks``) does not: FSEvents can give a change after the scan that occurred before the scan. A change that
+    /// makes the index out of date forgets keys, so that the next call that needs the index scans again. The one
+    /// exception is a change of a board log whose copies the index reads again (``forgetting(expiredBy:)``).
     ///
     /// - Parameter change: The change of a scan place of the index.
     /// - Returns: `true` when the files of the change are not the same as the scan saw them, and the change is a change
@@ -213,16 +215,46 @@ extension BoardIndex {
     }
 
     /// Gives the index without the keys that a list of changes makes unknown. Each change is resolved
-    /// (``resolving(_:)``), only the resolved changes that expire the index (``isExpired(by:)``) are kept, and the
-    /// index forgets the repos of each kept change (``forgetting(_:)``). This is the one place of the expiry rule of a
-    /// change for the scan cache.
+    /// (``resolving(_:)``), and only the resolved changes that make the index out of date (``isExpired(by:)``) are
+    /// kept. A kept change of a board log whose copies the index can read again (``readingBoardLog(of:)``) gives the
+    /// new names and the new enabled state of those copies, and needs no scan. The index forgets the repos of each
+    /// other kept change (``forgetting(_:)``), and the next call that needs the index scans again. This is the one
+    /// place of the expiry rule of a change for the scan cache.
     ///
     /// - Parameter changes: The changes of the scan places of the index, in order.
-    /// - Returns: The index without the forgotten repos, and `true` when a change expired the index.
+    /// - Returns: The index without the forgotten repos and with the copies read again, and `true` when a change
+    ///   expired the index, so that only a new scan can make it current.
     func forgetting(expiredBy changes: [ScanChange]) -> (index: BoardIndex, isExpired: Bool) {
         let expiring = changes.flatMap(resolving).filter(isExpired(by:))
-        let index = expiring.reduce(self) { index, change in index.forgetting(change) }
-        return (index, !expiring.isEmpty)
+        return expiring.reduce((index: self, isExpired: false)) { result, change in
+            guard let read = result.index.readingBoardLog(of: change) else {
+                return (result.index.forgetting(change), true)
+            }
+            return (read, result.isExpired)
+        }
+    }
+
+    /// Gives the index with the copies of one repo read again from the disk, for a change of its board log
+    /// (divergence.md M9). A write to a board log can change only the names and the enabled state of a copy
+    /// (``BoardCopy/read(fromRepoAt:key:)``), for example a new board ID, or the old names of a `collected` patch.
+    /// That read takes the key that the index knows, and runs no `git` and no scan, so the index stays current. A
+    /// write that keeps the names and the enabled state gives the same copies.
+    ///
+    /// - Parameter change: The change.
+    /// - Returns: The index with the copies read again, or `nil` when the change is not a change of a board log, when
+    ///   no copy of the index is at the repo, or when the folder is no repo now. Then only a new scan can find the
+    ///   board, for example a new board outside git, or the board of a repo whose key read failed.
+    private func readingBoardLog(of change: ScanChange) -> BoardIndex? {
+        guard case .board(let repo) = change,
+            copies.contains(where: { copy in copy.directory.canonicalPath == repo }),
+            RepoMark(ofRepoAt: URL(filePath: repo, directoryHint: .isDirectory)) != nil
+        else {
+            return nil
+        }
+        let read = copies.map { copy in
+            copy.directory.canonicalPath == repo ? BoardCopy.read(fromRepoAt: copy.directory, key: copy.key) : copy
+        }
+        return BoardIndex(places: places, copies: read, unreadable: unreadable, marks: marks)
     }
 
     /// Gives the index without the keys that a change makes unknown, so that the next scan reads them again.
@@ -231,7 +263,8 @@ extension BoardIndex {
     ///   from the same git config.
     /// - New commits forget a failed key read of the repo.
     /// - A change of the place forgets each repo of the place.
-    /// - A changed board log forgets no key: each scan reads the enabled state again.
+    /// - A changed board log forgets no key: each scan reads the names and the enabled state again. This applies
+    ///   only to a board log that the index cannot read again (``forgetting(expiredBy:)``).
     ///
     /// - Parameter change: The change.
     /// - Returns: The index without the forgotten repos.

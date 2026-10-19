@@ -108,18 +108,19 @@ private struct ScanRecord {
     var changesDuringScans: [ScanChange] = []
 
     /// Applies a change to the index, and keeps it for each scan that runs now. A change of a place applies as the
-    /// change of each repo of the place whose files changed (``BoardIndex/forgetting(expiredBy:)``).
+    /// change of each repo of the place whose files changed (``BoardIndex/forgetting(expiredBy:)``). A change of a
+    /// board log that the index reads again keeps the index current, with the new names of the board.
     ///
     /// - Parameter change: The change.
     mutating func apply(_ change: ScanChange) {
         if runningScans > 0 {
             changesDuringScans.append(change)
         }
-        guard let result = index?.forgetting(expiredBy: [change]), result.isExpired else {
+        guard let result = index?.forgetting(expiredBy: [change]) else {
             return
         }
         index = result.index
-        isCurrent = false
+        isCurrent = isCurrent && !result.isExpired
     }
 
     /// Stores the index of a scan that ended.
