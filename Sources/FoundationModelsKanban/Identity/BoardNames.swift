@@ -34,6 +34,16 @@ struct BoardNames: Hashable, Sendable {
         oldNames = OrderedSet(recorded.map(BoardKey.normalizedText(of:))).elements.filter { name in name != key }
     }
 
+    /// Makes the names of a board from its git key and its board node. With no board node, the key is the one name
+    /// of the board.
+    ///
+    /// - Parameters:
+    ///   - key: The git key of the board.
+    ///   - board: The board node, or `nil` when the board has no board node yet.
+    init(key: BoardKey, board: BoardNode? = nil) {
+        self.init(key: key.description, board: board)
+    }
+
     /// The primary ID of the board: the lowest board ID, or `nil` when the board has no ID yet.
     var primaryID: ULID? {
         ids.first
@@ -105,13 +115,13 @@ extension BoardNames {
     static func read(fromRepoAt directory: URL, key: BoardKey) -> BoardNames {
         do {
             let board = try EventLog(repositoryAt: directory).readLog(of: .board).node?.state as? BoardNode
-            return BoardNames(key: key.description, board: board)
+            return BoardNames(key: key, board: board)
         } catch {
             Log.kanban.warning(
                 "The scan cannot read the board log of a repo, so the board has only its key as a name",
                 metadata: ["path": "\(directory.path)", "error": "\(error)"]
             )
-            return BoardNames(key: key.description, board: nil)
+            return BoardNames(key: key)
         }
     }
 }

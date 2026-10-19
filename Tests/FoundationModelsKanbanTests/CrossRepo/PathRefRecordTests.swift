@@ -109,6 +109,6 @@ struct PathRefRecordTests {
     /// - Throws: An error when the key cannot be made from the `origin`.
     static func readableRecord(ofRepo repo: URL) throws -> PathRefRecord {
         let key = try BoardKey(remoteURL: ScanCacheTests.libOrigin)
-        return record(of: .board(BoardCopy(directory: repo, key: key)), ofFolderAt: repo)
+        return record(of: .board(BoardCopy.read(fromRepoAt: repo, key: key)), ofFolderAt: repo)
     }
 }

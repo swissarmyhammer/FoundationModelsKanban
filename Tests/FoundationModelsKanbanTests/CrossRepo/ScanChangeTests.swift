@@ -48,7 +48,7 @@ struct ScanChangeTests {
             directory: URL(filePath: path, directoryHint: .isDirectory),
             key: key,
             isEnabled: false,
-            names: BoardNames(key: key.description, board: nil)
+            names: BoardNames(key: key)
         )
     }
 

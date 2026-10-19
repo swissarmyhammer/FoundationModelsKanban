@@ -63,6 +63,15 @@ struct EventLog: Hashable, Sendable {
         directory = root.appending(path: Self.directoryName, directoryHint: .isDirectory)
     }
 
+    /// Gives the board log of a repo: the log file of the board node, `.kanban/board.jsonl`. Each reader of the board
+    /// log of a repo gets its location here, so that the location is in one place.
+    ///
+    /// - Parameter root: The root directory of the repo.
+    /// - Returns: The file. The file does not have to exist.
+    static func boardLogURL(inRepositoryAt root: URL) -> URL {
+        EventLog(repositoryAt: root).fileURL(for: .board)
+    }
+
     /// The lock file of the board.
     var lockFileURL: URL {
         directory.appending(path: Self.lockFileName, directoryHint: .notDirectory)

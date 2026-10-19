@@ -171,16 +171,21 @@ extension Design {
         /// - Returns: The lines that hold the text, by the local ref of their node.
         /// - Throws: An error when a log cannot be read.
         static func linesHolding(_ text: String, inRepoAt root: URL) throws -> [LocalRef: [String]] {
-            var found: [LocalRef: [String]] = [:]
-            for (ref, log) in try logTexts(inRepoAt: root) {
-                let lines = log.split(separator: "\n").map(String.init).filter { line in
+            let found = try logTexts(inRepoAt: root).compactMap { ref, log -> (LocalRef, [String])? in
+                let held = lines(of: log).filter { line in
                     line.contains(text) && !(ref == .board && isBoardNamesLine(line))
                 }
-                if !lines.isEmpty {
-                    found[ref] = lines
-                }
+                return held.isEmpty ? nil : (ref, held)
             }
-            return found
+            return Dictionary(uniqueKeysWithValues: found)
+        }
+
+        /// Splits the text of a log into its lines.
+        ///
+        /// - Parameter log: The text of the log.
+        /// - Returns: The lines, in file order, with no empty line.
+        static func lines(of log: String) -> [String] {
+            log.split(separator: "\n").map(String.init)
         }
 
         /// Gives the lines of the board log of a repo that are board names patches (divergence.md M9).
@@ -190,7 +195,7 @@ extension Design {
         /// - Throws: An error when the board log cannot be read.
         static func boardNamesLines(inRepoAt root: URL) throws -> [String] {
             let text = try logTexts(inRepoAt: root)[.board] ?? ""
-            return text.split(separator: "\n").map(String.init).filter(isBoardNamesLine)
+            return lines(of: text).filter(isBoardNamesLine)
         }
 
         /// Tells if a line of the board log is a board names patch (divergence.md M9).

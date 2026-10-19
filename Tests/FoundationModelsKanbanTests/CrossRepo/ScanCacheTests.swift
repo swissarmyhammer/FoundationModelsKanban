@@ -79,7 +79,7 @@ struct ScanCacheTests {
         )
         var ids = GitGraphFixture.secondEngineIDs
         try KanbanGraphTests.append(names, mintingFrom: &ids, to: EventLog(repositoryAt: place.app))
-        let boardLog = EventLog(repositoryAt: place.app).fileURL(for: .board)
+        let boardLog = EventLog.boardLogURL(inRepositoryAt: place.app)
         let boardLogBefore = try Data(contentsOf: boardLog)
         let reader = ScanKeyReader()
         let recorder = ScanRecorder()

@@ -38,6 +38,42 @@ comments:
     - Follow-up task added: expire the scan index only when board names change (each board.jsonl write now starts one rescan with no git).
     - next: /review
   timestamp: 2026-10-19T16:38:10.277668+00:00
+- actor: claude-code
+  id: 01m5agt3xzqvyce26zxbnge4j2
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (d080282). 7 findings, 7 confirmed, 2 refuted. Sources/FoundationModelsKanban/CrossRepo/BoardLocator.swift:260, Sources/FoundationModelsKanban/CrossRepo/ScanMarks.swift:127, Tests/FoundationModelsKanbanTests/CrossRepo/BoardIDTests.swift:71, Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift:148, Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift:366, Tests/FoundationModelsKanbanTests/CrossRepo/ScanChangeTests.swift:51, Tests/FoundationModelsKanbanTests/Design/PortabilityTests.swift:174.
+    - acceptance: Each of the 5 acceptance items has a test in Tests/FoundationModelsKanbanTests/CrossRepo/BoardIDTests.swift. Item 1: newBoardHasOneIDEvent, oldBoardGetsIDOnNextWrite. Item 2: boardIDAndGitKeyResolveToOneBoard, taskURIWithBoardIDResolves, relatedBoardResolvesByBoardID. Item 3: mergedBoardLogKeepsEachID. Item 4: remoteChangeRecordsOldKey. Item 5: the tests use GitSandbox and CrossRepoFixture.SideBySide (temporary folders). The reviewer did not run the tests. The reviewer did not change the checkboxes. The implementer must set them.
+    - next: implement the 7 findings, then review again.
+  timestamp: 2026-10-19T16:44:41.791814+00:00
+- actor: claude-code
+  id: 01m5agtmgkcb29ccr6rf83hv7z
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 19 Sources files, 10 test files
+    - test: green — swift test, 1626 passed
+    - commit: d080282
+    - review: findings — BoardLocator.swift:260, ScanMarks.swift:127, BoardIDTests.swift:71, BoardLocatorTests.swift:148, BoardLocatorTests.swift:366, ScanChangeTests.swift:51, PortabilityTests.swift:174
+  timestamp: 2026-10-19T16:44:58.771578+00:00
+- actor: claude-code
+  id: 01m5ah3bzk8gyq49hgw8rm97a0
+  text: |-
+    Review findings (2026-10-19 11:40) fixed. Each cause is removed from the whole file:
+    - BoardLocator.swift: the init BoardCopy(directory:key:) is gone. The new explicit step BoardCopy.read(fromRepoAt:key:) reads isEnabled and the names. The scan and BoardLocator.board(ofFolderAt:) call it. The memberwise init only stores values. The isEnabled disk read also left the init, because the finding says "Keep init(directory:key:) to storing the values".
+    - New EventLog.boardLogURL(inRepositoryAt:) holds the board log location. RepoMark.init?(ofRepoAt:), BoardCopy.hasBoardLog(at:) and ScanCacheTests (a site that this change added) call it.
+    - New BoardNames.init(key: BoardKey, board: BoardNode? = nil). BoardLocatorTests (3 sites, also the third copy at the outside-repo helper), ScanChangeTests, BoardNames.read (2 sites) and CommitSession.names use it.
+    - BoardIDTests: undoKeepsBoardID calls Self.boardNode(inRepoAt:).
+    - PortabilityTests.linesHolding builds its value with compactMap and Dictionary(uniqueKeysWithValues:). A new helper lines(of:) removes the repeated split of a log into lines (linesHolding and boardNamesLines).
+    - Note: a local `let lines = lines(of:)` in a closure does not compile in Swift (use before declaration), so the local is named `held`.
+    Acceptance: I read BoardIDTests.swift. Each of the 5 items has a test (newBoardHasOneIDEvent, oldBoardGetsIDOnNextWrite, boardIDAndGitKeyResolveToOneBoard, mergedBoardLogKeepsEachID, remoteChangeRecordsOldKey; GitSandbox and SideBySide temporary folders). All pass, so I set the 5 items to [x].
+  timestamp: 2026-10-19T16:49:44.947717+00:00
+- actor: claude-code
+  id: 01m5ah3f1rddkgs5ep36mg1fyp
+  text: |-
+    ### implement — changed
+    - evidence: swift test: 1626 tests in 133 suites passed, 0 failures; only the allowed SwiftPM "missing creator" warning. Files: Sources/.../CrossRepo/BoardLocator.swift, Sources/.../CrossRepo/ScanMarks.swift, Sources/.../Events/EventLog.swift, Sources/.../Identity/BoardNames.swift, Sources/.../Tool/SessionNames.swift, Tests/.../CrossRepo/BoardIDTests.swift, Tests/.../CrossRepo/BoardLocatorTests.swift, Tests/.../CrossRepo/PathRefRecordTests.swift, Tests/.../CrossRepo/ScanCacheTests.swift, Tests/.../CrossRepo/ScanChangeTests.swift, Tests/.../Design/PortabilityTests.swift. 7/7 findings and 5/5 acceptance items are [x]. Not committed.
+    - next: /review
+  timestamp: 2026-10-19T16:49:48.088777+00:00
 depends_on:
 - 01M4XJG62C0DB0780SENXRQCGN
 position_column: doing
@@ -56,8 +92,23 @@ divergence.md M9 "each board has a board ID in its log". A board needs a fixed I
 - The host keeps an index of all names for each scanned board. The scan reads the board node log one time. The watcher keeps the index current.
 
 ## Acceptance Criteria
-- [ ] A new board has one ID event. An old board gets it on the next write, not on load.
-- [ ] A URI with the bare ULID and a URI with the git key resolve to the same board.
-- [ ] A merged log with two ID events: both resolve; the lowest is primary.
-- [ ] A remote change records the old git key, and a URI with the old key still resolves.
-- [ ] Tests use temporary git repos and temporary folders only.
+- [x] A new board has one ID event. An old board gets it on the next write, not on load.
+- [x] A URI with the bare ULID and a URI with the git key resolve to the same board.
+- [x] A merged log with two ID events: both resolve; the lowest is primary.
+- [x] A remote change records the old git key, and a URI with the old key still resolves.
+- [x] Tests use temporary git repos and temporary folders only.
+
+## Review Findings (2026-10-19 11:40)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 28 file(s) reviewed, 6 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+- [x] `Sources/FoundationModelsKanban/CrossRepo/BoardLocator.swift:260` `swift/initialization` — The new BoardCopy init reads the board log from disk through BoardNames.read(fromRepoAt:key:). An init that is not throws has no way to report a failure, and callers expect init to return at once. The read belongs in an explicit load step that the scan calls, not in init. Keep init(directory:key:) to storing the values. Pass the names in from the scan, or give the scan a separate step that reads BoardNames for each copy, and call that step explicitly before the copy is used.
+- [x] `Sources/FoundationModelsKanban/CrossRepo/ScanMarks.swift:127` `reuse/reuse` — The new board log path is derived inline as `EventLog(repositoryAt: directory).fileURL(for: .board)`. The same derivation already exists in `BoardCopy.hasBoardLog(at:)`, so the board log location is now computed in two places. If the layout of the board log changes, both places must change. Move the board log URL derivation into one shared helper (for example a static on `EventLog` or on `BoardCopy`) and call it from both `RepoMark.init?(ofRepoAt:)` and `BoardCopy.hasBoardLog(at:)`.
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/BoardIDTests.swift:71` `reuse/reuse` — The test reads the board node with the same inline expression that the new helper `boardNode(inRepoAt:)` already wraps. The helper is declared in this file at line 88. The test does not call it, so the read logic exists twice. Replace line 71 with `let board = try Self.boardNode(inRepoAt: repo)`.
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift:148` `reuse/reuse` — The line builds `BoardNames(key:board: nil)` from a key text. The same construction appears in other new lines of this change, so the pattern is repeated without a shared helper. Add one helper, or an existing initializer, that builds the names of a board from its key. Use it at every site. If `BoardNames` already has such an initializer, call it.
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift:366` `reuse/reuse` — The line repeats the `BoardNames(key:board: nil)` construction. It is the third copy in this file. Use the same shared helper or initializer as the fix for line 148.
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/ScanChangeTests.swift:51` `reuse/reuse` — The copy helper builds `BoardNames(key: key.description, board: nil)` by hand. The same construction appears in other files of this change. Use the same shared helper or initializer as the fix for BoardLocatorTests.swift:148.
+- [x] `Tests/FoundationModelsKanbanTests/Design/PortabilityTests.swift:174` `swift/immutability` — The function linesHolding builds its result with a mutable var accumulator that is changed inside a for loop. A reader must read the whole loop to learn the final value of found. The loop only keeps the refs whose lines are not empty, so it is a filter-and-build step. Build the result as a value, for example: return Dictionary(uniqueKeysWithValues: try logTexts(inRepoAt: root).compactMap { ref, log in let lines = ...; return lines.isEmpty ? nil : (ref, lines) }). Use let, not var.

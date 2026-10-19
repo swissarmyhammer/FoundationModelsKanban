@@ -78,7 +78,7 @@ public struct BoardLocator: Sendable {
         let readable = directories.filter { directory in !knownFailures.contains(directory.canonicalPath) }
         let keys = try await Self.keys(ofReposAt: readable, knowing: knownKeys, readingKeysWith: keyReader)
         let copies = directories.compactMap { directory in
-            keys[directory.canonicalPath].map { key in BoardCopy(directory: directory, key: key) }
+            keys[directory.canonicalPath].map { key in BoardCopy.read(fromRepoAt: directory, key: key) }
         }
         let unreadable = Set(directories.map(\.canonicalPath)).subtracting(keys.keys)
         return BoardIndex(places: places, copies: copies, unreadable: unreadable, marks: marks)
@@ -108,7 +108,7 @@ public struct BoardLocator: Sendable {
             return .notARepo(path: path)
         }
         let key = try await key(ofRepoAt: top, knownKey: nil, readingKeysWith: keyReader).get()
-        return key.map { key in .board(BoardCopy(directory: top, key: key)) } ?? .unreadableKey(top: top)
+        return key.map { key in .board(BoardCopy.read(fromRepoAt: top, key: key)) } ?? .unreadableKey(top: top)
     }
 
     /// Gives the folder that a path ref names, when the folder exists. The lookup runs no `git`.
@@ -245,18 +245,20 @@ struct BoardCopy: Hashable, Sendable {
 }
 
 extension BoardCopy {
-    /// Makes the copy of a repo whose key is known. The copy is enabled when the repo has `.kanban/board.jsonl` now.
-    /// The names come from the board log of the repo now: the scan reads the board log of each repo one time
-    /// (divergence.md M9).
+    /// Reads the copy of a repo whose key is known, from the files of the repo now. This is the explicit read step of
+    /// the scan: the memberwise init only stores its values, and this step reads the disk. The copy is enabled when
+    /// the repo has `.kanban/board.jsonl`. The names come from the board log of the repo: the scan reads the board
+    /// log of each repo one time (divergence.md M9).
     ///
     /// - Parameters:
     ///   - directory: The root directory of the copy.
     ///   - key: The key of the board of the copy.
-    init(directory: URL, key: BoardKey) {
-        self.init(
+    /// - Returns: The copy.
+    static func read(fromRepoAt directory: URL, key: BoardKey) -> BoardCopy {
+        BoardCopy(
             directory: directory,
             key: key,
-            isEnabled: Self.hasBoardLog(at: directory),
+            isEnabled: hasBoardLog(at: directory),
             names: BoardNames.read(fromRepoAt: directory, key: key)
         )
     }
@@ -266,8 +268,7 @@ extension BoardCopy {
     /// - Parameter directory: The directory.
     /// - Returns: `true` when the board log exists.
     static func hasBoardLog(at directory: URL) -> Bool {
-        let boardLog = EventLog(repositoryAt: directory).fileURL(for: .board)
-        return FileManager.default.fileExists(atPath: boardLog.path)
+        FileManager.default.fileExists(atPath: EventLog.boardLogURL(inRepositoryAt: directory).path)
     }
 }
 

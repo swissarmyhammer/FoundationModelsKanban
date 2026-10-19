@@ -68,7 +68,7 @@ struct BoardIDTests {
         let graph = try GitGraphFixture.makeGraph(at: repo)
         try await CrossRepoUndoTests.runWithNoErrors(Self.writeField, on: graph)
         try await CrossRepoUndoTests.runWithNoErrors(CrossRepoUndoTests.undoField, on: graph)
-        let board = try #require(try EventLog(repositoryAt: repo).readLog(of: .board).node?.state as? BoardNode)
+        let board = try Self.boardNode(inRepoAt: repo)
         #expect(board.ids.count == 1)
         #expect(board.fields.body.isEmpty)
         await graph.close()

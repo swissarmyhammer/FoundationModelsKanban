@@ -124,7 +124,7 @@ struct RepoMark: Hashable, Sendable {
         config = FileStamp(ofItemAt: git.appending(path: GitEntryName.config))
         branchRefs = FileStamp(ofItemAt: git.appending(path: GitEntryName.refs).appending(path: GitEntryName.heads))
         packedRefs = FileStamp(ofItemAt: git.appending(path: GitEntryName.packedRefs))
-        boardLog = FileStamp(ofItemAt: EventLog(repositoryAt: directory).fileURL(for: .board))
+        boardLog = FileStamp(ofItemAt: EventLog.boardLogURL(inRepositoryAt: directory))
     }
 
     /// Gives the changes of a repo folder from an earlier mark to a later mark: the same kinds of change that the
