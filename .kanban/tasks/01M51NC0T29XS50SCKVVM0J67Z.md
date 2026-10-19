@@ -77,6 +77,42 @@ comments:
     - evidence: 2 files — Sources/FoundationModelsKanban/Events/BoardLock.swift, Tests/FoundationModelsKanbanTests/Events/EventLogTests.swift. `swift test`: 1613 tests in 132 suites passed, 0 failures, only the accepted "missing creator" warning. Finding EventLogTests.swift:485 is checked.
     - next: /test, then /review. The task stays in doing.
   timestamp: 2026-10-19T15:55:11.652459+00:00
+- actor: claude-code
+  id: 01m5ae3r6k0yccb7x2kemyhhrw
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (3e5c099): 1 finding, 1 confirmed, 0 refuted — Tests/FoundationModelsKanbanTests/Events/EventLogTests.swift:141 (test-integrity/no-test-cheating). The prior finding at EventLogTests.swift:485 is checked.
+    - next: Make an open failure in `isLockFree` fail the test, not return "lock is held". Then run review again.
+  timestamp: 2026-10-19T15:57:31.731714+00:00
+- actor: claude-code
+  id: 01m5ae437vtf3djmm0k9kz3k3g
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 2 files (BoardLock.swift, EventLogTests.swift)
+    - test: green — swift test, 1613 passed
+    - commit: 3e5c099
+    - review: findings — Tests/FoundationModelsKanbanTests/Events/EventLogTests.swift:141
+  timestamp: 2026-10-19T15:57:43.035504+00:00
+- actor: claude-code
+  id: 01m5aeaqazmqcxms5qy7ysqy19
+  text: |-
+    Review finding EventLogTests.swift:141 (test-integrity/no-test-cheating) is fixed. Only the test file changed.
+    - `isLockFree(of:)` now has `throws(EventLogError)` and no `catch`. An open failure from `openLockFile()` goes to the caller.
+    - Same cause, second place in the same helper: a `tryLock` code that is not `0` and not `EWOULDBLOCK` also became "lock is held". Now only `EWOULDBLOCK` gives `false`. Each other code throws `EventLogError.lockFailed(path:code:)`.
+    - `waitUntil` now takes `() async throws -> Bool`. An error from the check ends the wait at once and goes to the test. The wait still has no deadline (divergence.md S6). The callers in KanbanHostTests, FolderStreamsTests, TestGate, BoardKeyTests and ScanCacheTests give closures that do not throw, so they compile with no change.
+    - `waitForLockRelease` calls `try isLockFree(of:)`. `lockExcludesOtherDescriptor` and `expectOneLockHolds` use `#expect(try ...)`.
+    - New test `lockCheckFailsWhenLockFileCannotOpen`: a board with no `.kanban` directory. It expects `lockFailed(path:, code: ENOENT)`.
+    - I found no other helper in EventLogTests.swift that changes an error into a wait. `TemporaryDirectory.deinit` uses `try?`, but it is not a wait, and a `deinit` cannot throw.
+    - RED: the new test failed: "an error was expected but none was thrown and \"false\" was returned". GREEN: `swift test --filter EventLogTests`: 22 tests passed. Full `swift test`: 1614 tests in 132 suites passed. The only warning is the accepted SwiftPM "missing creator" warning.
+    - Note: the validator dump has 12098 lines. I read the swift and test-integrity rule sections in full. I did not read all of the other sections.
+  timestamp: 2026-10-19T16:01:20.223659+00:00
+- actor: claude-code
+  id: 01m5aeas6ka0qvspnaxekhp00g
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsKanbanTests/Events/EventLogTests.swift. RED: lockCheckFailsWhenLockFileCannotOpen failed (false returned, no error). GREEN: EventLogTests 22 passed. `swift test`: 1614 tests in 132 suites passed, 0 failures, only the accepted "missing creator" warning. Finding EventLogTests.swift:141 is checked.
+    - next: /test, then /review. The task stays in doing.
+  timestamp: 2026-10-19T16:01:22.131999+00:00
 position_column: doing
 position_ordinal: '80'
 title: Do not block a thread of the cooperative pool while a commit waits for the board lock
@@ -108,3 +144,12 @@ Found during ^je3gkw8 by a static review. A full test run did not show this hang
 > - `Package.resolved` — no validator matches this file
 
 - [x] `Tests/FoundationModelsKanbanTests/Events/EventLogTests.swift:485` `reuse/reuse` — The test helper `holdLockWithOwnDescriptor` repeats the production lock sequence: it opens the lock file with `O_RDWR | O_CREAT | O_CLOEXEC` and calls `flock(LOCK_EX | LOCK_NB)`, which is the same steps as `LockedFile.lock(of:)` and `callFlock` in BoardLock.swift. If the open flags or lock mode change in production, this copy can silently diverge and the test would stop testing the real lock path. Extract the open-and-try-lock step into one internal helper that both `LockedFile.lock(of:)` and the test call, for example `openLockFile(of:)` plus a non-blocking `tryLock(descriptor)`. The test can then call the shared helper and keep its own raw descriptor for release on another thread. If the test must stay separate, add a comment stating why it duplicates the production open flags.
+
+## Review Findings (2026-10-19 10:56)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 2 file(s) reviewed, 6 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+- [x] `Tests/FoundationModelsKanbanTests/Events/EventLogTests.swift:141` `test-integrity/no-test-cheating` — The `catch` in `isLockFree` swallows every error from `openLockFile()` and returns `false`, which means 'lock is held'. `waitForLockRelease` calls `isLockFree` through `waitUntil`, and `waitUntil` has no deadline. If the lock file can never be opened, the wait never ends and the test hangs instead of failing. The failure is hidden, not proven. Do not map an open failure to 'not free'. Let the error propagate, for example make `isLockFree` a throwing function and use `try log.openLockFile()` without the `catch`, or make the wait fail after a deadline. Then an open failure fails the test at once and the test does not hang.

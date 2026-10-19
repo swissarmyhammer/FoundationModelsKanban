@@ -130,17 +130,21 @@ struct EventLogTests {
     /// Tells if a different file descriptor can get the lock of a board now. The check does not wait. It uses the
     /// open step and the lock try of the production lock.
     ///
+    /// Only `EWOULDBLOCK` means that a different lock holds the lock. Each other failure throws, so that a wait on
+    /// this check fails at once and does not wait for a lock that no holder will release.
+    ///
     /// - Parameter log: The event log of the board.
-    /// - Returns: `true` when the lock is free. `false` when a different lock holds it, or the lock file cannot be
-    ///   opened.
-    static func isLockFree(of log: EventLog) -> Bool {
-        do {
-            let descriptor = try log.openLockFile()
-            defer { close(descriptor) }
-            return EventLog.tryLock(on: descriptor) == 0
-        } catch {
-            return false
+    /// - Returns: `true` when the lock is free. `false` when a different lock holds it.
+    /// - Throws: `EventLogError.lockFailed` when the lock file cannot be opened, or the lock try fails for a different
+    ///   reason than a held lock.
+    static func isLockFree(of log: EventLog) throws(EventLogError) -> Bool {
+        let descriptor = try log.openLockFile()
+        defer { close(descriptor) }
+        let code = EventLog.tryLock(on: descriptor)
+        guard code == 0 || code == EWOULDBLOCK else {
+            throw .lockFailed(path: log.lockFileURL.path, code: code)
         }
+        return code == 0
     }
 
     /// Waits until the lock of a board is released. A child process that another test starts at the same time can
@@ -148,18 +152,20 @@ struct EventLogTests {
     /// so that this short time does not fail the test.
     ///
     /// - Parameter log: The event log of the board.
-    /// - Throws: `CancellationError` when the test is cancelled during the wait.
+    /// - Throws: `EventLogError.lockFailed` from ``isLockFree(of:)``, or `CancellationError` when the test is
+    ///   cancelled during the wait.
     static func waitForLockRelease(of log: EventLog) async throws {
-        try await waitUntil { isLockFree(of: log) }
+        try await waitUntil { try isLockFree(of: log) }
     }
 
     /// Does a check again and again, with a short pause between two tries, until the check is true. The wait has no
-    /// deadline. A test that waits for a different thread or process uses this wait.
+    /// deadline. A test that waits for a different thread or process uses this wait. An error from the check ends
+    /// the wait at once, so that a check that cannot run fails the test and does not make it wait with no end.
     ///
     /// - Parameter condition: The check. It must not block. It can read an actor.
-    /// - Throws: `CancellationError` when the test is cancelled during the wait.
-    static func waitUntil(_ condition: () async -> Bool) async throws {
-        while !(await condition()) {
+    /// - Throws: The error of the check, or `CancellationError` when the test is cancelled during the wait.
+    static func waitUntil(_ condition: () async throws -> Bool) async throws {
+        while !(try await condition()) {
             try await Task.sleep(for: retryPause)
         }
     }
@@ -367,9 +373,18 @@ struct EventLogTests {
         let directory = try TemporaryDirectory()
         let log = EventLog(repositoryAt: directory.url)
         let lock = try await log.lock()
-        #expect(!Self.isLockFree(of: log))
+        #expect(try !Self.isLockFree(of: log))
         lock.unlock()
         try await Self.waitForLockRelease(of: log)
+    }
+
+    @Test("The lock check fails, and does not report a held lock, when the lock file cannot be opened")
+    func lockCheckFailsWhenLockFileCannotOpen() throws {
+        let directory = try TemporaryDirectory()
+        let log = EventLog(repositoryAt: directory.url)
+        #expect(throws: EventLogError.lockFailed(path: log.lockFileURL.path, code: ENOENT)) {
+            try Self.isLockFree(of: log)
+        }
     }
 
     @Test("A second lock of the same board waits until the first lock is released")
@@ -491,7 +506,7 @@ struct EventLogTests {
         inOrder ordered: [EventLog]
     ) async throws {
         let lock = try await EventLog.lock(sortedByKey: logs)
-        #expect(ordered.allSatisfy { log in !isLockFree(of: log) })
+        #expect(try ordered.allSatisfy { log in try !isLockFree(of: log) })
         lock.unlock()
         for log in ordered {
             try await waitForLockRelease(of: log)
