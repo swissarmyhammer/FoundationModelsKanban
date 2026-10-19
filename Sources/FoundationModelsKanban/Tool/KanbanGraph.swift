@@ -327,7 +327,9 @@ public actor KanbanGraph {
     ///   working directory and the top folder is not read: each response of the view warns about it
     ///   (``SubfolderBoard``).
     /// - Outside git, the board is at the nearest folder, from the working directory up, that has a `.kanban/`, or at
-    ///   the working directory itself (``BareBoard/root(of:)``). The first write makes its `.kanban/`.
+    ///   the working directory itself (``BareBoard/root(of:)``). The first write makes its `.kanban/`. After a
+    ///   `git init` in that folder, the board takes the git key with no restart
+    ///   (``KanbanHost/engine(ofSessionBoardAt:)``).
     ///
     /// - Returns: The engine of the board.
     /// - Throws: A ``BoardKeyError`` other than ``BoardKeyError/notARepo(path:)``, an ``EventLogError``, or a
@@ -342,7 +344,7 @@ public actor KanbanGraph {
             root = BareBoard.root(of: workingDirectory)
             subfolderBoard = nil
         }
-        let engine = try await host.engine(ofBoardAt: root)
+        let engine = try await host.engine(ofSessionBoardAt: root)
         feeds.replace(engine.feed, forBoardAt: engine.root.canonicalPath)
         await host.register(self)
         boardState = .resolved(engine, subfolderBoard: subfolderBoard)

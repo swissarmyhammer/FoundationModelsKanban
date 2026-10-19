@@ -229,6 +229,11 @@ actor BoardEngine {
         session.changeKey(to: key)
     }
 
+    /// The current key of the board: the git key, or the board ID of a board outside git (divergence.md M9).
+    var key: BoardKey {
+        session.key
+    }
+
     /// Stores a new session of the board with the key and the former keys of the current session, so that a key
     /// change during the call or the batch that made the new session stays.
     ///

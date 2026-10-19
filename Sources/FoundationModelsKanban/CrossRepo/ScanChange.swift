@@ -287,11 +287,11 @@ extension BoardIndex {
 // MARK: - Observer
 
 /// Gets a call when the host scans the places for repos, when a call waits for a running scan, when the file watcher
-/// of a scan place sees a change, and when the file watcher of a folder that a path ref named sees a change that makes
-/// the result of the path ref out of date.
+/// of a scan place sees a change, when the file watcher of a folder that a path ref named sees a change that makes
+/// the result of the path ref out of date, and when a current board outside git gets its git key.
 ///
 /// A test uses it to count the scans and the waits for a running scan, and to wait until the host saw a change of a
-/// scan place or of a folder that a path ref named.
+/// scan place, of a folder that a path ref named, or of the folder of a current board outside git.
 protocol BoardScanObserver: Sendable {
     /// Tells that a scan of the places starts.
     ///
@@ -315,4 +315,11 @@ protocol BoardScanObserver: Sendable {
     ///   watched repo folder, ``ScanChange/commits(inRepo:)`` of a repo whose key read failed, or
     ///   ``ScanChange/place(_:)`` of the parent folder of the watched repo folder.
     func pathRefDidChange(_ change: ScanChange)
+
+    /// Tells that the host saw a change of the folder of the current board of a session outside git, and gave the
+    /// board the git key that git gives now, for example after a `git init` in the folder (divergence.md M9).
+    ///
+    /// - Parameter change: The change: ``ScanChange/repo(_:)`` of the root directory of the board, or
+    ///   ``ScanChange/place(_:)`` of its parent folder.
+    func bareBoardDidChange(_ change: ScanChange)
 }

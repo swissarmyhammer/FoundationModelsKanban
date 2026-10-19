@@ -475,8 +475,8 @@ final class ScanKeyReader: Sendable {
 
 // MARK: - Scan recorder
 
-/// Records each scan of a host, and gives each change that a file watcher of the host sees: of a scan place, or of a
-/// folder that a path ref named.
+/// Records each scan of a host, and gives each change that a file watcher of the host sees: of a scan place, of a
+/// folder that a path ref named, or of the folder of a current board outside git.
 final class ScanRecorder: BoardScanObserver {
     /// The number of scans that started, behind a lock, because the scans run on different threads.
     private let starts = Mutex(0)
@@ -531,6 +531,14 @@ final class ScanRecorder: BoardScanObserver {
     ///
     /// - Parameter change: The change.
     func pathRefDidChange(_ change: ScanChange) {
+        scanPlaceDidChange(change)
+    }
+
+    /// Records a change after which the current board of a session outside git took its git key, in the same stream
+    /// as a change of a scan place.
+    ///
+    /// - Parameter change: The change.
+    func bareBoardDidChange(_ change: ScanChange) {
         scanPlaceDidChange(change)
     }
 

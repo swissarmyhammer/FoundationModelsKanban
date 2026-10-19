@@ -64,10 +64,21 @@ comments:
     - evidence: 2 files — Sources/FoundationModelsKanban/Tool/Commit.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CollectBoardsTests.swift. swift build --build-tests: 0 warnings (only the accepted SwiftPM "missing creator" warning). swift test: 1684 tests in 139 suites passed. Findings Commit.swift:295 and CollectBoardsTests.swift:207 are fixed and checked. Finding Commit.swift:873 is open with a BLOCKER: it conflicts with divergence.md Q23 and IncompleteTransactions.isComplete.
     - next: a person decides on Commit.swift:873 (drop the finding, or change the Q23 contract). The task stays in doing.
   timestamp: 2026-10-19T19:41:17.360711+00:00
+- actor: claude-code
+  id: 01m5atyrkcphhthyvdhfgwcss0
+  text: |-
+    ### finish iteration 2 — stuck
+    - implement: stuck — fixed Commit.swift:295 and CollectBoardsTests.swift:207; Commit.swift:873 not done
+    - test: green — swift test, 1684 passed (implement run)
+    - commit: c6b3d70 (checkpoint of the 2 fixes)
+    - review: not run
+    - blocker: the finding at Commit.swift:873 asks for `writtenNodes.count` as the Q23 file count. This conflicts with divergence.md Q23 and `IncompleteTransactions.isComplete` (Events/TransactionCheck.swift), which count only the nodes that hold lines of the same `txn`. Merged events keep their own `txn` and `files`. With the change, each load holds the collect transaction always.
+    - next: a person decides. Drop the finding, or change the Q23 contract (for example, a second count for merged files). Then run /finish ^e8wypkz again.
+  timestamp: 2026-10-19T19:41:59.788505+00:00
 depends_on:
 - 01M52RKV2MX3F84VYXAD5Y7AAY
 - 01M52RM3SJT6S3R1PVF99E0H99
-position_column: doing
+position_column: review
 position_ordinal: '80'
 title: Add collectBoards to combine .kanban folders into one target board
 ---

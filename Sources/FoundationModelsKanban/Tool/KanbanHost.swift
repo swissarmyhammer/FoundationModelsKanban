@@ -77,6 +77,11 @@ public actor KanbanHost {
     /// entry, the same as the scan index forgets the key of a repo.
     private var knownFolders: [String: KnownFolder] = [:]
 
+    /// The file watcher of the parent folder of each current board of a session outside git, by the identity of the
+    /// root directory of the board (divergence.md M9). A `git init` in the root directory shows in this watcher, and
+    /// the host then gives the engine the git key. Thus a read runs no `git`.
+    private var bareBoardWatches: [FolderIdentity: BoardWatch] = [:]
+
     /// The session views that get the changes of the boards, by their object identity. The host does not keep a view
     /// alive.
     private var views: [ObjectIdentifier: Weak<KanbanGraph>] = [:]
@@ -160,6 +165,20 @@ public actor KanbanHost {
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when the folder cannot be read. An error of the load.
     func engine(ofBoardAt root: URL, knownKey: BoardKey? = nil) async throws -> BoardEngine {
         try await engine(identifiedBy: try FolderIdentity(of: root), at: root, knownKey: knownKey)
+    }
+
+    /// Gives the engine of the current board of a session, as ``engine(ofBoardAt:knownKey:)`` does with no known key.
+    /// When the key of the board is a board ID (a board outside git), the host also watches the folder of the board
+    /// for a `git init` (``watchGitInit(of:)``, divergence.md M9).
+    ///
+    /// - Parameter root: The root directory of the board: the top folder of the worktree, or the folder of a board
+    ///   outside git.
+    /// - Returns: The engine.
+    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when the folder cannot be read. An error of the load.
+    func engine(ofSessionBoardAt root: URL) async throws -> BoardEngine {
+        let engine = try await engine(ofBoardAt: root)
+        await watchGitInit(of: engine)
+        return engine
     }
 
     /// Gives the engine of a related board, as ``engine(ofBoardAt:knownKey:)`` does, and marks a board that cannot
@@ -289,15 +308,17 @@ public actor KanbanHost {
     /// move.
     ///
     /// The engine calls this method while it holds its serial gate, so the method waits for no engine gate:
-    /// ``BoardEngine/retire()`` does not wait for the task of the watch. A second call does nothing.
+    /// ``BoardEngine/retire()`` does not wait for the task of the watch. A second call does nothing. The watch of a
+    /// `git init` in the folder of the engine stops too (``watchGitInit(of:)``).
     ///
     /// - Parameter engine: The engine whose folder moved away from its root path.
     func retire(_ engine: BoardEngine) async {
-        if case .loaded(let loaded) = engines[engine.identity], loaded === engine {
+        if isLoaded(engine) {
             engines[engine.identity] = nil
             retiredEngines.removeGoneObjects()
             retiredEngines.append(Weak(object: engine))
         }
+        await bareBoardWatches.removeValue(forKey: engine.identity)?.stop()
         await engine.retire()
     }
 
@@ -728,10 +749,8 @@ public actor KanbanHost {
         of path: String,
         watchingRepoAt repo: URL
     ) async throws(BoardWatcherError) -> BoardWatch {
-        let parent = repo.deletingLastPathComponent()
-        let watched = WatchedPlace(watching: parent)
-        return try await makeFolderWatch(of: parent) { host, paths in
-            await host.knownFolderDidChange(path, in: watched, at: paths)
+        try await makeParentWatch(ofRepoAt: repo) { host, parent, paths in
+            await host.knownFolderDidChange(path, in: parent, at: paths)
         }
     }
 
@@ -778,7 +797,147 @@ public actor KanbanHost {
         }
     }
 
+    // MARK: - Current boards outside git
+
+    /// Watches the folder of the current board of a session outside git for a `git init`, so that the board takes the
+    /// git key with no restart, and a read runs no `git` (divergence.md M9).
+    ///
+    /// The watch is a file watcher on the parent folder of the root directory of the board
+    /// (``bareBoardDidChange(_:in:at:)``). After the start, the watcher gives one compare batch, so a `git init`
+    /// between the key read of the load and the start of the watcher shows too.
+    ///
+    /// The host watches only an engine whose key is a board ID, and it starts one watcher for each engine. A closed
+    /// host starts no watcher. When the watcher cannot start, the board keeps its board ID key after a `git init`, and
+    /// the host records the failure with swift-log. The host can run other calls while the watcher starts, so it
+    /// checks the state again after the start. It stops the new watcher when a close, a parallel start, or a retire
+    /// came first.
+    ///
+    /// - Parameter engine: The engine of the current board of a session.
+    private func watchGitInit(of engine: BoardEngine) async {
+        guard !isClosed, bareBoardWatches[engine.identity] == nil, await engine.key.isBoardID else {
+            return
+        }
+        let identity = engine.identity
+        let watch: BoardWatch
+        do {
+            watch = try await makeParentWatch(ofRepoAt: engine.root) { host, parent, paths in
+                await host.bareBoardDidChange(identity, in: parent, at: paths)
+            }
+        } catch {
+            Self.logWatchFailure(
+                "The host cannot watch the folder of a board outside git, so a git init does not change its key",
+                path: engine.root.path,
+                error: error
+            )
+            return
+        }
+        guard !isClosed, bareBoardWatches[identity] == nil, isLoaded(engine) else {
+            await watch.end()
+            return
+        }
+        bareBoardWatches[identity] = watch
+        watch.watcher.compareEachFile()
+    }
+
+    /// Gives the current board of a session outside git the key that git gives now, after one batch of the watcher of
+    /// its parent folder (divergence.md M9).
+    ///
+    /// The host reads the key only when the batch can show a `git init` in the root directory of the board
+    /// (``gitInitChange(in:ofBoardAt:inside:)``), and the root directory has a `.git` entry now. A change of a
+    /// different folder in the parent folder runs no `git`. When git gives a git key, the engine takes it
+    /// (``BoardEngine/changeKey(to:)``), the watcher stops, and the scan observer gets the change. When git still gives
+    /// a board ID, or the read fails, the watcher stays, so that a later change reads the key again.
+    ///
+    /// The method runs in the task of the watch, so it stops the watcher with no wait for the end of that task
+    /// (``BoardWatch/stop()``).
+    ///
+    /// - Parameters:
+    ///   - identity: The identity of the root directory of the board.
+    ///   - parent: The watched parent folder of the root directory.
+    ///   - paths: The changed paths of the batch.
+    private func bareBoardDidChange(_ identity: FolderIdentity, in parent: WatchedPlace, at paths: [URL]) async {
+        guard
+            bareBoardWatches[identity] != nil,
+            case .loaded(let engine) = engines[identity],
+            let change = Self.gitInitChange(in: parent.changes(in: paths), ofBoardAt: engine.root, inside: parent),
+            BoardLocator.hasGitEntry(engine.root),
+            let key = await gitKey(ofBoardAt: engine.root)
+        else {
+            return
+        }
+        await engine.changeKey(to: key)
+        await bareBoardWatches.removeValue(forKey: identity)?.stop()
+        configuration.scanObserver?.bareBoardDidChange(change)
+    }
+
+    /// Gives the first change of a batch that can show a `git init` in the root directory of a board: a change of the
+    /// root directory, of its `.git` entry, or of its git config, or a change of the parent folder itself (for
+    /// example the compare batch after the start of the watcher).
+    ///
+    /// - Parameters:
+    ///   - changes: The changes of the batch.
+    ///   - root: The root directory of the board.
+    ///   - parent: The watched parent folder of the root directory.
+    /// - Returns: The change, or `nil` when no change of the batch can show a `git init` in the root directory.
+    private static func gitInitChange(
+        in changes: [ScanChange],
+        ofBoardAt root: URL,
+        inside parent: WatchedPlace
+    ) -> ScanChange? {
+        changes.first { change in change == .repo(root.canonicalPath) || change == .place(parent.path) }
+    }
+
+    /// Reads the key of a board outside git again, after a change of its folder.
+    ///
+    /// - Parameter root: The root directory of the board.
+    /// - Returns: The git key, or `nil` when git gives no git key: the folder is still outside git, or the read failed.
+    ///   The host records a failed read with swift-log.
+    private func gitKey(ofBoardAt root: URL) async -> BoardKey? {
+        do {
+            let key = try await configuration.boardKeyReader(root)
+            return key.isBoardID ? nil : key
+        } catch {
+            Log.kanban.warning(
+                "The host cannot read the git key of a board outside git, so the board keeps its board ID key",
+                metadata: ["path": "\(root.path)", "error": "\(error)"]
+            )
+            return nil
+        }
+    }
+
+    /// Tells whether an engine is the loaded engine of its folder in the table of the host.
+    ///
+    /// - Parameter engine: The engine.
+    /// - Returns: `true` when the table has this engine, loaded, for the identity of its folder.
+    private func isLoaded(_ engine: BoardEngine) -> Bool {
+        guard case .loaded(let loaded) = engines[engine.identity] else {
+            return false
+        }
+        return loaded === engine
+    }
+
     // MARK: - File watches
+
+    /// Starts a file watcher on the parent folder of a repo folder, and makes its watch: the watcher of a folder that a
+    /// path ref named, or of the folder of a current board outside git. Each batch goes to a receiver with the watched
+    /// parent folder, so that the receiver can read the changes of the batch (``WatchedPlace/changes(in:)``). The
+    /// watch holds the host weakly.
+    ///
+    /// - Parameters:
+    ///   - repo: The repo folder.
+    ///   - receive: Gets the host, the watched parent folder, and the changed paths of each batch.
+    /// - Returns: The watch.
+    /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when the watcher cannot start.
+    private func makeParentWatch(
+        ofRepoAt repo: URL,
+        sendingBatchesTo receive: @escaping @Sendable (KanbanHost, WatchedPlace, [URL]) async -> Void
+    ) async throws(BoardWatcherError) -> BoardWatch {
+        let parent = repo.deletingLastPathComponent()
+        let watched = WatchedPlace(watching: parent)
+        return try await makeFolderWatch(of: parent) { host, paths in
+            await receive(host, watched, paths)
+        }
+    }
 
     /// Starts a file watcher on one folder, and makes its watch with
     /// ``BoardWatch/init(of:heldWeaklyBy:sendingBatchesTo:)``. The watch holds the host weakly.
@@ -845,20 +1004,23 @@ public actor KanbanHost {
 
     // MARK: - Close
 
-    /// Stops the file watcher of each board, of each scan place, of each board that could not load, and of each folder
-    /// that a path ref named, and ends each subscription. The boards stay in memory, and a board that loads later has
-    /// no watcher. With no watcher on its places, a scan index is not current any more. A board that could not load
-    /// loads again at its next related load. The host forgets what git told about each folder that a path ref named:
-    /// a ref with the key of such a board does not find it, and each path ref reads git again. The shared host stays
-    /// open for the life of the process; a test closes its own host. Each retired engine that is still alive closes
-    /// too, so that its subscriptions end.
+    /// Stops the file watcher of each board, of each scan place, of each board that could not load, of each folder
+    /// that a path ref named, and of the folder of each current board outside git, and ends each subscription. The
+    /// boards stay in memory, and a board that loads later has no watcher. A `git init` in the folder of a board
+    /// outside git then does not change its key. With no watcher on its places, a scan index is not current any more.
+    /// A board that could not load loads again at its next related load. The host forgets what git told about each
+    /// folder that a path ref named: a ref with the key of such a board does not find it, and each path ref reads git
+    /// again. The shared host stays open for the life of the process; a test closes its own host. Each retired engine
+    /// that is still alive closes too, so that its subscriptions end.
     func close() async {
         isClosed = true
         let watches =
             Array(placeWatches.values) + unloadableBoards.values.map(\.watch) + knownFolders.values.map(\.watch)
+            + Array(bareBoardWatches.values)
         placeWatches = [:]
         unloadableBoards = [:]
         knownFolders = [:]
+        bareBoardWatches = [:]
         for watch in watches {
             await watch.end()
         }
@@ -914,7 +1076,8 @@ struct HostConfiguration: Sendable {
     let workerObserver: (any LoaderWorkerObserver)?
 
     /// Gets a call when a scan for the related boards starts, when the file watcher of a scan place sees a change,
-    /// and when the host forgets what git told about a folder that a path ref named, or `nil` for no calls.
+    /// when the host forgets what git told about a folder that a path ref named, and when a current board outside git
+    /// gets its git key, or `nil` for no calls.
     let scanObserver: (any BoardScanObserver)?
 
     /// The FSEvents calls of the file watchers of the host. A test gives a fake, for example a service whose stream
@@ -951,8 +1114,9 @@ struct HostConfiguration: Sendable {
     ///   - logWriter: The writer of the appends of each commit.
     ///   - loadObserver: Gets a call when the file load of a board starts and ends, or `nil` for no calls.
     ///   - workerObserver: Gets a call when each worker of a loader reads a file, or `nil` for no calls.
-    ///   - scanObserver: Gets a call when a scan starts, when the file watcher of a scan place sees a change, and when
-    ///     the host forgets what git told about a folder that a path ref named, or `nil` for no calls.
+    ///   - scanObserver: Gets a call when a scan starts, when the file watcher of a scan place sees a change, when the
+    ///     host forgets what git told about a folder that a path ref named, and when a current board outside git gets
+    ///     its git key, or `nil` for no calls.
     ///   - folderEvents: The FSEvents calls of the file watchers of the host.
     init(
         keyReader: @escaping BoardKeyReader = BoardKey.read(fromRepoAt:),
