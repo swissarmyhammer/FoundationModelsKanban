@@ -206,11 +206,37 @@ actor BoardEngine {
 
     // MARK: - Session
 
-    /// Gives the new session of the board after a call. The caller must hold ``gate``.
+    /// Gives the new session of the board after a call. The caller must hold ``gate``. The new session keeps the
+    /// current key of the board, because ``changeKey(to:)`` does not wait for the gate: a call that started before a
+    /// key change gives a session with the key before the change.
     ///
     /// - Parameter newSession: The session after the call.
     func replaceSession(with newSession: CommitSession) {
-        session = newSession
+        storeKeepingKey(newSession)
+    }
+
+    /// Gives the board the key that git gives now, when it is not the current key (divergence.md M9). For example, a
+    /// `git init` in the folder of a board outside git changes its key from its board ID to the git key, and the host
+    /// then reads the new key from git with no restart. The next write records the key before the change as a name of
+    /// the board (``CommitSession/changeKey(to:)``).
+    ///
+    /// The change does not wait for ``gate``: a caller can hold the gate of this engine while it loads a related
+    /// board. A call or a batch that runs now keeps the change when it gives back its session
+    /// (``replaceSession(with:)``).
+    ///
+    /// - Parameter key: The key that git gives now.
+    func changeKey(to key: BoardKey) {
+        session.changeKey(to: key)
+    }
+
+    /// Stores a new session of the board with the key and the former keys of the current session, so that a key
+    /// change during the call or the batch that made the new session stays.
+    ///
+    /// - Parameter newSession: The new session.
+    private func storeKeepingKey(_ newSession: CommitSession) {
+        var kept = newSession
+        kept.takeKey(of: session)
+        session = kept
     }
 
     /// Takes the changes of the live graph that added events since the last take, and forgets them. The caller must
@@ -343,7 +369,7 @@ actor BoardEngine {
         guard await readsRoot() else {
             return
         }
-        session = updated
+        storeKeepingKey(updated)
         guard !applied.isEmpty else {
             return
         }

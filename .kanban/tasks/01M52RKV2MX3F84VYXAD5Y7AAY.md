@@ -82,10 +82,26 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift. `swift test --filter BoardLocatorTests`: 26 tests in 1 suite pass. The only warning is the accepted SwiftPM "missing creator" warning.
     - next: test, then review
   timestamp: 2026-10-19T17:36:19.120230+00:00
+- actor: claude-code
+  id: 01m5akwvp0rfv6thkjx0eykazk
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (bfdc089). 0 findings, 0 confirmed, 0 refuted. 7 validators ran, 0 failed. All prior Review Findings items are checked.
+    - next: none. The task moved to done.
+  timestamp: 2026-10-19T17:38:37.376628+00:00
+- actor: claude-code
+  id: 01m5akx78adj2d5hvb61a89ht9
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — 1 file (BoardLocatorTests.swift)
+    - test: green — swift test, 1629 passed
+    - commit: bfdc089
+    - review: clean — 0 findings, 3/3 prior findings checked
+  timestamp: 2026-10-19T17:38:49.226073+00:00
 depends_on:
 - 01M52RKMDD8RJ7TNTQVE65466D
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ff9e80
 title: Put back boards in bare folders, with search up outside git
 ---
 ## What

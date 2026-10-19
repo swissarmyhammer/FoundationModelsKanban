@@ -193,6 +193,11 @@ public actor KanbanHost {
     /// Gives the engine of a board by the identity of its repo directory, and loads the board when no engine has it
     /// yet.
     ///
+    /// A caller that knows the key read it from git after the engine loaded: the scan, or a path ref whose record
+    /// expired. When that key is not the key of the engine, the engine takes it (``BoardEngine/changeKey(to:)``,
+    /// divergence.md M9). For example, a `git init` in the folder of a loaded board outside git gives the git key with
+    /// no restart.
+    ///
     /// - Parameters:
     ///   - identity: The identity of the root directory.
     ///   - root: The root directory of the repo of the board.
@@ -204,14 +209,16 @@ public actor KanbanHost {
         at root: URL,
         knownKey: BoardKey?
     ) async throws -> BoardEngine {
-        switch engines[identity] {
-        case .loaded(let engine):
-            return engine
-        case .loading(let load):
-            return try await load.value
-        case nil:
-            return try await startLoad(ofBoardAt: root, identity: identity, knownKey: knownKey)
+        let engine =
+            switch engines[identity] {
+            case .loaded(let engine): engine
+            case .loading(let load): try await load.value
+            case nil: try await startLoad(ofBoardAt: root, identity: identity, knownKey: knownKey)
+            }
+        if let knownKey {
+            await engine.changeKey(to: knownKey)
         }
+        return engine
     }
 
     /// Starts the load of a board, stores the load task, and waits for it.

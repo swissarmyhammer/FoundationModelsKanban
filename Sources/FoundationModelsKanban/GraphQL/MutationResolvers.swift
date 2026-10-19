@@ -1,5 +1,6 @@
 import Graphiti
 import GraphQL
+import OrderedCollections
 import ULID
 
 // MARK: - Names
@@ -398,6 +399,11 @@ extension WorkingCopy {
     /// a board ID when the log does not have it, so that each stored ref with the key names the board. It records no
     /// git key.
     ///
+    /// The keys that the board had in this process before its current key (``formerKeys``) are names too: a former
+    /// board ID is a board ID, and a former git key is an old name. Thus a `git init` in the folder of a board outside
+    /// git keeps the board ID that the board had as its key, also when no write recorded it before the `git init`.
+    /// The log already has each name that the patch adds again, so such a name writes nothing.
+    ///
     /// - Parameters:
     ///   - key: The current key of the board: its git key, or its board ID outside git.
     ///   - time: The time of the change.
@@ -405,12 +411,17 @@ extension WorkingCopy {
     fileprivate mutating func recordBoardNames(currentKey key: String, at time: DateTime) throws(EventError) {
         let board = graph.boardNode
         let keyID = ULID(boardKeyText: key)
-        let oldKeys = board?.gitKey.flatMap { recorded in recorded == key ? nil : [StoredRef.board(named: recorded)] }
+        let pastKeys = OrderedSet(([board?.gitKey].compactMap(\.self) + formerKeys).filter { past in past != key })
+        let pastIDs = pastKeys.compactMap(ULID.init(boardKeyText:))
+        let oldKeys = pastKeys.filter { past in ULID(boardKeyText: past) == nil }.map(StoredRef.board(named:))
         let patch = try PatchInput(
             node: .board,
             set: keyID == nil ? [PropertyName.gitKey: .json(.string(key))] : [:],
-            add: [PropertyName.boardIDs: newBoardIDs(of: board, key: keyID), PropertyName.oldNames: oldKeys ?? []]
-                .filter { _, refs in !refs.isEmpty }
+            add: [
+                PropertyName.boardIDs: newBoardIDs(of: board, keys: [keyID].compactMap(\.self) + pastIDs),
+                PropertyName.oldNames: oldKeys,
+            ]
+            .filter { _, refs in !refs.isEmpty }
         )
         try apply(patch, at: time)
     }
@@ -419,14 +430,15 @@ extension WorkingCopy {
     ///
     /// - Parameters:
     ///   - board: The board node, or `nil` when the board has no board node yet.
-    ///   - keyID: The current key of the board when it is a board ID (a board outside git), or `nil` for a git key.
-    /// - Returns: The key when it is a board ID that the log does not have; else a new ID when the board has no ID.
-    private mutating func newBoardIDs(of board: BoardNode?, key keyID: ULID?) -> [StoredRef] {
+    ///   - keyIDs: The keys of the board that are board IDs: its current key outside git, and each former key that
+    ///     was a board ID.
+    /// - Returns: Each key that the log does not have; else a new ID when the board has no ID and no such key.
+    private mutating func newBoardIDs(of board: BoardNode?, keys keyIDs: [ULID]) -> [StoredRef] {
         let ids = board?.ids ?? []
-        if let keyID {
-            return ids.contains(keyID) ? [] : [StoredRef.board(named: keyID.ulidString)]
+        guard ids.isEmpty, keyIDs.isEmpty else {
+            return keyIDs.filter { id in !ids.contains(id) }.map { id in StoredRef.board(named: id.ulidString) }
         }
-        return ids.isEmpty ? [StoredRef.board(named: mintULID().ulidString)] : []
+        return [StoredRef.board(named: mintULID().ulidString)]
     }
 }
 

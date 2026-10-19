@@ -104,23 +104,23 @@ struct PathRefCacheTests {
 
     @Test("After git init in a folder that a path ref named, the next call with the path ref reads the git key")
     func gitInitReadsGitKey() async throws {
-        let place = try ScanPlace.make()
-        let outside = try TemporaryDirectory()
-        let folder = try GitSandbox.makeFolder(named: ScanCacheTests.newName, in: outside.url)
-        let reader = ScanKeyReader()
-        let recorder = ScanRecorder()
-        let host = ScanCacheTests.makeHost(reading: reader, recordedBy: recorder)
-        let session = try await host.session(workingDirectory: place.app, actor: KanbanHostTests.firstActor)
-        let bareKey = try #require(try await CrossRepoReadTests.board("key", of: folder.path, on: session))
-        #expect(ULID(boardKeyText: bareKey) != nil, "The key \(bareKey) of a folder outside git is not a board ID")
-        #expect(reader.keyReadCount(ofRepoNamed: ScanCacheTests.newName) == 0)
-        try await GitSandbox.initializeRepo(at: folder, withIdentity: false)
-        try await recorder.waitForChange(waitingFor: "a scan change after which git is read again", at: folder) {
-            _ = try await CrossRepoReadTests.board("key", of: folder.path, on: session)
-            return reader.keyReadCount(ofRepoNamed: ScanCacheTests.newName) > 0
-        }
-        #expect(try await CrossRepoReadTests.board("path", of: folder.path, on: session) == folder.path)
-        await host.close()
+        let repo = try await BareFolderRepo.make()
+        let gitKey = try CrossRepoFixture.keyText(of: ScanCacheTests.newOrigin)
+        #expect(try await CrossRepoReadTests.board("key", of: repo.folder.path, on: repo.session) == gitKey)
+        #expect(try await CrossRepoReadTests.board("path", of: repo.folder.path, on: repo.session) == repo.folder.path)
+        await repo.host.close()
+    }
+
+    @Test("After git init in a loaded bare folder, the next write records the old board ID key as a board ID")
+    func gitInitWriteRecordsBareKey() async throws {
+        let repo = try await BareFolderRepo.make()
+        let bareID = try #require(ULID(boardKeyText: repo.bareKey))
+        let write = #"updateBoard(input: { board: "\#(repo.folder.path)", body: "Plan" }) { name }"#
+        try await CrossRepoUndoTests.runWithNoErrors(write, on: repo.session)
+        let board = try BoardIDTests.boardNode(inRepoAt: repo.folder)
+        #expect(board.ids == [bareID])
+        #expect(board.gitKey == (try CrossRepoFixture.keyText(of: ScanCacheTests.newOrigin)))
+        await repo.host.close()
     }
 
     @Test("After the first commit in a repo whose key read failed, the next call with the path ref finds the board")
@@ -200,5 +200,62 @@ struct PathRefCacheTests {
         try FileManager.default.setAttributes([.modificationDate: Date.now], ofItemAtPath: parent.path)
         try FileManager.default.moveItem(at: repo, to: staging.appending(path: repo.lastPathComponent))
         _ = try ScanPlace.makeRepoFolder(named: repo.lastPathComponent, in: parent)
+    }
+}
+
+// MARK: - Bare folder after git init
+
+/// A folder outside git that a path ref named, outside the scan place of the current repo, after a `git init` in it.
+/// The host loaded the engine of the board of the folder before the `git init`, with a board ID as its key.
+struct BareFolderRepo {
+    /// The scan place of the current repo.
+    let place: ScanPlace
+
+    /// The temporary directory that holds the folder of the path ref.
+    let outside: TemporaryDirectory
+
+    /// The folder that the path ref names. It is a git repo after ``make()``.
+    let folder: URL
+
+    /// The host of the session view.
+    let host: KanbanHost
+
+    /// The session view of the current repo.
+    let session: KanbanGraph
+
+    /// The key of the board of the folder before the `git init`: a board ID.
+    let bareKey: String
+
+    /// Makes the folder, the host, and the session view. A call with the path ref loads the board of the folder with
+    /// its board ID key. Then the method runs `git init` in the folder, and waits until a call with the path ref reads
+    /// the key of the folder from git again (``ScanRecorder/waitForChange(waitingFor:at:until:)``).
+    ///
+    /// - Returns: The folder after the `git init`.
+    /// - Throws: An error when a folder, the host, or the view cannot be made, when `git init` fails, or
+    ///   ``FolderEventTimeout`` when no call reads git again before the time limit.
+    static func make() async throws -> BareFolderRepo {
+        let place = try ScanPlace.make()
+        let outside = try TemporaryDirectory()
+        let folder = try GitSandbox.makeFolder(named: ScanCacheTests.newName, in: outside.url)
+        let reader = ScanKeyReader()
+        let recorder = ScanRecorder()
+        let host = ScanCacheTests.makeHost(reading: reader, recordedBy: recorder)
+        let session = try await host.session(workingDirectory: place.app, actor: KanbanHostTests.firstActor)
+        let bareKey = try #require(try await CrossRepoReadTests.board("key", of: folder.path, on: session))
+        #expect(ULID(boardKeyText: bareKey) != nil, "The key \(bareKey) of a folder outside git is not a board ID")
+        #expect(reader.keyReadCount(ofRepoNamed: ScanCacheTests.newName) == 0)
+        try await GitSandbox.initializeRepo(at: folder, withIdentity: false)
+        try await recorder.waitForChange(waitingFor: "a scan change after which git is read again", at: folder) {
+            _ = try await CrossRepoReadTests.board("key", of: folder.path, on: session)
+            return reader.keyReadCount(ofRepoNamed: ScanCacheTests.newName) > 0
+        }
+        return BareFolderRepo(
+            place: place,
+            outside: outside,
+            folder: folder,
+            host: host,
+            session: session,
+            bareKey: bareKey
+        )
     }
 }

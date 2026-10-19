@@ -158,6 +158,10 @@ struct WorkingCopy: Sendable {
     /// commit locks and checks these boards too (plan.md §5.4 steps 4.4 and 5.1).
     private(set) var readBoards: Set<String> = []
 
+    /// The keys that the board had in this process before its current key (``CommitSession/formerKeys``). A field
+    /// that keeps a patch records them as names of the board (divergence.md M9).
+    let formerKeys: [String]
+
     /// Makes the working copy of a run.
     ///
     /// - Parameters:
@@ -166,8 +170,10 @@ struct WorkingCopy: Sendable {
     ///   - stamp: The envelope values of the events of the run. Its actor is the session actor.
     ///   - largest: The largest event id of the board, or `nil` for a board with no event. Each event that the run
     ///     makes for the board gets a larger id.
-    init(graph: Graph, events: [Event], stamp: EventStamp, after largest: ULID?) {
+    ///   - formerKeys: The keys that the board had in this process before its current key. The default is none.
+    init(graph: Graph, events: [Event], stamp: EventStamp, after largest: ULID?, formerKeys: [String] = []) {
         self.graph = graph
+        self.formerKeys = formerKeys
         liveEvents = events
         self.stamp = stamp
         self.stamp.advance(past: largest)
@@ -308,8 +314,14 @@ struct CommitSession: Sendable {
     private(set) var live: LiveGraph
 
     /// The key of the board. It orders the locks (plan.md §5.4 step 5.1), and the engine resolves the board refs of
-    /// the related boards with it (plan.md §6.6).
-    let key: BoardKey
+    /// the related boards with it (plan.md §6.6). It changes when git gives a new key for the board
+    /// (``changeKey(to:)``).
+    private(set) var key: BoardKey
+
+    /// The keys that the board had in this process before its current key, in the order of the changes
+    /// (divergence.md M9). Each write records them as names of the board
+    /// (``WorkingCopy/recordBoardNames(currentKey:at:)``), so that a ref with an old key still names the board.
+    private(set) var formerKeys: [BoardKey] = []
 
     /// The source of the transaction ULIDs and the event ids.
     private var ids: any ULIDSource
@@ -347,6 +359,30 @@ struct CommitSession: Sendable {
         self.clock = clock
         self.search = search
         self.writer = writer
+    }
+
+    /// Gives the board a new key, when git gives a key that is not the current key: for example after a `git init` in
+    /// the folder of a board outside git, or after a new `origin` (divergence.md M9). The current key becomes a former
+    /// key, and the next write records it as a name of the board. The same key changes nothing.
+    ///
+    /// - Parameter newKey: The key that git gives now.
+    mutating func changeKey(to newKey: BoardKey) {
+        guard newKey != key else {
+            return
+        }
+        formerKeys.removeAll { former in former == newKey }
+        formerKeys.append(key)
+        key = newKey
+    }
+
+    /// Takes the key and the former keys of a different session of the same board. The engine calls it when a call or
+    /// a batch gives a new session that it made from a copy of the session before a key change
+    /// (``BoardEngine/replaceSession(with:)``), so that the key change stays.
+    ///
+    /// - Parameter other: The session whose key is current.
+    mutating func takeKey(of other: CommitSession) {
+        key = other.key
+        formerKeys = other.formerKeys
     }
 
     /// Gives the live tasks of the board to the search (plan.md §6.4, life of the searcher). The searcher embeds again
@@ -560,7 +596,13 @@ struct CommitSession: Sendable {
     ///   for this board gets an id larger than the largest event id of the board.
     /// - Returns: The working copy.
     func makeWorkingCopy(stampedBy stamp: EventStamp) -> WorkingCopy {
-        WorkingCopy(graph: displayGraph, events: live.events, stamp: stamp, after: live.largestEventID)
+        WorkingCopy(
+            graph: displayGraph,
+            events: live.events,
+            stamp: stamp,
+            after: live.largestEventID,
+            formerKeys: formerKeys.map(\.description)
+        )
     }
 
     /// Writes the kept patches of a run under the locks of the boards that the run changed or read for a graph rule

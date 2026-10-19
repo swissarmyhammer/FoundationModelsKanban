@@ -59,17 +59,19 @@ struct CommitTests {
     ///
     /// - Parameters:
     ///   - log: The event log of the board.
+    ///   - key: The key of the board. The default is the fake key of the fixture logs.
     ///   - ids: The ULID source of the calls. The default gives ids after each event of the fixture.
     ///   - writer: The writer of the appends of the commit. The default writes the log files.
     /// - Returns: The commit session. Its task search has no embedder.
     static func makeSession(
         of log: EventLog,
+        inBoard key: BoardKey = KanbanGraphTests.boardKey,
         mintingFrom ids: any ULIDSource = FixedULIDSource(at: ReplayTests.date(atStep: callStep)),
         writingWith writer: any EventLogWriter = FileEventLogWriter()
     ) async throws -> CommitSession {
         CommitSession(
             of: try await LiveGraphApplyTests.load(log),
-            inBoard: KanbanGraphTests.boardKey,
+            inBoard: key,
             mintingFrom: ids,
             timedBy: { callTime },
             searchingWith: TaskSearch(embeddingWith: nil),

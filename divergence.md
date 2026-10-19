@@ -1039,6 +1039,7 @@ This section lists the work in sections 10–14 that we can drop. The reasons: t
     - When a merge gives a board log with more than one ID event (two clones that each ran `initBoard`), each ID stays a name. The lowest ULID is the primary ID.
     - **Stored refs use the git key when there is one, else the ULID.** This applies to `dependsOn`, an assignee URI, and the tombstone line of a moved task. The input accepts each name.
     - When the engine sees that the git key of the board changed (a new remote, or `git init` above the folder), it records the old git key as an old name on the next write.
+      - A loaded engine takes the new key with no restart: when the scan or an expired path-ref record reads a key from git that is not the key of the engine, the engine uses the new key. The key before the change stays a name: the next write records an old git key as an old name, and an old board ID key (a `git init` in a bare folder) as a board ID. Thus the next write does not make a second board ID.
     - The host keeps an index of all names (ULIDs, git keys, old names) for each board that it scanned. The scan reads the board node log of each candidate folder one time. The watcher keeps the index current.
     - `Query.boards` and the related-board scan also find sibling folders that have a `.kanban/` and no `.git`.
     - When a scan finds two folders with the same board ULID (for example, a copied bare folder), calls work, and the response gives a warning that names both paths.
