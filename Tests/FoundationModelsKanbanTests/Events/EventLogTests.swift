@@ -559,11 +559,18 @@ final class TemporaryDirectory {
     /// The directory.
     let url: URL
 
-    /// Makes an empty temporary directory.
+    /// Makes an empty temporary directory in the folder of the ``TestFolderGroup/temporaryDirectories`` group.
     ///
     /// - Throws: An error from `FileManager` when the directory cannot be made.
-    init() throws {
-        let parent = try TestFolderRoot.folder(of: .temporaryDirectories)
+    convenience init() throws {
+        try self.init(in: TestFolderRoot.folder(of: .temporaryDirectories))
+    }
+
+    /// Makes an empty temporary directory in a parent folder.
+    ///
+    /// - Parameter parent: The folder that holds the new directory.
+    /// - Throws: An error from `FileManager` when the directory cannot be made.
+    init(in parent: URL) throws {
         url = parent.appending(path: "EventLogTests-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     }

@@ -262,7 +262,22 @@ struct AddUpdateTaskTests {
     ///
     /// - Returns: The ULID.
     static func fixtureTask() throws -> ULID {
-        try KanbanGraphTests.writeFixture(inRepoAt: TemporaryDirectory().url).task
+        try fixtureTask(in: TestFolderRoot.folder(of: .temporaryDirectories))
+    }
+
+    /// Gives the ULID of the fixture task, and writes the fixture in a new temporary directory in a parent folder.
+    ///
+    /// The directory stays alive until the write ends, and is removed at the return. A temporary value with no
+    /// binding ends just after its `url` is read: its `deinit` removes the empty directory, the fixture write makes
+    /// the directory again, and nothing removes it.
+    ///
+    /// - Parameter parent: The folder that holds the temporary directory of the fixture.
+    /// - Returns: The ULID.
+    /// - Throws: An error when the directory or the fixture cannot be made.
+    static func fixtureTask(in parent: URL) throws -> ULID {
+        let directory = try TemporaryDirectory(in: parent)
+        defer { withExtendedLifetime(directory) {} }
+        return try KanbanGraphTests.writeFixture(inRepoAt: directory.url).task
     }
 
     /// Gives the last patch of the log of a task.
@@ -331,6 +346,13 @@ struct AddUpdateTaskTests {
         let other = try #require(dependent)
         let path = [sigilRef(of: task), sigilRef(of: other), sigilRef(of: task)]
         return (error, .dependencyCycle(path: path))
+    }
+
+    @Test("fixtureTask removes the temporary directory that it writes the fixture in")
+    func fixtureTaskLeavesNoDirectory() throws {
+        let parent = try TemporaryDirectory()
+        _ = try Self.fixtureTask(in: parent.url)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: parent.url.path).isEmpty)
     }
 
     // MARK: - addTask

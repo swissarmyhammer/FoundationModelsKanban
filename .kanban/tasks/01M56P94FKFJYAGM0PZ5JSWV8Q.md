@@ -29,8 +29,24 @@ comments:
     - evidence: 4 files — Sources/FoundationModelsKanban/CrossRepo/RunningScan.swift (new), Sources/FoundationModelsKanban/Tool/KanbanHost.swift, Sources/FoundationModelsKanban/CrossRepo/ScanChange.swift, Tests/FoundationModelsKanbanTests/CrossRepo/ScanCacheTests.swift. `swift test`: 1612 tests, 132 suites, 0 issues.
     - next: /review
   timestamp: 2026-10-19T12:33:38.715493+00:00
-position_column: doing
-position_ordinal: '8280'
+- actor: claude-code
+  id: 01m5a2m0mg5w3r6mhqbzyv8f35
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (fcf4e2e). 4 files reviewed. 0 findings, 0 confirmed, 1 refuted, 7 attempted, 0 failed. The ignore rule (.reviewignore) excluded 2 files in .kanban/.
+    - next: none. The task is in done.
+  timestamp: 2026-10-19T12:36:41.744315+00:00
+- actor: claude-code
+  id: 01m5a2mbqs787rb7tqgpqp0982
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 4 files
+    - test: green — swift test, 1612 passed
+    - commit: fcf4e2e
+    - review: clean — 0 findings
+  timestamp: 2026-10-19T12:36:53.113806+00:00
+position_column: done
+position_ordinal: ff9980
 title: Share one running scan between the parallel requests of one call
 ---
 ## What

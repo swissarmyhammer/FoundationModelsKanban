@@ -1,8 +1,24 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: b980
+comments:
+- actor: claude-code
+  id: 01m5a2q89s7wc6gqvpyk3rh13g
+  text: 'Research: The two run folders in /tmp/fmk-tests each hold 96 leaked folders. All 96 hold the same files: .kanban/.gitattributes, .kanban/.gitignore, .kanban/board.jsonl, .kanban/columns/todo.jsonl, .kanban/tasks/01M3ZYPDG00040000000000009.jsonl. This is the output of KanbanGraphTests.writeFixture only (the TaskSearchTests fixture adds a done column, and no folder has it). The only call of writeFixture on a TemporaryDirectory with no binding is AddUpdateTaskTests.fixtureTask(), which 12 test files call. Swift releases the temporary TemporaryDirectory after `.url` is read, deinit removes the empty folder, and writeFixture makes it again. KanbanToolTests uses `makeTool(inRepoAt: TemporaryDirectory().url)` too, but makeTool writes nothing, so those folders are not left. Plan: add a TemporaryDirectory helper that keeps the value alive while a body runs (withExtendedLifetime), and use it in fixtureTask and in the KanbanToolTests calls.'
+  timestamp: 2026-10-19T12:38:27.897523+00:00
+- actor: claude-code
+  id: 01m5a2zbc8w11caqpq6mxhkr51
+  text: 'Implementation landed. TemporaryDirectory has a new `init(in parent: URL)`; `init()` is now a convenience init that calls it with the TemporaryDirectory group folder. AddUpdateTaskTests.fixtureTask() calls the new `fixtureTask(in:)`, which binds the directory and keeps it alive with `defer { withExtendedLifetime(directory) {} }` (the same pattern as ReplayPropertyTests and ListInStringTests). New test `fixtureTaskLeavesNoDirectory` writes the fixture in a bound parent and expects the parent to be empty. RED: the test failed before the fix (one folder left). GREEN after the fix. Full `swift test`: 1613 tests in 132 suites passed; the run left no new run folder in /tmp/fmk-tests (the run folder was removed at exit because it was empty). KanbanToolTests `makeTool(inRepoAt: TemporaryDirectory().url)` was not changed: makeTool writes nothing, and no leaked folder came from it. Not done: the shell blocked `rm -rf` of the two old run folders from before the fix (0A988E69-2E64-4C46-999F-B6B1CBEDCC82, 857BFE9E-DE59-4A44-8D3D-8C16FC3BB56B in /tmp/fmk-tests). A person must remove them, and the old `$TMPDIR/FoundationModelsKanbanTests` folder, by hand. No new folder comes from the tests now.'
+  timestamp: 2026-10-19T12:42:53.192564+00:00
+- actor: claude-code
+  id: 01m5a2zd4dx960n5n4c0qpg1p6
+  text: |-
+    ### implement — changed
+    - evidence: 2 files — Tests/FoundationModelsKanbanTests/Events/EventLogTests.swift, Tests/FoundationModelsKanbanTests/Mutations/AddUpdateTaskTests.swift; `swift test`: 1613 tests in 132 suites passed; /tmp/fmk-tests has no new run folder after the run
+    - next: /review. Remove the two old run folders in /tmp/fmk-tests by hand (the shell blocked rm -rf).
+  timestamp: 2026-10-19T12:42:54.989678+00:00
+position_column: doing
+position_ordinal: '8280'
 title: Stop the tests that leave their TemporaryDirectory folder on the disk
 ---
 ## What
@@ -12,6 +28,6 @@ After a full `swift test`, about 96 folders `EventLogTests-<UUID>` stay in `/tmp
 Some tests use a `TemporaryDirectory` with no binding, for example `KanbanGraphTests.writeFixture(inRepoAt: TemporaryDirectory().url)` (AddUpdateTaskTests), `Self.makeTool(inRepoAt: TemporaryDirectory().url)` (KanbanToolTests). Swift can release the value just after `.url` is read. Then `deinit` removes the empty folder, and the fixture write makes the folder again (`withIntermediateDirectories: true`), and nothing removes it.
 
 ## Acceptance
-- [ ] Find each test that leaves a folder (list the folders after a full run, and map the fixture to the test).
-- [ ] Each test removes its own folder at the end.
-- [ ] After a full `swift test`, `/tmp/fmk-tests` is empty.
+- [x] Find each test that leaves a folder (list the folders after a full run, and map the fixture to the test).
+- [x] Each test removes its own folder at the end.
+- [x] After a full `swift test`, `/tmp/fmk-tests` is empty.
