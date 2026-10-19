@@ -292,7 +292,7 @@ struct WorkingCopy: Sendable {
     /// - Parameter events: The events of the node logs of the other boards, in any order.
     mutating func merge(_ events: [Event]) {
         for (ref, foreign) in OrderedDictionary(grouping: events, by: \.patch.node) {
-            let current = nodeEvents[ref] ?? liveEvents.filter { event in event.patch.node == ref }
+            let current = self.events(of: ref)
             let known = Set(current)
             let added = OrderedSet(foreign.filter { event in !known.contains(event) }).elements
             guard !added.isEmpty else {
@@ -326,13 +326,22 @@ struct WorkingCopy: Sendable {
     /// - Throws: An ``EventError`` from the change of the patch. A valid patch gives no error.
     mutating func apply(_ patch: PatchInput, at time: DateTime, undoing target: ULID? = nil) throws(EventError) {
         let ref = patch.node
-        let events = nodeEvents[ref] ?? liveEvents.filter { event in event.patch.node == ref }
-        guard let change = try patch.changes(afterFolding: events) else {
+        let current = events(of: ref)
+        guard let change = try patch.changes(afterFolding: current) else {
             return
         }
         let event = stamp.makeEvent(of: change, at: time, undoing: target)
-        nodeEvents[ref] = graph.update(folding: events + [event], for: ref)
+        nodeEvents[ref] = graph.update(folding: current + [event], for: ref)
         kept.append(event)
+    }
+
+    /// Gives the current events of one node: the events of the run when the run changed the node, else the live
+    /// events of the node.
+    ///
+    /// - Parameter ref: The local ref of the node.
+    /// - Returns: The events of the node, in the order of their ids.
+    private func events(of ref: LocalRef) -> [Event] {
+        nodeEvents[ref] ?? liveEvents.filter { event in event.patch.node == ref }
     }
 }
 

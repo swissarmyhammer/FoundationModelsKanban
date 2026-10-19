@@ -198,16 +198,6 @@ struct CollectBoardsTests {
         return (columns, Dictionary(uniqueKeysWithValues: tasks))
     }
 
-    /// Gives the `extensions.code` of the first error of a response.
-    ///
-    /// - Parameter response: The response JSON text.
-    /// - Returns: The code.
-    /// - Throws: An error when the response has no error with a code.
-    static func errorCode(of response: String) throws -> String {
-        let extensions = try #require(try NameRewriteTests.errors(of: response).first?["extensions"] as? [String: Any])
-        return try #require(extensions["code"] as? String)
-    }
-
     // MARK: - Collect
 
     @Test("Two boards with tasks, comments, and a shared todo column collect into one board with all tasks and one todo column")
@@ -328,7 +318,8 @@ struct CollectBoardsTests {
         let field = Self.collectField(of: [fixture.first.folder.path, rust.path])
         let response = try await CommentTests.run(field, on: graph)
         await graph.close()
-        #expect(try Self.errorCode(of: response) == KanbanError.incompatibleBoard(directory: "").code, "\(response)")
+        let error = try #require(try NameRewriteTests.errors(of: response).first)
+        #expect(ErrorCoverageTests.code(of: error) == KanbanError.incompatibleBoard(directory: "").code, "\(response)")
         #expect(try IncompatibleBoardTests.listing(of: fixture.sandbox.root) == before)
         withExtendedLifetime(fixture.sandbox) {}
     }
@@ -341,7 +332,8 @@ struct CollectBoardsTests {
         let response = try await CommentTests.run(CrossRepoUndoTests.undoField, on: graph)
         let board = try await Self.board(on: graph)
         await graph.close()
-        #expect(try Self.errorCode(of: response) == KanbanError.nothingToUndo.code, "\(response)")
+        let error = try #require(try NameRewriteTests.errors(of: response).first)
+        #expect(ErrorCoverageTests.code(of: error) == KanbanError.nothingToUndo.code, "\(response)")
         #expect(board.tasks.count == [fixture.first, fixture.second].count, "\(board.tasks)")
         withExtendedLifetime(fixture.sandbox) {}
     }
