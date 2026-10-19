@@ -93,6 +93,18 @@ enum GraphQLFieldAliases {
         "board": ["toBoard", "targetBoard", "destination", "repo"],
     ]
 
+    /// The aliases of the `boards` argument of `checkLinks` and `repairLinks`: the boards of the links (divergence.md
+    /// M9).
+    private static let linkBoards = ["board", "ids", "id", "keys", "key", "repos", "repo", "paths", "path"]
+
+    /// The aliases of the arguments of `repairLinks` (divergence.md M9): the boards, the reach option, and the dry run
+    /// option.
+    private static let linkRepair = [
+        "boards": linkBoards,
+        "reach": ["reachable", "includeReachable", "related", "allBoards"],
+        "dryRun": ["dry", "preview", "simulate", "whatIf", "plan"],
+    ]
+
     /// The aliases of each object type and each `input` object type, by its GraphQL name.
     private static let byType: [String: [String: [String]]] = [
         "Task": ["column": ["status", "state", "lane"]],
@@ -126,7 +138,8 @@ enum GraphQLFieldAliases {
     /// so its aliases come from the mutation.
     private static let byField: [String: [String: [String]]] = [
         "Query.board": ["id": ["path", "board", "key", "repo"]],
-        "Query.checkLinks": ["boards": ["board", "ids", "id", "keys", "key", "repos", "repo", "paths", "path"]],
+        "Query.checkLinks": ["boards": linkBoards],
+        "Mutation.repairLinks": linkRepair,
         "Query.node": ["id": ["task", "column", "actor", "tag", "comment", "ref", "uri", "key", "nodeId"]],
         "Board.task": ["id": taskID],
         "Board.tasks": ["first": pageSize, "after": ["cursor"]],

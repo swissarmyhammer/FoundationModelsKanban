@@ -379,6 +379,27 @@ actor BoardStore {
         }
     }
 
+    /// Gives the boards that the scan reaches, as the targets of a mutation field: the boards of the list of
+    /// `Query.boards` (divergence.md M9, `repairLinks` with `reach`). A board that cannot be read is not in the list,
+    /// and the warning of the response names it.
+    ///
+    /// - Returns: The boards in scan order, or `nil` when the engine did not scan for the list or load a board of it
+    ///   yet. The store then records the request, and the call runs again after the load.
+    func reachableTargets() -> [MutationTarget]? {
+        guard let copies = related.copies else {
+            requests.insert(.allCopies)
+            return nil
+        }
+        let boards = copies.map(\.board).filter { board in board != .notFound && board.unreadableBoard == nil }
+        let targets = boards.map { board -> MutationTarget? in
+            guard case .copy(let copy) = board else {
+                return .current
+            }
+            return relatedTarget(of: copy, namedBy: copy.directory.path)
+        }
+        return targets.allSatisfy { target in target != nil } ? targets.compactMap(\.self) : nil
+    }
+
     /// Gives the working copy of a board of a mutation field as the run sees it now.
     ///
     /// - Parameter target: The board.
@@ -405,7 +426,7 @@ actor BoardStore {
     ///
     /// - Parameter target: The board.
     /// - Returns: The read view.
-    private func view(of target: MutationTarget) -> BoardView {
+    func view(of target: MutationTarget) -> BoardView {
         switch target {
         case .current:
             view
@@ -1175,6 +1196,7 @@ struct PublicSchema: API {
             .addCommentMutations()
             .addTagMutations()
             .addUndoMutations()
+            .addRepairLinksMutation()
             .addChangesSubscription()
         schema = try extend(builder).build()
     }

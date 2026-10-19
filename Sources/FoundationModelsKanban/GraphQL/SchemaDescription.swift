@@ -264,4 +264,33 @@ enum SchemaDescription {
     static let linkCurrentName = """
         The current key of the board that the link names. Null for a \(LinkStatus.dangling.rawValue) link.
         """
+
+    // MARK: - Link repairs
+
+    /// The `Mutation.repairLinks` field (divergence.md M9).
+    static let repairLinks = """
+        Rewrites each \(LinkStatus.oldName.rawValue) link of the boards to the current name of its board, and lists \
+        each \(LinkStatus.oldName.rawValue) and \(LinkStatus.dangling.rawValue) link. A \
+        \(LinkStatus.dangling.rawValue) link does not change. One undo reverses the rewrite in each board.
+        """
+
+    /// The `boards` argument of `Mutation.repairLinks`.
+    static let boardsToRepair = """
+        The boards whose links to rewrite. Each item is a board ref. \(boardForms) No value, or an empty list, names \
+        the current board. The call writes to no other board, unless reach is true.
+        """
+
+    /// The `reach` argument of `Mutation.repairLinks`.
+    static let repairReach = """
+        True also rewrites the links of each board that the scan reaches: the boards of Query.boards.
+        """
+
+    /// The `dryRun` argument of `Mutation.repairLinks`.
+    static let repairDryRun = "True lists the same links and writes nothing."
+
+    /// The `LinkRepair.newTarget` field.
+    static let linkNewTarget = """
+        The link after the rewrite: the full kanban:// URI with the current name of its board. Null for a \
+        \(LinkStatus.dangling.rawValue) link, which does not change.
+        """
 }

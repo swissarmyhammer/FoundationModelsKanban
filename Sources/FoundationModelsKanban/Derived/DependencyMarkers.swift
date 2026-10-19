@@ -11,10 +11,11 @@ struct DependencyMarker: Hashable, Sendable {
     let range: Range<String.Index>
 }
 
-/// Finds and removes the dependency markers of a task body (plan.md §6.1, §12 item 7).
+/// Finds, removes, and replaces the dependency markers of a task body (plan.md §6.1, §12 item 7).
 ///
 /// Only a full task URL is a marker. A short id, `^short`, a bare ULID, or a URL to a node that is not a task is
-/// plain text. The text keeps the URL as the agent wrote it: the tool does not rewrite it.
+/// plain text. The text keeps the URL as the agent wrote it: only `repairLinks` rewrites a URL with an old board name
+/// (divergence.md M9).
 ///
 /// A URL in a fence line, in a fenced code block, in a heading line, or in inline code is not a marker
 /// (``MarkdownCode``). Thus an example URL in a code block does not block a task, and does not make a cycle.
@@ -137,6 +138,50 @@ extension DependencyMarkers {
         var kept = text
         kept.removeSubranges(RangeSet(ranges))
         return BodyLines.editedLine(withText: kept, replacing: line)
+    }
+}
+
+// MARK: - Replace
+
+extension DependencyMarkers {
+    /// Replaces each marker of one task in a body with the URL of a different URI.
+    ///
+    /// The `repairLinks` mutation uses it when it rewrites a task URL with an old board name to the current name of
+    /// the board (divergence.md M9). A URL that is not a marker, for example a URL in a code block, stays. A line with
+    /// no marker of the task stays the same, byte for byte, and a changed line keeps its other text and its line break.
+    ///
+    /// - Parameters:
+    ///   - old: The URI of the task whose markers to replace.
+    ///   - new: The URI that each marker gets.
+    ///   - body: The Markdown body of a task.
+    /// - Returns: The body with the new URL in place of each marker of the old URI.
+    static func replacing(markersOf old: NodeURI, with new: NodeURI, in body: String) -> String {
+        MarkdownCode.editingMarkerBearingLines(of: body) { line in
+            editedLine(line, replacingMarkersOf: old, with: new)
+        }
+    }
+
+    /// Replaces the markers of one task in one line.
+    ///
+    /// - Parameters:
+    ///   - line: The line, with its line break.
+    ///   - old: The URI of the task whose markers to replace.
+    ///   - new: The URI that each marker gets.
+    /// - Returns: The changed line with its line break, or `nil` when the line has no marker of the task.
+    private static func editedLine(
+        _ line: Substring,
+        replacingMarkersOf old: NodeURI,
+        with new: NodeURI
+    ) -> String? {
+        let text = BodyLines.content(of: line)
+        let ranges = markers(inLine: text).filter { marker in marker.uri == old }.map(\.range)
+        guard let last = ranges.last else {
+            return nil
+        }
+        let starts = [text.startIndex] + ranges.map(\.upperBound)
+        let kept = zip(starts, ranges).map { start, range in String(text[start..<range.lowerBound]) }
+        return kept.joined(separator: new.description) + new.description + text[last.upperBound...]
+            + line[text.endIndex...]
     }
 }
 

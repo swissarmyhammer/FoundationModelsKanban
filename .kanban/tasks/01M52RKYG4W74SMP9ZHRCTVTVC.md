@@ -64,10 +64,26 @@ comments:
     - evidence: `swift build --build-tests` has only the accepted mlx "missing creator" warning; `swift test --filter CheckLinksTests` 14 passed; `swift test` 1650 tests in 136 suites passed. Files: Sources/FoundationModelsKanban/GraphQL/ResponseWarnings.swift, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift, Sources/FoundationModelsKanban/CrossRepo/BoardPlaceWarnings.swift, Sources/FoundationModelsKanban/CrossRepo/OldBoardName.swift, Sources/FoundationModelsKanban/CrossRepo/BoardLocator.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CheckLinksTests.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoFixture.swift.
     - next: /review
   timestamp: 2026-10-19T18:24:46.146181+00:00
+- actor: claude-code
+  id: 01m5apq9zyyq10mynzz5casa0z
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (f7b3f9b). 7 files reviewed. 0 findings, 0 confirmed, 3 refuted. All prior findings are checked.
+    - next: The task is in done. No more work is necessary.
+  timestamp: 2026-10-19T18:28:01.150605+00:00
+- actor: claude-code
+  id: 01m5apqk84w2jznxya524dsfc6
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 7 files
+    - test: green — swift test, 1650 passed
+    - commit: f7b3f9b
+    - review: clean — 0 findings, 2/2 prior findings checked
+  timestamp: 2026-10-19T18:28:10.628345+00:00
 depends_on:
 - 01M52RKMDD8RJ7TNTQVE65466D
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffa080
 title: Add checkLinks, and resolve an old board name at read time with a warning
 ---
 ## What

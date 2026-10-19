@@ -36,19 +36,44 @@ extension BoardStore {
     ///   store then records the requests, and the call runs again after the load.
     /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for a ref.
     func linkChecks(ofBoards references: [String]?) throws(KanbanError) -> [LinkCheck]? {
-        let named = references.flatMap { refs in refs.isEmpty ? nil : refs.map(Optional.some) } ?? [nil]
-        let views = try named.map { reference throws(KanbanError) in try view(ofBoard: reference) }
+        let views = try Self.boardReferences(references).map { reference throws(KanbanError) in
+            try view(ofBoard: reference)
+        }
         let boards = OrderedDictionary(
             views.compactMap(\.self).map { view in (view.boardKey, view) },
             uniquingKeysWith: { first, _ in first }
         )
-        let checks = boards.values.flatMap { view in
-            view.graph.storedLinks(inBoard: view.boardKey).map { link in check(link, in: view) }
-        }
-        guard views.allSatisfy({ view in view != nil }), checks.allSatisfy({ check in check != nil }) else {
+        let checks = boards.values.map(checkedLinks(of:))
+        guard views.allSatisfy({ view in view != nil }), checks.allSatisfy({ links in links != nil }) else {
             return nil
         }
-        return checks.compactMap(\.self)
+        return checks.compactMap(\.self).flatMap { links in links.map(\.check) }
+    }
+
+    /// Gives the board refs of a field that names the boards of its links: `checkLinks` and `repairLinks`
+    /// (divergence.md M9).
+    ///
+    /// - Parameter references: The board refs of the field, or `nil` or an empty list for the current board.
+    /// - Returns: The board refs, or one `nil` ref for the current board.
+    static func boardReferences(_ references: [String]?) -> [String?] {
+        references.flatMap { refs in refs.isEmpty ? nil : refs.map(Optional.some) } ?? [nil]
+    }
+
+    /// Checks each stored link of one board (``Graph/storedLinks(inBoard:)``). The check of each link runs, also after
+    /// a link whose board is not loaded, so that the store records the requests of all links in one run.
+    ///
+    /// - Parameter view: The read view of the board that holds the links.
+    /// - Returns: Each link with its check, in the order of ``Graph/storedLinks(inBoard:)``, or `nil` when the engine
+    ///   did not resolve or load the board of a link yet. The store then records the requests, and the call runs again
+    ///   after the load.
+    func checkedLinks(of view: BoardView) -> [(link: StoredLink, check: LinkCheck)]? {
+        let checked = view.graph.storedLinks(inBoard: view.boardKey).map { link in
+            check(link, in: view).map { check in (link: link, check: check) }
+        }
+        guard checked.allSatisfy({ link in link != nil }) else {
+            return nil
+        }
+        return checked.compactMap(\.self)
     }
 
     /// Checks one stored link of a board. A link with the current key of its own board reads the graph of that board.
@@ -77,14 +102,29 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
         add {
             Self.enumType(LinkField.self)
             Self.enumType(LinkStatus.self)
-            Type(LinkCheck.self) {
-                Field("board", at: \.board).description(SchemaDescription.linkBoard)
-                Field("node", at: \.node).description(SchemaDescription.linkNode)
-                Field("field", at: \.field).description(SchemaDescription.linkField)
-                Field("target", at: \.target).description(SchemaDescription.linkTarget)
-                Field("status", at: \.status).description(SchemaDescription.linkStatus)
-                Field("currentName", at: \.currentName).description(SchemaDescription.linkCurrentName)
-            }
+            Graphiti.`Type`(
+                resolver: KanbanResolver.self,
+                context: KanbanContext.self,
+                LinkCheck.self,
+                fields: Self.linkCheckFields(of: \.self)
+            )
         }
+    }
+
+    /// Gives the fields of a checked link, for the `LinkCheck` type and for the `LinkRepair` type of
+    /// `Mutation.repairLinks` (divergence.md M9).
+    ///
+    /// - Parameter check: The key path from the object to its checked link.
+    /// - Returns: The fields `board`, `node`, `field`, `target`, `status`, and `currentName`.
+    @FieldComponentBuilder<Object, KanbanContext>
+    static func linkCheckFields<Object: Sendable>(
+        of check: KeyPath<Object, LinkCheck>
+    ) -> [FieldComponent<Object, KanbanContext>] {
+        Field("board", at: check.appending(path: \.board)).description(SchemaDescription.linkBoard)
+        Field("node", at: check.appending(path: \.node)).description(SchemaDescription.linkNode)
+        Field("field", at: check.appending(path: \.field)).description(SchemaDescription.linkField)
+        Field("target", at: check.appending(path: \.target)).description(SchemaDescription.linkTarget)
+        Field("status", at: check.appending(path: \.status)).description(SchemaDescription.linkStatus)
+        Field("currentName", at: check.appending(path: \.currentName)).description(SchemaDescription.linkCurrentName)
     }
 }

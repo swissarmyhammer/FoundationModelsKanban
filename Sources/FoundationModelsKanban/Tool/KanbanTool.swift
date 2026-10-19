@@ -55,7 +55,8 @@ public struct KanbanTool: Tool {
         matches each task that has it. Task.unresolvedDependsOn shows each dependency that no loaded board has. \
         checkLinks gives the class of each stored link: \
         \(LinkStatus.allCases.map(\.rawValue).joined(separator: ", ")). A link with an old board name still works, \
-        and the response gives the warning \(OldBoardName.warningCode). \
+        and the response gives the warning \(OldBoardName.warningCode). The repairLinks mutation rewrites each \
+        \(LinkStatus.oldName.rawValue) link to the current name; dryRun: true only lists the changes. \
         Read the warnings in extensions.warnings. The board is in .kanban at the top of a git worktree. Outside git, \
         the board is in the nearest folder up that has a .kanban folder, else in the working directory, and its key \
         is its board ID. A .kanban folder of the old Rust kanban gives INCOMPATIBLE_BOARD. \

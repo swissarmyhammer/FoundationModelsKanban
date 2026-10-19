@@ -197,13 +197,38 @@ enum MovedTaskLine {
     /// - Parameter body: The Markdown body of a task.
     /// - Returns: The URIs, in text order. A line whose text after the prefix is not a node URI gives no URI.
     static func targets(in body: String) -> [NodeURI] {
-        body.split(whereSeparator: \.isNewline).compactMap { line in
-            guard line.hasPrefix(prefix) else {
-                return nil
-            }
-            let text = line.dropFirst(prefix.count).trimmingCharacters(in: .whitespacesAndNewlines)
-            // A text that does not parse is not a line of a move: each parse error means "no URI".
-            return try? NodeURI(parsing: text)
+        body.split(whereSeparator: \.isNewline).compactMap(target(ofLine:))
+    }
+
+    /// Replaces the URI of each line of a body that points to one task with a different URI: the `repairLinks`
+    /// rewrite of a moved line with an old board name (divergence.md M9). Each other line stays the same, byte for
+    /// byte, and a changed line keeps its line break, also a `\r\n`.
+    ///
+    /// - Parameters:
+    ///   - old: The URI that the line points to now.
+    ///   - new: The URI that the line gets.
+    ///   - body: The Markdown body of a task.
+    /// - Returns: The body with the new line in place of each line that points to the old URI.
+    static func replacing(_ old: NodeURI, with new: NodeURI, in body: String) -> String {
+        let lines = BodyLines.lines(of: body)
+        let edits = lines.map { line in
+            let content = BodyLines.content(of: line)
+            return target(ofLine: content) == old ? text(pointingTo: new) + line[content.endIndex...] : nil
         }
+        return BodyLines.body(joining: lines, with: edits)
+    }
+
+    /// Finds the URI of one line that points to the new task of a move.
+    ///
+    /// - Parameter line: The text of the line, with no line break.
+    /// - Returns: The URI, or `nil` when the line does not start with the prefix, or its text after the prefix is not
+    ///   a node URI.
+    private static func target(ofLine line: Substring) -> NodeURI? {
+        guard line.hasPrefix(prefix) else {
+            return nil
+        }
+        let text = line.dropFirst(prefix.count).trimmingCharacters(in: .whitespacesAndNewlines)
+        // A text that does not parse is not a line of a move: each parse error means "no URI".
+        return try? NodeURI(parsing: text)
     }
 }
