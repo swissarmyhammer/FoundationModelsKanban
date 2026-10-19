@@ -32,6 +32,31 @@ comments:
     outcome: changed
     task: ^d5y7aay
   timestamp: 2026-10-19T17:23:22.809157+00:00
+- actor: claude-code
+  id: 01m5akadqzvyz1sgxc2k4r5jca
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (4b9f488). 2 findings, 2 confirmed, 0 refuted. Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift:248, Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift:424
+    - next: Move the bare-folder key reader to one shared test helper. Both tests must call it. Then run the review again.
+  timestamp: 2026-10-19T17:28:33.279137+00:00
+- actor: claude-code
+  id: 01m5akavezhz9f1acce3mbw296
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 3 new files, 13 Sources files, 11 test files, 2 docs
+    - test: green — swift test, 1629 passed
+    - commit: 4b9f488
+    - review: findings — BoardLocatorTests.swift:248, BoardLocatorTests.swift:424
+  timestamp: 2026-10-19T17:28:47.327521+00:00
+- actor: claude-code
+  id: 01m5akfnnf0j9mzyxagazpp583
+  text: |-
+    Fixed the 2 `reuse/reuse` findings in BoardLocatorTests.swift. A new test helper `BoardLocatorTests.bareFolderKeyReader(giving:)` holds the one do/catch closure. It reads the key from git, and gives the fixed bare key on `.notARepo`. `folderWithBoardAndNoGitIsCopy` and `pathOutsideGitResolvesToBareBoard` both call it. No other `catch .notARepo` closure stays in the file. I did not use the production `boardKeyReader`: `HostConfiguration.bareBoardIDs` has a fixed `SystemULIDSource`, and it reads the board ID from the log first, so the fixture log of the scan test can give a key that is not the fixed key. Production code did not change.
+
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift. `swift test`: 1629 tests in 134 suites pass. The only warning is the accepted SwiftPM "missing creator" warning.
+    - next: review
+  timestamp: 2026-10-19T17:31:25.231898+00:00
 depends_on:
 - 01M52RKMDD8RJ7TNTQVE65466D
 position_column: doing
@@ -55,3 +80,17 @@ divergence.md M9 "where the board is". A board can be in a folder that is not in
 - [x] `boards` lists a sibling bare-folder board.
 - [x] The copied-folder warning and the subfolder-in-repo warning are given.
 - [x] Tests use temporary folders and temporary git repos only.
+
+## Review Findings (2026-10-19 12:24)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 28 file(s) reviewed, 8 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+> 2 file(s) not reviewed — no validator matched:
+> - `Documentation/kanban/SKILL.md` — no validator matches this file
+> - `README.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift:248` `reuse/reuse` — The test makes its own key reader for bare folders. It uses the same do/catch pattern as the other bare-folder test. It does not use one shared helper. If the rule for bare-folder keys changes, the two tests can drift apart. Move the closure to one test helper that takes the bare key as a parameter. Call it from both tests. Or build the reader once from the production `boardKeyReader` with a fixed bare-ID source.
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/BoardLocatorTests.swift:424` `reuse/reuse` — The bare-folder key reader in this test repeats the closure in `folderWithBoardAndNoGitIsCopy` (line 248). The same logic is in two places in the file. Use one shared helper for the bare-folder key reader, as in the finding at line 248. Then both tests call the helper.

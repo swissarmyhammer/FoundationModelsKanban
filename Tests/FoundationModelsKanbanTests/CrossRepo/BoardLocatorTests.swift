@@ -119,6 +119,21 @@ struct BoardLocatorTests {
         try await locator.scan(around: root, readingKeysWith: BoardKey.read(fromRepoAt:))
     }
 
+    /// Gives a key reader that reads the key from git, and gives one fixed board ID key for a folder that is not in a
+    /// git repo. The tests of boards outside git use it in place of the board ID record of a host.
+    ///
+    /// - Parameter bareKey: The key that the reader gives for each folder that is not in a git repo.
+    /// - Returns: The key reader.
+    static func bareFolderKeyReader(giving bareKey: BoardKey) -> BoardKeyReader {
+        { root throws(BoardKeyError) in
+            do throws(BoardKeyError) {
+                return try await BoardKey.read(fromRepoAt: root)
+            } catch .notARepo {
+                return bareKey
+            }
+        }
+    }
+
     /// Gives the names of the directories of the copies of an index, in scan order.
     ///
     /// - Parameter index: The index.
@@ -245,13 +260,10 @@ struct BoardLocatorTests {
         let lib = try GitSandbox.makeFolder(named: Self.libName, in: sandbox.root)
         _ = try KanbanGraphTests.writeFixture(inRepoAt: lib)
         let bareKey = BoardKey(boardID: ULID())
-        let index = try await BoardLocator.default.scan(around: app) { root throws(BoardKeyError) in
-            do throws(BoardKeyError) {
-                return try await BoardKey.read(fromRepoAt: root)
-            } catch .notARepo {
-                return bareKey
-            }
-        }
+        let index = try await BoardLocator.default.scan(
+            around: app,
+            readingKeysWith: Self.bareFolderKeyReader(giving: bareKey)
+        )
         #expect(Self.names(in: index) == [Self.appName, Self.libName])
         #expect(try Self.copy(at: lib, in: index).key == bareKey)
     }
@@ -421,13 +433,7 @@ struct BoardLocatorTests {
         let folder = try #require(BoardLocator.folder(namedBy: Self.outsideReferenceFromRoot, currentRoot: app))
         let board = try await BoardLocator.board(
             ofFolderAt: folder,
-            readingKeysWith: { root throws(BoardKeyError) in
-                do throws(BoardKeyError) {
-                    return try await BoardKey.read(fromRepoAt: root)
-                } catch .notARepo {
-                    return bareKey
-                }
-            },
+            readingKeysWith: Self.bareFolderKeyReader(giving: bareKey),
             findingTopsWith: BoardKey.worktreeTop(of:)
         )
         let resolution = board.resolution(currentRoot: app)
