@@ -66,10 +66,26 @@ comments:
     - commit: not run. review: not run.
     - next: run /test again when the load is low, then /commit and /review.
   timestamp: 2026-10-16T16:08:11.154134+00:00
+- actor: claude-code
+  id: 01m5admjqsjw2yq3y10ctkk8jg
+  text: |-
+    ### review — clean
+    - evidence: review sha 7f131e6~1..7f131e6 — 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed. 5 files reviewed. No validator matched Documentation/kanban/SKILL.md and divergence.md. The .reviewignore rule excluded the .kanban/ files.
+    - next: none. The task is in done.
+  timestamp: 2026-10-19T15:49:14.617233+00:00
+- actor: claude-code
+  id: 01m5admx9r4wcfh4w55rrqj02k
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: not run — the code is in WIP commit 7f131e6
+    - test: green — swift test, 1613 passed
+    - commit: no-change — the code was already in 7f131e6
+    - review: clean — review sha 7f131e6~1..7f131e6, 0 findings
+  timestamp: 2026-10-19T15:49:25.432921+00:00
 depends_on:
 - 01M4X6YRT3543TS3S5K6RGZMCJ
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: ff9b80
 title: Decide how Query.boards treats a sibling repo with a Rust .kanban
 ---
 ## What

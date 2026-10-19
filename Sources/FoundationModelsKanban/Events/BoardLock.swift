@@ -51,6 +51,46 @@ extension EventLog {
         }
         .map(\.value)
     }
+
+    /// Opens the lock file of the board, and makes the file when it is not there. The call does not lock the file and
+    /// does not make the directory of the board: ``lock()`` makes the directory first. Each open of the lock file uses
+    /// this call, so that each open uses the same flags and the same file mode.
+    ///
+    /// - Returns: The file descriptor of the open lock file. The caller owns it and closes it.
+    /// - Throws: ``EventLogError/lockFailed(path:code:)`` when the file cannot be opened.
+    func openLockFile() throws(EventLogError) -> Int32 {
+        let path = lockFileURL.path
+        let descriptor = open(path, O_RDWR | O_CREAT | O_CLOEXEC, Self.lockFileMode)
+        guard descriptor >= 0 else {
+            throw .lockFailed(path: path, code: errno)
+        }
+        return descriptor
+    }
+
+    /// Tries to get the exclusive lock of an open lock file, with no wait. Each lock try uses this call, so that each
+    /// try uses the same lock mode.
+    ///
+    /// - Parameter descriptor: The file descriptor of the open lock file.
+    /// - Returns: `0` when the lock is held, `EWOULDBLOCK` when a different lock holds it, or the `errno` of a
+    ///   different failure.
+    static func tryLock(on descriptor: Int32) -> Int32 {
+        callFlock(on: descriptor, operation: LOCK_EX | LOCK_NB)
+    }
+
+    /// Calls `flock` on an open file. A call that a signal stops starts again.
+    ///
+    /// - Parameters:
+    ///   - descriptor: The file descriptor.
+    ///   - operation: The `flock` operation, for example `LOCK_EX`.
+    /// - Returns: `0` when the call succeeds, or the `errno` of the failure.
+    fileprivate static func callFlock(on descriptor: Int32, operation: Int32) -> Int32 {
+        while flock(descriptor, operation) != 0 {
+            guard errno == EINTR else {
+                return errno
+            }
+        }
+        return 0
+    }
 }
 
 /// The write locks of one or more boards (plan.md §5.4 step 5).
@@ -95,15 +135,11 @@ private final class LockedFile: Sendable {
     ///   ``EventLogError/lockFailed(path:code:)`` when the file cannot be opened or locked.
     static func lock(of log: EventLog) async throws(EventLogError) -> LockedFile {
         try log.prepareDirectory()
-        let path = log.lockFileURL.path
-        let descriptor = open(path, O_RDWR | O_CREAT | O_CLOEXEC, EventLog.lockFileMode)
-        guard descriptor >= 0 else {
-            throw .lockFailed(path: path, code: errno)
-        }
+        let descriptor = try log.openLockFile()
         let code = await waitForLock(on: descriptor)
         guard code == 0 else {
             close(descriptor)
-            throw .lockFailed(path: path, code: code)
+            throw .lockFailed(path: log.lockFileURL.path, code: code)
         }
         return LockedFile(holding: descriptor)
     }
@@ -117,29 +153,14 @@ private final class LockedFile: Sendable {
     /// - Parameter descriptor: The file descriptor.
     /// - Returns: `0` when the lock is held, or the `errno` of the failure.
     private static func waitForLock(on descriptor: Int32) async -> Int32 {
-        let code = callFlock(on: descriptor, operation: LOCK_EX | LOCK_NB)
+        let code = EventLog.tryLock(on: descriptor)
         guard code == EWOULDBLOCK else {
             return code
         }
         return await withCheckedContinuation { continuation in
             Thread.detachNewThread {
-                continuation.resume(returning: callFlock(on: descriptor, operation: LOCK_EX))
+                continuation.resume(returning: EventLog.callFlock(on: descriptor, operation: LOCK_EX))
             }
         }
-    }
-
-    /// Calls `flock` on an open file. A call that a signal stops starts again.
-    ///
-    /// - Parameters:
-    ///   - descriptor: The file descriptor.
-    ///   - operation: The `flock` operation, for example `LOCK_EX`.
-    /// - Returns: `0` when the call succeeds, or the `errno` of the failure.
-    private static func callFlock(on descriptor: Int32, operation: Int32) -> Int32 {
-        while flock(descriptor, operation) != 0 {
-            guard errno == EINTR else {
-                return errno
-            }
-        }
-        return 0
     }
 }

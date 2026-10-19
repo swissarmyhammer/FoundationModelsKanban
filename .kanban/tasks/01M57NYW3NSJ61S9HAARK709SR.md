@@ -17,8 +17,24 @@ comments:
     - evidence: 2 files — Tests/FoundationModelsKanbanTests/Events/EventLogTests.swift, Tests/FoundationModelsKanbanTests/Mutations/AddUpdateTaskTests.swift; `swift test`: 1613 tests in 132 suites passed; /tmp/fmk-tests has no new run folder after the run
     - next: /review. Remove the two old run folders in /tmp/fmk-tests by hand (the shell blocked rm -rf).
   timestamp: 2026-10-19T12:42:54.989678+00:00
-position_column: doing
-position_ordinal: '8280'
+- actor: claude-code
+  id: 01m5a33p91wstkdn00ga25f17y
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (5850059): 0 findings, 0 confirmed, 0 refuted; 7 validator runs, 0 failed; 2 files reviewed; 4 .kanban files not reviewed because of .reviewignore.
+    - next: none. The task is in done.
+  timestamp: 2026-10-19T12:45:15.425871+00:00
+- actor: claude-code
+  id: 01m5a33z3n6txpy9yampp3vjes
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 2 files
+    - test: green — swift test, 1613 passed
+    - commit: 5850059
+    - review: clean — 0 findings
+  timestamp: 2026-10-19T12:45:24.469049+00:00
+position_column: done
+position_ordinal: ff9a80
 title: Stop the tests that leave their TemporaryDirectory folder on the disk
 ---
 ## What

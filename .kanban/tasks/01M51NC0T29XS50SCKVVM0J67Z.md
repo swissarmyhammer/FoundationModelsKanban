@@ -44,6 +44,39 @@ comments:
     - No source change was made. No time limit was raised. No hang at 0% CPU.
     - next: run the full suite again when the machine load is low.
   timestamp: 2026-10-16T09:41:06.628439+00:00
+- actor: claude-code
+  id: 01m5adr0kag2wabe4qcnbt7w2c
+  text: |-
+    ### review — findings
+    - evidence: review sha 1ae2a1c~1..1ae2a1c; 1 finding (1 confirmed, 0 refuted) — Tests/FoundationModelsKanbanTests/Events/EventLogTests.swift:485 (reuse/reuse)
+    - next: implement the open item in the "Review Findings (2026-10-19 10:49)" section. The task stays in review.
+  timestamp: 2026-10-19T15:51:07.114763+00:00
+- actor: claude-code
+  id: 01m5adrhk1qnyatch2gqcpw985
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: not run — the code is in WIP commit 1ae2a1c
+    - test: green — swift test, 1613 passed (same tree as the ^nxrqcgn run)
+    - commit: no-change — the code was already in 1ae2a1c
+    - review: findings — Tests/FoundationModelsKanbanTests/Events/EventLogTests.swift:485
+  timestamp: 2026-10-19T15:51:24.513021+00:00
+- actor: claude-code
+  id: 01m5adzddran6hak3j7za99skj
+  text: |-
+    Review finding EventLogTests.swift:485 (reuse/reuse) is fixed.
+    - New internal helpers in S/Events/BoardLock.swift on `EventLog`: `openLockFile()` (the one `open` with `O_RDWR | O_CREAT | O_CLOEXEC` and `lockFileMode`; it throws `lockFailed`) and `static tryLock(on:)` (the one `flock(LOCK_EX | LOCK_NB)`). `callFlock(on:operation:)` moved from `LockedFile` to `EventLog` as `fileprivate`, so that `tryLock` and the blocking wait share it.
+    - `LockedFile.lock(of:)` and `LockedFile.waitForLock(on:)` now call these helpers.
+    - Same cause, second place in the test file: `EventLogTests.isLockFree(of:)` also repeated the open and the `flock(LOCK_EX | LOCK_NB)`. It now calls `openLockFile()` and `tryLock(on:)` too. It also no longer calls `close(-1)` when the open fails. `holdLockWithOwnDescriptor(of:)` calls the helpers and keeps its raw descriptor for the release on its own thread.
+    - After the change, `rg 'flock\(|O_CLOEXEC|lockFileMode' Sources Tests IntegrationTests` finds only BoardLock.swift.
+    - RED: `swift build --build-tests` failed because `openLockFile` and `tryLock` did not exist. GREEN: `swift test --filter EventLogTests` passed 21 tests. Full `swift test`: 1613 tests in 132 suites passed. The only compiler warning is the accepted SwiftPM "missing creator" warning.
+  timestamp: 2026-10-19T15:55:09.624447+00:00
+- actor: claude-code
+  id: 01m5adzfd43awyn2cbzcvb2tge
+  text: |-
+    ### implement — changed
+    - evidence: 2 files — Sources/FoundationModelsKanban/Events/BoardLock.swift, Tests/FoundationModelsKanbanTests/Events/EventLogTests.swift. `swift test`: 1613 tests in 132 suites passed, 0 failures, only the accepted "missing creator" warning. Finding EventLogTests.swift:485 is checked.
+    - next: /test, then /review. The task stays in doing.
+  timestamp: 2026-10-19T15:55:11.652459+00:00
 position_column: doing
 position_ordinal: '80'
 title: Do not block a thread of the cooperative pool while a commit waits for the board lock
@@ -63,3 +96,15 @@ Found during ^je3gkw8 by a static review. A full test run did not show this hang
 ## Tests
 - [x] A test that holds the lock of a temporary board with a file descriptor of the test, starts 2 x `activeProcessorCount` tasks that call `await log.lock()`, and expects that each task starts before a thread of the test releases the lock. With the blocking wait, the tasks start only after the release, so the test fails (and does not hang).
 - [x] `swift test` passes.
+
+## Review Findings (2026-10-19 10:49)
+
+> Scope: `review sha 1ae2a1c~1..1ae2a1c` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 3 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `Package.resolved` — no validator matches this file
+
+- [x] `Tests/FoundationModelsKanbanTests/Events/EventLogTests.swift:485` `reuse/reuse` — The test helper `holdLockWithOwnDescriptor` repeats the production lock sequence: it opens the lock file with `O_RDWR | O_CREAT | O_CLOEXEC` and calls `flock(LOCK_EX | LOCK_NB)`, which is the same steps as `LockedFile.lock(of:)` and `callFlock` in BoardLock.swift. If the open flags or lock mode change in production, this copy can silently diverge and the test would stop testing the real lock path. Extract the open-and-try-lock step into one internal helper that both `LockedFile.lock(of:)` and the test call, for example `openLockFile(of:)` plus a non-blocking `tryLock(descriptor)`. The test can then call the shared helper and keep its own raw descriptor for release on another thread. If the test must stay separate, add a comment stating why it duplicates the production open flags.

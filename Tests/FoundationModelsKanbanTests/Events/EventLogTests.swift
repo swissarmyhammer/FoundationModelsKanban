@@ -127,14 +127,20 @@ struct EventLogTests {
         return file
     }
 
-    /// Tells if a different file descriptor can get the lock of a board now. The check does not wait.
+    /// Tells if a different file descriptor can get the lock of a board now. The check does not wait. It uses the
+    /// open step and the lock try of the production lock.
     ///
     /// - Parameter log: The event log of the board.
-    /// - Returns: `true` when the lock is free.
+    /// - Returns: `true` when the lock is free. `false` when a different lock holds it, or the lock file cannot be
+    ///   opened.
     static func isLockFree(of log: EventLog) -> Bool {
-        let descriptor = open(log.lockFileURL.path, O_RDWR | O_CREAT | O_CLOEXEC, EventLog.lockFileMode)
-        defer { close(descriptor) }
-        return flock(descriptor, LOCK_EX | LOCK_NB) == 0
+        do {
+            let descriptor = try log.openLockFile()
+            defer { close(descriptor) }
+            return EventLog.tryLock(on: descriptor) == 0
+        } catch {
+            return false
+        }
     }
 
     /// Waits until the lock of a board is released. A child process that another test starts at the same time can
@@ -408,21 +414,21 @@ struct EventLogTests {
         #expect(progress.lateStartCount == 0)
     }
 
-    /// Opens the lock file of a board with a file descriptor of the test, and gets its lock. The board has no other
-    /// lock, so the call does not wait.
+    /// Opens the lock file of a board with a file descriptor of the test, and gets its lock. The call uses the open
+    /// step and the lock try of the production lock, but keeps the raw descriptor, so that a thread of the test can
+    /// release the lock. The board has no other lock, so the call does not wait.
     ///
     /// - Parameter log: The event log of the board.
     /// - Returns: The file descriptor that holds the lock. Its close releases the lock.
     /// - Throws: An error when the directory cannot be made, or the file cannot be opened or locked.
     private static func holdLockWithOwnDescriptor(of log: EventLog) throws -> Int32 {
         try log.prepareDirectory()
-        let descriptor = open(log.lockFileURL.path, O_RDWR | O_CREAT | O_CLOEXEC, EventLog.lockFileMode)
-        try #require(descriptor >= 0)
-        let isLocked = flock(descriptor, LOCK_EX | LOCK_NB) == 0
-        if !isLocked {
+        let descriptor = try log.openLockFile()
+        let code = EventLog.tryLock(on: descriptor)
+        if code != 0 {
             close(descriptor)
         }
-        try #require(isLocked)
+        try #require(code == 0)
         return descriptor
     }
 
