@@ -293,4 +293,85 @@ enum SchemaDescription {
         The link after the rewrite: the full kanban:// URI with the current name of its board. Null for a \
         \(LinkStatus.dangling.rawValue) link, which does not change.
         """
+
+    // MARK: - Collect
+
+    /// The `Mutation.collectBoards` field (divergence.md M9).
+    static let collectBoards = """
+        Combines the .kanban folders of the source boards into the target board, the same as a git union merge. Tasks \
+        and comments keep their ids. A column, a tag, or an actor with the same slug becomes one node, and the event \
+        order decides a field that two boards set. Each name of a source becomes an old name of the target, and the \
+        call removes each source .kanban folder. The call rewrites each \(LinkStatus.oldName.rawValue) link of the \
+        target to the current name. Undo does not reverse the call. A board of the old Rust kanban gives \
+        INCOMPATIBLE_BOARD and the call writes nothing.
+        """
+
+    /// The `sources` argument of `Mutation.collectBoards`.
+    static let collectSources = """
+        The boards to combine into the target. Each item is a folder that holds a .kanban folder (also a subfolder of \
+        a git repo), or a board ref. \(boardForms) A source that is the target is left out.
+        """
+
+    /// The `target` argument of `Mutation.collectBoards`.
+    static let collectTarget = """
+        The board that gets the sources: a board ref. \(boardForms) No value names the current board. A target with \
+        no board gets a new board with a new board ID. In a git repo, the target is the top folder of the repo.
+        """
+
+    /// The `reach` argument of `Mutation.collectBoards`.
+    static let collectReach = """
+        True also rewrites each link of a different board that the scan reaches and that names a source: the link \
+        then names the target. With no value, the call only lists these links in otherLinks.
+        """
+
+    /// The `dryRun` argument of `Mutation.collectBoards`.
+    static let collectDryRun = "True lists the slug merges, the conflicts, and the link repairs, and writes nothing."
+
+    /// The `CollectBoardsResult.target` field.
+    static let collectResultTarget = "The current key of the target board."
+
+    /// The `CollectBoardsResult.sources` field.
+    static let collectResultSources = "Each source board: its folder and its names, which are old names of the target."
+
+    /// The `CollectBoardsResult.slugMerges` field.
+    static let collectResultSlugMerges = "Each column, tag, and actor that more than one board has: one node now."
+
+    /// The `CollectBoardsResult.conflicts` field.
+    static let collectResultConflicts = "Each field that two or more boards set to different values, and the winner."
+
+    /// The `CollectBoardsResult.repairs` field.
+    static let collectResultRepairs = """
+        The \(LinkStatus.oldName.rawValue) and \(LinkStatus.dangling.rawValue) links of the target, and with reach the \
+        links of other boards that name a source, each with its new target.
+        """
+
+    /// The `CollectBoardsResult.otherLinks` field.
+    static let collectResultOtherLinks = """
+        Each link of a different board that names a source by a name that is now an old name of the target. Without \
+        reach, the call does not change these links.
+        """
+
+    /// The `CollectBoardsResult.dryRun` field.
+    static let collectResultDryRun = "True when the call wrote nothing."
+
+    /// The `CollectedBoard.path` field.
+    static let collectedPath = "The folder of the source board."
+
+    /// The `CollectedBoard.names` field.
+    static let collectedNames = "The names of the source board: its board IDs, its git key, and its old names."
+
+    /// The `SlugMerge.node` field and the `FieldConflict.node` field.
+    static let collectNode = "The full URI of the node in the target board."
+
+    /// The `SlugMerge.boards` field.
+    static let slugMergeBoards = "The folder of each board that has the node, the target first."
+
+    /// The `FieldConflict.field` field.
+    static let conflictField = "The name of the field, for example name, or body."
+
+    /// The `FieldConflict.values` field.
+    static let conflictValues = "The value that each board gives the field, each one time."
+
+    /// The `FieldConflict.winner` field.
+    static let conflictWinner = "The value after the collect: the value of the last event."
 }

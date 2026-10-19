@@ -137,6 +137,15 @@ struct WorkingCopy: Sendable {
     /// the `ops` of each event.
     private(set) var operations: OrderedSet<String> = []
 
+    /// The events of other boards that a `collectBoards` field added to this board, in the order that the field merged
+    /// them (divergence.md M9). The commit writes them as they are: each keeps its id, its transaction, its `ops`, and
+    /// its file count, the same as a git union merge.
+    private(set) var merged: [Event] = []
+
+    /// The source boards of a `collectBoards` field (divergence.md M9). The commit locks them with this board, checks
+    /// under the lock that they did not change, and removes their `.kanban/` after the write.
+    private(set) var collectedSources: [CollectedSource] = []
+
     /// The envelope values of the events of the run.
     private(set) var stamp: EventStamp
 
@@ -268,6 +277,38 @@ struct WorkingCopy: Sendable {
     /// - Parameter paths: The canonical paths of the repo directories of the boards.
     mutating func record(readBoards paths: Set<String>) {
         readBoards.formUnion(paths)
+    }
+
+    /// `true` when the run kept a patch of the board, or merged an event of a different board into it: the commit
+    /// then locks, checks, and writes the board.
+    var hasChanges: Bool {
+        !kept.isEmpty || !merged.isEmpty
+    }
+
+    /// Adds the events of other boards to the nodes of this board as they are (divergence.md M9, `collectBoards`), the
+    /// same as a git union merge: each node folds again from its events and the new events, by event order. An event
+    /// that the node already has adds nothing. The commit writes the new events with no change.
+    ///
+    /// - Parameter events: The events of the node logs of the other boards, in any order.
+    mutating func merge(_ events: [Event]) {
+        for (ref, foreign) in OrderedDictionary(grouping: events, by: \.patch.node) {
+            let current = nodeEvents[ref] ?? liveEvents.filter { event in event.patch.node == ref }
+            let known = Set(current)
+            let added = OrderedSet(foreign.filter { event in !known.contains(event) }).elements
+            guard !added.isEmpty else {
+                continue
+            }
+            nodeEvents[ref] = graph.update(folding: current + added, for: ref)
+            merged.append(contentsOf: added)
+        }
+    }
+
+    /// Records a source board of a `collectBoards` field, so that the commit locks it, checks it, and removes its
+    /// `.kanban/` after the write (divergence.md M9).
+    ///
+    /// - Parameter source: The source board.
+    mutating func record(collected source: CollectedSource) {
+        collectedSources.append(source)
     }
 
     /// Applies one patch to the working copy (plan.md §5.4 steps 4.2 and 4.3).
@@ -490,7 +531,7 @@ struct CommitSession: Sendable {
         var related = try await load(.loadable, initialRequests)
         for _ in 1...Self.maximumRuns {
             let (response, work, relatedWork) = try await runReading(&related, actingAs: actor, loadingWith: load, call)
-            guard !work.kept.isEmpty || relatedWork.contains(where: \.hasPatches) else {
+            guard work.hasChanges || relatedWork.contains(where: \.hasPatches) else {
                 return response
             }
             let readOnlyWork = readOnlyWork(of: work, along: relatedWork, in: related)
@@ -615,6 +656,12 @@ struct CommitSession: Sendable {
     /// boards, and each working copy becomes the live graph of its board. When an append fails, the commit puts
     /// each log file that it changed back, and no live graph changes.
     ///
+    /// A run of `collectBoards` also gives source boards (divergence.md M9). The commit locks them with the other
+    /// boards, in the same order. A source whose node files changed after the run read them counts as a changed log,
+    /// so the call runs again and reads the source again. After each append and each fsync succeeds, the commit
+    /// removes the `.kanban/` of each source, while it still holds the locks. Thus a crash before the removal leaves
+    /// each source as it was, and a crash after it leaves each event in the target.
+    ///
     /// - Parameters:
     ///   - work: The working copy of the current board at the end of the run.
     ///   - related: The working copy of each related board that the run changed or read for a graph rule.
@@ -632,14 +679,20 @@ struct CommitSession: Sendable {
         let lockedBoards = writes.indices.filter { index in
             writes[index].hasPatches || reads.contains(writes[index].path)
         }
-        let lock = try await EventLog.lock(sortedByKey: lockedBoards.map { index in writes[index].lockEntry })
-        var isLogChanged = false
+        let sources = writes.flatMap(\.work.collectedSources)
+        let lock = try await EventLog.lock(
+            sortedByKey: lockedBoards.map { index in writes[index].lockEntry } + writes.flatMap(\.collectedLocks)
+        )
+        var isLogChanged = try sources.map { source throws(EventLogError) in try !source.isUnchanged() }.contains(true)
         for index in lockedBoards {
             let isChanged = try await writes[index].applyChangedFiles()
             isLogChanged = isLogChanged || isChanged
         }
         if !isLogChanged {
             try Self.append(&writes, recording: Array(work.operations))
+            for source in sources {
+                source.removeBoardDirectory()
+            }
         }
         lock.unlock()
         live = writes[0].live
@@ -754,14 +807,21 @@ private struct BoardWrite {
     /// The writer of the appends to the logs of the board.
     let writer: any EventLogWriter
 
-    /// `true` when the run kept a patch of the board, so the commit locks, checks, and writes the board.
+    /// `true` when the run kept a patch of the board or merged an event into it, so the commit locks, checks, and
+    /// writes the board.
     var hasPatches: Bool {
-        !work.kept.isEmpty
+        work.hasChanges
     }
 
     /// The key and the event log of the board, for the lock of many boards.
     var lockEntry: (key: BoardKey, value: EventLog) {
         (key, live.log)
+    }
+
+    /// The key and the event log of each source board of a `collectBoards` field of the board, for the lock of many
+    /// boards (divergence.md M9). A source with no board ID takes the key of this board.
+    var collectedLocks: [(key: BoardKey, value: EventLog)] {
+        work.collectedSources.map { source in source.lockEntry(besides: key) }
     }
 
     /// Applies the log files of the board that changed after the live graph read them (plan.md §5.4 step 5.2).
@@ -787,15 +847,22 @@ private struct BoardWrite {
     }
 
     /// The local refs of the nodes whose log files the kept patches of the board append to.
-    private var writtenNodes: Set<LocalRef> {
+    private var keptNodes: Set<LocalRef> {
         Set(work.kept.map(\.patch.node))
     }
 
-    /// Appends the kept patches of the board to their node logs (plan.md §5.4 step 5.3). The live graph does not
-    /// change: ``adopt(writing:)`` changes it after each append of each board succeeds.
+    /// The local refs of the nodes whose log files the commit appends to: the nodes of the kept patches, and the
+    /// nodes of the events that a `collectBoards` field merged into the board.
+    private var writtenNodes: Set<LocalRef> {
+        keptNodes.union(work.merged.map(\.patch.node))
+    }
+
+    /// Appends the kept patches of the board, and the events that a `collectBoards` field merged into the board, to
+    /// their node logs (plan.md §5.4 step 5.3, divergence.md M9). The live graph does not change:
+    /// ``adopt(writing:)`` changes it after each append of each board succeeds.
     ///
-    /// Each written event records the count of the log files of the board that the transaction writes (divergence.md
-    /// Q23).
+    /// Each kept patch records the count of the log files of the board that the transaction writes (divergence.md
+    /// Q23). A merged event keeps its own transaction, its `ops`, and its count.
     ///
     /// - Parameters:
     ///   - operations: The names of the public mutations of the full call.
@@ -803,15 +870,16 @@ private struct BoardWrite {
     /// - Returns: The written events, in the order of their ids.
     /// - Throws: An ``EventLogError`` when a log file cannot be written.
     func append(recording operations: [String], changing keys: [String]) throws(EventLogError) -> [Event] {
-        let fileCount = writtenNodes.count
-        let written = work.kept.map { event in
+        let fileCount = keptNodes.count
+        let recorded = work.kept.map { event in
             event.recording(operations: operations, changing: keys, inBoard: key.description)
                 .recording(fileCount: fileCount)
         }
+        let written = work.merged + recorded
         for (ref, events) in OrderedDictionary(grouping: written, by: \.patch.node) {
             try writer.append(contentsOf: events, toLogOf: ref, in: live.log)
         }
-        return written
+        return written.sorted { lhs, rhs in lhs.id < rhs.id }
     }
 
     /// Calls fsync on each log file of the board that the kept patches appended to (divergence.md Q23). The commit
@@ -849,9 +917,9 @@ struct RelatedWork: Sendable {
     /// The working copy of the board.
     var work: WorkingCopy
 
-    /// `true` when the run kept a patch of the board.
+    /// `true` when the run kept a patch of the board or merged an event into it.
     var hasPatches: Bool {
-        !work.kept.isEmpty
+        work.hasChanges
     }
 
     /// The board as the reads of the run see it now: the working graph.

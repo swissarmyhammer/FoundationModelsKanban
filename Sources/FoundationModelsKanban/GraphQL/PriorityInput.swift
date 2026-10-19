@@ -42,7 +42,7 @@ extension PriorityValue {
     /// - Returns: The text of the value, as a string.
     @Sendable
     static func parseValue(_ map: Map, coders _: Coders) -> Map {
-        .string(text(of: map))
+        .string(map.plainText)
     }
 
     /// Gives a literal value of the document as its text.
@@ -61,7 +61,7 @@ extension PriorityValue {
         case let value as IntValue: value.value
         case let value as FloatValue: value.value
         case let value as BooleanValue: String(value.value)
-        default: text(of: try valueFromASTUntyped(valueAST: literal))
+        default: try valueFromASTUntyped(valueAST: literal).plainText
         }
         return .string(text)
     }
@@ -91,17 +91,17 @@ extension PriorityValue {
         }
         return [move.warning(for: value), move.ordinalWarning(ignoring: ordinal, for: value)]
     }
+}
 
-    /// Gives the text of a value from the variables.
-    ///
-    /// - Parameter map: The value.
-    /// - Returns: The text of a string, a Boolean, or a number, or the JSON form of any other value.
-    private static func text(of map: Map) -> String {
-        switch map {
+extension Map {
+    /// The text of the value: the text of a string, a Boolean, or a number, or the JSON form of any other value. The
+    /// priority scalar reads a value from the variables with it, and `collectBoards` shows a field value with it.
+    var plainText: String {
+        switch self {
         case .string(let text): text
         case .bool(let flag): String(flag)
         case .number(let number): number.stringValue
-        case .undefined, .null, .array, .dictionary: map.description
+        case .undefined, .null, .array, .dictionary: description
         }
     }
 }

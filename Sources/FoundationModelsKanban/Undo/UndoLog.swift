@@ -52,6 +52,12 @@ struct UndoLog: Sendable {
         var actor: LocalRef? {
             events.first?.actor
         }
+
+        /// `true` for a transaction that `undo` and `redo` never reverse: a transaction of `collectBoards`, which
+        /// removed the `.kanban/` folders of its sources (divergence.md M9).
+        var isFinal: Bool {
+            events.contains { event in event.ops.contains(MutationName.collectBoards) }
+        }
     }
 
     /// The transactions, in the order of their ULIDs.
@@ -80,12 +86,17 @@ struct UndoLog: Sendable {
     ///   - text: The `txn` of the call, in any case, or `nil` for the newest target of the session actor.
     ///   - actor: The session actor.
     /// - Returns: The transaction ULID.
-    /// - Throws: ``KanbanError/nothingToUndo`` when the log has no such transaction, when `undo` names a transaction
-    ///   that is already undone, and when `redo` names a transaction that is not undone. `force` does not change this.
+    /// - Throws: ``KanbanError/nothingToUndo`` when the log has no such transaction, when the call names a transaction
+    ///   of `collectBoards` (divergence.md M9: collect is final), when `undo` names a transaction that is already
+    ///   undone, and when `redo` names a transaction that is not undone. `force` does not change this. A call with no
+    ///   `txn` takes only a transaction after the newest transaction of `collectBoards`, so that it never reverses a
+    ///   transaction that the collect brought from a source board.
     func target(of direction: ReverseDirection, named text: String?, by actor: LocalRef) throws(KanbanError) -> ULID {
         guard let text else {
+            let barrier = transactions.last(where: \.isFinal)?.txn
             let candidate = transactions.last { transaction in
                 transaction.actor == actor && !undoneState.isUndone(txn: transaction.txn)
+                    && barrier.map { final in transaction.txn > final } ?? true
                     && isCandidate(transaction, of: direction)
             }
             guard let candidate else {
@@ -94,7 +105,8 @@ struct UndoLog: Sendable {
             return candidate.txn
         }
         // Each ULID text of the log is Crockford base 32 in uppercase, so a txn in lowercase compares in uppercase.
-        guard let txn = ULID(ulidString: text.uppercased()), index(of: txn) != nil else {
+        guard let txn = ULID(ulidString: text.uppercased()), let index = index(of: txn), !transactions[index].isFinal
+        else {
             throw .nothingToUndo
         }
         return try target(of: direction, naming: txn)

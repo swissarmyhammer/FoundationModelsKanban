@@ -25,8 +25,8 @@ struct RepairLinksArguments: Codable, Sendable {
     let dryRun: Bool?
 }
 
-/// One board of a `repairLinks` call: the board, and the repairs of its links.
-private struct BoardRepairs {
+/// One board of a `repairLinks` or a `collectBoards` call: the board, and the repairs of its links.
+struct BoardRepairs {
     /// The board that holds the links.
     let target: MutationTarget
 
@@ -87,7 +87,7 @@ extension BoardStore {
             return nil
         }
         if arguments.dryRun != true {
-            try write(boards, at: time)
+            try write(boards, as: MutationName.repairLinks, at: time)
         }
         return boards.flatMap(\.repairs)
     }
@@ -114,13 +114,14 @@ extension BoardStore {
     ///
     /// - Parameters:
     ///   - boards: The boards and the repairs of their links.
+    ///   - operation: The name of the public mutation of the field: `repairLinks` or `collectBoards`.
     ///   - time: The time of the change.
     /// - Throws: An ``EventError`` when a patch breaks a rule of the log. Then no board keeps a patch.
-    private func write(_ boards: [BoardRepairs], at time: DateTime) throws {
+    func write(_ boards: [BoardRepairs], as operation: String, at time: DateTime) throws {
         let actor = sessionActor
         try runAtomically {
             for board in boards where board.repairs.contains(where: { repair in repair.newURI != nil }) {
-                _ = try runField(as: MutationName.repairLinks, in: board.target) { work, key in
+                _ = try runField(as: operation, in: board.target) { work, key in
                     try work.applyMutationRules(actingAs: actor, inBoard: key, at: time) { work in
                         try work.rewrite(board.repairs, inBoard: key, at: time)
                     }
@@ -140,7 +141,7 @@ extension WorkingCopy {
     ///   - key: The current key of this board.
     ///   - time: The time of the change.
     /// - Throws: An ``EventError`` when a patch breaks a rule of the log.
-    fileprivate mutating func rewrite(
+    mutating func rewrite(
         _ repairs: [LinkRepair],
         inBoard key: String,
         at time: DateTime

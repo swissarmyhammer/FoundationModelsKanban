@@ -38,7 +38,7 @@ extension BoardStore {
         let views = try Self.boardReferences(references).map { reference throws(KanbanError) in
             try view(ofBoard: reference)
         }
-        let checks = views.compactMap(\.self).firstByKey(\.boardKey).map(checkedLinks(of:))
+        let checks = views.compactMap(\.self).firstByKey(\.boardKey).map { view in checkedLinks(of: view) }
         guard views.allValues() != nil, let boards = checks.allValues() else {
             return nil
         }
@@ -57,27 +57,36 @@ extension BoardStore {
     /// Checks each stored link of one board (``Graph/storedLinks(inBoard:)``). The check of each link runs, also after
     /// a link whose board is not loaded, so that the store records the requests of all links in one run.
     ///
-    /// - Parameter view: The read view of the board that holds the links.
+    /// - Parameters:
+    ///   - view: The read view of the board that holds the links.
+    ///   - ownNames: More names that name the board of the view itself, each as ``BoardKey/normalizedText(of:)``
+    ///     gives it, for example the names of the source boards that `collectBoards` adds to it. A link with such a
+    ///     name reads the graph of the view, and not the board that the scan finds for the name. The default is none.
     /// - Returns: Each link with its check, in the order of ``Graph/storedLinks(inBoard:)``, or `nil` when the engine
     ///   did not resolve or load the board of a link yet. The store then records the requests, and the call runs again
     ///   after the load.
-    func checkedLinks(of view: BoardView) -> [(link: StoredLink, check: LinkCheck)]? {
+    func checkedLinks(
+        of view: BoardView,
+        naming ownNames: Set<String> = []
+    ) -> [(link: StoredLink, check: LinkCheck)]? {
         view.graph.storedLinks(inBoard: view.boardKey).map { link in
-            check(link, in: view).map { check in (link: link, check: check) }
+            check(link, in: view, naming: ownNames).map { check in (link: link, check: check) }
         }
         .allValues()
     }
 
-    /// Checks one stored link of a board. A link with the current key of its own board reads the graph of that board.
+    /// Checks one stored link of a board. A link with the current key of its own board, or with one of the own names,
+    /// reads the graph of that board.
     ///
     /// - Parameters:
     ///   - link: The link.
     ///   - view: The read view of the board that holds the link.
+    ///   - ownNames: More names that name the board of the view itself, as ``checkedLinks(of:naming:)`` gives them.
     /// - Returns: The checked link, or `nil` when the engine did not resolve or load the board of the link yet.
-    private func check(_ link: StoredLink, in view: BoardView) -> LinkCheck? {
+    private func check(_ link: StoredLink, in view: BoardView, naming ownNames: Set<String>) -> LinkCheck? {
         let key = link.target.boardKey
         let linked =
-            key == view.boardKey
+            key == view.boardKey || ownNames.contains(BoardKey.normalizedText(of: key))
             ? LinkedBoard.loaded(BoardSnapshot(key: view.boardKey, graph: view.graph, source: view.source))
             : linkedBoard(named: key)
         return linked.map { linked in LinkCheck(of: link, in: view, against: linked) }

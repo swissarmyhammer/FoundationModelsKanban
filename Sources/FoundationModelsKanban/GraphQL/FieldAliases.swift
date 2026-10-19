@@ -97,13 +97,22 @@ enum GraphQLFieldAliases {
     /// M9).
     private static let linkBoards = ["board", "ids", "id", "keys", "key", "repos", "repo", "paths", "path"]
 
-    /// The aliases of the arguments of `repairLinks` (divergence.md M9): the boards, the reach option, and the dry run
-    /// option.
-    private static let linkRepair = [
-        "boards": linkBoards,
+    /// The aliases of the reach option and the dry run option of `repairLinks` and `collectBoards` (divergence.md M9).
+    private static let repairOptions = [
         "reach": ["reachable", "includeReachable", "related", "allBoards"],
         "dryRun": ["dry", "preview", "simulate", "whatIf", "plan"],
     ]
+
+    /// The aliases of the arguments of `repairLinks` (divergence.md M9): the boards, the reach option, and the dry run
+    /// option.
+    private static let linkRepair = repairOptions.merging(["boards": linkBoards]) { option, _ in option }
+
+    /// The aliases of the arguments of `collectBoards` (divergence.md M9): the source boards, the target board, the
+    /// reach option, and the dry run option.
+    private static let boardCollect = repairOptions.merging([
+        "sources": ["source", "boards", "board", "from", "folders", "folder", "paths", "path", "repos", "repo"],
+        "target": ["into", "to", "destination", "targetBoard", "toBoard"],
+    ]) { option, _ in option }
 
     /// The aliases of each object type and each `input` object type, by its GraphQL name.
     private static let byType: [String: [String: [String]]] = [
@@ -140,6 +149,7 @@ enum GraphQLFieldAliases {
         "Query.board": ["id": ["path", "board", "key", "repo"]],
         "Query.checkLinks": ["boards": linkBoards],
         "Mutation.repairLinks": linkRepair,
+        "Mutation.collectBoards": boardCollect,
         "Query.node": ["id": ["task", "column", "actor", "tag", "comment", "ref", "uri", "key", "nodeId"]],
         "Board.task": ["id": taskID],
         "Board.tasks": ["first": pageSize, "after": ["cursor"]],

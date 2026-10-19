@@ -59,7 +59,9 @@ public struct KanbanTool: Tool {
         \(LinkStatus.oldName.rawValue) link to the current name; dryRun: true only lists the changes. \
         Read the warnings in extensions.warnings. The board is in .kanban at the top of a git worktree. Outside git, \
         the board is in the nearest folder up that has a .kanban folder, else in the working directory, and its key \
-        is its board ID. A .kanban folder of the old Rust kanban gives INCOMPATIBLE_BOARD. \
+        is its board ID. The collectBoards mutation combines other .kanban folders, for example a board in a \
+        subfolder (warning \(SubfolderBoard.warningCode)), into one target board; undo does not reverse it. A .kanban \
+        folder of the old Rust kanban gives INCOMPATIBLE_BOARD. \
         boards leaves out a related repo with a Rust .kanban folder and gives the warning BOARD_INCOMPATIBLE.
         """
 

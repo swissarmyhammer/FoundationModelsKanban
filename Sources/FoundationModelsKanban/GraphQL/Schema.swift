@@ -1197,6 +1197,7 @@ struct PublicSchema: API {
             .addTagMutations()
             .addUndoMutations()
             .addRepairLinksMutation()
+            .addCollectBoardsMutation()
             .addChangesSubscription()
         schema = try extend(builder).build()
     }
