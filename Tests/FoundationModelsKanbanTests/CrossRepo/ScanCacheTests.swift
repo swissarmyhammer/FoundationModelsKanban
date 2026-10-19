@@ -425,10 +425,14 @@ final class ScanKeyReader: Sendable {
     }
 
     /// The reader as a ``BoardKeyReader``: it counts the read and gives the key of the `origin` of the folder. A key
-    /// read of the held repo waits at the gate first.
+    /// read of the held repo waits at the gate first. A folder with no `.git` entry is not in a git repo, the same as
+    /// `git rev-parse` in a folder whose parent folders hold no repo.
     var keyReader: BoardKeyReader {
         { root throws(BoardKeyError) in
             self.calls.withLock { calls in calls += 1 }
+            guard BoardLocator.hasGitEntry(root) else {
+                throw .notARepo(path: root.path)
+            }
             let name = root.lastPathComponent
             self.keyReads.withLock { reads in reads[name, default: 0] += 1 }
             if name == self.heldName {

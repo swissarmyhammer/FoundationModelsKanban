@@ -23,10 +23,6 @@ enum KanbanError: Error, Hashable, Sendable {
     /// call writes nothing on any board. The transaction is its ULID, and the board is the key of that board.
     case transactionBoardNotLoaded(transaction: String, board: String)
 
-    /// `NOT_A_REPO`: the folder is not in a git repo, so it has no board (divergence.md §16). The path is the path of
-    /// the folder.
-    case notARepo(path: String)
-
     /// `INCOMPATIBLE_BOARD`: a `.kanban/` directory has a file or a directory of the old Rust kanban, so the engine
     /// does not read it, write to it, or make a new board in it (divergence.md Q6). The directory is the path of that
     /// `.kanban/` directory.
@@ -133,7 +129,6 @@ extension KanbanError {
         switch self {
         case .invalidVariables: "INVALID_VARIABLES"
         case .notFound, .boardNotFound, .transactionBoardNotLoaded: "NOT_FOUND"
-        case .notARepo: "NOT_A_REPO"
         case .incompatibleBoard: "INCOMPATIBLE_BOARD"
         case .ambiguousID: "AMBIGUOUS_ID"
         case .actorNotFound: "ACTOR_NOT_FOUND"
@@ -167,15 +162,13 @@ extension KanbanError {
             "No \(Self.noun(for: type)) has the reference \"\(reference)\". Query the board to get the correct ids, "
                 + "and then send the call again."
         case .boardNotFound(let reference, let searchRoots):
-            "No board has the reference \"\(reference)\". The scan looked for git repos in: "
-                + "\(searchRoots.joined(separator: Self.listSeparator)). Use a board key, a repo directory name, "
-                + "or a repo path from these places, and then send the call again."
+            "No board has the reference \"\(reference)\". The scan looked for git repos and for folders with a "
+                + ".kanban/ folder in: \(searchRoots.joined(separator: Self.listSeparator)). Use a board key, a board "
+                + "ID, a folder name, or a path from these places, and then send the call again."
         case .transactionBoardNotLoaded(let transaction, let board):
             "Transaction \"\(transaction)\" also changed the board \"\(board)\", and no loaded copy of that board has "
                 + "its changes, so the call wrote nothing on any board. Name the copy by its path, for example "
                 + "undo(txn: \"\(transaction)\", boards: [\"/path/to/copy\"]), and then send the call again."
-        case .notARepo(let path):
-            "The kanban needs a git repo. `\(path)` is not in a git repo."
         case .incompatibleBoard(let directory):
             "There is an incompatible board at `\(directory)`. Remove it, then try again."
         case .ambiguousID(let reference, let matches):

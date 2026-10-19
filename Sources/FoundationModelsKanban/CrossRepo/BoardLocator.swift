@@ -11,10 +11,10 @@ typealias WorktreeTopReader = @Sendable (URL) async throws(BoardKeyError) -> URL
 ///
 /// The locator looks one level down in the parent directory of the current repo, and then one level down in each
 /// search root of the config, in config order. In each place, it reads the directory names in sort order. A
-/// directory with a `.git` entry (the directory of a clone, or the file of a worktree) is a repo. A folder that is not
-/// a git repo has no board, so the scan does not find it (divergence.md §16). The key of a repo comes from
-/// ``BoardKey/read(fromRepoAt:)``: from its current `origin`, or `local/<root commit>` for a repo with no remote.
-/// The board of the repo is enabled when `.kanban/board.jsonl` exists.
+/// directory with a `.git` entry (the directory of a clone, or the file of a worktree) is a repo. A directory with a
+/// `.kanban/` and no `.git` entry is a board outside git when its key is a board ID (divergence.md M9). The key of a
+/// repo comes from ``BoardKey/read(fromRepoAt:)``: from its current `origin`, or `local/<root commit>` for a repo with
+/// no remote. The board of the repo is enabled when `.kanban/board.jsonl` exists.
 public struct BoardLocator: Sendable {
     /// The locator with no search root: it looks only in the parent directory of the current repo.
     public static let `default` = BoardLocator(searchRoots: [])
@@ -78,22 +78,42 @@ public struct BoardLocator: Sendable {
         let readable = directories.filter { directory in !knownFailures.contains(directory.canonicalPath) }
         let keys = try await Self.keys(ofReposAt: readable, knowing: knownKeys, readingKeysWith: keyReader)
         let copies = directories.compactMap { directory in
-            keys[directory.canonicalPath].map { key in BoardCopy.read(fromRepoAt: directory, key: key) }
+            keys[directory.canonicalPath].flatMap { key in Self.copy(ofBoardAt: directory, key: key) }
         }
         let unreadable = Set(directories.map(\.canonicalPath)).subtracting(keys.keys)
         return BoardIndex(places: places, copies: copies, unreadable: unreadable, marks: marks)
     }
 
+    /// Reads the copy of one folder that a scan found, when the folder is the root directory of its board.
+    ///
+    /// A folder with a `.git` entry is the top folder of a clone or of a worktree. A folder with a `.kanban/` and no
+    /// `.git` entry is a board outside git only when its key is a board ID (divergence.md M9). When git gives a git
+    /// key for such a folder, the folder is a subfolder of a repo, and the board of the repo is at the top folder of
+    /// the repo: the folder is not a copy.
+    ///
+    /// - Parameters:
+    ///   - directory: The folder.
+    ///   - key: The key of the board of the folder.
+    /// - Returns: The copy, or `nil` when the folder is a subfolder of a repo.
+    private static func copy(ofBoardAt directory: URL, key: BoardKey) -> BoardCopy? {
+        guard hasGitEntry(directory) || key.isBoardID else {
+            return nil
+        }
+        return BoardCopy.read(fromRepoAt: directory, key: key)
+    }
+
     /// Reads with git the board of the folder that a path ref names, also when the scan does not look in that folder
-    /// (plan.md §6.6, board refs). The board of a folder is the board at the top folder of its worktree (divergence.md
-    /// §16), so the folder can be a subfolder of a repo. The key comes from the key reader with the rule of the scan.
+    /// (plan.md §6.6, board refs). The board of a folder in a git repo is the board at the top folder of its worktree
+    /// (divergence.md §16), so the folder can be a subfolder of a repo. The board of a folder outside git is the
+    /// nearest folder, from the folder up, that has a `.kanban/`, or the folder itself (``BareBoard/root(of:)``,
+    /// divergence.md M9). The key comes from the key reader with the rule of the scan.
     ///
     /// - Parameters:
     ///   - directory: The folder, from ``folder(namedBy:currentRoot:)``.
-    ///   - keyReader: Reads the key of the repo of the folder.
+    ///   - keyReader: Reads the key of the board of the folder: a git key, or the board ID of a board outside git.
     ///   - topReader: Reads the top folder of the worktree of the folder.
-    /// - Returns: The copy of the repo of the folder, ``FolderBoard/notARepo(path:)`` when the folder is not in a git
-    ///   repo, or ``FolderBoard/unreadableKey(top:)`` when the key of the repo cannot be read.
+    /// - Returns: The copy of the board of the folder, or ``FolderBoard/unreadableKey(top:)`` when the key of the
+    ///   board cannot be read.
     /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during a read of git. Each
     ///   other ``BoardKeyError`` of the read of the top folder.
     static func board(
@@ -101,14 +121,14 @@ public struct BoardLocator: Sendable {
         readingKeysWith keyReader: BoardKeyReader,
         findingTopsWith topReader: WorktreeTopReader
     ) async throws(BoardKeyError) -> FolderBoard {
-        let top: URL
+        let root: URL
         do throws(BoardKeyError) {
-            top = try await topReader(directory)
-        } catch .notARepo(let path) {
-            return .notARepo(path: path)
+            root = try await topReader(directory)
+        } catch .notARepo {
+            root = BareBoard.root(of: directory)
         }
-        let key = try await key(ofRepoAt: top, knownKey: nil, readingKeysWith: keyReader).get()
-        return key.map { key in .board(BoardCopy.read(fromRepoAt: top, key: key)) } ?? .unreadableKey(top: top)
+        let key = try await key(ofRepoAt: root, knownKey: nil, readingKeysWith: keyReader).get()
+        return key.map { key in .board(BoardCopy.read(fromRepoAt: root, key: key)) } ?? .unreadableKey(top: root)
     }
 
     /// Gives the folder that a path ref names, when the folder exists. The lookup runs no `git`.
@@ -152,12 +172,20 @@ public struct BoardLocator: Sendable {
             .filter(isCandidate(_:))
     }
 
-    /// Tells if a directory is a repo: it has a `.git` entry (the directory of a clone, or the file of a worktree). A
-    /// folder that is not a git repo has no board (divergence.md §16).
+    /// Tells if a directory can hold a board: it has a `.git` entry (the directory of a clone, or the file of a
+    /// worktree), or it has a `.kanban/` (a board outside git, divergence.md M9).
     ///
     /// - Parameter directory: The directory.
-    /// - Returns: `true` when the directory has a `.git` entry.
+    /// - Returns: `true` when the directory has a `.git` entry or a `.kanban/`.
     private static func isCandidate(_ directory: URL) -> Bool {
+        hasGitEntry(directory) || BoardWatcher.existingBoardDirectory(ofBoardAt: directory) != nil
+    }
+
+    /// Tells if a directory has a `.git` entry: the directory of a clone, or the file of a worktree.
+    ///
+    /// - Parameter directory: The directory.
+    /// - Returns: `true` when the `.git` entry is there.
+    static func hasGitEntry(_ directory: URL) -> Bool {
         FileManager.default.fileExists(atPath: directory.appending(path: BoardKey.gitDirectoryName).path)
     }
 
@@ -227,13 +255,14 @@ public struct BoardLocator: Sendable {
 
 // MARK: - Index
 
-/// One copy of a repo that a scan found: a clone or a worktree (plan.md §6.6).
+/// One copy of a board that a scan found: a clone, a worktree, or a folder outside git (plan.md §6.6, divergence.md
+/// M9).
 struct BoardCopy: Hashable, Sendable {
     /// The root directory of the copy.
     let directory: URL
 
     /// The key of the board of the copy, from its current `origin`, or `local/<root commit>` for a repo with no
-    /// remote.
+    /// remote. The key of a board outside git is its board ID.
     let key: BoardKey
 
     /// `true` when the copy has `.kanban/board.jsonl`.
@@ -334,10 +363,11 @@ struct BoardIndex: Sendable {
     /// Trust decision (plan.md §6.6, trust of a path ref): the tool runs with the rights of its process, so a path can
     /// name a folder in any git repo, also a repo outside the search roots. There is no containment check. The path
     /// names the board at the top folder of the worktree of the folder (divergence.md §16). A folder that is not in a
-    /// git repo gives `NOT_A_REPO`. The tool never makes the folder: a path to a folder that does not exist gives
-    /// `NOT_FOUND`. The tool reads and writes only inside `<worktree top>/.kanban/`, because each read and each write
-    /// of a board goes through ``EventLog``, whose files are all in that directory. The one exception is the reads of
-    /// git: the tool runs `git` in the folder, and `git` only reads.
+    /// git repo names its board outside git (``BareBoard/root(of:)``, divergence.md M9). The tool never makes the
+    /// folder: a path to a folder that does not exist gives `NOT_FOUND`. The tool reads and writes only inside the
+    /// `.kanban/` of the board, because each read and each write of a board goes through ``EventLog``, whose files are
+    /// all in that directory. The one exception is the reads of git: the tool runs `git` in the folder, and `git` only
+    /// reads.
     ///
     /// - Parameters:
     ///   - reference: The board ref. White space at the two ends is ignored.
@@ -425,10 +455,6 @@ enum BoardResolution: Hashable, Sendable {
 
     /// No board: the scan cannot find one.
     case notFound
-
-    /// No board: the folder that a path ref names is not in a git repo (divergence.md §16). The path is the path of
-    /// the folder.
-    case notARepo(path: String)
 
     /// A copy of a related repo whose board cannot be read, for example a log file with no read permission
     /// (divergence.md Q7). The call continues: a read of the board gives nothing, and each dependency on a task of

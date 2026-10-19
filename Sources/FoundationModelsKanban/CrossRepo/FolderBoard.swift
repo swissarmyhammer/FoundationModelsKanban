@@ -7,11 +7,9 @@ import Foundation
 /// (``isExpired(by:ofRepoAt:)``), when the files of the change are not the same as the record saw them
 /// (``PathRefRecord/isExpired(by:)``).
 enum FolderBoard: Hashable, Sendable {
-    /// The folder is in a git repo whose key git can read: the copy at the top folder of its worktree.
+    /// The board of the folder: the copy at the top folder of its worktree for a folder in a git repo, or the copy of
+    /// the board outside git (``BareBoard/root(of:)``, divergence.md M9).
     case board(BoardCopy)
-
-    /// The folder is not in a git repo. The path is the path of the folder, as the read of git gives it.
-    case notARepo(path: String)
 
     /// The folder is in a git repo whose key git cannot read, for example because git fails in it. The URL is the top
     /// folder of its worktree.
@@ -29,27 +27,22 @@ extension FolderBoard {
 
     /// Gives the board that the path ref names, as one call sees it.
     ///
-    /// - Parameter root: The top folder of the worktree of the current board.
-    /// - Returns: The current board for a folder of the current worktree, the copy of the repo of the folder,
-    ///   ``BoardResolution/notARepo(path:)`` when the folder is not in a git repo, or `nil` when the key of the repo
-    ///   cannot be read.
+    /// - Parameter root: The root directory of the current board.
+    /// - Returns: The current board for a folder of the current board, the copy of the board of the folder, or `nil`
+    ///   when the key of the repo cannot be read.
     func resolution(currentRoot root: URL) -> BoardResolution? {
-        switch self {
-        case .board(let copy): BoardResolution(of: copy, currentRoot: root)
-        case .notARepo(let path): .notARepo(path: path)
-        case .unreadableKey: nil
-        }
+        copy.map { copy in BoardResolution(of: copy, currentRoot: root) }
     }
 
-    /// Gives the repo folder whose changes can change the result: the top folder of the worktree of a repo, or the
-    /// folder itself when it is not in a git repo, so that a `git init` in the folder shows.
+    /// Gives the repo folder whose changes can change the result: the root directory of the board of the folder, or
+    /// the top folder of the worktree of a repo whose key cannot be read. A `git init` in the root directory of a
+    /// board outside git shows there.
     ///
     /// - Parameter folder: The folder that the path ref names.
     /// - Returns: The repo folder.
     func watchedRepo(ofFolderAt folder: URL) -> URL {
         switch self {
         case .board(let copy): copy.directory
-        case .notARepo: folder
         case .unreadableKey(let top): top
         }
     }

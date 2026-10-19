@@ -41,7 +41,8 @@ return { board: r.data.board, errors: r.errors ?? [], warnings: r.extensions?.wa
 
 - The board is in the `.kanban/` folder at the top folder of the git worktree (`git rev-parse --show-toplevel`). Each worktree has its own board. Commit `.kanban/` with the code. Thus the task changes go on the branch of the code, and git merges the boards when it merges the branches.
 - A query on a repo that has no board gives an empty board, and it writes no file. The first mutation makes the board, with the columns `todo`, `doing`, `review`, and `done`. The board name is the name of the folder.
-- A folder that is not in a git repo has no board. Each call then gives `NOT_A_REPO`. Tell the user.
+- Outside git, the board is in the nearest folder, from the working directory up, that has a `.kanban/` folder. When no folder has one, the first mutation makes `.kanban/` in the working directory. The key of that board is its board ID (a ULID).
+- The warning `BOARD_IN_SUBFOLDER` tells you that a `.kanban/` in a subfolder of the repo is not used. Tell the user to run `collectBoards`. The warning `BOARD_ID_SHARED` tells you that two folders have the same board ID, for example a copied folder. Tell the user.
 - A `.kanban/` folder of the old Rust kanban gives `INCOMPATIBLE_BOARD`. Do not change that folder. Tell the user to remove it. Remove it only when the user tells you to remove it.
 - `boards` does not show a related repo with a Rust `.kanban/` folder. The call continues, and the warning `BOARD_INCOMPATIBLE` names that repo. Only a call that names that board gives `INCOMPATIBLE_BOARD`.
 - A call names the current board, unless an input `board` field or a full `kanban://` URI names a different board.

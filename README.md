@@ -5,8 +5,8 @@ the graph with GraphQL: one document goes in, and one `{data, errors}`
 response comes out. The package moves the kanban function of the Rust
 `swissarmyhammer` tool to Swift. It gives a `KanbanGraph` engine and a
 FoundationModels `kanban` tool for in-process agents. Each board is an event
-log in the `.kanban/` directory of the top folder of a git worktree. A board
-needs a git repo. The port is not complete. See [plan.md](plan.md) for the
+log in the `.kanban/` directory of the top folder of a git worktree, or of a
+folder outside git. The port is not complete. See [plan.md](plan.md) for the
 design and the port order, and [divergence.md](divergence.md) for the decided
 changes to that design.
 
@@ -41,14 +41,21 @@ let graph = try await KanbanHost.shared.session(
 )
 ```
 
-- The folder must be in a git repo. The board is in the `.kanban/` directory of
-  the top folder of the worktree (`git rev-parse --show-toplevel`). When
-  `/path/to/my-project` is the top folder of a repo, the board is in
-  `/path/to/my-project/.kanban/`, also for a working directory in a subfolder
-  of the repo.
+- In a git repo, the board is in the `.kanban/` directory of the top folder of
+  the worktree (`git rev-parse --show-toplevel`). When `/path/to/my-project`
+  is the top folder of a repo, the board is in `/path/to/my-project/.kanban/`,
+  also for a working directory in a subfolder of the repo.
   In a linked worktree, the board is in the top folder of that worktree.
-- A folder that is not in a git repo has no board. Each call then gives the
-  error `NOT_A_REPO`.
+  A `.kanban/` in a subfolder of the repo is not used. Each response then
+  gives the warning `BOARD_IN_SUBFOLDER`, which tells you to run
+  `collectBoards`.
+- Outside git, the board is in the nearest folder, from the working directory
+  up, that has a `.kanban/` directory. When no folder has one, the first write
+  makes `.kanban/` in the working directory. The key of such a board is its
+  board ID (a ULID).
+- When the scan finds two folders outside git with the same board ID (for
+  example, a copied folder), the response gives the warning
+  `BOARD_ID_SHARED`, which names the two paths.
 - The host does not read, change, or replace a `.kanban/` of the old Rust
   kanban, for example a `.kanban/` with a `boards/` directory or `*.yaml`
   entity files. `session` then throws the error `INCOMPATIBLE_BOARD`, and so

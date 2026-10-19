@@ -1,11 +1,13 @@
 import Foundation
 import Synchronization
 import Testing
+import ULID
 
 @testable import FoundationModelsKanban
 
 /// Tests the board locator: the scan of the places for git repos, the index of the copies, and the board refs (plan.md
-/// §6.6, §12 items 13 and 26). A board is only in a git repo (divergence.md §16).
+/// §6.6, §12 items 13 and 26). A board is at the top folder of a git repo, or in a folder outside git with its board
+/// ID as its key (divergence.md §16, M9).
 ///
 /// Each test makes real git repos or plain folders in a ``GitSandbox``. The sandbox directory is the parent directory
 /// of the current repo, so the scan looks in it first.
@@ -236,13 +238,22 @@ struct BoardLocatorTests {
         #expect(try await Self.scan(around: app).copies.map(\.isEnabled) == [false, true])
     }
 
-    @Test("A folder with .kanban/board.jsonl and no .git is not a copy: a board is only in a git repo")
-    func folderWithBoardAndNoGitIsNotCopy() async throws {
+    @Test("A folder with .kanban/board.jsonl and no .git is a copy with its board ID key: a board outside git")
+    func folderWithBoardAndNoGitIsCopy() async throws {
         let sandbox = try GitSandbox()
         let app = try await sandbox.makeRepo(named: Self.appName, origin: Self.appOrigin)
         let lib = try GitSandbox.makeFolder(named: Self.libName, in: sandbox.root)
         _ = try KanbanGraphTests.writeFixture(inRepoAt: lib)
-        #expect(Self.names(in: try await Self.scan(around: app)) == [Self.appName])
+        let bareKey = BoardKey(boardID: ULID())
+        let index = try await BoardLocator.default.scan(around: app) { root throws(BoardKeyError) in
+            do throws(BoardKeyError) {
+                return try await BoardKey.read(fromRepoAt: root)
+            } catch .notARepo {
+                return bareKey
+            }
+        }
+        #expect(Self.names(in: index) == [Self.appName, Self.libName])
+        #expect(try Self.copy(at: lib, in: index).key == bareKey)
     }
 
     @Test("A folder with no .git and no .kanban/board.jsonl is not a copy")
@@ -401,13 +412,27 @@ struct BoardLocatorTests {
         try await Self.expectOutsideRepoResolves(fromFolderAt: "Sources/Deep") { folder in folder.path }
     }
 
-    @Test("A path to a folder that is not in a git repo resolves to notARepo")
-    func pathOutsideGitResolvesToNotARepo() async throws {
+    @Test("A path to a folder that is not in a git repo resolves to the board in that folder, with its board ID key")
+    func pathOutsideGitResolvesToBareBoard() async throws {
         let sandbox = try GitSandbox()
         let app = try await sandbox.makeRepo(named: Self.appName, origin: Self.appOrigin)
         let other = try GitSandbox.makeFolder(named: Self.outsidePath, in: sandbox.root)
-        let resolution = try await Self.resolveFolder(Self.outsideReferenceFromRoot, around: app)
-        #expect(resolution == .notARepo(path: other.standardizedFileURL.path))
+        let bareKey = BoardKey(boardID: ULID())
+        let folder = try #require(BoardLocator.folder(namedBy: Self.outsideReferenceFromRoot, currentRoot: app))
+        let board = try await BoardLocator.board(
+            ofFolderAt: folder,
+            readingKeysWith: { root throws(BoardKeyError) in
+                do throws(BoardKeyError) {
+                    return try await BoardKey.read(fromRepoAt: root)
+                } catch .notARepo {
+                    return bareKey
+                }
+            },
+            findingTopsWith: BoardKey.worktreeTop(of:)
+        )
+        let resolution = board.resolution(currentRoot: app)
+        #expect(resolution == .copy(BoardCopy.read(fromRepoAt: folder, key: bareKey)))
+        #expect(folder.canonicalPath == other.canonicalPath)
     }
 
     @Test(

@@ -89,13 +89,14 @@ struct ScanMarks: Sendable {
 // MARK: - Repo mark
 
 /// The state of the files of one repo folder that the key and the board of the repo come from: the folder, its
-/// `.git` entry, its git config, its branch refs, and its board log.
+/// `.git` entry, its git config, its branch refs, and its board log. A folder outside git with a `.kanban/` has a mark
+/// too, with no `.git` entry (divergence.md M9).
 struct RepoMark: Hashable, Sendable {
     /// The identity of the repo folder.
     let folder: FolderIdentity
 
-    /// The `.git` entry: the directory of a clone, or the file of a worktree.
-    let gitEntry: FileStamp
+    /// The `.git` entry: the directory of a clone, or the file of a worktree. It is `nil` for a folder outside git.
+    let gitEntry: FileStamp?
 
     /// The git config file, or `nil` when it is not there.
     let config: FileStamp?
@@ -113,10 +114,15 @@ struct RepoMark: Hashable, Sendable {
     /// Reads the mark of a repo folder.
     ///
     /// - Parameter directory: The repo folder.
-    /// - Returns: The mark, or `nil` when the folder is not there or has no `.git` entry: then it is no repo.
+    /// - Returns: The mark, or `nil` when the folder is not there, or has no `.git` entry and no `.kanban/`: then it
+    ///   holds no board.
     init?(ofRepoAt directory: URL) {
         let git = directory.appending(path: BoardKey.gitDirectoryName)
-        guard let folder = try? FolderIdentity(of: directory), let gitEntry = FileStamp(ofItemAt: git) else {
+        let gitEntry = FileStamp(ofItemAt: git)
+        guard
+            let folder = try? FolderIdentity(of: directory),
+            gitEntry != nil || BoardWatcher.existingBoardDirectory(ofBoardAt: directory) != nil
+        else {
             return nil
         }
         self.folder = folder
@@ -160,7 +166,20 @@ struct RepoMark: Hashable, Sendable {
     /// - Parameter earlier: The earlier mark.
     /// - Returns: `true` when the key of the repo is the same.
     private func isSameRepo(as earlier: RepoMark) -> Bool {
-        folder == earlier.folder && gitEntry.isSameEntry(as: earlier.gitEntry) && config == earlier.config
+        folder == earlier.folder && hasSameGitEntry(as: earlier) && config == earlier.config
+    }
+
+    /// Tells if a later mark has the same `.git` entry as an earlier mark: both have none (a folder outside git), or
+    /// both have the same entry (``FileStamp/isSameEntry(as:)``).
+    ///
+    /// - Parameter earlier: The earlier mark.
+    /// - Returns: `true` when the `.git` entry is the same.
+    private func hasSameGitEntry(as earlier: RepoMark) -> Bool {
+        switch (gitEntry, earlier.gitEntry) {
+        case (nil, nil): true
+        case (let later?, let before?): later.isSameEntry(as: before)
+        case (nil, _?), (_?, nil): false
+        }
     }
 
     /// Tells if a later mark has the same branch refs and packed refs as an earlier mark.

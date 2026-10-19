@@ -37,3 +37,14 @@ struct BoardNode: NodeState {
         .board(self)
     }
 }
+
+extension BoardNode {
+    /// Reads the board node of a repo or of a folder from its board log now. The read takes no lock and makes no file.
+    ///
+    /// - Parameter directory: The root directory of the board.
+    /// - Returns: The board node, or `nil` when the board log has no board node.
+    /// - Throws: An ``EventLogError`` when the board log cannot be read.
+    static func stored(inRepoAt directory: URL) throws -> BoardNode? {
+        try EventLog(repositoryAt: directory).readLog(of: .board).node?.state as? BoardNode
+    }
+}

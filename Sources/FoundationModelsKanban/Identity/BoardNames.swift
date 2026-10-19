@@ -4,7 +4,8 @@ import ULID
 
 /// The names of one board (divergence.md M9). Each name resolves to the board:
 ///
-/// - the current key, which a stored ref uses: the git key of the repo of the board;
+/// - the current key, which a stored ref uses: the git key of the repo of the board, or the primary board ID of a
+///   board outside git;
 /// - each board ID, as a bare ULID: `kanban://<ULID>/<type>/<id>`. A git key always has a `/`, so the two forms
 ///   cannot be confused;
 /// - each old name: a git key that the board log records from before a change of the git key.
@@ -13,7 +14,7 @@ import ULID
 /// write recorded (``BoardNode/gitKey``) and that is not the current key is an old name too, also before the next
 /// write records it in ``BoardNode/oldNames``.
 struct BoardNames: Hashable, Sendable {
-    /// The current key of the board: the text of its git key.
+    /// The current key of the board: the text of its git key, or of its board ID outside git.
     let key: String
 
     /// The board IDs, the lowest first. The lowest is the primary ID.
@@ -114,8 +115,7 @@ extension BoardNames {
     /// - Returns: The names of the board.
     static func read(fromRepoAt directory: URL, key: BoardKey) -> BoardNames {
         do {
-            let board = try EventLog(repositoryAt: directory).readLog(of: .board).node?.state as? BoardNode
-            return BoardNames(key: key, board: board)
+            return BoardNames(key: key, board: try BoardNode.stored(inRepoAt: directory))
         } catch {
             Log.kanban.warning(
                 "The scan cannot read the board log of a repo, so the board has only its key as a name",

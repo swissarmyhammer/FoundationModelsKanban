@@ -372,16 +372,18 @@ struct CrossRepoWriteTests {
     }
 
     @Test(
-        "addTask with the board field set to the path of a folder that is not in a git repo gives NOT_A_REPO",
+        "addTask with the board field set to the path of a folder that is not in a git repo writes to its board",
         arguments: [true, false]
     )
-    func pathOutsideGitGivesNotARepo(isRelative: Bool) async throws {
+    func pathOutsideGitWritesFolderBoard(isRelative: Bool) async throws {
         let repos = try await CrossRepoFixture.SideBySide.make()
         let other = try await Self.makeOutsideFolder(as: .plainFolder, in: repos)
         let reference = isRelative ? BoardLocatorTests.outsideReferenceFromRoot : other.path
-        let expected = KanbanError.notARepo(path: other.standardizedFileURL.path)
-        try await Self.expectAddTaskFailure(naming: reference, in: repos, giving: expected, coded: "NOT_A_REPO")
-        #expect(!Self.hasBoardDirectory(inRepoAt: other))
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
+        let task = try await CrossRepoFixture.addTask(with: Self.boardField(reference), on: app)
+        await app.close()
+        #expect(!(try Self.events(ofTask: task, inRepoAt: other).isEmpty))
+        #expect(try NodeURI(parsing: task).boardKey == (try BoardIDTests.boardID(inRepoAt: other)))
     }
 
     @Test("addTask through a path ref changes no file of the repo outside .kanban/ (plan.md §6.6, trust)")

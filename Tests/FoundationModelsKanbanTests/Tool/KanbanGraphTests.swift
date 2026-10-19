@@ -346,13 +346,13 @@ struct KanbanGraphTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
     }
 
-    @Test("An engine in a folder that is not a git repo gives NOT_A_REPO, and makes no .kanban/")
+    @Test("A read of an engine in a folder that is not a git repo gives the empty board, and makes no .kanban/")
     func boardInPlainFolder() async throws {
         let directory = try TemporaryDirectory()
         let graph = try await KanbanHost.shared.session(workingDirectory: directory.url, actor: Self.actorName)
-        let response = try await Self.execute(Self.keyQuery, on: graph)
+        let response = try await Self.execute("{ board { tasks { totalCount } } }", on: graph)
         await graph.close()
-        #expect(response == (try KanbanError.notARepo(path: directory.url.path).responseJSON()))
+        #expect(response == #"{"data":{"board":{"tasks":{"totalCount":0}}}}"#)
         #expect(!FileManager.default.fileExists(atPath: EventLog(repositoryAt: directory.url).directory.path))
     }
 

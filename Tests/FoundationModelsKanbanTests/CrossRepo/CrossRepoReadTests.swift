@@ -165,13 +165,13 @@ struct CrossRepoReadTests {
         #expect(response == #"{"data":{"node":{"id":"\#(target)","title":"\#(AddUpdateTaskTests.title)"}}}"#)
     }
 
-    @Test("A plain folder with a board and no .git is not a related board: the scan does not find it")
-    func plainFolderBoardIsNotFound() async throws {
+    @Test("A sibling folder with a board and no .git is a related board outside git: the scan finds it")
+    func plainFolderBoardIsFound() async throws {
         let sandbox = try GitSandbox()
         let app = try await sandbox.makeRepo(named: BoardLocatorTests.appName, origin: BoardLocatorTests.appOrigin)
         let lib = try GitSandbox.makeFolder(named: BoardLocatorTests.libName, in: sandbox.root)
         _ = try KanbanGraphTests.writeFixture(inRepoAt: lib)
-        #expect(try await Self.boardPaths(on: GitGraphFixture.makeGraph(at: app)) == [app.path])
+        #expect(try await Self.boardPaths(on: GitGraphFixture.makeGraph(at: app)) == [app.path, lib.path])
     }
 
     @Test("A dependency on a task of a board that the scan cannot find counts as not done, with no error")

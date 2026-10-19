@@ -74,10 +74,26 @@ comments:
     - evidence: swift test: 1626 tests in 133 suites passed, 0 failures; only the allowed SwiftPM "missing creator" warning. Files: Sources/.../CrossRepo/BoardLocator.swift, Sources/.../CrossRepo/ScanMarks.swift, Sources/.../Events/EventLog.swift, Sources/.../Identity/BoardNames.swift, Sources/.../Tool/SessionNames.swift, Tests/.../CrossRepo/BoardIDTests.swift, Tests/.../CrossRepo/BoardLocatorTests.swift, Tests/.../CrossRepo/PathRefRecordTests.swift, Tests/.../CrossRepo/ScanCacheTests.swift, Tests/.../CrossRepo/ScanChangeTests.swift, Tests/.../Design/PortabilityTests.swift. 7/7 findings and 5/5 acceptance items are [x]. Not committed.
     - next: /review
   timestamp: 2026-10-19T16:49:48.088777+00:00
+- actor: claude-code
+  id: 01m5ahbr8kpkrkkawvbf6c2n90
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (45c6778). 0 findings, 0 confirmed, 0 refuted. 14 attempts, 0 failed. 11 files reviewed. All 7 prior findings are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-19T16:54:19.667429+00:00
+- actor: claude-code
+  id: 01m5ahc0paebhem81h1429aksf
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 11 files
+    - test: green — swift test, 1626 passed
+    - commit: 45c6778
+    - review: clean — 0 findings, 7/7 prior findings checked
+  timestamp: 2026-10-19T16:54:28.298251+00:00
 depends_on:
 - 01M4XJG62C0DB0780SENXRQCGN
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ff9d80
 title: Give each board a board ID in its log, and resolve a board by each of its names
 ---
 ## What

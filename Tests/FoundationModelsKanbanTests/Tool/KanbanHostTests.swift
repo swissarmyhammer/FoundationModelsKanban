@@ -2,6 +2,7 @@ import Foundation
 import FoundationModelsExtras
 import Synchronization
 import Testing
+import ULID
 
 @testable import FoundationModelsKanban
 
@@ -125,15 +126,16 @@ struct KanbanHostTests {
         await host.close()
     }
 
-    @Test("A session in a folder that is not in a git repo has no board, and each call gives NOT_A_REPO")
-    func folderOutsideRepoHasNoBoard() async throws {
+    @Test("A session in a folder that is not in a git repo loads the board of the folder in one engine of the host")
+    func folderOutsideRepoLoadsItsBoard() async throws {
         let sandbox = try GitSandbox()
-        let folder = try GitSandbox.makeFolder(named: RepoBoardTests.plainFolderName, in: sandbox.root)
+        let folder = try BareFolderBoardTests.makeBareFolder(in: sandbox)
         let host = HostFixture.makeGitHost()
         let session = try await host.session(workingDirectory: folder, actor: Self.firstActor)
-        let expected = try KanbanError.notARepo(path: folder.path).responseJSON()
-        #expect(try await KanbanGraphTests.execute(KanbanGraphTests.keyQuery, on: session) == expected)
-        #expect(await host.engineCount == 0)
+        let response = try await KanbanGraphTests.execute(KanbanGraphTests.keyQuery, on: session)
+        let key = try #require(try KanbanGraphTests.object(named: "board", in: response)["key"] as? String)
+        #expect(ULID(boardKeyText: key) != nil, "The key \(key) of a board outside git is not a board ID")
+        #expect(await host.engineCount == 1)
         await host.close()
     }
 

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import ULID
 
 @testable import FoundationModelsKanban
 
@@ -83,7 +84,8 @@ struct PathRefRecordTests {
     func gitInitExpiresRecord() throws {
         let directory = try TemporaryDirectory()
         let folder = try GitSandbox.makeFolder(named: Self.repoName, in: directory.url)
-        let record = Self.record(of: .notARepo(path: folder.path), ofFolderAt: folder)
+        let bareBoard = BoardCopy.read(fromRepoAt: folder, key: BoardKey(boardID: ULID()))
+        let record = Self.record(of: .board(bareBoard), ofFolderAt: folder)
         _ = try GitSandbox.makeFolder(named: BoardKey.gitDirectoryName, in: folder)
         #expect(record.isExpired(by: .repo(folder.canonicalPath)))
     }

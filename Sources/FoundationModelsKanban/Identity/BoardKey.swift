@@ -7,11 +7,11 @@ import ULID
 ///
 /// The SSH form (`git@host:owner/repo.git`), the HTTPS form (`https://host/owner/repo.git`), and the `ssh://` form of
 /// one remote give the same key. A repo with no usable remote has the key `local/<root commit>`, with the first
-/// ``rootCommitDigitCount`` hex digits of its root commit (divergence.md §16, M7). A board is only in a git repo
-/// (divergence.md §16), so a folder that is not in a git repo has no key. A node log does not store the key. Only the
-/// board log records it, as a name of the board (``BoardNames``, divergence.md M9). Each call that opens a board reads
-/// the key from git again with ``read(fromRepoAt:)``, so a repo that moves to a new remote gets a new key, and its data
-/// does not change. ``NodeURI`` holds the text of the key (``description``).
+/// ``rootCommitDigitCount`` hex digits of its root commit (divergence.md §16, M7). A board in a folder that is not in a
+/// git repo has its board ID as its key (``init(boardID:)``, divergence.md M9). A node log does not store the key.
+/// Only the board log records it, as a name of the board (``BoardNames``, divergence.md M9). Each call that opens a
+/// board reads the key from git again with ``read(fromRepoAt:)``, so a repo that moves to a new remote gets a new key,
+/// and its data does not change. ``NodeURI`` holds the text of the key (``description``).
 struct BoardKey: Hashable, Sendable, CustomStringConvertible {
     /// The first segment of the key of a repo with no remote.
     static let localHost = "local"
@@ -70,6 +70,18 @@ struct BoardKey: Hashable, Sendable, CustomStringConvertible {
     /// - Parameter commit: The SHA of the root commit of the repo, in hex.
     init(rootCommit commit: String) {
         description = "\(Self.localHost)\(LocalRef.separator)\(commit.prefix(Self.rootCommitDigitCount))"
+    }
+
+    /// Makes the key of a board outside git: its board ID (divergence.md M9). The text is the canonical ULID text.
+    ///
+    /// - Parameter id: The primary board ID of the board.
+    init(boardID id: ULID) {
+        description = id.ulidString
+    }
+
+    /// `true` when the key is a board ID, the key of a board outside git. A git key always has a `/`.
+    var isBoardID: Bool {
+        ULID(boardKeyText: description) != nil
     }
 }
 
@@ -188,8 +200,8 @@ extension BoardKey {
     /// The arguments of the git command that lists the root commits of ``headName``, one SHA on each line.
     static let rootCommitsArguments = ["rev-list", "--max-parents=0", headName]
 
-    /// Reads the key of the board of a repo (plan.md §3.2, §12 item 4). A board is only in a git repo (divergence.md
-    /// §16). Git runs with the environment of the process.
+    /// Reads the key of the board of a repo (plan.md §3.2, §12 item 4). A folder that is not in a git repo has no git
+    /// key: its board has its board ID as its key (divergence.md M9). Git runs with the environment of the process.
     ///
     /// See ``read(fromRepoAt:gitEnvironment:)``.
     ///
@@ -200,8 +212,8 @@ extension BoardKey {
         try await read(fromRepoAt: directory, gitEnvironment: nil)
     }
 
-    /// Reads the key of the board of a repo (plan.md §3.2, §12 item 4). A board is only in a git repo (divergence.md
-    /// §16).
+    /// Reads the key of the board of a repo (plan.md §3.2, §12 item 4). A folder that is not in a git repo has no git
+    /// key (divergence.md M9).
     ///
     /// When the repo has no commit, the read first makes one empty first commit on the current branch (divergence.md
     /// §16, M8). The commit has the empty tree, so it does not take the staged files, and the index and the working
@@ -462,7 +474,8 @@ enum BoardKeyError: Error, Hashable, Sendable {
     /// The remote URL has no host, no path, or an empty path segment.
     case invalidRemoteURL(url: String)
 
-    /// The folder is not in a git repo, so it has no board (divergence.md §16). The path is the path of the folder.
+    /// The folder is not in a git repo, so it has no git key and no worktree top. Its board is outside git, and the
+    /// key of that board is its board ID (divergence.md M9). The path is the path of the folder.
     case notARepo(path: String)
 
     /// The `git` tool did not start, for example because git is not installed or the directory does not exist.

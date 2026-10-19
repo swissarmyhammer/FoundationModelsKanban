@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import ULID
 
 @testable import FoundationModelsKanban
 
@@ -386,12 +387,17 @@ struct BoardKeyTests {
         #expect(try await response == KanbanGraphTests.keyResponse(of: BoardKey.read(fromRepoAt: repo)))
     }
 
-    @Test("An engine in a folder that is not in a git repo gives NOT_A_REPO for the key")
-    func engineOutsideRepoGivesNotARepo() async throws {
+    @Test("The key of a board outside git before its first write is the board ID that the first write records")
+    func engineOutsideRepoKeyIsRecordedBoardID() async throws {
         let sandbox = try GitSandbox()
         let folder = try GitSandbox.makeFolder(named: Self.plainFolderName, in: sandbox.root)
-        let response = try await Self.keyResponse(ofEngineAt: folder)
-        #expect(try response == KanbanError.notARepo(path: folder.path).responseJSON())
+        let graph = try GitGraphFixture.makeGraph(at: folder)
+        let key = try await KanbanGraphTests.execute(KanbanGraphTests.keyQuery, on: graph)
+        try await CrossRepoUndoTests.runWithNoErrors(BoardIDTests.writeField, on: graph)
+        await graph.close()
+        let recorded = try BoardIDTests.boardID(inRepoAt: folder)
+        #expect(key == KanbanGraphTests.keyResponse(of: BoardKey(boardID: try #require(ULID(ulidString: recorded)))))
+        #expect(try await Self.keyResponse(ofEngineAt: folder) == key)
     }
 
     /// Runs ``KanbanGraphTests/keyQuery`` on an engine that reads the key from git, and closes the engine.

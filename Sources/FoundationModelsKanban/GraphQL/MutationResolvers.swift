@@ -1,5 +1,6 @@
 import Graphiti
 import GraphQL
+import ULID
 
 // MARK: - Names
 
@@ -393,22 +394,39 @@ extension WorkingCopy {
     /// `git init` above the folder), the patch adds that old key as an old name. The patch sets the current key as
     /// the recorded git key. A board that has an ID and the current key gets no patch.
     ///
+    /// A board outside git has its board ID as its key (``BoardKey/init(boardID:)``). The patch then adds that key as
+    /// a board ID when the log does not have it, so that each stored ref with the key names the board. It records no
+    /// git key.
+    ///
     /// - Parameters:
-    ///   - key: The current key of the board: its git key.
+    ///   - key: The current key of the board: its git key, or its board ID outside git.
     ///   - time: The time of the change.
     /// - Throws: An ``EventError`` when the patch breaks a rule of the log.
     fileprivate mutating func recordBoardNames(currentKey key: String, at time: DateTime) throws(EventError) {
         let board = graph.boardNode
-        let newIDs = board?.ids.isEmpty == false ? [] : [StoredRef.board(named: mintULID().ulidString)]
+        let keyID = ULID(boardKeyText: key)
         let oldKeys = board?.gitKey.flatMap { recorded in recorded == key ? nil : [StoredRef.board(named: recorded)] }
         let patch = try PatchInput(
             node: .board,
-            set: [PropertyName.gitKey: .json(.string(key))],
-            add: [PropertyName.boardIDs: newIDs, PropertyName.oldNames: oldKeys ?? []].filter { _, refs in
-                !refs.isEmpty
-            }
+            set: keyID == nil ? [PropertyName.gitKey: .json(.string(key))] : [:],
+            add: [PropertyName.boardIDs: newBoardIDs(of: board, key: keyID), PropertyName.oldNames: oldKeys ?? []]
+                .filter { _, refs in !refs.isEmpty }
         )
         try apply(patch, at: time)
+    }
+
+    /// Gives the board IDs that the next write of a board adds (divergence.md M9).
+    ///
+    /// - Parameters:
+    ///   - board: The board node, or `nil` when the board has no board node yet.
+    ///   - keyID: The current key of the board when it is a board ID (a board outside git), or `nil` for a git key.
+    /// - Returns: The key when it is a board ID that the log does not have; else a new ID when the board has no ID.
+    private mutating func newBoardIDs(of board: BoardNode?, key keyID: ULID?) -> [StoredRef] {
+        let ids = board?.ids ?? []
+        if let keyID {
+            return ids.contains(keyID) ? [] : [StoredRef.board(named: keyID.ulidString)]
+        }
+        return ids.isEmpty ? [StoredRef.board(named: mintULID().ulidString)] : []
     }
 }
 

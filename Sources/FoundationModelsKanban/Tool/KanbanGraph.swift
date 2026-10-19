@@ -3,8 +3,9 @@ import FoundationModelsExtras
 import GraphQL
 
 /// The session view of the kanban tool: one GraphQL endpoint for one session, over the board of its working
-/// directory (plan.md §7.2, divergence.md §16). The board is in the `.kanban/` directory of the top folder of the
-/// worktree of the working directory, and a working directory that is not in a git repo has no board.
+/// directory (plan.md §7.2, divergence.md §16, M9). In a git repo, the board is in the `.kanban/` directory of the top
+/// folder of the worktree of the working directory. Outside git, the board is in the nearest folder, from the working
+/// directory up, that has a `.kanban/`, else in the working directory.
 ///
 /// Get a view from the host of the process: ``KanbanHost/session(workingDirectory:actor:)``. The tool, a GUI, and the
 /// tests use the same view. Each view has its own session actor and its own default board, and a call that names no
@@ -23,7 +24,7 @@ import GraphQL
 /// a URI of the board) or when a cross-board dependency reads it. The host keeps the board in memory after that.
 public actor KanbanGraph {
     /// The working directory of the session. The board is in the `.kanban/` directory of the top folder of its
-    /// worktree (divergence.md §16).
+    /// worktree, or outside git in the nearest folder up that has a `.kanban/` (divergence.md §16, M9).
     private let workingDirectory: URL
 
     /// The host that holds the engine of each board.
@@ -47,8 +48,17 @@ public actor KanbanGraph {
     /// The change feed of each board that the view loaded. The subscribers of the view are in them (plan.md §6.7).
     private let feeds = SessionFeeds()
 
-    /// The board of the working directory: not found yet, found, or none because the folder is not in a git repo.
+    /// The board of the working directory: not found yet, or found.
     private var boardState = ViewBoardState.unresolved
+
+    /// The board in a subfolder of the repo of the working directory that the calls do not read, or `nil` when there
+    /// is none or the view did not find its board yet (divergence.md M9).
+    private var subfolderBoard: SubfolderBoard? {
+        guard case .resolved(_, let subfolderBoard) = boardState else {
+            return nil
+        }
+        return subfolderBoard
+    }
 
     /// The engine of each related board that a call of the view loaded, by the canonical path of its repo directory.
     private var relatedBoards: [String: BoardEngine] = [:]
@@ -164,7 +174,7 @@ public actor KanbanGraph {
     /// the watcher.
     var activeWatch: BoardWatch? {
         get async {
-            guard case .resolved(.board(let engine)) = boardState else {
+            guard case .resolved(let engine, _) = boardState else {
                 return nil
             }
             return await engine.activeWatch
@@ -276,7 +286,7 @@ public actor KanbanGraph {
     // MARK: - Board of the working directory
 
     /// Finds and loads the board of the working directory, when the view did not find it yet (divergence.md §16,
-    /// Gap 2). A working directory that is not in a git repo has no board, and that is not an error here.
+    /// Gap 2).
     ///
     /// - Throws: A ``BoardKeyError``, an ``EventLogError``, or a ``BoardWatcherError`` when the board cannot load.
     func prepareBoard() async throws {
@@ -297,47 +307,46 @@ public actor KanbanGraph {
         }
     }
 
-    /// Gives the engine of the board of the working directory. The first call finds the top folder of the worktree,
+    /// Gives the engine of the board of the working directory. The first call finds the root directory of the board,
     /// and the host gives the engine of its board: it loads the board when no session loaded it yet.
     ///
     /// - Returns: The engine.
-    /// - Throws: ``KanbanError/notARepo(path:)`` when the working directory is not in a git repo. A
-    ///   ``BoardKeyError``, an ``EventLogError``, or a ``BoardWatcherError`` when the board cannot load. The next call
-    ///   then tries again.
+    /// - Throws: A ``BoardKeyError``, an ``EventLogError``, or a ``BoardWatcherError`` when the board cannot load. The
+    ///   next call then tries again.
     private func currentBoard() async throws -> BoardEngine {
-        let resolved: ResolvedBoard
-        if case .resolved(let found) = boardState {
-            resolved = found
-        } else {
-            resolved = try await resolveBoard()
-        }
-        switch resolved {
-        case .board(let engine):
+        if case .resolved(let engine, _) = boardState {
             return engine
-        case .notARepo(let path):
-            throw KanbanError.notARepo(path: path)
         }
+        return try await resolveBoard()
     }
 
-    /// Finds the board of the working directory: the top folder of its worktree, and the engine of that board
-    /// (divergence.md §16). The view then gets the changes of the board.
+    /// Finds the board of the working directory and the engine of that board (divergence.md §16, M9). The view then
+    /// gets the changes of the board.
     ///
-    /// - Returns: The board.
+    /// - In a git repo, the board is at the top folder of the worktree. A `.kanban/` in a subfolder between the
+    ///   working directory and the top folder is not read: each response of the view warns about it
+    ///   (``SubfolderBoard``).
+    /// - Outside git, the board is at the nearest folder, from the working directory up, that has a `.kanban/`, or at
+    ///   the working directory itself (``BareBoard/root(of:)``). The first write makes its `.kanban/`.
+    ///
+    /// - Returns: The engine of the board.
     /// - Throws: A ``BoardKeyError`` other than ``BoardKeyError/notARepo(path:)``, an ``EventLogError``, or a
     ///   ``BoardWatcherError`` when the board cannot load. Then the view stays unresolved.
-    private func resolveBoard() async throws -> ResolvedBoard {
-        let top: URL
+    private func resolveBoard() async throws -> BoardEngine {
+        let root: URL
+        let subfolderBoard: SubfolderBoard?
         do throws(BoardKeyError) {
-            top = try await host.configuration.topReader(workingDirectory)
-        } catch .notARepo(let path) {
-            boardState = .resolved(.notARepo(path: path))
-            return .notARepo(path: path)
+            root = try await host.configuration.topReader(workingDirectory)
+            subfolderBoard = SubfolderBoard.nearest(from: workingDirectory, below: root)
+        } catch .notARepo {
+            root = BareBoard.root(of: workingDirectory)
+            subfolderBoard = nil
         }
-        let engine = try await host.engine(ofBoardAt: top)
+        let engine = try await host.engine(ofBoardAt: root)
         feeds.replace(engine.feed, forBoardAt: engine.root.canonicalPath)
         await host.register(self)
-        boardState = .resolved(.board(engine))
-        return .board(engine)
+        boardState = .resolved(engine, subfolderBoard: subfolderBoard)
+        return engine
     }
 
     // MARK: - Moved boards
@@ -380,7 +389,7 @@ public actor KanbanGraph {
     /// is now at its path, and the subscribers of the view move to that engine (``record(_:)``). A related board that
     /// cannot load at its path any more goes away from the view, and the streams of its subscribers end.
     private func followMovedBoards() async {
-        if case .resolved(.board(let current)) = boardState, !current.isAtRoot {
+        if case .resolved(let current, _) = boardState, !current.isAtRoot {
             boardState = .unresolved
             _ = try? await resolveBoard()
         }
@@ -412,7 +421,7 @@ public actor KanbanGraph {
     /// - Parameter path: The canonical path of the repo directory of the related board.
     private func forgetRelatedBoard(at path: String) {
         relatedBoards[path] = nil
-        if case .resolved(.board(let current)) = boardState, current.root.canonicalPath == path {
+        if case .resolved(let current, _) = boardState, current.root.canonicalPath == path {
             return
         }
         feeds.remove(forBoardAt: path)
@@ -423,7 +432,7 @@ public actor KanbanGraph {
     /// - Parameter engine: The engine.
     /// - Returns: `true` when the view found its board, and that board has the identity of the engine.
     private func isCurrentBoard(_ engine: BoardEngine) -> Bool {
-        guard case .resolved(.board(let current)) = boardState else {
+        guard case .resolved(let current, _) = boardState else {
             return false
         }
         return current.identity == engine.identity
@@ -554,9 +563,8 @@ public actor KanbanGraph {
     }
 
     /// Runs one call of the public schema on the board of the working directory, and gives a ``KanbanError`` of the
-    /// run or of the commit as one error response (plan.md §4.4, §5.4). A working directory that is not in a git repo
-    /// gives `NOT_A_REPO`, and a `.kanban/` with Rust files, of the current board or of a related board that the call
-    /// names, gives `INCOMPATIBLE_BOARD` (divergence.md Q6).
+    /// run or of the commit as one error response (plan.md §4.4, §5.4). A `.kanban/` with Rust files, of the current
+    /// board or of a related board that the call names, gives `INCOMPATIBLE_BOARD` (divergence.md Q6).
     ///
     /// - Parameters:
     ///   - board: The board of the working directory, or the error that stops each call.
@@ -624,6 +632,7 @@ public actor KanbanGraph {
         var session = await engine.session
         let copy = session.copy(at: engine.root)
         let (clock, search, feeds) = (host.configuration.clock, session.source.search, feeds)
+        let subfolderBoard = subfolderBoard
         do {
             let response = try await session.run(
                 actingAs: sessionActor,
@@ -640,6 +649,7 @@ public actor KanbanGraph {
                     let context = KanbanContext(store: store, clock: clock, search: search, feed: feeds)
                     await lastRun.record(context.warnings)
                     try await Self.checkUnreadableBoards(of: store, in: context)
+                    await Self.addPlaceWarnings(of: store, subfolderBoard: subfolderBoard, in: context)
                     return try await call(context)
                 }
             )
@@ -671,6 +681,27 @@ public actor KanbanGraph {
         }
         for board in boards {
             await context.warnings.add(board.warningMessage, code: board.warningCode)
+        }
+    }
+
+    /// Adds the warnings of the places of the boards to the response of a run (divergence.md M9): one warning for the
+    /// board in a subfolder of the repo that the calls do not read, and one warning for each board ID that more than
+    /// one board outside git has in the scan index that the run read.
+    ///
+    /// - Parameters:
+    ///   - store: The store of the run. Its related boards hold the shared board IDs.
+    ///   - subfolderBoard: The board in a subfolder of the repo of the view, or `nil` when there is none.
+    ///   - context: The context of the run, whose warnings become `extensions.warnings` of the response.
+    private static func addPlaceWarnings(
+        of store: BoardStore,
+        subfolderBoard: SubfolderBoard?,
+        in context: KanbanContext
+    ) async {
+        if let subfolderBoard {
+            await context.warnings.add(subfolderBoard.warningMessage, code: SubfolderBoard.warningCode)
+        }
+        for shared in await store.sharedBoardIDs {
+            await context.warnings.add(shared.warningMessage, code: SharedBoardID.warningCode)
         }
     }
 
@@ -769,7 +800,7 @@ public actor KanbanGraph {
     func publish(_ changed: [String: BoardChanges]) async {
         await followMovedBoards()
         let subscribed = feeds.subscribedBoards
-        guard !changed.isEmpty, !subscribed.isEmpty, case .resolved(.board(let current)) = boardState else {
+        guard !changed.isEmpty, !subscribed.isEmpty, case .resolved(let current, _) = boardState else {
             return
         }
         let currentSession = await current.session
@@ -933,6 +964,9 @@ public actor KanbanGraph {
             updated = await withLoadedBoards(updated, around: current.directory)
             pending = updated.loadedCrossBoardRequests.filter { request in !updated.satisfies([request]) }
         }
+        if requests.contains(where: \.readsScanIndex), let index = await host.scanIndex(around: current.directory) {
+            updated.record(sharedBoardIDs: SharedBoardID.shared(among: index.copies))
+        }
         return updated
     }
 
@@ -1040,8 +1074,8 @@ public actor KanbanGraph {
     /// - Parameters:
     ///   - reference: The board ref.
     ///   - current: The copy of the current board: the top folder of its worktree and its current key.
-    /// - Returns: The board, ``BoardResolution/notARepo(path:)`` for a path to a folder that is not in a git repo, or
-    ///   `nil` when no copy of the index, no folder, and no board that a call reached by a path has the ref.
+    /// - Returns: The board (for a path to a folder outside git, the board outside git of that folder), or `nil` when
+    ///   no copy of the index, no folder, and no board that a call reached by a path has the ref.
     /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the scan or during a
     ///   read of git for a folder. Each other ``BoardKeyError`` of the read of the top folder of a folder.
     private func resolution(
@@ -1132,7 +1166,7 @@ public actor KanbanGraph {
             )
             return .unreadable(board)
         }
-        if case .resolved(.board(let current)) = boardState, current.identity == engine.identity {
+        if case .resolved(let current, _) = boardState, current.identity == engine.identity {
             return .current
         }
         record(engine)
@@ -1167,17 +1201,9 @@ private enum ViewBoardState {
     /// No call and no preparation found the board yet.
     case unresolved
 
-    /// The view found the board, or found that the working directory is not in a git repo.
-    case resolved(ResolvedBoard)
-}
-
-/// The board of the working directory of a ``KanbanGraph``, after the view found it.
-private enum ResolvedBoard {
-    /// The engine of the board.
-    case board(BoardEngine)
-
-    /// The working directory is not in a git repo, so it has no board. Each call gives `NOT_A_REPO`.
-    case notARepo(path: String)
+    /// The view found the engine of the board, and the board in a subfolder of the repo that the calls do not read,
+    /// or `nil` when there is none (divergence.md M9).
+    case resolved(BoardEngine, subfolderBoard: SubfolderBoard?)
 }
 
 // MARK: - Related board answers

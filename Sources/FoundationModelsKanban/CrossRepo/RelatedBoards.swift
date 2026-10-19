@@ -20,6 +20,16 @@ enum BoardRequest: Hashable, Sendable {
     /// changed a board with that key (plan.md §6.5, many boards; divergence.md X5). Each worktree of a repo has its
     /// own board with the same key, so the key alone does not tell which copy the transaction changed.
     case loadedCopies(key: String)
+
+    /// `true` when the answer reads the scan index of the host: a board ref, or the list of `Query.boards`. The
+    /// response of such a run warns about the board IDs that more than one board outside git has in the index
+    /// (``SharedBoardID``).
+    var readsScanIndex: Bool {
+        switch self {
+        case .board, .allCopies: true
+        case .loadedCopies: false
+        }
+    }
 }
 
 /// What the related boards of a run know of the target of a cross-board dependency (divergence.md Q3). The write
@@ -150,6 +160,10 @@ struct RelatedBoards: Sendable {
     /// The places that the scan looked in, in scan order, for the `NOT_FOUND` message of a board.
     private(set) var searchRoots: [URL] = []
 
+    /// The board IDs that more than one board outside git has in the scan index that the run read (divergence.md
+    /// M9). The response of the run has one warning for each of them.
+    private(set) var sharedBoardIDs: [SharedBoardID] = []
+
     /// The board that each resolved board ref names, by the ref as the call wrote it.
     private var resolutions: [String: BoardResolution] = [:]
 
@@ -255,7 +269,7 @@ struct RelatedBoards: Sendable {
             .copy(formerCurrent)
         case .copy(let copy) where copy.directory.canonicalPath == path:
             .current
-        case .copy, .notFound, .notARepo, .unreadable:
+        case .copy, .notFound, .unreadable:
             resolution
         }
     }
@@ -322,13 +336,12 @@ struct RelatedBoards: Sendable {
     /// Gives the loaded board of a resolved board ref.
     ///
     /// - Parameter resolution: The board.
-    /// - Returns: The loaded board, or `nil` when the board is not found, not in a git repo, cannot be read, or is not
-    ///   loaded.
+    /// - Returns: The loaded board, or `nil` when the board is not found, cannot be read, or is not loaded.
     func board(resolvedAs resolution: BoardResolution) -> BoardSnapshot? {
         switch resolution {
         case .current: current
         case .copy(let copy): boards[copy.directory.canonicalPath]
-        case .notFound, .notARepo, .unreadable: nil
+        case .notFound, .unreadable: nil
         }
     }
 
@@ -413,7 +426,7 @@ struct RelatedBoards: Sendable {
             return .unknown
         }
         switch resolution {
-        case .notFound, .notARepo:
+        case .notFound:
             return .boardNotFound
         case .unreadable:
             return .unknown
@@ -507,6 +520,13 @@ struct RelatedBoards: Sendable {
     ///   - key: The key, with the host in lowercase.
     mutating func record(loadedCopies copies: [BoardResolution], ofKey key: String) {
         keyCopies[key] = copies
+    }
+
+    /// Records the board IDs that more than one board outside git has in the scan index that the run read.
+    ///
+    /// - Parameter shared: The shared board IDs, in the order of the first copy with each ID.
+    mutating func record(sharedBoardIDs shared: [SharedBoardID]) {
+        sharedBoardIDs = shared
     }
 
     /// Records the loaded related boards and the places of the scan.

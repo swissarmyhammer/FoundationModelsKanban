@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import ULID
 
 @testable import FoundationModelsKanban
 
@@ -60,8 +61,8 @@ struct PathRefCacheTests {
 
     // MARK: - No git on a repeated path ref
 
-    @Test("A second call with the same path ref to a folder that is not in a git repo runs no git")
-    func notARepoRunsNoGit() async throws {
+    @Test("A second call with the same path ref to a folder that is not in a git repo runs no git, and reads its board")
+    func folderOutsideGitRunsNoGit() async throws {
         let place = try ScanPlace.make()
         let outside = try TemporaryDirectory()
         let folder = try GitSandbox.makeFolder(named: ScanCacheTests.newName, in: outside.url)
@@ -69,8 +70,7 @@ struct PathRefCacheTests {
         let host = ScanCacheTests.makeHost(reading: reader, recordedBy: ScanRecorder())
         let session = try await host.session(workingDirectory: place.app, actor: KanbanHostTests.firstActor)
         let response = try await Self.expectRepeatedCallsRunNoGit(naming: folder, on: session, readingWith: reader)
-        let expected = KanbanError.notARepo(path: folder.standardizedFileURL.path)
-        try ErrorCoverageTests.expectFailure(of: "board", in: response, giving: expected, coded: "NOT_A_REPO")
+        #expect(response == #"{"data":{"board":{"name":"\#(ScanCacheTests.newName)"}}}"#)
         await host.close()
     }
 
@@ -102,17 +102,23 @@ struct PathRefCacheTests {
 
     // MARK: - Watcher
 
-    @Test("After git init in a folder that a path ref named, the next call with the path ref finds the board")
-    func gitInitFindsBoard() async throws {
+    @Test("After git init in a folder that a path ref named, the next call with the path ref reads the git key")
+    func gitInitReadsGitKey() async throws {
         let place = try ScanPlace.make()
         let outside = try TemporaryDirectory()
         let folder = try GitSandbox.makeFolder(named: ScanCacheTests.newName, in: outside.url)
+        let reader = ScanKeyReader()
         let recorder = ScanRecorder()
-        let host = ScanCacheTests.makeHost(reading: ScanKeyReader(), recordedBy: recorder)
+        let host = ScanCacheTests.makeHost(reading: reader, recordedBy: recorder)
         let session = try await host.session(workingDirectory: place.app, actor: KanbanHostTests.firstActor)
-        #expect(try await !ScanCacheTests.hasBoard(of: folder.path, on: session))
+        let bareKey = try #require(try await CrossRepoReadTests.board("key", of: folder.path, on: session))
+        #expect(ULID(boardKeyText: bareKey) != nil, "The key \(bareKey) of a folder outside git is not a board ID")
+        #expect(reader.keyReadCount(ofRepoNamed: ScanCacheTests.newName) == 0)
         try await GitSandbox.initializeRepo(at: folder, withIdentity: false)
-        try await Self.waitUntilBoardFound(of: folder, on: session, recordedBy: recorder)
+        try await recorder.waitForChange(waitingFor: "a scan change after which git is read again", at: folder) {
+            _ = try await CrossRepoReadTests.board("key", of: folder.path, on: session)
+            return reader.keyReadCount(ofRepoNamed: ScanCacheTests.newName) > 0
+        }
         #expect(try await CrossRepoReadTests.board("path", of: folder.path, on: session) == folder.path)
         await host.close()
     }

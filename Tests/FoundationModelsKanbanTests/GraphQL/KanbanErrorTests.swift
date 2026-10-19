@@ -64,12 +64,8 @@ struct KanbanErrorTests {
         (.graphQLValidationFailed(detail: engineMessage), "GRAPHQL_VALIDATION_FAILED"),
         (.ambiguousName(name: "taskz", matches: ["task", "tasks"]), "AMBIGUOUS_NAME"),
         (.internalFailure(detail: engineMessage), "INTERNAL"),
-        (.notARepo(path: plainFolderPath), "NOT_A_REPO"),
         (.incompatibleBoard(directory: rustBoardPath), "INCOMPATIBLE_BOARD"),
     ]
-
-    /// The path of a folder that is not in a git repo, in the `NOT_A_REPO` tests.
-    static let plainFolderPath = "/tmp/plain-folder"
 
     /// The path of a `.kanban/` directory of the old Rust kanban, in the `INCOMPATIBLE_BOARD` tests.
     static let rustBoardPath = "/tmp/rust-repo/.kanban"
@@ -91,20 +87,12 @@ struct KanbanErrorTests {
         #expect(error.code == expectedCode)
     }
 
-    @Test("The cases give twenty-three different codes")
+    @Test("The cases give twenty-two different codes")
     func codesAreDistinct() {
         #expect(Set(Self.codes.map { $0.0.code }).count == Self.codes.count)
     }
 
     // MARK: - Messages
-
-    @Test("NOT_A_REPO tells that the kanban needs a git repo, and names the path")
-    func notARepoMessage() {
-        #expect(
-            KanbanError.notARepo(path: Self.plainFolderPath).message
-                == "The kanban needs a git repo. `/tmp/plain-folder` is not in a git repo."
-        )
-    }
 
     @Test("INCOMPATIBLE_BOARD names the .kanban/ directory, and tells the caller to remove it")
     func incompatibleBoardMessage() {
@@ -157,9 +145,9 @@ struct KanbanErrorTests {
         #expect(error.code == "NOT_FOUND")
         #expect(
             error.message
-                == "No board has the reference \"github.com/o/missing\". The scan looked for git repos in: /src, "
-                + "/work. Use a board key, a repo directory name, or a repo path from these places, "
-                + "and then send the call again."
+                == "No board has the reference \"github.com/o/missing\". The scan looked for git repos and for "
+                + "folders with a .kanban/ folder in: /src, /work. Use a board key, a board ID, a folder name, or a "
+                + "path from these places, and then send the call again."
         )
     }
 

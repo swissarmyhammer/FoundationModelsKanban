@@ -115,8 +115,9 @@ public actor KanbanHost {
     /// The board of the session is the `.kanban/` directory of the top folder of the worktree of the working
     /// directory (`git rev-parse --show-toplevel`). The host finds the engine of that board, or makes it and loads the
     /// board: the key of the repo (with a first commit when the repo has no commit), the file watcher, and the log
-    /// files, at the same time. A second session on the same board waits for the same load. A working directory that
-    /// is not in a git repo has no board: the session starts, and each call gives `NOT_A_REPO`.
+    /// files, at the same time. A second session on the same board waits for the same load. Outside git, the board is
+    /// in the nearest folder, from the working directory up, that has a `.kanban/`, else in the working directory, and
+    /// its key is its board ID (divergence.md M9).
     ///
     /// - Parameters:
     ///   - workingDirectory: The working directory of the session.
@@ -508,7 +509,7 @@ public actor KanbanHost {
             let scanned = try await locator.scan(
                 around: root,
                 reusing: earlier,
-                readingKeysWith: configuration.keyReader
+                readingKeysWith: configuration.boardKeyReader
             )
             return .success(scanCache.finishScan(scanned, ofPlaces: key, isWatched: isWatching(key)))
         } catch {
@@ -624,7 +625,8 @@ public actor KanbanHost {
     /// (``pathCopy(namedBy:)``, divergence.md X4).
     ///
     /// - Parameter folder: The folder, from ``BoardLocator/folder(namedBy:currentRoot:)``.
-    /// - Returns: The board of the folder, ``FolderBoard/notARepo(path:)``, or ``FolderBoard/unreadableKey(top:)``.
+    /// - Returns: The board of the folder (a board in a git repo, or a board outside git), or
+    ///   ``FolderBoard/unreadableKey(top:)``.
     /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during a read of git. Each
     ///   other ``BoardKeyError`` of the read of the top folder. The host records no result then.
     func board(ofFolderAt folder: URL) async throws(BoardKeyError) -> FolderBoard {
@@ -634,7 +636,7 @@ public actor KanbanHost {
         let mark = RepoMark(ofRepoAt: folder)
         let board = try await BoardLocator.board(
             ofFolderAt: folder,
-            readingKeysWith: configuration.keyReader,
+            readingKeysWith: configuration.boardKeyReader,
             findingTopsWith: configuration.topReader
         )
         await recordBoard(board, ofFolderAt: folder, folderMark: mark)
@@ -911,6 +913,22 @@ struct HostConfiguration: Sendable {
     /// The FSEvents calls of the file watchers of the host. A test gives a fake, for example a service whose stream
     /// start waits.
     let folderEvents: any FolderEventService
+
+    /// The board IDs that the host gave to the boards outside git whose log has no board ID yet (divergence.md M9).
+    let bareBoardIDs = BareBoardIDs(mintingFrom: SystemULIDSource())
+
+    /// Reads the key of the board of a root directory: the git key from ``keyReader``, or the board ID of a board
+    /// outside git when git tells that the folder is not in a git repo (divergence.md M9). The engine, the scan, and
+    /// the path refs read each key with it.
+    var boardKeyReader: BoardKeyReader {
+        { [keyReader, bareBoardIDs] root throws(BoardKeyError) in
+            do throws(BoardKeyError) {
+                return try await keyReader(root)
+            } catch .notARepo {
+                return bareBoardIDs.key(ofBoardAt: root)
+            }
+        }
+    }
 
     /// Makes a configuration. Each default is the value of the process: git, the system clock, random ULIDs, the log
     /// files, and the FSEvents service of the system.

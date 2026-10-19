@@ -108,7 +108,6 @@ actor BoardStore {
     /// - Returns: The read view, or `nil` when the engine did not load the board yet. The store then records the
     ///   request, and the call runs again after the load.
     /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the ref.
-    ///   ``KanbanError/notARepo(path:)`` when the ref is the path of a folder that is not in a git repo.
     func view(ofBoardNamed reference: String) throws(KanbanError) -> BoardView? {
         try resolution(ofBoardNamed: reference).flatMap(view(of:))
     }
@@ -117,10 +116,9 @@ actor BoardStore {
     ///
     /// - Parameter reference: The board ref: a board key, a repo directory name, a path, or the URI of a board.
     /// - Returns: The current board, a copy of a related repo, or a copy whose board cannot be read (never
-    ///   ``BoardResolution/notFound`` or ``BoardResolution/notARepo(path:)``), or `nil` when the engine did not resolve
-    ///   the ref yet. The store then records the request, and the call runs again after the load.
+    ///   ``BoardResolution/notFound``), or `nil` when the engine did not resolve the ref yet. The store then records
+    ///   the request, and the call runs again after the load.
     /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the ref.
-    ///   ``KanbanError/notARepo(path:)`` when the ref is the path of a folder that is not in a git repo.
     private func resolution(ofBoardNamed reference: String) throws(KanbanError) -> BoardResolution? {
         let resolver = RefResolver(graph: work.graph, boardKey: boardKey)
         if (try? resolver.storedRef(for: reference, ofType: .board)) != nil {
@@ -135,8 +133,6 @@ actor BoardStore {
             return resolution
         case .notFound:
             throw .boardNotFound(reference: reference, searchRoots: related.searchRoots.map(\.path))
-        case .notARepo(let path):
-            throw .notARepo(path: path)
         }
     }
 
@@ -239,7 +235,6 @@ actor BoardStore {
     /// - Returns: The board, or `nil` when the engine did not load the board yet. The store then records the request,
     ///   and the call runs again after the load.
     /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the ref.
-    ///   ``KanbanError/notARepo(path:)`` when the ref is the path of a folder that is not in a git repo.
     ///   ``KanbanError/notFound(type:reference:)`` for the board when its board cannot be read (divergence.md Q7): the
     ///   field writes nothing, and the warning of the response names the board.
     func target(of board: MutationBoard) throws(KanbanError) -> MutationTarget? {
@@ -254,7 +249,7 @@ actor BoardStore {
             return relatedTarget(of: copy, namedBy: reference)
         case .unreadable:
             throw .notFound(type: .board, reference: reference)
-        case .current, .notFound, .notARepo:
+        case .current, .notFound:
             return .current
         }
     }
@@ -286,6 +281,12 @@ actor BoardStore {
     /// has one warning for each of them.
     var unreadableBoards: [UnreadableBoard] {
         related.unreadableBoards
+    }
+
+    /// The board IDs that more than one board outside git has in the scan index that the run read (divergence.md
+    /// M9). The response of the run has one warning for each of them.
+    var sharedBoardIDs: [SharedBoardID] {
+        related.sharedBoardIDs
     }
 
     /// Tells if a board ref names a related board that cannot be read (divergence.md Q7).
@@ -351,7 +352,7 @@ actor BoardStore {
                 related.session(of: copy).map { session in
                     relatedTarget(of: session, atPath: copy.directory.canonicalPath)
                 }
-            case .notFound, .notARepo, .unreadable:
+            case .notFound, .unreadable:
                 nil
             }
         }

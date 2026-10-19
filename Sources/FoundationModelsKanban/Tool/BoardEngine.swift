@@ -453,8 +453,8 @@ struct EngineLoad: Sendable {
     /// Tells the host that the engine retired because its folder moved away from its root path.
     let reportRetirement: EngineRetirement
 
-    /// Gives the key of the board: the known key, or the key that git gives (with the first commit of a repo with no
-    /// commit, divergence.md §16 M8).
+    /// Gives the key of the board: the known key, the key that git gives (with the first commit of a repo with no
+    /// commit, divergence.md §16 M8), or the board ID of a board outside git (divergence.md M9).
     ///
     /// - Returns: The key.
     /// - Throws: A ``BoardKeyError`` when git cannot give the key.
@@ -462,7 +462,7 @@ struct EngineLoad: Sendable {
         if let knownKey {
             return knownKey
         }
-        return try await configuration.keyReader(root)
+        return try await configuration.boardKeyReader(root)
     }
 
     /// Loads the session of the board. The key read and the file load run at the same time (divergence.md §16, L1).

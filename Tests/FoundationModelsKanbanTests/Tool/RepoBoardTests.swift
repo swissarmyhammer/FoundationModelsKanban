@@ -3,8 +3,9 @@ import Testing
 
 @testable import FoundationModelsKanban
 
-/// Tests where the engine finds the board of its working directory (divergence.md §16): the board is in the
-/// `.kanban/` directory of the top folder of the worktree, and a folder that is not in a git repo has no board.
+/// Tests where the engine finds the board of its working directory in a git repo (divergence.md §16, M9): the board is
+/// in the `.kanban/` directory of the top folder of the worktree. ``BareFolderBoardTests`` tests the folders outside
+/// git.
 ///
 /// Each test makes real git repos in a ``GitSandbox`` and engines that read the worktree top and the board key from
 /// git.
@@ -18,9 +19,6 @@ struct RepoBoardTests {
 
     /// The name of the subfolder of the working directory.
     static let subfolderName = "Sources"
-
-    /// The name of the folder that is not in a git repo.
-    static let plainFolderName = "plain-folder"
 
     /// Makes a repo with ``BoardLocatorTests/appOrigin`` and a subfolder in it.
     ///
@@ -60,28 +58,19 @@ struct RepoBoardTests {
         #expect(!CrossRepoWriteTests.hasBoardDirectory(inRepoAt: subfolder))
     }
 
-    @Test("A .kanban/ in a subfolder of a repo is not read: the session reads the board at the top folder")
+    @Test("A subfolder .kanban/ of a repo is not read: the top folder board is read, and a warning names collectBoards")
     func subfolderBoardIsNotUsed() async throws {
         let sandbox = try GitSandbox()
-        let (_, subfolder) = try await Self.makeRepoWithSubfolder(in: sandbox)
+        let (repo, subfolder) = try await Self.makeRepoWithSubfolder(in: sandbox)
         _ = try KanbanGraphTests.writeFixture(inRepoAt: subfolder)
         let response = try await Self.respond(to: "{ board { name } }", inWorkingDirectory: subfolder)
-        #expect(response == #"{"data":{"board":{"name":"\#(Self.repoName)"}}}"#)
-    }
-
-    // MARK: - Outside git
-
-    @Test("Each call in a folder that is not in a git repo gives NOT_A_REPO, and writes no .kanban/")
-    func folderOutsideRepoGivesNotARepo() async throws {
-        let sandbox = try GitSandbox()
-        let folder = try GitSandbox.makeFolder(named: Self.plainFolderName, in: sandbox.root)
-        let graph = try GitGraphFixture.makeGraph(at: folder)
-        let expected = try KanbanError.notARepo(path: folder.path).responseJSON()
-        #expect(try await KanbanGraphTests.execute(KanbanGraphTests.keyQuery, on: graph) == expected)
-        let mutation = AddUpdateTaskTests.mutation(of: AddUpdateTaskTests.addTask(with: ""))
-        #expect(try await KanbanGraphTests.execute(mutation, on: graph) == expected)
-        await graph.close()
-        #expect(!CrossRepoWriteTests.hasBoardDirectory(inRepoAt: folder))
+        let board = try KanbanGraphTests.object(named: "board", in: response)
+        #expect(board["name"] as? String == Self.repoName)
+        let warnings = try ResponseWarningsTests.warnings(of: response)
+        #expect(warnings.map(\.code) == [SubfolderBoard.warningCode])
+        let message = try #require(warnings.first?.message)
+        let subfolderBoard = EventLog(repositoryAt: subfolder).directory.path
+        #expect(message.contains(subfolderBoard) && message.contains(repo.path) && message.contains("collectBoards"))
     }
 
     // MARK: - Worktree
