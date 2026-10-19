@@ -286,17 +286,22 @@ extension BoardIndex {
 
 // MARK: - Observer
 
-/// Gets a call when the host scans the places for repos, when the file watcher of a scan place sees a change, and
-/// when the file watcher of a folder that a path ref named sees a change that makes the result of the path ref out of
-/// date.
+/// Gets a call when the host scans the places for repos, when a call waits for a running scan, when the file watcher
+/// of a scan place sees a change, and when the file watcher of a folder that a path ref named sees a change that makes
+/// the result of the path ref out of date.
 ///
-/// A test uses it to count the scans, and to wait until the host saw a change of a scan place or of a folder that a
-/// path ref named.
+/// A test uses it to count the scans and the waits for a running scan, and to wait until the host saw a change of a
+/// scan place or of a folder that a path ref named.
 protocol BoardScanObserver: Sendable {
     /// Tells that a scan of the places starts.
     ///
     /// - Parameter places: The places of the scan, in scan order.
     func scanDidStart(inPlaces places: [URL])
+
+    /// Tells that a call waits for the index of a scan of the places that runs now, and does not start a second scan.
+    ///
+    /// - Parameter places: The places of the scan, in scan order.
+    func scanWaitDidStart(inPlaces places: [URL])
 
     /// Tells that the host saw a change of a scan place, after the host applied it to its scan indexes.
     ///

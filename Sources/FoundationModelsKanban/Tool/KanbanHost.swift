@@ -56,6 +56,11 @@ public actor KanbanHost {
     /// (plan.md §6.6, index life; divergence.md §16, Gap 1).
     private var scanCache = ScanCache()
 
+    /// The scan of each list of scan places that runs now, by the canonical path of each place in scan order. A call
+    /// that needs the index of the places while their scan runs waits for the index of that scan, and does not start
+    /// a second scan.
+    private var runningScans: [[String]: RunningScan] = [:]
+
     /// The file watcher of each scan place, by the canonical path of the place. A change that a watcher sees makes
     /// the indexes of the place out of date.
     private var placeWatches: [String: BoardWatch] = [:]
@@ -422,21 +427,52 @@ public actor KanbanHost {
     /// board of a current index is not found, with no scan and no `git`. A new scan reuses each key that no change
     /// made unknown, and does not read again a key whose read failed.
     ///
+    /// One scan of the places runs at a time. A call that needs the index while a scan of the same places runs, for
+    /// example a parallel request of the same GraphQL call, waits for that scan and uses its index. When that scan
+    /// gives no index, for example because a cancel stopped it, the waiting call checks the index again, and scans
+    /// when the index is still not current.
+    ///
     /// - Parameter root: The top folder of the worktree of the current board of a session.
     /// - Returns: The current index.
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during a scan. Then the host
-    ///   keeps the earlier index.
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during a scan, or during the
+    ///   wait for a running scan. Then the host keeps the earlier index.
     func currentScanIndex(around root: URL) async throws(BoardKeyError) -> BoardIndex {
         let places = locator.places(around: root)
         let key = Self.placesKey(of: places)
-        if isWatching(key), let index = scanCache.currentIndex(ofPlaces: key) {
-            return index
+        while true {
+            if isWatching(key), let index = scanCache.currentIndex(ofPlaces: key) {
+                return index
+            }
+            guard let running = runningScans[key] else {
+                return try await rescan(around: root, inPlaces: places)
+            }
+            if let index = try await index(of: running, inPlaces: places) {
+                return index
+            }
         }
-        return try await rescan(around: root, inPlaces: places)
     }
 
-    /// Scans the places around a repo for repos, and records the new index. The file watcher of each place starts
-    /// before the scan, so a change during the scan is not lost.
+    /// Waits for the index of a scan of the places that runs now.
+    ///
+    /// - Parameters:
+    ///   - running: The scan that runs now.
+    ///   - places: The places of the scan, in scan order.
+    /// - Returns: The index of the scan, or `nil` when the scan gave no index.
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the wait. The scan goes
+    ///   on for the other calls.
+    private func index(of running: RunningScan, inPlaces places: [URL]) async throws(BoardKeyError) -> BoardIndex? {
+        configuration.scanObserver?.scanWaitDidStart(inPlaces: places)
+        if let index = await running.index() {
+            return index
+        }
+        guard !Task.isCancelled else {
+            throw .gitCancelled(arguments: [])
+        }
+        return nil
+    }
+
+    /// Scans the places around a repo for repos, and records the new index. While the scan runs, each other call
+    /// that needs the index of the places waits for it (``runningScans``).
     ///
     /// - Parameters:
     ///   - root: The top folder of the worktree of the current board of a session.
@@ -446,17 +482,38 @@ public actor KanbanHost {
     ///   keeps the earlier index.
     private func rescan(around root: URL, inPlaces places: [URL]) async throws(BoardKeyError) -> BoardIndex {
         let key = Self.placesKey(of: places)
+        let running = RunningScan()
+        runningScans[key] = running
+        let outcome = await scanOutcome(around: root, inPlaces: places)
+        runningScans[key] = nil
+        running.finish(giving: try? outcome.get())
+        return try outcome.get()
+    }
+
+    /// Runs one scan of the places around a repo, and records the new index in the scan cache. The file watcher of
+    /// each place starts before the scan, so a change during the scan is not lost.
+    ///
+    /// - Parameters:
+    ///   - root: The top folder of the worktree of the current board of a session.
+    ///   - places: The places of the scan, in scan order.
+    /// - Returns: The new index, or ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the
+    ///   scan. Then the cache keeps the earlier index.
+    private func scanOutcome(around root: URL, inPlaces places: [URL]) async -> Result<BoardIndex, BoardKeyError> {
+        let key = Self.placesKey(of: places)
         await watch(places)
         configuration.scanObserver?.scanDidStart(inPlaces: places)
         let earlier = scanCache.beginScan(ofPlaces: key)
-        let scanned: BoardIndex
         do {
-            scanned = try await locator.scan(around: root, reusing: earlier, readingKeysWith: configuration.keyReader)
+            let scanned = try await locator.scan(
+                around: root,
+                reusing: earlier,
+                readingKeysWith: configuration.keyReader
+            )
+            return .success(scanCache.finishScan(scanned, ofPlaces: key, isWatched: isWatching(key)))
         } catch {
             scanCache.abandonScan(ofPlaces: key)
-            throw error
+            return .failure(error)
         }
-        return scanCache.finishScan(scanned, ofPlaces: key, isWatched: isWatching(key))
     }
 
     /// Starts the file watcher of each place that has none yet. A closed host starts no watcher. A place whose

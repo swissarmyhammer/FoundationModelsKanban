@@ -89,6 +89,54 @@ struct ScanCacheTests {
         await host.close()
     }
 
+    // MARK: - Parallel calls
+
+    @Test("Two parallel calls that need the index run one scan, and read the key of each repo one time")
+    func parallelCallsShareOneScan() async throws {
+        let fixture = try HeldScanFixture.make()
+        defer { fixture.hold.release() }
+        let calls = try await fixture.startTwoCalls()
+        fixture.hold.release()
+        let firstIndex = try await calls.first.value
+        let secondIndex = try await calls.second.value
+        #expect(Self.copyPaths(of: secondIndex) == Self.copyPaths(of: firstIndex))
+        #expect(Self.copyPaths(of: firstIndex) == fixture.foundPaths)
+        #expect(fixture.recorder.scanCount == 1)
+        for name in [Self.appName, Self.libName, Self.brokenName] {
+            #expect(fixture.reader.keyReadCount(ofRepoNamed: name) == 1, "key reads of \(name)")
+        }
+        await fixture.host.close()
+    }
+
+    @Test("A cancel of a call that waits for a running scan ends its wait, and the scan goes on")
+    func cancelledWaitEndsOnlyItsWait() async throws {
+        let fixture = try HeldScanFixture.make()
+        defer { fixture.hold.release() }
+        let calls = try await fixture.startTwoCalls()
+        calls.second.cancel()
+        await #expect(throws: BoardKeyError.self) { try await calls.second.value }
+        fixture.hold.release()
+        let index = try await calls.first.value
+        #expect(Self.copyPaths(of: index) == fixture.foundPaths)
+        #expect(fixture.recorder.scanCount == 1)
+        await fixture.host.close()
+    }
+
+    @Test("A call that waits for a running scan scans again when that scan gives no index")
+    func waitingCallScansAgainAfterCancelledScan() async throws {
+        let fixture = try HeldScanFixture.make()
+        defer { fixture.hold.release() }
+        let calls = try await fixture.startTwoCalls()
+        calls.first.cancel()
+        await #expect(throws: BoardKeyError.self) { try await calls.first.value }
+        fixture.hold.release()
+        let index = try await calls.second.value
+        #expect(Self.copyPaths(of: index) == fixture.foundPaths)
+        #expect(fixture.recorder.scanWaitCount == 1)
+        #expect(fixture.recorder.scanCount == 2)
+        await fixture.host.close()
+    }
+
     // MARK: - Watcher
 
     @Test("A new repo folder in a scan place makes the next call find its key")
@@ -176,6 +224,14 @@ struct ScanCacheTests {
         return try KanbanGraphTests.data(of: response)["board"] as? [String: Any] != nil
     }
 
+    /// Gives the canonical path of the repo directory of each copy of an index.
+    ///
+    /// - Parameter index: The index.
+    /// - Returns: The paths.
+    static func copyPaths(of index: BoardIndex) -> Set<String> {
+        Set(index.copies.map(\.directory.canonicalPath))
+    }
+
     /// Makes a host whose git reads come from a key reader, and whose scans a recorder records.
     ///
     /// - Parameters:
@@ -232,11 +288,72 @@ struct ScanPlace {
     }
 }
 
+// MARK: - Held scan
+
+/// A host and a ``ScanPlace`` whose scan holds at each key read of the related repo, so that a test can start a second
+/// call while the scan of the first call runs.
+struct HeldScanFixture {
+    /// The type of a call that needs the current index.
+    typealias IndexCall = Task<BoardIndex, any Error>
+
+    /// The scan place.
+    let place: ScanPlace
+
+    /// The gate that each key read of the related repo waits at.
+    let hold: TestGate
+
+    /// Gives the keys, holds the key reads of the related repo, and counts each key read.
+    let reader: ScanKeyReader
+
+    /// Records each scan and each wait for a running scan.
+    let recorder: ScanRecorder
+
+    /// The host.
+    let host: KanbanHost
+
+    /// Makes the place, the reader, the recorder, and the host.
+    ///
+    /// - Returns: The fixture.
+    /// - Throws: An error from `FileManager` when a folder or a log file cannot be made.
+    static func make() throws -> HeldScanFixture {
+        let place = try ScanPlace.make()
+        let hold = TestGate()
+        let reader = ScanKeyReader(holdingKeyReadsOfRepoNamed: ScanCacheTests.libName, at: hold)
+        let recorder = ScanRecorder()
+        let host = ScanCacheTests.makeHost(reading: reader, recordedBy: recorder)
+        return HeldScanFixture(place: place, hold: hold, reader: reader, recorder: recorder, host: host)
+    }
+
+    /// The canonical path of each repo whose copy a complete scan of the place finds: the current repo and the
+    /// related repo.
+    var foundPaths: Set<String> {
+        [place.app.canonicalPath, place.lib.canonicalPath]
+    }
+
+    /// Starts two calls that need the current index of the place. The first call starts the scan, and the scan holds
+    /// at the key read of the related repo. The second call starts then. The method returns when the second call
+    /// waits for the running scan, or when it started a second scan, so that a test can check both results.
+    ///
+    /// - Returns: The two calls.
+    /// - Throws: `CancellationError` when the test is cancelled during a wait.
+    func startTwoCalls() async throws -> (first: IndexCall, second: IndexCall) {
+        let (host, app, recorder) = (host, place.app, recorder)
+        let first = IndexCall { try await host.currentScanIndex(around: app) }
+        await hold.waitForArrival()
+        let second = IndexCall { try await host.currentScanIndex(around: app) }
+        try await EventLogTests.waitUntil { recorder.scanWaitCount + recorder.scanCount > 1 }
+        return (first, second)
+    }
+}
+
 // MARK: - Key reader
 
 /// Gives the key of each repo of a ``ScanPlace`` by the name of its folder, with no git, and counts each read of a
 /// key and of a worktree top. A repo with no origin in the table gives a git failure, the same as a repo whose key
 /// git cannot read.
+///
+/// The reader can hold the key reads of one repo at a ``TestGate``: each key read of that repo records its arrival,
+/// and waits until the test releases the gate.
 final class ScanKeyReader: Sendable {
     /// The exit status of the failed git read of a repo with no origin in the table.
     private static let failureStatus: Int32 = 128
@@ -252,9 +369,36 @@ final class ScanKeyReader: Sendable {
     /// The number of reads, behind a lock.
     private let calls = Mutex(0)
 
+    /// The number of key reads of each repo, by the name of its folder, behind a lock.
+    private let keyReads = Mutex([String: Int]())
+
+    /// The name of the folder of the repo whose key reads wait at ``hold``, or `nil` for no held read.
+    private let heldName: String?
+
+    /// The gate that each key read of the held repo waits at.
+    private let hold: TestGate
+
+    /// Makes a reader.
+    ///
+    /// - Parameters:
+    ///   - heldName: The name of the folder of the repo whose key reads wait at the gate, or `nil` for no held read.
+    ///   - hold: The gate that each key read of the held repo waits at.
+    init(holdingKeyReadsOfRepoNamed heldName: String? = nil, at hold: TestGate = TestGate()) {
+        self.heldName = heldName
+        self.hold = hold
+    }
+
     /// The number of reads of a key or of a worktree top so far.
     var count: Int {
         calls.withLock { calls in calls }
+    }
+
+    /// Gives the number of key reads of one repo so far.
+    ///
+    /// - Parameter name: The name of the folder of the repo.
+    /// - Returns: The number of key reads.
+    func keyReadCount(ofRepoNamed name: String) -> Int {
+        keyReads.withLock { reads in reads[name, default: 0] }
     }
 
     /// Gives a repo a new `origin`, the same as `git remote set-url`.
@@ -266,15 +410,33 @@ final class ScanKeyReader: Sendable {
         origins.withLock { origins in origins[name] = origin }
     }
 
-    /// The reader as a ``BoardKeyReader``: it counts the read and gives the key of the `origin` of the folder.
+    /// The reader as a ``BoardKeyReader``: it counts the read and gives the key of the `origin` of the folder. A key
+    /// read of the held repo waits at the gate first.
     var keyReader: BoardKeyReader {
         { root throws(BoardKeyError) in
             self.calls.withLock { calls in calls += 1 }
             let name = root.lastPathComponent
+            self.keyReads.withLock { reads in reads[name, default: 0] += 1 }
+            if name == self.heldName {
+                try await self.waitAtHold()
+            }
             guard let origin = self.origins.withLock({ origins in origins[name] }) else {
                 throw .gitFailed(arguments: [], status: Self.failureStatus, message: "no origin for \(name)")
             }
             return try BoardKey(remoteURL: origin)
+        }
+    }
+
+    /// Records the arrival of a held key read, and waits until the test releases the gate.
+    ///
+    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled before the release, the same
+    ///   as a git command that a cancel stops.
+    private func waitAtHold() async throws(BoardKeyError) {
+        hold.recordArrival()
+        do {
+            try await hold.waitUntilReleased()
+        } catch {
+            throw .gitCancelled(arguments: [])
         }
     }
 
@@ -301,6 +463,9 @@ final class ScanRecorder: BoardScanObserver {
     /// The number of scans that started, behind a lock, because the scans run on different threads.
     private let starts = Mutex(0)
 
+    /// The number of calls that waited for a running scan, behind a lock.
+    private let waits = Mutex(0)
+
     /// The changes that the host saw, in order.
     private let changes: AsyncStream<ScanChange>
 
@@ -317,11 +482,23 @@ final class ScanRecorder: BoardScanObserver {
         starts.withLock { starts in starts }
     }
 
+    /// The number of calls that waited for a running scan.
+    var scanWaitCount: Int {
+        waits.withLock { waits in waits }
+    }
+
     /// Counts a scan.
     ///
     /// - Parameter places: The places of the scan.
     func scanDidStart(inPlaces places: [URL]) {
         starts.withLock { starts in starts += 1 }
+    }
+
+    /// Counts a call that waits for a running scan.
+    ///
+    /// - Parameter places: The places of the scan.
+    func scanWaitDidStart(inPlaces places: [URL]) {
+        waits.withLock { waits in waits += 1 }
     }
 
     /// Records a change of a scan place.
