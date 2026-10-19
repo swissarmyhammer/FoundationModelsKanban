@@ -302,14 +302,14 @@ extension BoardStore {
         let actor = sessionActor
         return try runAtomically {
             let made = try runField(as: kind.operation, in: destination) { work, targetKey in
-                try work.applyMutationRules(actingAs: actor, at: time) { work in
+                try work.applyMutationRules(actingAs: actor, inBoard: targetKey, at: time) { work in
                     try work.addCopy(copy, from: sourceKey, placedBy: fields, inBoard: targetKey, at: time)
                 }
             }
             if kind == .move {
                 let uri = NodeURI(boardKey: key(of: destination), ref: made.value.ref)
-                _ = try runField(as: kind.operation, in: source) { work, _ in
-                    try work.applyMutationRules(actingAs: actor, at: time) { work in
+                _ = try runField(as: kind.operation, in: source) { work, key in
+                    try work.applyMutationRules(actingAs: actor, inBoard: key, at: time) { work in
                         try work.retire(ref, movedTo: uri, at: time)
                     }
                 }

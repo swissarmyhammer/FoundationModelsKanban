@@ -238,16 +238,27 @@ struct BoardCopy: Hashable, Sendable {
 
     /// `true` when the copy has `.kanban/board.jsonl`.
     let isEnabled: Bool
+
+    /// The names of the board of the copy: its key, its board IDs, and its old names (divergence.md M9). A board ref
+    /// with any of these names names the copy.
+    let names: BoardNames
 }
 
 extension BoardCopy {
     /// Makes the copy of a repo whose key is known. The copy is enabled when the repo has `.kanban/board.jsonl` now.
+    /// The names come from the board log of the repo now: the scan reads the board log of each repo one time
+    /// (divergence.md M9).
     ///
     /// - Parameters:
     ///   - directory: The root directory of the copy.
     ///   - key: The key of the board of the copy.
     init(directory: URL, key: BoardKey) {
-        self.init(directory: directory, key: key, isEnabled: Self.hasBoardLog(at: directory))
+        self.init(
+            directory: directory,
+            key: key,
+            isEnabled: Self.hasBoardLog(at: directory),
+            names: BoardNames.read(fromRepoAt: directory, key: key)
+        )
     }
 
     /// Tells if a directory has `.kanban/board.jsonl` now.
@@ -278,8 +289,10 @@ struct BoardIndex: Sendable {
 
     /// Finds the board that a board ref names (plan.md §6.6, board refs).
     ///
-    /// - A board key, or the URI of a board: the current key gives the current board, and a different key gives the
-    ///   first copy with the key in scan order.
+    /// - A name of a board, or the URI of a board with a name: a git key, a board ID, or an old name (divergence.md
+    ///   M9). A name of the current board gives the current board, and a different name gives the first copy with the
+    ///   name in scan order. A current key comes before a board ID, and a board ID before an old name
+    ///   (``BoardNames/kind(of:)``), so an old name of one board never hides the current key of a different board.
     /// - A repo directory name that only one copy has.
     /// - A path: absolute, from the home directory (`~`), or from the root directory of the current repo (`./` or
     ///   `../`). The path of the current repo gives the current board.
@@ -287,22 +300,32 @@ struct BoardIndex: Sendable {
     /// - Parameters:
     ///   - reference: The board ref. White space at the two ends is ignored.
     ///   - root: The root directory of the current repo.
-    ///   - key: The key of the current board.
+    ///   - names: The names of the current board.
     /// - Returns: The board, or `nil` when no copy of the index has the ref.
-    func resolution(of reference: String, currentRoot root: URL, currentKey key: BoardKey) -> BoardResolution? {
+    func resolution(of reference: String, currentRoot root: URL, currentNames names: BoardNames) -> BoardResolution? {
         let text = reference.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let boardKey = Self.boardKey(in: text) {
-            if boardKey == key.description {
-                return .current
-            }
-            if let copy = copies.first(where: { copy in copy.key.description == boardKey }) {
-                return .copy(copy)
-            }
+        if let boardKey = Self.boardKey(in: text), let named = resolution(ofName: boardKey, currentNames: names) {
+            return named
         }
         guard let directory = Self.directory(ofPath: text, currentRoot: root) else {
             return copy(named: text).map { copy in BoardResolution(of: copy, currentRoot: root) }
         }
         return resolution(ofFolderAt: directory, currentRoot: root)
+    }
+
+    /// Finds the board that has a name: the current board or a copy of the index (divergence.md M9). The board with
+    /// the best kind of the name wins (``BoardNames/kind(of:)``), and the current board comes before the copies in
+    /// scan order when the kinds are the same.
+    ///
+    /// - Parameters:
+    ///   - name: The board key of the ref.
+    ///   - names: The names of the current board.
+    /// - Returns: The current board, the copy, or `nil` when no board has the name.
+    private func resolution(ofName name: String, currentNames names: BoardNames) -> BoardResolution? {
+        let candidates = [(kind: names.kind(of: name), board: BoardResolution.current)]
+            + copies.map { copy in (kind: copy.names.kind(of: name), board: BoardResolution.copy(copy)) }
+        let named = candidates.compactMap { candidate in candidate.kind.map { kind in (kind, candidate.board) } }
+        return named.min { lhs, rhs in lhs.0 < rhs.0 }?.1
     }
 
     /// Gives the directory that a path ref names (plan.md §6.6, board refs).

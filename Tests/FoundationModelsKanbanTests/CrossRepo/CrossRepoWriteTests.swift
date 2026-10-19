@@ -488,6 +488,8 @@ struct CrossRepoWriteTests {
         #expect(patch.add[PropertyName.dependsOn] == [.remote(try NodeURI(parsing: target))])
     }
 
+    /// The board log records the names of its board (divergence.md M9). Thus only the board names patch of each board
+    /// log holds the key of its own board.
     @Test("After writes across two boards, no log line holds the key of its own board")
     func noLogLineHoldsKeyOfItsOwnBoard() async throws {
         let repos = try await CrossRepoFixture.SideBySide.make()
@@ -498,8 +500,12 @@ struct CrossRepoWriteTests {
         let (appKey, libKey) = (try Self.appKey(), try Self.libKey())
         let appTexts = try Design.PortabilityTests.logTexts(inRepoAt: repos.app).values
         let libTexts = try Design.PortabilityTests.logTexts(inRepoAt: repos.lib).values
-        #expect(!appTexts.contains { text in text.contains(appKey) })
-        #expect(!libTexts.contains { text in text.contains(libKey) })
+        #expect(try Design.PortabilityTests.linesHolding(appKey, inRepoAt: repos.app).isEmpty)
+        #expect(try Design.PortabilityTests.linesHolding(libKey, inRepoAt: repos.lib).isEmpty)
+        let appNames = try Design.PortabilityTests.boardNamesLines(inRepoAt: repos.app)
+        let libNames = try Design.PortabilityTests.boardNamesLines(inRepoAt: repos.lib)
+        #expect(appNames.count == 1 && appNames.allSatisfy { line in line.contains(appKey) })
+        #expect(libNames.count == 1 && libNames.allSatisfy { line in line.contains(libKey) })
         #expect(appTexts.contains { text in text.contains(libKey) })
         #expect(libTexts.contains { text in text.contains(appKey) })
     }

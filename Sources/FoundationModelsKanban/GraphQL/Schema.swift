@@ -901,6 +901,8 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
         add {
             Self.nodeType(BoardObject.self, as: GraphQLTypeName.board) {
                 Field("key", at: \.key)
+                Field("boardId", at: \.boardId).description(SchemaDescription.boardID)
+                Field("names", at: \.names).description(SchemaDescription.boardNames)
                 Field("name", at: \.name)
                 Field("model", at: \.model).description(SchemaDescription.boardModel)
                 Field("columns", at: \.columns)

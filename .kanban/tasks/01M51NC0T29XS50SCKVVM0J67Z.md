@@ -113,8 +113,24 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsKanbanTests/Events/EventLogTests.swift. RED: lockCheckFailsWhenLockFileCannotOpen failed (false returned, no error). GREEN: EventLogTests 22 passed. `swift test`: 1614 tests in 132 suites passed, 0 failures, only the accepted "missing creator" warning. Finding EventLogTests.swift:141 is checked.
     - next: /test, then /review. The task stays in doing.
   timestamp: 2026-10-19T16:01:22.131999+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5aeg1atxf2zzr3y64s1gcs2
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (c3b032a). 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed. 1 file reviewed. All prior findings are checked.
+    - next: none. The task moved to done.
+  timestamp: 2026-10-19T16:04:14.298068+00:00
+- actor: claude-code
+  id: 01m5aegd3s5r0326x7xvz6045z
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — 1 file (EventLogTests.swift)
+    - test: green — swift test, 1614 passed
+    - commit: c3b032a
+    - review: clean — 0 findings, all prior findings checked
+  timestamp: 2026-10-19T16:04:26.361024+00:00
+position_column: done
+position_ordinal: ff9c80
 title: Do not block a thread of the cooperative pool while a commit waits for the board lock
 ---
 ## What

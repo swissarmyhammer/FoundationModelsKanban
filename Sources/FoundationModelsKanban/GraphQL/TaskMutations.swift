@@ -432,8 +432,9 @@ extension WorkingCopy {
     ) throws -> [ResponseWarning] {
         let task = graph.node(for: ref)?.state as? TaskNode
         let oldBody = task?.fields.body ?? ""
+        let edges = otherBoards.storedEdges(change.edges, inBoard: key)
         let removedTargets = task.map { task in
-            removedDependencies(of: task, keeping: change.edges, inBoard: key)
+            removedDependencies(of: task, keeping: edges, inBoard: key)
         } ?? []
         let newBody = removedTargets.reduce(change.body.newBody ?? oldBody) { body, target in
             DependencyMarkers.removing(markersOf: target, from: body)
@@ -442,17 +443,17 @@ extension WorkingCopy {
         let patch = try PatchInput(
             changing: ref,
             updating: change.values,
-            adding: change.edges,
-            removing: task.map { task in removedEdges(of: task, keeping: change.edges) } ?? [:],
+            adding: edges,
+            removing: task.map { task in removedEdges(of: task, keeping: edges) } ?? [:],
             body: newBody == oldBody ? .unchanged : .changed(newBody),
             from: oldBody
         )
         try apply(patch, at: time)
-        if change.edges[PropertyName.dependsOn] != nil || newBody != oldBody {
+        if edges[PropertyName.dependsOn] != nil || newBody != oldBody {
             try checkNoCycle(throughTask: ref, inBoard: key)
         }
         return DependencyWarnings.warnings(
-            forDependsOn: change.edges[PropertyName.dependsOn],
+            forDependsOn: edges[PropertyName.dependsOn],
             body: change.body.newBody,
             inBoard: key,
             reading: otherBoards

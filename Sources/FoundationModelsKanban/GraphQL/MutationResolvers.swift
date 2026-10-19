@@ -231,7 +231,7 @@ extension KanbanResolver {
 extension BoardStore {
     /// Runs one public mutation field on the working copy of the board that the field names: the current board or
     /// a related board (plan.md §6.6). The field obeys the rules of each public mutation in that board
-    /// (``WorkingCopy/applyMutationRules(actingAs:at:_:)``), and its refs resolve in that board.
+    /// (``WorkingCopy/applyMutationRules(actingAs:inBoard:at:_:)``), and its refs resolve in that board.
     ///
     /// - Parameters:
     ///   - operation: The name of the public mutation of the field.
@@ -255,7 +255,7 @@ extension BoardStore {
         }
         let actor = sessionActor
         return try runField(as: operation, in: target) { work, key in
-            try work.applyMutationRules(actingAs: actor, at: time) { work in
+            try work.applyMutationRules(actingAs: actor, inBoard: key, at: time) { work in
                 try body(&work, RefResolver(graph: work.graph, boardKey: key))
             }
         }
@@ -302,17 +302,22 @@ extension WorkingCopy {
     /// - Auto-init: when the log has no board, the field writes the default columns before the body, and the board
     ///   `set name` with the name of the repo directory after the body, when the body set no name. Thus a field that
     ///   sets the name writes one board patch.
+    /// - Board names: when the field kept a patch, the field also writes one board patch when the board has no board
+    ///   ID or when the git key of the board changed (``recordBoardNames(currentKey:at:)``, divergence.md M9). Thus a
+    ///   new board gets its ID event, and a board with no ID gets one on its next write. A load never writes.
     /// - Session actor: when the field kept a patch and the board has no node of the session actor, the field also
     ///   writes an actor `set name` patch. A field that keeps no patch writes no actor patch.
     ///
     /// - Parameters:
     ///   - actor: The session actor.
+    ///   - key: The current key of the board: its git key.
     ///   - time: The time of the change.
     ///   - body: Makes and applies the patches of the field, and checks the graph rules.
     /// - Returns: The value of the body.
     /// - Throws: The error of the body, or an ``EventError`` when a patch breaks a rule of the log.
     mutating func applyMutationRules<Value>(
         actingAs actor: SessionActor,
+        inBoard key: String,
         at time: DateTime,
         _ body: (inout WorkingCopy) throws -> Value
     ) throws -> Value {
@@ -327,6 +332,7 @@ extension WorkingCopy {
             try nameNewBoard(directoryName, at: time)
         }
         if kept.count > keptCount {
+            try recordBoardNames(currentKey: key, at: time)
             try addActor(actor, at: time)
         }
         return value
@@ -380,6 +386,29 @@ extension WorkingCopy {
             return
         }
         try apply(PatchInput(node: actor.ref, set: [PropertyName.name: .json(.string(actor.name))]), at: time)
+    }
+
+    /// Records the names of the board in one board patch (divergence.md M9). The patch adds a new board ID when the
+    /// board has none. When the git key that the last write recorded is not the current key (a new remote, or a
+    /// `git init` above the folder), the patch adds that old key as an old name. The patch sets the current key as
+    /// the recorded git key. A board that has an ID and the current key gets no patch.
+    ///
+    /// - Parameters:
+    ///   - key: The current key of the board: its git key.
+    ///   - time: The time of the change.
+    /// - Throws: An ``EventError`` when the patch breaks a rule of the log.
+    fileprivate mutating func recordBoardNames(currentKey key: String, at time: DateTime) throws(EventError) {
+        let board = graph.boardNode
+        let newIDs = board?.ids.isEmpty == false ? [] : [StoredRef.board(named: mintULID().ulidString)]
+        let oldKeys = board?.gitKey.flatMap { recorded in recorded == key ? nil : [StoredRef.board(named: recorded)] }
+        let patch = try PatchInput(
+            node: .board,
+            set: [PropertyName.gitKey: .json(.string(key))],
+            add: [PropertyName.boardIDs: newIDs, PropertyName.oldNames: oldKeys ?? []].filter { _, refs in
+                !refs.isEmpty
+            }
+        )
+        try apply(patch, at: time)
     }
 }
 

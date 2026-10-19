@@ -106,8 +106,9 @@ struct RepoMark: Hashable, Sendable {
     /// The file of the packed refs, or `nil` when it is not there.
     let packedRefs: FileStamp?
 
-    /// `true` when the repo has `.kanban/board.jsonl`.
-    let hasBoardLog: Bool
+    /// The board log `.kanban/board.jsonl`, or `nil` when it is not there. A write to the board log, for example a
+    /// new board ID (divergence.md M9), gives a new stamp, so the names of the board in the index are read again.
+    let boardLog: FileStamp?
 
     /// Reads the mark of a repo folder.
     ///
@@ -123,7 +124,7 @@ struct RepoMark: Hashable, Sendable {
         config = FileStamp(ofItemAt: git.appending(path: GitEntryName.config))
         branchRefs = FileStamp(ofItemAt: git.appending(path: GitEntryName.refs).appending(path: GitEntryName.heads))
         packedRefs = FileStamp(ofItemAt: git.appending(path: GitEntryName.packedRefs))
-        hasBoardLog = BoardCopy.hasBoardLog(at: directory)
+        boardLog = FileStamp(ofItemAt: EventLog(repositoryAt: directory).fileURL(for: .board))
     }
 
     /// Gives the changes of a repo folder from an earlier mark to a later mark: the same kinds of change that the
@@ -133,7 +134,8 @@ struct RepoMark: Hashable, Sendable {
     /// - A new or a removed repo, a different folder, a different `.git` entry, or a different git config is a repo
     ///   change. A new entry in a `.git` directory is not: the event of that entry gives no change either.
     /// - Different branch refs or different packed refs are a commits change.
-    /// - A new or a removed board log is a board change.
+    /// - A new, a removed, or a written board log is a board change: the names of the board can change
+    ///   (divergence.md M9).
     ///
     /// - Parameters:
     ///   - repo: The canonical path of the repo folder.
@@ -148,7 +150,7 @@ struct RepoMark: Hashable, Sendable {
             return [.repo(repo)]
         }
         let commits = later.hasSameCommits(as: earlier) ? nil : ScanChange.commits(inRepo: repo)
-        let board = later.hasBoardLog == earlier.hasBoardLog ? nil : ScanChange.board(inRepo: repo)
+        let board = later.boardLog == earlier.boardLog ? nil : ScanChange.board(inRepo: repo)
         return [commits, board].compactMap { change in change }
     }
 

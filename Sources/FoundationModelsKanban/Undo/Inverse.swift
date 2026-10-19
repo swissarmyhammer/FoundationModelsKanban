@@ -79,7 +79,9 @@ struct BodyChange: Sendable {
 ///
 /// Each part comes from the state of the node just before and just after the transaction: `set` of the old value, or
 /// `unset` when there was no old value; `remove` of each added member and `add` of each removed member; `delete` back
-/// to the old tombstone state; and the reversed diff of the body.
+/// to the old tombstone state; and the reversed diff of the body. The names of the board (``BoardNode/nameProperties``)
+/// have no inverse: an undo never removes a board ID or an old name, because links to the board use them
+/// (divergence.md M9).
 struct NodeInverse: Sendable {
     /// The `set`, `unset`, `add`, `remove`, and `delete` parts. The `edit` part depends on the body now, so
     /// ``patch(onBody:)`` adds it.
@@ -126,13 +128,14 @@ struct NodeInverse: Sendable {
             try self.init(parts: PatchInput(node: node, delete: true), bodyChange: nil)
             return
         }
+        let kept = node == .board ? BoardNode.nameProperties : []
         let values = after.properties.valueChanges(
             to: before.properties,
-            named: Set(before.properties.values.keys).union(after.properties.values.keys)
+            named: Set(before.properties.values.keys).union(after.properties.values.keys).subtracting(kept)
         )
         let members = after.properties.memberChanges(
             to: before.properties,
-            named: Set(before.properties.members.keys).union(after.properties.members.keys)
+            named: Set(before.properties.members.keys).union(after.properties.members.keys).subtracting(kept)
         )
         let parts = try PatchInput(
             node: node,

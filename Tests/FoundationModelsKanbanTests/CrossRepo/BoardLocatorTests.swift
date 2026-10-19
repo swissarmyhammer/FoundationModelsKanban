@@ -145,7 +145,8 @@ struct BoardLocatorTests {
     /// - Returns: The resolution.
     /// - Throws: An error when the key of the current repo is not valid.
     static func resolve(_ reference: String, in repos: TwoCopies, index: BoardIndex) throws -> BoardResolution? {
-        index.resolution(of: reference, currentRoot: repos.current, currentKey: try key(of: appOrigin))
+        let names = BoardNames(key: try key(of: appOrigin).description, board: nil)
+        return index.resolution(of: reference, currentRoot: repos.current, currentNames: names)
     }
 
     /// Resolves a board ref in the index of a new sandbox with two copies of each repo, and gives the board of one copy
@@ -203,7 +204,9 @@ struct BoardLocatorTests {
         let other = try await sandbox.makeRepo(named: outsidePath, origin: libOrigin)
         let folder = try GitSandbox.makeFolder(named: subpath, in: other)
         #expect(names(in: try await scan(around: app)) == [appName])
-        let expected = BoardResolution.copy(BoardCopy(directory: other, key: try key(of: libOrigin), isEnabled: false))
+        let libKey = try key(of: libOrigin)
+        let libNames = BoardNames(key: libKey.description, board: nil)
+        let expected = BoardResolution.copy(BoardCopy(directory: other, key: libKey, isEnabled: false, names: libNames))
         #expect(try await resolveFolder(reference(folder), around: app) == expected)
     }
 
@@ -360,7 +363,8 @@ struct BoardLocatorTests {
         _ = try await sandbox.makeRepo(named: "src/\(Self.libName)", origin: Self.libOrigin)
         let index = try await Self.scan(around: app, with: BoardLocator(searchRoots: [root]))
         let key = try Self.key(of: Self.appOrigin)
-        #expect(index.resolution(of: Self.libName, currentRoot: app, currentKey: key) == nil)
+        let names = BoardNames(key: key.description, board: nil)
+        #expect(index.resolution(of: Self.libName, currentRoot: app, currentNames: names) == nil)
     }
 
     @Test("A path resolves to its copy, and the path of the current repo resolves to the current board")

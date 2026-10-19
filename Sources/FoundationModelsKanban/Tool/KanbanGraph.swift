@@ -622,7 +622,7 @@ public actor KanbanGraph {
         await observer?.callDidStart()
         defer { observer?.callDidFinish() }
         var session = await engine.session
-        let copy = BoardCopy(directory: engine.root, key: session.key)
+        let copy = session.copy(at: engine.root)
         let (clock, search, feeds) = (host.configuration.clock, session.source.search, feeds)
         do {
             let response = try await session.run(
@@ -773,7 +773,7 @@ public actor KanbanGraph {
             return
         }
         let currentSession = await current.session
-        let copy = BoardCopy(directory: current.root, key: currentSession.key)
+        let copy = currentSession.copy(at: current.root)
         let related: RelatedBoards
         do {
             let requests = RelatedBoards.loadable.crossBoardRequests(
@@ -1049,7 +1049,7 @@ public actor KanbanGraph {
         current: BoardCopy
     ) async throws(BoardKeyError) -> BoardResolution? {
         let resolve = { (index: BoardIndex) in
-            index.resolution(of: reference, currentRoot: current.directory, currentKey: current.key)
+            index.resolution(of: reference, currentRoot: current.directory, currentNames: current.names)
         }
         if let index = await host.scanIndex(around: current.directory), let found = resolve(index) {
             return found
@@ -1136,7 +1136,7 @@ public actor KanbanGraph {
             return .current
         }
         record(engine)
-        return .copy(BoardCopy(directory: engine.root, key: copy.key, isEnabled: copy.isEnabled))
+        return .copy(BoardCopy(directory: engine.root, key: copy.key, isEnabled: copy.isEnabled, names: copy.names))
     }
 
     /// Records the engine of a related board as the board of its path. A path has one engine in the view. When a new

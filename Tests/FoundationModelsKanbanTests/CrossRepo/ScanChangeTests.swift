@@ -43,10 +43,12 @@ struct ScanChangeTests {
     /// - Returns: The copy.
     /// - Throws: An error when the origin is not a valid remote.
     static func copy(at path: String, origin: String) throws -> BoardCopy {
-        BoardCopy(
+        let key = try BoardKey(remoteURL: origin)
+        return BoardCopy(
             directory: URL(filePath: path, directoryHint: .isDirectory),
-            key: try BoardKey(remoteURL: origin),
-            isEnabled: false
+            key: key,
+            isEnabled: false,
+            names: BoardNames(key: key.description, board: nil)
         )
     }
 

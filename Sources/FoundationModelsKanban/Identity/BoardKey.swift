@@ -1,5 +1,6 @@
 import Foundation
 import Synchronization
+import ULID
 
 /// The key of a board: the current `origin` remote of its repo, normalized to `host/owner/repo` (plan.md §3.2, §12
 /// item 4).
@@ -7,9 +8,10 @@ import Synchronization
 /// The SSH form (`git@host:owner/repo.git`), the HTTPS form (`https://host/owner/repo.git`), and the `ssh://` form of
 /// one remote give the same key. A repo with no usable remote has the key `local/<root commit>`, with the first
 /// ``rootCommitDigitCount`` hex digits of its root commit (divergence.md §16, M7). A board is only in a git repo
-/// (divergence.md §16), so a folder that is not in a git repo has no key. The log does not store the key. Each call
-/// that opens a board reads the key from git again with ``read(fromRepoAt:)``, so a repo that moves to a new remote
-/// gets a new key, and its data does not change. ``NodeURI`` holds the text of the key (``description``).
+/// (divergence.md §16), so a folder that is not in a git repo has no key. A node log does not store the key. Only the
+/// board log records it, as a name of the board (``BoardNames``, divergence.md M9). Each call that opens a board reads
+/// the key from git again with ``read(fromRepoAt:)``, so a repo that moves to a new remote gets a new key, and its data
+/// does not change. ``NodeURI`` holds the text of the key (``description``).
 struct BoardKey: Hashable, Sendable, CustomStringConvertible {
     /// The first segment of the key of a repo with no remote.
     static let localHost = "local"
@@ -80,9 +82,16 @@ extension BoardKey {
     /// The key of a remote and the key in a parsed ``NodeURI`` both use this rule, so `GitHub.com/owner/repo` and
     /// `github.com/owner/repo` name the same board.
     ///
+    /// A key of one segment that is a ULID is a board ID (divergence.md M9). A git key always has a `/`, so the two
+    /// forms cannot be confused. A board ID ignores case, so its text is the canonical ULID text in uppercase.
+    ///
     /// - Parameter segments: The segments of the key, the host first.
-    /// - Returns: The text of the key, for example `github.com/swissarmyhammer/FoundationModelsKanban`.
+    /// - Returns: The text of the key, for example `github.com/swissarmyhammer/FoundationModelsKanban`, or the
+    ///   canonical text of a board ID.
     static func normalizedText(ofSegments segments: some Collection<String>) -> String {
+        if segments.count == 1, let id = segments.first.flatMap(ULID.init(boardKeyText:)) {
+            return id.ulidString
+        }
         let host = segments.first.map { host in [host.lowercased()] } ?? []
         return (host + segments.dropFirst()).joined(separator: String(LocalRef.separator))
     }

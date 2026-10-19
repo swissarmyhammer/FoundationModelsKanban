@@ -65,9 +65,22 @@ struct ScanCacheTests {
         await host.close()
     }
 
+    /// The board of the current repo has its board names before the host starts (divergence.md M9). A board with no
+    /// board ID gets its board names patch at its first write. That write changes the board log, and the change makes
+    /// the next call that needs the index scan again (``RepoMark``). The test is about the reads after the first scan,
+    /// so the call of the test must not change the board log.
     @Test("Reads that reach an unknown key run no git and no scan after the first scan")
     func readsRunNoGit() async throws {
         let place = try ScanPlace.make()
+        let names = try PatchInput(
+            node: .board,
+            set: [PropertyName.gitKey: .json(.string(try BoardKey(remoteURL: Self.appOrigin).description))],
+            add: [PropertyName.boardIDs: [StoredRef.board(named: BoardIDTests.lowestID)]]
+        )
+        var ids = GitGraphFixture.secondEngineIDs
+        try KanbanGraphTests.append(names, mintingFrom: &ids, to: EventLog(repositoryAt: place.app))
+        let boardLog = EventLog(repositoryAt: place.app).fileURL(for: .board)
+        let boardLogBefore = try Data(contentsOf: boardLog)
         let reader = ScanKeyReader()
         let recorder = ScanRecorder()
         let host = Self.makeHost(reading: reader, recordedBy: recorder)
@@ -75,6 +88,7 @@ struct ScanCacheTests {
         let target = NodeURI(boardKey: Self.missingKey, ref: .task(ULID())).description
         let task = try await CrossRepoFixture.addTask(dependingOn: target, on: session)
         let (gitCalls, scans) = (reader.count, recorder.scanCount)
+        #expect(try Data(contentsOf: boardLog) == boardLogBefore)
         let reads = [
             Self.missingQuery,
             Self.nextTaskQuery,

@@ -385,14 +385,15 @@ public actor KanbanHost {
     /// that key (plan.md §6.5, many boards; divergence.md X5). Each worktree of a repo has its own board with the same
     /// key, so one key can give more than one copy. A board that is still loading is not in the list.
     ///
-    /// - Parameter key: The key, with the host in lowercase.
+    /// - Parameter key: The key, with the host in lowercase. Each name of a board matches (``BoardNames``,
+    ///   divergence.md M9), so an old git key in the `boards` value of an old event still finds its board.
     /// - Returns: The copies, in the sort order of the path of their root directory.
     func loadedCopies(withKey key: String) async -> [BoardCopy] {
         var copies: [BoardCopy] = []
         for engine in loadedEngines {
-            let boardKey = await engine.session.key
-            if boardKey.description == key {
-                copies.append(BoardCopy(directory: engine.root, key: boardKey))
+            let copy = await engine.session.copy(at: engine.root)
+            if copy.names.contains(key) {
+                copies.append(copy)
             }
         }
         return copies.sorted { lhs, rhs in lhs.directory.canonicalPath < rhs.directory.canonicalPath }
@@ -748,11 +749,13 @@ public actor KanbanHost {
     /// Finds the copy that a key ref names among the boards that calls reached by a path (divergence.md X4). Copies
     /// with the same key obey the rule of the scan: the key gives the first copy in a fixed order, here the sort order
     /// of the canonical path of the top folder of its worktree (plan.md §6.6, many copies of one repo). A copy whose
-    /// folder is not there any more is not a match.
+    /// folder is not there any more is not a match. Each name of a board matches (divergence.md M9). The record of a
+    /// folder keeps no file watcher on the board log, so the match reads the names from the board log now: a board ID
+    /// that a later write added matches too.
     ///
-    /// - Parameter reference: The board ref: a board key, or the URI of a board. White space at the two ends is
+    /// - Parameter reference: The board ref: a name of a board, or the URI of a board. White space at the two ends is
     ///   ignored.
-    /// - Returns: The copy, or `nil` when the ref is not a key, or when no copy has the key.
+    /// - Returns: The copy, or `nil` when the ref is not a key, or when no copy has the name.
     func pathCopy(namedBy reference: String) -> BoardCopy? {
         guard let key = BoardIndex.boardKey(in: reference.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             return nil
@@ -761,7 +764,8 @@ public actor KanbanHost {
             known.record.board.copy.map { copy in (path: known.record.repo, copy: copy) }
         }
         return copies.sorted { lhs, rhs in lhs.path < rhs.path }.lazy.map(\.copy).first { copy in
-            copy.key.description == key && FileManager.default.fileExists(atPath: copy.directory.path)
+            FileManager.default.fileExists(atPath: copy.directory.path)
+                && BoardNames.read(fromRepoAt: copy.directory, key: copy.key).contains(key)
         }
     }
 

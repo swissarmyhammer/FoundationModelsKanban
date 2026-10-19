@@ -6,7 +6,8 @@ import ULID
 
 extension Design {
     /// Tests that local data is portable (plan.md §1 item 9, §3.2, §11, §12 items 4 and 18): the log of a board
-    /// holds no key of its own board, so a move of the repo changes no stored data.
+    /// holds no key of its own board, so a move of the repo changes no stored data. Only the board names patch of the
+    /// board log holds the key: it records the names of the board (divergence.md M9).
     ///
     /// Each test makes a real git repo in a ``GitSandbox`` and an engine that reads the board key from git. The engine
     /// writes a board through full URIs with the current key: a tag, a task that is done, and a second task with the
@@ -158,6 +159,51 @@ extension Design {
             )
         }
 
+        /// Gives each log line of a repo that holds a text, but not a board names patch of the board log.
+        ///
+        /// The board log records the names of the board: the board IDs, the git key, and the old names (divergence.md
+        /// M9). Thus a board names patch holds the key of its own board and the scheme of a URI. Each other line must
+        /// not hold the key of its own board.
+        ///
+        /// - Parameters:
+        ///   - text: The text to find, for example the key of the board or the scheme of a URI.
+        ///   - root: The root directory of the repo.
+        /// - Returns: The lines that hold the text, by the local ref of their node.
+        /// - Throws: An error when a log cannot be read.
+        static func linesHolding(_ text: String, inRepoAt root: URL) throws -> [LocalRef: [String]] {
+            var found: [LocalRef: [String]] = [:]
+            for (ref, log) in try logTexts(inRepoAt: root) {
+                let lines = log.split(separator: "\n").map(String.init).filter { line in
+                    line.contains(text) && !(ref == .board && isBoardNamesLine(line))
+                }
+                if !lines.isEmpty {
+                    found[ref] = lines
+                }
+            }
+            return found
+        }
+
+        /// Gives the lines of the board log of a repo that are board names patches (divergence.md M9).
+        ///
+        /// - Parameter root: The root directory of the repo.
+        /// - Returns: The lines, in file order.
+        /// - Throws: An error when the board log cannot be read.
+        static func boardNamesLines(inRepoAt root: URL) throws -> [String] {
+            let text = try logTexts(inRepoAt: root)[.board] ?? ""
+            return text.split(separator: "\n").map(String.init).filter(isBoardNamesLine)
+        }
+
+        /// Tells if a line of the board log is a board names patch (divergence.md M9).
+        ///
+        /// - Parameter line: The line.
+        /// - Returns: `true` when the line is an event whose patch touches only the name properties of the board.
+        static func isBoardNamesLine(_ line: String) -> Bool {
+            guard let event = try? Event(parsing: line) else {
+                return false
+            }
+            return BoardMutationTests.isBoardNamesPatch(event.patch)
+        }
+
         /// Gives the full URI of a node of a board.
         ///
         /// - Parameters:
@@ -222,18 +268,20 @@ extension Design {
 
         // MARK: - Stored form
 
+        /// The board log records the names of the board (divergence.md M9). Thus only its one board names patch holds
+        /// the key of the board and the scheme of a URI. No other line holds them.
         @Test("After writes through full URIs with the current key, no log line holds the key of its own board")
         func noLogLineHoldsBoardKey() async throws {
             let sandbox = try GitSandbox()
             let repo = try await RepoMove.newOrigin.makeRepo(in: sandbox)
             let key = try await BoardKey.read(fromRepoAt: repo)
             _ = try await Self.writeBoard(on: GitGraphFixture.makeGraph(at: repo))
-            let texts = try Self.logTexts(inRepoAt: repo)
-            #expect(!texts.isEmpty)
-            for (ref, text) in texts {
-                #expect(!text.contains(key.description), "\(ref)")
-                #expect(!text.contains(NodeURI.scheme), "\(ref)")
-            }
+            #expect(!(try Self.logTexts(inRepoAt: repo)).isEmpty)
+            #expect(try Self.linesHolding(key.description, inRepoAt: repo).isEmpty)
+            #expect(try Self.linesHolding(NodeURI.scheme, inRepoAt: repo).isEmpty)
+            let namesLines = try Self.boardNamesLines(inRepoAt: repo)
+            #expect(namesLines.count == 1)
+            #expect(namesLines.allSatisfy { line in line.contains(key.description) })
         }
 
         @Test("A full URI with the current key in the input is stored as a local ref")

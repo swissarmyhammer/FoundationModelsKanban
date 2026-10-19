@@ -161,7 +161,10 @@ struct RustFieldTests {
         let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
         #expect(response == #"{"data":{"initBoard":{"model":"\#(Self.haiku)"}}}"#)
         let expected = try PatchInput(node: .board, set: [PropertyName.model: .json(.string(Self.haiku))])
-        #expect(try ColumnActorTests.patches(of: .board, in: directory).last == expected)
+        // The first write of the fixture board also gives it its board ID: the board names patch comes after the
+        // patch of the field (divergence.md M9).
+        let names = try BoardMutationTests.boardNamesPatch(inRepoAt: directory.url)
+        #expect(try ColumnActorTests.patches(of: .board, in: directory).suffix(2) == [expected, names])
     }
 
     @Test("A new engine reads the model that updateBoard wrote")

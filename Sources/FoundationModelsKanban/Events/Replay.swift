@@ -286,7 +286,10 @@ extension NodeFold {
             BoardNode(
                 fields: fields,
                 name: properties.removeName(),
-                model: properties.removeText(forKey: PropertyName.model)
+                model: properties.removeText(forKey: PropertyName.model),
+                ids: properties.removeBoardIDs(),
+                gitKey: properties.removeText(forKey: PropertyName.gitKey),
+                oldNames: properties.removeBoardNames(forKey: PropertyName.oldNames)
             )
         case .column(let slug):
             ColumnNode(
@@ -475,6 +478,15 @@ enum PropertyName {
 
     /// The author of a comment.
     static let author = "author"
+
+    /// The board IDs of the board: each member is the URI `kanban://<ULID>/board` (divergence.md M9).
+    static let boardIDs = "boardIds"
+
+    /// The git key of the board that the last write saw (divergence.md M9).
+    static let gitKey = "gitKey"
+
+    /// The old names of the board: each member is the URI of the board with an old git key (divergence.md M9).
+    static let oldNames = "oldNames"
 }
 
 // MARK: - Property bag
@@ -550,6 +562,39 @@ extension PropertyBag {
     /// - Returns: The unresolved edges to the members, in the order of their first `add`.
     mutating func removeEdges(forKey name: String) -> [EdgeTarget] {
         (members.removeValue(forKey: name) ?? []).map(EdgeTarget.unresolved)
+    }
+
+    /// Removes a set-valued property whose members are board URIs, and gives the board key of each member
+    /// (divergence.md M9). A member that is not the URI of a board is recorded with swift-log and not read.
+    ///
+    /// - Parameter name: The name of the property.
+    /// - Returns: The board key of each member, in the order of their first `add`.
+    mutating func removeBoardNames(forKey name: String) -> [String] {
+        (members.removeValue(forKey: name) ?? []).compactMap { member in
+            guard let key = member.boardName else {
+                Log.kanban.warning(
+                    "Replay skips a board name that is not the URI of a board",
+                    metadata: ["property": "\(name)", "value": "\(member)"]
+                )
+                return nil
+            }
+            return key
+        }
+    }
+
+    /// Removes the board IDs of the board, and gives them in sort order (divergence.md M9). A member whose board key
+    /// is not a ULID is recorded with swift-log and not read.
+    ///
+    /// - Returns: The board IDs, the lowest first.
+    mutating func removeBoardIDs() -> [ULID] {
+        removeBoardNames(forKey: PropertyName.boardIDs).compactMap { key in
+            guard let id = ULID(boardKeyText: key) else {
+                Log.kanban.warning("Replay skips a board ID that is not a ULID", metadata: ["value": "\(key)"])
+                return nil
+            }
+            return id
+        }
+        .sorted()
     }
 
     /// Removes a property, and reads its value. A value of the wrong kind is recorded with swift-log and not read.

@@ -351,10 +351,19 @@ extension RefResolver {
 
     /// Gives the short form of the node of a URI, when the URI has the key of this board.
     ///
+    /// A URI with any name of this board (``boardNames``) names a node of this board: the git key, a board ID, or an
+    /// old name (divergence.md M9). The stored ref is then a local ref, so it never holds a name of its own board.
+    ///
     /// - Parameter uri: The URI.
     /// - Returns: The short form, or `nil` when the URI has the key of a different board.
     private func localKey(forURI uri: NodeURI) -> String? {
-        uri.localRef(inBoard: boardKey).map { ref in shortForm(of: ref) }
+        boardNames.contains(uri.boardKey) ? shortForm(of: uri.ref) : nil
+    }
+
+    /// The names of this board: the current key, and the board IDs and the old names of the board node of the graph
+    /// (divergence.md M9).
+    private var boardNames: BoardNames {
+        BoardNames(key: boardKey, board: graph.boardNode)
     }
 
     /// Gives the stored ref of a URI to a node of a different board.
@@ -408,7 +417,7 @@ extension RefResolver {
     private func candidateRef(forKey key: String, in lookup: Lookup) throws(KanbanError) -> LocalRef? {
         switch lookup.type {
         case .board:
-            return BoardKey.normalizedText(of: key) == boardKey ? ref(of: .board, in: lookup) : nil
+            return boardNames.contains(key) ? ref(of: .board, in: lookup) : nil
         case .column:
             return ref(of: .column(slug: Slug.normalizedText(of: key)), in: lookup)
         case .actor:

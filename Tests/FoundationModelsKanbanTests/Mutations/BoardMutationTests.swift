@@ -68,6 +68,35 @@ struct BoardMutationTests {
         try EventLog(repositoryAt: root).readLog(of: ref).events
     }
 
+    /// Tells if a patch is a board names patch (divergence.md M9): a patch of the board that touches only the name
+    /// properties of the board (``BoardNode/nameProperties``).
+    ///
+    /// - Parameter patch: The patch.
+    /// - Returns: `true` when the patch is a board names patch.
+    static func isBoardNamesPatch(_ patch: PatchInput) -> Bool {
+        let touched = Set(patch.set.keys).union(patch.unset).union(patch.add.keys).union(patch.remove.keys)
+        return patch.node == .board && patch.delete == nil && patch.edit == nil && !touched.isEmpty
+            && touched.isSubset(of: BoardNode.nameProperties)
+    }
+
+    /// Makes the board names patch that the first kept write of a board with no board ID writes (divergence.md M9):
+    /// an add of the one board ID, and a set of the git key.
+    ///
+    /// - Parameters:
+    ///   - root: The root directory of the repo. Its board log gives the board ID.
+    ///   - key: The git key that the write saw. The default is the fake key of ``KanbanGraphTests``.
+    /// - Returns: The patch.
+    /// - Throws: An error when the board log has no board ID.
+    static func boardNamesPatch(inRepoAt root: URL, key: BoardKey = KanbanGraphTests.boardKey) throws -> PatchInput {
+        let board = try BoardIDTests.boardNode(inRepoAt: root)
+        #expect(board.ids.count == 1)
+        return try PatchInput(
+            node: .board,
+            set: [PropertyName.gitKey: .json(.string(key.description))],
+            add: [PropertyName.boardIDs: [StoredRef.board(named: try BoardIDTests.boardID(inRepoAt: root))]]
+        )
+    }
+
     /// Gives the JSON of one actor in a response that selects `actors { id name }`.
     ///
     /// - Parameter actor: The actor.
@@ -133,7 +162,8 @@ struct BoardMutationTests {
         #expect(try Self.storedRefs(inRepoAt: root) == Self.initializedRefs)
     }
 
-    @Test("initBoard with a name and a body writes one board patch with the name and the body diff")
+    /// The board names patch comes after the patch of the field (divergence.md M9).
+    @Test("initBoard with a name and a body writes one board patch with the name and the body diff, then the names")
     func initBoardWithNameAndBody() async throws {
         let directory = try TemporaryDirectory()
         let (root, response) = try await Self.execute(
@@ -146,7 +176,8 @@ struct BoardMutationTests {
             set: ["name": .json(.string(Self.boardName))],
             edit: PatchEdit(body: UnifiedDiff(from: "", to: Self.boardBody).text)
         )
-        #expect(try Self.events(of: .board, inRepoAt: root).map(\.patch) == [expected])
+        let names = try Self.boardNamesPatch(inRepoAt: root)
+        #expect(try Self.events(of: .board, inRepoAt: root).map(\.patch) == [expected, names])
     }
 
     @Test("initBoard on a board that exists writes only the given fields that differ, and adds no column")
@@ -165,7 +196,8 @@ struct BoardMutationTests {
         let written = try Self.events(of: .board, inRepoAt: directory.url).dropFirst(boardEventsBefore.count)
         let diff = UnifiedDiff(from: "", to: Self.boardBody).text
         let expected = try PatchInput(node: .board, edit: PatchEdit(body: diff))
-        #expect(written.map(\.patch) == [expected])
+        let names = try Self.boardNamesPatch(inRepoAt: directory.url)
+        #expect(written.map(\.patch) == [expected, names])
         #expect(try Self.storedRefs(inRepoAt: directory.url) == refsBefore.union([ReplayTests.actor]))
     }
 
@@ -268,24 +300,32 @@ struct BoardMutationTests {
         for name in names {
             _ = try await graph.execute(query: mutation, variables: ["name": .string(name)], operationName: nil)
         }
-        #expect(try Self.events(of: .board, inRepoAt: root).count == names.count)
+        let namePatches = try names.map { name in
+            try PatchInput(node: .board, set: [PropertyName.name: .json(.string(name))])
+        }
+        let boardNames = try Self.boardNamesPatch(inRepoAt: root)
+        let expected = [namePatches[0], boardNames, namePatches[1]]
+        #expect(try Self.events(of: .board, inRepoAt: root).map(\.patch) == expected)
         #expect(try Self.events(of: ReplayTests.actor, inRepoAt: root).count == 1)
     }
 
     // MARK: - Stored form
 
-    @Test("No log line holds the key of its own board")
+    /// No line of a node log holds the key of its own board or the scheme of a URI. The one exception is the board
+    /// names patch of the board log: the board log records the names of the board, its board IDs, its git key, and its
+    /// old names (divergence.md M9). Thus each line of the board log that holds the key or the scheme is a board names
+    /// patch, whose patch touches only `boardIds`, `gitKey`, and `oldNames`.
+    @Test("No log line holds the key of its own board, but the board names patch of the board log")
     func noLogLineHoldsBoardKey() async throws {
         let directory = try TemporaryDirectory()
         let mutation = "mutation { initBoard(\(Self.boardInput)) { id } }"
         let (root, _) = try await Self.execute(mutation, onEmptyRepoIn: directory)
-        let log = EventLog(repositoryAt: root)
-        let refs = try Self.storedRefs(inRepoAt: root)
-        #expect(refs == Self.initializedRefs)
-        for ref in refs {
-            let text = try String(contentsOf: log.fileURL(for: ref), encoding: .utf8)
-            #expect(!text.contains(KanbanGraphTests.boardKey.description))
-            #expect(!text.contains(NodeURI.scheme))
-        }
+        let key = KanbanGraphTests.boardKey.description
+        #expect(try Self.storedRefs(inRepoAt: root) == Self.initializedRefs)
+        #expect(try Design.PortabilityTests.linesHolding(key, inRepoAt: root).isEmpty)
+        #expect(try Design.PortabilityTests.linesHolding(NodeURI.scheme, inRepoAt: root).isEmpty)
+        let namesLines = try Design.PortabilityTests.boardNamesLines(inRepoAt: root)
+        #expect(namesLines.count == 1)
+        #expect(namesLines.allSatisfy { line in line.contains(key) && line.contains(NodeURI.scheme) })
     }
 }

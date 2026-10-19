@@ -252,7 +252,15 @@ struct CommitRollbackTests {
         #expect(try CrossRepoWriteTests.hasNoErrors(response))
         #expect(try await KanbanGraphTests.execute(KanbanGraphTests.nameQuery, on: graph).contains(Self.newBoardName))
         let boardEvents = try EventLog(repositoryAt: boards.app).readLog(of: .board).events
-        #expect(boardEvents.filter { event in event.ops == [MutationName.updateBoard, MutationName.addTask] }.count == 1)
+        let callEvents = boardEvents.filter { event in event.ops == [MutationName.updateBoard, MutationName.addTask] }
+        // The call also writes one board names patch to the board log (divergence.md M9), in the same transaction.
+        let (names, changes) = (
+            callEvents.filter { event in BoardMutationTests.isBoardNamesPatch(event.patch) },
+            callEvents.filter { event in !BoardMutationTests.isBoardNamesPatch(event.patch) }
+        )
+        #expect(changes.count == 1)
+        #expect(names.count == 1)
+        #expect(Set(callEvents.map(\.txn)).count == 1)
         let libLog = EventLog(repositoryAt: boards.lib)
         let libTitles = try libLog.nodeRefs(ofType: .task).compactMap { ref in
             (try libLog.readLog(of: ref).node?.state as? TaskNode)?.title

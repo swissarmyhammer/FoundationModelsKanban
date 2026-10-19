@@ -127,7 +127,7 @@ extension BoardStore {
         let (actor, isForced) = (sessionActor, input?.force == true)
         let references = isForced ? [] : try laterReferences(to: found.txn, tombstonedIn: boards)
         let changes = try runField(as: direction.operation, inEach: boards) { work, key in
-            try work.applyMutationRules(actingAs: actor, at: time) { work in
+            try work.applyMutationRules(actingAs: actor, inBoard: key, at: time) { work in
                 try work.reverse(found.txn, forcing: isForced, alsoConflictingWith: references, inBoard: key, at: time)
             }
         }

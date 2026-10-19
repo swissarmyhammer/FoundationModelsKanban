@@ -109,11 +109,13 @@ struct ChangeFilterTests {
             filter: nil,
             steps: tombstoneSteps,
             expected: { task in
+                // The first write of the fixture board gives it its board ID: the board names patch comes before the
+                // patch of the session actor (divergence.md M9). Thus the board update comes before the actor update.
                 [
                     [
                         updateText(.task, .deleted, .task(task)),
-                        updateText(.actor, .created, ReplayTests.actor),
                         updateText(.board, .updated, .board),
+                        updateText(.actor, .created, ReplayTests.actor),
                     ],
                     [updateText(.column, .created, ColumnActorTests.qaColumn)],
                 ]
@@ -140,12 +142,16 @@ struct ChangeFilterTests {
                 let bug = LocalRef.tag(slug: TagMutationTests.bug)
                 // The fixture column `todo` is the last column. A column after it makes the fixture task open, and
                 // the delete of that column makes the task done again. Each change updates the task and the board.
+                // The first write also gives the fixture board its board ID: the board names patch comes before the
+                // patch of the session actor (divergence.md M9). Thus the board update comes before the actor update.
                 let doneStateChange = [updateText(.board, .updated, .board), updateText(.task, .updated, .task(task))]
                 return [
                     [
                         updateText(.column, .created, ColumnActorTests.qaColumn),
+                        updateText(.board, .updated, .board),
                         updateText(.actor, .created, ReplayTests.actor),
-                    ] + doneStateChange,
+                        updateText(.task, .updated, .task(task)),
+                    ],
                     [updateText(.tag, .created, bug)],
                     [updateText(.column, .deleted, ColumnActorTests.qaColumn)] + doneStateChange,
                     [updateText(.tag, .deleted, bug)],
