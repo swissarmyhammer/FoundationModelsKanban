@@ -680,9 +680,7 @@ public actor KanbanGraph {
         if let failure = boards.lazy.compactMap(\.callFailure).first {
             throw failure
         }
-        for board in boards {
-            await context.warnings.add(board.warningMessage, code: board.warningCode)
-        }
+        await addWarnings(for: boards, in: context)
     }
 
     /// Adds the warnings of the places of the boards to the response of a run (divergence.md M9): one warning for the
@@ -698,12 +696,8 @@ public actor KanbanGraph {
         subfolderBoard: SubfolderBoard?,
         in context: KanbanContext
     ) async {
-        if let subfolderBoard {
-            await context.warnings.add(subfolderBoard.warningMessage, code: SubfolderBoard.warningCode)
-        }
-        for shared in await store.sharedBoardIDs {
-            await context.warnings.add(shared.warningMessage, code: SharedBoardID.warningCode)
-        }
+        await addWarnings(for: subfolderBoard.map { board in [board] } ?? [], in: context)
+        await addWarnings(for: store.sharedBoardIDs, in: context)
     }
 
     /// Adds one warning to the response of a run for each old board name that a board ref or a stored link of the
@@ -713,9 +707,20 @@ public actor KanbanGraph {
     ///   - store: The store of the run. Its related boards hold the resolved board refs.
     ///   - context: The context of the run, whose warnings become `extensions.warnings` of the response.
     private static func addOldNameWarnings(of store: BoardStore, in context: KanbanContext) async {
-        for oldName in await store.oldBoardNames {
-            await context.warnings.add(oldName.warningMessage, code: OldBoardName.warningCode)
-        }
+        await addWarnings(for: store.oldBoardNames, in: context)
+    }
+
+    /// Adds one warning to the response of a run for each fact about a board, in the order of the facts. Each fact
+    /// gives its own text and its own code.
+    ///
+    /// - Parameters:
+    ///   - facts: The facts, for example the old board names of the run.
+    ///   - context: The context of the run, whose warnings become `extensions.warnings` of the response.
+    private static func addWarnings<Fact: BoardWarning>(
+        for facts: some Sequence<Fact>,
+        in context: KanbanContext
+    ) async {
+        await context.warnings.add(contentsOf: facts.map(\.responseWarning))
     }
 
     /// Checks that a call holds the gate of each board of a commit attempt (divergence.md §16, locks across boards),

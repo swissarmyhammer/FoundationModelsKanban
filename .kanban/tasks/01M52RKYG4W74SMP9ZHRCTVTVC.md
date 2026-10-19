@@ -32,6 +32,38 @@ comments:
     - evidence: `swift build --build-tests` 0 warnings; `swift test` 1647 tests in 136 suites passed. New: Sources/FoundationModelsKanban/CrossRepo/LinkCheck.swift, CrossRepo/OldBoardName.swift, GraphQL/CheckLinksField.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CheckLinksTests.swift (11 tests). Changed: CrossRepo/RelatedBoards.swift, GraphQL/Schema.swift, GraphQL/SchemaDescription.swift, GraphQL/FieldAliases.swift, GraphQL/TaskTransferMutations.swift, Tool/KanbanGraph.swift, Tool/KanbanTool.swift, Tool/SessionNames.swift, Identity/BoardNames.swift, Identity/RefResolver.swift, Derived/ReadinessCache.swift, Model/Node.swift, Observe/Change.swift, Tests/.../CrossRepo/BoardIDTests.swift.
     - next: /review
   timestamp: 2026-10-19T18:13:23.570481+00:00
+- actor: claude-code
+  id: 01m5ap5h4wed06n14xe3csj1g5
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (77354ea): 2 findings (2 confirmed, 3 refuted) — Sources/FoundationModelsKanban/Tool/KanbanGraph.swift:716, Tests/FoundationModelsKanbanTests/CrossRepo/CheckLinksTests.swift:317
+    - next: implement the 2 open items in "Review Findings (2026-10-19 13:14)". The task stays in review.
+  timestamp: 2026-10-19T18:18:18.652902+00:00
+- actor: claude-code
+  id: 01m5ap5zk8js0ma2qr8xvqxxmk
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 18 files
+    - test: green — swift test, 1647 passed
+    - commit: 77354ea
+    - review: findings — KanbanGraph.swift:716, CheckLinksTests.swift:317
+  timestamp: 2026-10-19T18:18:33.448489+00:00
+- actor: claude-code
+  id: 01m5aph8pg6c4g666rcb7fkfv7
+  text: |-
+    Review findings of 2026-10-19 13:14 are fixed (not committed).
+
+    - reuse/reuse (KanbanGraph.swift): a new protocol `BoardWarning` (GraphQL/ResponseWarnings.swift) has `warningMessage`, `warningCode`, and a default `responseWarning`. `UnreadableBoard`, `SubfolderBoard`, `SharedBoardID` and `OldBoardName` conform. The three types with one fixed code give an instance `warningCode` that returns the static code, the same shape that `UnreadableBoard` had before. One private static helper `KanbanGraph.addWarnings(for:in:)` adds the warnings. `checkUnreadableBoards`, `addPlaceWarnings` and `addOldNameWarnings` all call it, so the file has no copy of the loop now. Decision: the code comes from each value and not from a parameter, because the code of `UnreadableBoard` changes with its effect (BOARD_UNREADABLE or BOARD_INCOMPATIBLE).
+    - completeness/invariant-propagation (CheckLinksTests.swift): three new tests give OLD_NAME, the current name, and one OLD_BOARD_NAME warning for BODY (`oldNameBodyURLIsOldName`), TOMBSTONE (`oldNameMovedLineIsOldName`) and ASSIGNEE (`oldNameAssigneeIsOldName`). For ASSIGNEE, the remote of the app repo changes after the move, and the engine at the lib repo checks its current board. `makeRenamedLib` takes a `linkingWith` input function now (default `CrossRepoFixture.dependsOnInput`, which `addTask(dependingOn:)` uses too). New helpers: `bodyInput`, `moveNewTaskToLib`, and `expectOneOldNameWarning(in:naming:currentName:)`.
+    - The three new tests passed on the first run, because they cover behavior that the earlier change already had (the finding is a test gap, not a code bug).
+  timestamp: 2026-10-19T18:24:43.216761+00:00
+- actor: claude-code
+  id: 01m5aphbj2ba2de1dxfh0phb6k
+  text: |-
+    ### implement — changed
+    - evidence: `swift build --build-tests` has only the accepted mlx "missing creator" warning; `swift test --filter CheckLinksTests` 14 passed; `swift test` 1650 tests in 136 suites passed. Files: Sources/FoundationModelsKanban/GraphQL/ResponseWarnings.swift, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift, Sources/FoundationModelsKanban/CrossRepo/BoardPlaceWarnings.swift, Sources/FoundationModelsKanban/CrossRepo/OldBoardName.swift, Sources/FoundationModelsKanban/CrossRepo/BoardLocator.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CheckLinksTests.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CrossRepoFixture.swift.
+    - next: /review
+  timestamp: 2026-10-19T18:24:46.146181+00:00
 depends_on:
 - 01M52RKMDD8RJ7TNTQVE65466D
 position_column: doing
@@ -51,3 +83,13 @@ divergence.md M9 "checkLinks and repairLinks". A user must find links that use a
 - [x] A task that depends on a task through an old board name is ready when that task is done, and the response warns.
 - [x] `board(id:)` with an old name gives the current board.
 - [x] Tests use temporary folders and temporary git repos only.
+
+## Review Findings (2026-10-19 13:14)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 18 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsKanban/Tool/KanbanGraph.swift:716` `reuse/reuse` — addOldNameWarnings repeats the loop in addPlaceWarnings (lines 704-706): iterate a store collection, then call context.warnings.add with that item's warningMessage and warningCode. A helper that takes the collection and the code would hold this shape once. Each new warning kind would otherwise add another copy, and the copies could drift apart. Extract a private static helper, for example `addWarnings(_ items: some Sequence<...>, code: String, in context:)`, or a small generic over a warning-message protocol. Call it from addPlaceWarnings and addOldNameWarnings. Keep the per-case codes as the parameters. This is a minor duplication, so it is optional if the author prefers the explicit loops.
+- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/CheckLinksTests.swift:317` `completeness/invariant-propagation` — The test for an ASSIGNEE link covers only the current board name, so the status is OK. The change classifies old board names at read time for dependsOn links, and the same classifier reads assignee URIs. No test checks an assignee URI that holds an old board key, so the OLD_NAME class and its OLD_BOARD_NAME warning are unproven for ASSIGNEE. The same gap exists for BODY (line 274) and TOMBSTONE (line 293), which also test only the current name. Add one test in which a task assigned to a task of the related board holds the old git key, after the remote change. Assert one ASSIGNEE check with `status: "OLD_NAME"`, the current name in `currentName`, and one OLD_BOARD_NAME warning from `expectOneOldNameWarning`. Optionally add the same case for a BODY link.

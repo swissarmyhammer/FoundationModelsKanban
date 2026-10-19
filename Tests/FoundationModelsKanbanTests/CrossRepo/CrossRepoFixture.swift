@@ -111,7 +111,15 @@ enum CrossRepoFixture {
     ///   - graph: The engine.
     /// - Returns: The full URI of the new task.
     static func addTask(dependingOn target: String, on graph: KanbanGraph) async throws -> String {
-        try await addTask(with: "dependsOn: \(AddUpdateTaskTests.list(of: [target]))", on: graph)
+        try await addTask(with: dependsOnInput(target), on: graph)
+    }
+
+    /// Gives the input fields of a task that depends on a task.
+    ///
+    /// - Parameter target: The full URI of the task that the new task depends on.
+    /// - Returns: The `dependsOn` field.
+    static func dependsOnInput(_ target: String) -> String {
+        "dependsOn: \(AddUpdateTaskTests.list(of: [target]))"
     }
 
     /// Gives the key of a remote URL as text.

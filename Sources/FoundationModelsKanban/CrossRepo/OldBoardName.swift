@@ -4,9 +4,14 @@ import Foundation
 /// board log records from before a change of the git key. The ref works: it names the board that has the old name
 /// now. The response of the run has one warning for each such name, so that the user can find the links with
 /// `checkLinks` and change them to the current name.
-struct OldBoardName: Hashable, Sendable {
+struct OldBoardName: Hashable, BoardWarning {
     /// The code of the warning, in `extensions.warnings` (plan.md §4.4).
     static let warningCode = "OLD_BOARD_NAME"
+
+    /// The code of the warning of this name: always ``warningCode``.
+    var warningCode: String {
+        Self.warningCode
+    }
 
     /// The old name, as the ref holds it, with the host in lowercase.
     let name: String

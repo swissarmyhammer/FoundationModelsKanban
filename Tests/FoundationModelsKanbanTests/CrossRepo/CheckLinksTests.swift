@@ -95,8 +95,9 @@ struct CheckLinksTests {
             .compactMap(\.message)
     }
 
-    /// Two repos side by side: a task of the current repo depends on a task of the related repo, and then the
-    /// `origin` of the related repo changes. The stored link thus has the old git key of the related board.
+    /// Two repos side by side: a task of the current repo links to a task of the related repo, for example with
+    /// `dependsOn`, and then the `origin` of the related repo changes. The stored link thus has the old git key of the
+    /// related board.
     struct RenamedLib {
         /// The repos.
         let repos: CrossRepoFixture.SideBySide
@@ -114,12 +115,26 @@ struct CheckLinksTests {
         let newKey: String
     }
 
+    /// Gives the input fields of a task whose body holds the URL of a task.
+    ///
+    /// - Parameter target: The full URI of the task that the body names.
+    /// - Returns: The `body` field.
+    static func bodyInput(_ target: String) -> String {
+        #"body: "Needs \#(target) first.""#
+    }
+
     /// Makes the repos of ``RenamedLib``. The engines of the setup are closed when the function returns.
     ///
-    /// - Parameter isDone: `true` to complete the task of the related repo before the remote change.
+    /// - Parameters:
+    ///   - isDone: `true` to complete the task of the related repo before the remote change.
+    ///   - linkInput: Gives the input fields of the task of the current repo from the URI of the task of the related
+    ///     repo. The default is ``CrossRepoFixture/dependsOnInput(_:)``.
     /// - Returns: The repos, the tasks, and the two keys of the related board.
     /// - Throws: An error when a git command fails, or when a call fails.
-    static func makeRenamedLib(completingTarget isDone: Bool) async throws -> RenamedLib {
+    static func makeRenamedLib(
+        completingTarget isDone: Bool,
+        linkingWith linkInput: (String) -> String = CrossRepoFixture.dependsOnInput
+    ) async throws -> RenamedLib {
         let repos = try await CrossRepoFixture.SideBySide.make()
         let lib = try GitGraphFixture.makeGraph(at: repos.lib)
         let target = try await CrossRepoFixture.addTask(with: "", on: lib)
@@ -131,7 +146,7 @@ struct CheckLinksTests {
         }
         await lib.close()
         let app = try GitGraphFixture.makeGraph(at: repos.app, mintingFrom: GitGraphFixture.secondEngineIDs)
-        let task = try await CrossRepoFixture.addTask(dependingOn: target, on: app)
+        let task = try await CrossRepoFixture.addTask(with: linkInput(target), on: app)
         await app.close()
         try await BoardIDTests.setNewRemote(ofRepoAt: repos.lib)
         return RenamedLib(
@@ -143,6 +158,23 @@ struct CheckLinksTests {
         )
     }
 
+    /// Adds a task to the current board, and then moves it to the related board with `moveTask(board:)`. The task of
+    /// the current board is then a tombstone whose body has the line of the move.
+    ///
+    /// - Parameter app: The engine of the current repo.
+    /// - Returns: The full URI of the tombstone, and the full URI of the task that the move wrote on the related board.
+    /// - Throws: An error when a call fails.
+    static func moveNewTaskToLib(on app: KanbanGraph) async throws -> (old: String, moved: String) {
+        let old = try await CrossRepoFixture.addTask(with: "", on: app)
+        let moved = try await CrossRepoTransferTests.transfer(
+            MutationName.moveTask,
+            old,
+            with: try CrossRepoTransferTests.libBoard(),
+            on: app
+        )
+        return (old, moved)
+    }
+
     /// Expects that a response has one `OLD_BOARD_NAME` warning, and that the warning names the old name and the
     /// current name of the related board of a ``RenamedLib``.
     ///
@@ -151,10 +183,22 @@ struct CheckLinksTests {
     ///   - renamed: The repos and the keys of the related board.
     /// - Throws: An error when the response is not a JSON object.
     static func expectOneOldNameWarning(in response: String, for renamed: RenamedLib) throws {
+        try expectOneOldNameWarning(in: response, naming: renamed.oldKey, currentName: renamed.newKey)
+    }
+
+    /// Expects that a response has one `OLD_BOARD_NAME` warning, and that the warning names an old name and the
+    /// current name of the board that has it.
+    ///
+    /// - Parameters:
+    ///   - response: The response JSON text.
+    ///   - oldKey: The old git key of the board.
+    ///   - newKey: The current git key of the board.
+    /// - Throws: An error when the response is not a JSON object.
+    static func expectOneOldNameWarning(in response: String, naming oldKey: String, currentName newKey: String) throws {
         let warnings = try oldNameWarnings(in: response)
         #expect(warnings.count == 1, "\(response)")
         let message = try #require(warnings.first)
-        #expect(message.contains(renamed.oldKey) && message.contains(renamed.newKey), "\(message)")
+        #expect(message.contains(oldKey) && message.contains(newKey), "\(message)")
     }
 
     // MARK: - Old names at read time
@@ -276,7 +320,7 @@ struct CheckLinksTests {
         let repos = try await CrossRepoFixture.SideBySide.make()
         let target = try await CrossRepoFixture.addTask(with: "", on: GitGraphFixture.makeGraph(at: repos.lib))
         let app = try GitGraphFixture.makeGraph(at: repos.app, mintingFrom: GitGraphFixture.secondEngineIDs)
-        let task = try await CrossRepoFixture.addTask(with: #"body: "Needs \#(target) first.""#, on: app)
+        let task = try await CrossRepoFixture.addTask(with: Self.bodyInput(target), on: app)
         let result = try await Self.checks(on: app)
         await app.close()
         let expected = Check(
@@ -294,13 +338,7 @@ struct CheckLinksTests {
     func movedLineIsTombstoneLink() async throws {
         let repos = try await CrossRepoFixture.SideBySide.make()
         let app = try GitGraphFixture.makeGraph(at: repos.app)
-        let old = try await CrossRepoFixture.addTask(with: "", on: app)
-        let moved = try await CrossRepoTransferTests.transfer(
-            MutationName.moveTask,
-            old,
-            with: try CrossRepoTransferTests.libBoard(),
-            on: app
-        )
+        let (old, moved) = try await Self.moveNewTaskToLib(on: app)
         let result = try await Self.checks(on: app)
         await app.close()
         let expected = Check(
@@ -329,6 +367,77 @@ struct CheckLinksTests {
             currentName: try CrossRepoWriteTests.appKey()
         )
         #expect(result.checks == [expected], "\(result.response)")
+    }
+
+    // MARK: - Old names in each link field
+
+    @Test("checkLinks gives OLD_NAME and the current name for a task URL in a body with an old board name, and warns")
+    func oldNameBodyURLIsOldName() async throws {
+        let renamed = try await Self.makeRenamedLib(completingTarget: false, linkingWith: Self.bodyInput)
+        let app = try GitGraphFixture.makeGraph(at: renamed.repos.app)
+        let result = try await Self.checks(on: app)
+        await app.close()
+        let expected = Check(
+            board: try CrossRepoWriteTests.appKey(),
+            node: renamed.task,
+            field: "BODY",
+            target: renamed.target,
+            status: "OLD_NAME",
+            currentName: renamed.newKey
+        )
+        #expect(result.checks == [expected], "\(result.response)")
+        try Self.expectOneOldNameWarning(in: result.response, for: renamed)
+    }
+
+    @Test("checkLinks gives OLD_NAME and the current name for a moved task line with an old board name, and warns")
+    func oldNameMovedLineIsOldName() async throws {
+        let repos = try await CrossRepoFixture.SideBySide.make()
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
+        let (old, moved) = try await Self.moveNewTaskToLib(on: app)
+        await app.close()
+        try await BoardIDTests.setNewRemote(ofRepoAt: repos.lib)
+        let reopened = try GitGraphFixture.makeGraph(at: repos.app)
+        let result = try await Self.checks(on: reopened)
+        await reopened.close()
+        let newKey = try CrossRepoFixture.keyText(of: BoardLocatorTests.newOrigin)
+        let expected = Check(
+            board: try CrossRepoWriteTests.appKey(),
+            node: old,
+            field: "TOMBSTONE",
+            target: moved,
+            status: "OLD_NAME",
+            currentName: newKey
+        )
+        #expect(result.checks == [expected], "\(result.response)")
+        try Self.expectOneOldNameWarning(
+            in: result.response,
+            naming: try CrossRepoWriteTests.libKey(),
+            currentName: newKey
+        )
+    }
+
+    @Test("checkLinks gives OLD_NAME and the current name for an assignee URI with an old board name, and warns")
+    func oldNameAssigneeIsOldName() async throws {
+        let transfer = try await CrossRepoTransferTests.makeAssignedTransfer(MutationName.moveTask)
+        try await BoardIDTests.setNewRemote(ofRepoAt: transfer.repos.app)
+        let lib = try CrossRepoTransferTests.makeLibGraph(in: transfer.repos)
+        let result = try await Self.checks(on: lib)
+        await lib.close()
+        let newKey = try CrossRepoFixture.keyText(of: BoardLocatorTests.newOrigin)
+        let expected = Check(
+            board: try CrossRepoWriteTests.libKey(),
+            node: transfer.written,
+            field: "ASSIGNEE",
+            target: transfer.actor,
+            status: "OLD_NAME",
+            currentName: newKey
+        )
+        #expect(result.checks == [expected], "\(result.response)")
+        try Self.expectOneOldNameWarning(
+            in: result.response,
+            naming: try CrossRepoWriteTests.appKey(),
+            currentName: newKey
+        )
     }
 
     // MARK: - Units

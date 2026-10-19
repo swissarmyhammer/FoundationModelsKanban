@@ -491,7 +491,7 @@ extension BoardResolution {
 /// board has a warning that names the board and the reason. A board of the old Rust kanban is the exception: it stops
 /// each call that names it (divergence.md Q6), and only the change feed continues without it. When only the list of
 /// `Query.boards` reaches it, the call continues with a `BOARD_INCOMPATIBLE` warning.
-struct UnreadableBoard: Hashable, Sendable {
+struct UnreadableBoard: Hashable, BoardWarning {
     /// The code of the warning of a board that cannot be read, in `extensions.warnings` (plan.md §4.4).
     static let warningCode = "BOARD_UNREADABLE"
 

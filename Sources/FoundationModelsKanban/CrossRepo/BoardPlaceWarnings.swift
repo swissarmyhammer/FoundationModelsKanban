@@ -6,9 +6,14 @@ import ULID
 /// repo, the board is always at the top folder of the repo, so the calls do not read the subfolder board. Each
 /// response of a session that finds one gives a warning that names the subfolder board and tells the user to run
 /// `collectBoards`.
-struct SubfolderBoard: Hashable, Sendable {
+struct SubfolderBoard: Hashable, BoardWarning {
     /// The code of the warning, in `extensions.warnings` (plan.md §4.4).
     static let warningCode = "BOARD_IN_SUBFOLDER"
+
+    /// The code of the warning of this board: always ``warningCode``.
+    var warningCode: String {
+        Self.warningCode
+    }
 
     /// The subfolder that holds the `.kanban/`.
     let folder: URL
@@ -46,9 +51,14 @@ struct SubfolderBoard: Hashable, Sendable {
 ///
 /// Clones and worktrees of one git repo share their board log through git, and thus their board IDs. They have a git
 /// key, so they are not in this check.
-struct SharedBoardID: Hashable, Sendable {
+struct SharedBoardID: Hashable, BoardWarning {
     /// The code of the warning, in `extensions.warnings` (plan.md §4.4).
     static let warningCode = "BOARD_ID_SHARED"
+
+    /// The code of the warning of this board ID: always ``warningCode``.
+    var warningCode: String {
+        Self.warningCode
+    }
 
     /// The smallest number of folders that share one board ID in a warning.
     private static let sharedFolderCount = 2
