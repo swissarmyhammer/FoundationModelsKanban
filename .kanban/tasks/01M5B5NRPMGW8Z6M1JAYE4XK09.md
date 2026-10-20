@@ -62,8 +62,24 @@ comments:
     - evidence: Sources/FoundationModelsKanban/Identity/LocalRef.swift, Sources/FoundationModelsKanban/Events/Event.swift, Sources/FoundationModelsKanban/Events/TransactionCheck.swift, Sources/FoundationModelsKanban/Tool/Commit.swift, Tests/FoundationModelsKanbanTests/Identity/LocalRefTests.swift, Tests/FoundationModelsKanbanTests/Events/TransactionCheckTests.swift; `swift test`: 1701 tests in 140 suites passed, only the accepted SwiftPM "missing creator" warning.
     - next: /review. Follow-up task ^m2sdwxr for the other LocalRef text sorts.
   timestamp: 2026-10-20T01:14:01.675195+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5be1s5jcmhbmn5y808m8r8m
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 4226aac). 6 files reviewed, 4 .kanban files not reviewed (ignore rule). Counts: findings 0, confirmed 0, refuted 1, attempted 7, failed 0. All 6 items of the 2026-10-19 20:06 findings are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-20T01:15:41.618184+00:00
+- actor: claude-code
+  id: 01m5be21jm5gysmpgq4zn0mg96
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — LocalRef.swift, Event.swift, TransactionCheck.swift, Commit.swift, LocalRefTests.swift, TransactionCheckTests.swift
+    - test: green — swift test, 1701 passed (run by the implement step on the same tree)
+    - commit: 4226aac
+    - review: clean — 0 findings
+  timestamp: 2026-10-20T01:15:50.228848+00:00
+position_column: done
+position_ordinal: ffa580
 title: Record the refs of the written files in each transaction line, not a count
 ---
 ## What

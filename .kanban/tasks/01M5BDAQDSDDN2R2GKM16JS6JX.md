@@ -1,6 +1,14 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m5be2cewg18ebkxm55twrsta
+  text: |-
+    ### finish iteration 1 — stuck
+    - implement: not run — the task needs a decision by a person before work can start (see "Decision needed": rewrite the merged lists, ignore `board` in the check, or merge the source board log lines; each changes a recorded decision)
+    - next: a person chooses one option and records it in divergence.md, then `/finish ^16js6jx`
+  timestamp: 2026-10-20T01:16:01.372039+00:00
 position_column: todo
 position_ordinal: '80'
 title: Merged collectBoards lines are held after a fresh load when their source transaction also wrote the source board log

@@ -342,15 +342,15 @@ struct StagedLog: Sendable {
         return StagedLog(ref: ref, folding: log.events + held, by: incomplete)
     }
 
-    /// Tells if one log comes before a different log in the insert order of the join: the sort order of the text of
-    /// the local ref.
+    /// Tells if one log comes before a different log in the insert order of the join: the order of the local refs
+    /// (``LocalRef`` is `Comparable` by its text).
     ///
     /// - Parameters:
     ///   - lhs: A log.
     ///   - rhs: A different log.
     /// - Returns: `true` when `lhs` comes first.
     static func precedes(_ lhs: Self, _ rhs: Self) -> Bool {
-        lhs.ref.description < rhs.ref.description
+        lhs.ref < rhs.ref
     }
 }
 

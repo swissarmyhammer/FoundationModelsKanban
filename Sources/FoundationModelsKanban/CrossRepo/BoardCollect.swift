@@ -80,8 +80,7 @@ extension CollectedSource {
         try log.checkCompatibility()
         let signatures = try log.nodeFileSignatures()
         let board = try log.readLog(of: .board).node?.state as? BoardNode
-        let refs = signatures.keys.filter { ref in ref != .board }
-            .sorted { lhs, rhs in lhs.description < rhs.description }
+        let refs = signatures.keys.filter { ref in ref != .board }.sorted()
         let logs = try refs.map { ref throws(EventLogError) in try log.readLog(of: ref).events }
         let boardIDs = board?.ids.map(\.ulidString) ?? []
         let recorded = [key].compactMap(\.self) + boardIDs + [board?.gitKey].compactMap(\.self)
@@ -168,7 +167,7 @@ struct CollectMerge {
         return OrderedDictionary(grouping: pairs, by: \.node)
             .map { node, entries in (node: node, paths: entries.map(\.path)) }
             .filter { shared in shared.paths.count > 1 }
-            .sorted { lhs, rhs in lhs.node.description < rhs.node.description }
+            .sorted { lhs, rhs in lhs.node < rhs.node }
     }
 
     /// Each column, tag, and actor that more than one board has: the slug merges of the call.
