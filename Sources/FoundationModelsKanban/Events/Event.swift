@@ -180,7 +180,7 @@ enum TransactionFiles: Codable, Hashable, Sendable {
     /// - Parameter refs: The local refs of the nodes of the files, in any order.
     /// - Returns: The ``refs(_:)`` value.
     static func named(_ refs: some Sequence<LocalRef>) -> TransactionFiles {
-        .refs(Set(refs).sorted { lhs, rhs in lhs.description < rhs.description })
+        .refs(Set(refs).sorted())
     }
 
     /// Reads the value from a JSON number or a JSON list of local refs.

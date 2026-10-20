@@ -29,6 +29,39 @@ comments:
     - evidence: Sources/FoundationModelsKanban/Events/Event.swift, Sources/FoundationModelsKanban/Events/TransactionCheck.swift, Sources/FoundationModelsKanban/Tool/Commit.swift, Tests/FoundationModelsKanbanTests/Events/EventTests.swift, Tests/FoundationModelsKanbanTests/Events/TransactionCheckTests.swift, Tests/FoundationModelsKanbanTests/Tool/CommitCrashSafetyTests.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CollectBoardsTests.swift; `swift test`: 1700 tests in 140 suites passed, only the accepted SwiftPM "missing creator" warning.
     - next: /review. Follow-up task ^16js6jx needs a human decision.
   timestamp: 2026-10-20T01:05:55.419189+00:00
+- actor: claude-code
+  id: 01m5bdnnjmh4hysv2pxgx7hcj4
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (8048b50). 6 findings, 6 confirmed, 1 refuted. Sources/FoundationModelsKanban/Events/Event.swift:183, Sources/FoundationModelsKanban/Events/TransactionCheck.swift:39 (2 findings), Sources/FoundationModelsKanban/Events/TransactionCheck.swift:79, Tests/FoundationModelsKanbanTests/Events/TransactionCheckTests.swift:179, Tests/FoundationModelsKanbanTests/Events/TransactionCheckTests.swift:199
+    - next: correct the 6 open items in "Review Findings (2026-10-19 20:06)". The task stays in review.
+  timestamp: 2026-10-20T01:09:04.724989+00:00
+- actor: claude-code
+  id: 01m5bdpcdz4vnsshvjxmejkma4
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — Event.swift, TransactionCheck.swift, Commit.swift, 4 test files
+    - test: green — swift test, 1700 passed (run by the implement step on the same tree)
+    - commit: 8048b50
+    - review: findings — Events/Event.swift:183, Events/TransactionCheck.swift:39 (x2), Events/TransactionCheck.swift:79, TransactionCheckTests.swift:179, TransactionCheckTests.swift:199
+  timestamp: 2026-10-20T01:09:28.127642+00:00
+- actor: claude-code
+  id: 01m5bdyhbzsy32atn8x3znmn09
+  text: |-
+    Review findings corrected.
+    - Items 1-3: `LocalRef` is now `Comparable` by its text (`Identity/LocalRef.swift`). `TransactionFiles.named`, `IncompleteTransactions.missingFiles(of:)`, and both sorts in `Tool/Commit.swift` (the apply of the changed files and `synchronize()`) call `sorted()`. Item 2 said not to edit Commit.swift; item 1 says to call the shared order from the commit code. Item 1 was followed, because only then no copy of the comparator stays. A line under item 2 on the card records this.
+    - Item 4: the `namedRefs` and `oldCount` accessors are removed. `missingFiles(of:)` reads each line with one `switch` on `event.files`.
+    - Items 5-6: `StrayFixture` is removed. `Fixture` has an optional `missing` field. A new `makeBoard(taskCount:)` helper makes the folder, the log, and the board tasks; `makeFixture`, `makeStrayFixture`, and the two other tests with the same setup call it.
+    - New test `LocalRefTests.refsSortByText`: RED was a compile error (LocalRef not Comparable), then GREEN.
+    - Discovery: `BoardCollect.swift` and `Loader.swift` also sort local refs by `description`. They are out of the scope of this card, so I added a follow-up task.
+  timestamp: 2026-10-20T01:13:55.327374+00:00
+- actor: claude-code
+  id: 01m5bdyqjba2jm9x0g3d1jgrxw
+  text: |-
+    ### implement — changed
+    - evidence: Sources/FoundationModelsKanban/Identity/LocalRef.swift, Sources/FoundationModelsKanban/Events/Event.swift, Sources/FoundationModelsKanban/Events/TransactionCheck.swift, Sources/FoundationModelsKanban/Tool/Commit.swift, Tests/FoundationModelsKanbanTests/Identity/LocalRefTests.swift, Tests/FoundationModelsKanbanTests/Events/TransactionCheckTests.swift; `swift test`: 1701 tests in 140 suites passed, only the accepted SwiftPM "missing creator" warning.
+    - next: /review. Follow-up task ^m2sdwxr for the other LocalRef text sorts.
+  timestamp: 2026-10-20T01:14:01.675195+00:00
 position_column: doing
 position_ordinal: '80'
 title: Record the refs of the written files in each transaction line, not a count
@@ -51,3 +84,18 @@ divergence.md Q23, "Changed (2026-10-19)". Each event line of a transaction reco
 - [x] An old line with a number is checked by count, and an old line with no field is applied.
 - [x] A collect transaction lists only the files of its new lines, and it is applied after a load.
 - [x] Tests use temporary folders only.
+
+## Review Findings (2026-10-19 20:06)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 7 file(s) reviewed, 6 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+- [x] `Sources/FoundationModelsKanban/Events/Event.swift:183` `reuse/reuse` — The new `named` function sorts LocalRef values by `description` with an inline comparator. The same comparator is written again in the new missingFiles code, and it already appears in the commit code. Each copy is a separate place that must agree on the sort order. Add one shared sort helper for LocalRef by text, or a Comparable conformance if one fits the type, and call it from all three sites.
+- [x] `Sources/FoundationModelsKanban/Events/TransactionCheck.swift:39` `duplication/duplication` — The new sort of missing refs by `lhs.description < rhs.description` repeats the same comparator that the new `TransactionFiles.named` uses. The comparator is copied, not shared, so a change to the ref sort order must be made in two places. Give one shared sort, for example a `LocalRef` ordering or a small static helper that both call sites use. Then use it at Event.swift:183 and TransactionCheck.swift:39. Keep the change in the changed code. Do not edit Commit.swift:900 in this change.
+  - Commit.swift also calls the shared order, because item 1 tells the change to call it from the commit code, and only then is no copy of the comparator left.
+- [x] `Sources/FoundationModelsKanban/Events/TransactionCheck.swift:39` `reuse/reuse` — The new missingFiles code sorts LocalRef values by `description` with an inline comparator that duplicates the sort in Event.swift `named`. This is the second copy in the change. Call the same shared LocalRef text-sort helper that Event.swift `named` uses.
+- [x] `Sources/FoundationModelsKanban/Events/TransactionCheck.swift:79` `reuse/reuse` — The new namedRefs and oldCount accessors repeat the same guard-case extraction pattern. Each one unwraps one case of TransactionFiles and returns nil for the other. Two parallel accessors for one enum add a second copy of the same shape. Use the enum's own pattern directly at the two call sites (for example `if case .refs(let refs)?`), or keep one generic helper. Do not keep two copies of the same accessor.
+- [x] `Tests/FoundationModelsKanbanTests/Events/TransactionCheckTests.swift:179` `reuse/reuse` — The new StrayFixture struct repeats the fields of the existing Fixture struct (directory, log, tasks, events). Only the extra `missing` field differs. A parallel type makes two fixture shapes to keep in step. Give Fixture an optional or extra field for the missing task, or make StrayFixture reuse Fixture with a `missing` property added to Fixture. Keep one fixture type.
+- [x] `Tests/FoundationModelsKanbanTests/Events/TransactionCheckTests.swift:199` `reuse/reuse` — makeStrayFixture repeats the setup of makeFixture: a TemporaryDirectory, an EventLog on it, and writeBoard prefix to a task count. Only the task count and the event set differ. Extract the shared setup (directory, log, and board tasks for a count) into one helper that both makeFixture and makeStrayFixture call. Pass the task count as a parameter.

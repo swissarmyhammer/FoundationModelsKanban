@@ -34,12 +34,20 @@ struct IncompleteTransactions: Sendable {
     ///   count check finds fewer files than the count, or `nil` when the transaction is complete.
     private static func missingFiles(of transaction: [Event]) -> [LocalRef]? {
         let written = Set(transaction.map(\.patch.node))
-        let named = Set(transaction.flatMap { event in event.files?.namedRefs ?? [] })
+        var named = Set<LocalRef>()
+        var expected: Int?
+        for event in transaction {
+            switch event.files {
+            case .refs(let refs)?: named.formUnion(refs)
+            case .count(let count)?: expected = max(expected ?? count, count)
+            case nil: break
+            }
+        }
         guard named.isEmpty else {
-            let missing = named.subtracting(written).sorted { lhs, rhs in lhs.description < rhs.description }
+            let missing = named.subtracting(written).sorted()
             return missing.isEmpty ? nil : missing
         }
-        guard let expected = transaction.compactMap({ event in event.files?.oldCount }).max() else {
+        guard let expected else {
             return nil
         }
         return written.count >= expected ? nil : []
@@ -71,24 +79,6 @@ struct IncompleteTransactions: Sendable {
             "The load does not apply the events of transactions that are not complete in all their log files",
             metadata: ["missingFiles": "\(holdDetail)"]
         )
-    }
-}
-
-extension TransactionFiles {
-    /// The local refs of the list, or `nil` for a count.
-    fileprivate var namedRefs: [LocalRef]? {
-        guard case .refs(let refs) = self else {
-            return nil
-        }
-        return refs
-    }
-
-    /// The count of an old line, or `nil` for a list.
-    fileprivate var oldCount: Int? {
-        guard case .count(let count) = self else {
-            return nil
-        }
-        return count
     }
 }
 

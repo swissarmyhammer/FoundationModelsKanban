@@ -69,6 +69,12 @@ struct LocalRefTests {
         #expect(ref.description == "comment/\(Self.commentULID)")
     }
 
+    @Test("Local refs sort by their text, not by the order of the node types")
+    func refsSortByText() throws {
+        let refs = try Self.refTexts.map(LocalRef.init(parsing:))
+        #expect(refs.sorted().map(\.description) == Self.refTexts.sorted())
+    }
+
     // MARK: - Malformed refs
 
     @Test(

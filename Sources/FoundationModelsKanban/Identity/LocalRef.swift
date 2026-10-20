@@ -69,6 +69,20 @@ enum LocalRef: Hashable, Sendable, CustomStringConvertible {
     }
 }
 
+// MARK: - Order
+
+extension LocalRef: Comparable {
+    /// Puts local refs in the order of their text, so that each list of refs that the code sorts has one order.
+    ///
+    /// - Parameters:
+    ///   - lhs: The first ref.
+    ///   - rhs: The second ref.
+    /// - Returns: `true` when the text of `lhs` comes before the text of `rhs`.
+    static func < (lhs: LocalRef, rhs: LocalRef) -> Bool {
+        lhs.description < rhs.description
+    }
+}
+
 // MARK: - Parse
 
 extension LocalRef {

@@ -469,7 +469,7 @@ struct CommitSession: Sendable {
         guard !refs.isEmpty else {
             return []
         }
-        let files = refs.sorted { lhs, rhs in lhs.description < rhs.description }.map(log.fileURL(for:))
+        let files = refs.sorted().map(log.fileURL(for:))
         _ = try await live.apply(changedPaths: files)
         await updateSearch()
         return files
@@ -897,7 +897,7 @@ private struct BoardWrite {
     ///
     /// - Throws: An ``EventLogError`` when a log file is not there or the fsync fails.
     func synchronize() throws(EventLogError) {
-        for ref in writtenNodes.sorted(by: { lhs, rhs in lhs.description < rhs.description }) {
+        for ref in writtenNodes.sorted() {
             try writer.synchronize(logOf: ref, in: live.log)
         }
     }

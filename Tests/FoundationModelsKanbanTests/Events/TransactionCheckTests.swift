@@ -57,7 +57,7 @@ struct TransactionCheckTests {
 
     // MARK: - Fixture
 
-    /// A board fixture and the events of one transaction that sets ``transactionTitle`` on two tasks of the board.
+    /// A board fixture and the events of one transaction that sets ``transactionTitle`` on tasks of the board.
     struct Fixture {
         /// The temporary folder. The value keeps it, so that the folder stays until the test ends.
         let directory: TemporaryDirectory
@@ -65,24 +65,40 @@ struct TransactionCheckTests {
         /// The event log of the board.
         let log: EventLog
 
-        /// The two tasks of the transaction.
+        /// The tasks of the test: the tasks of the transaction, and, in the stray-line test, the task of the stray
+        /// line.
         let tasks: [LocalRef]
 
-        /// The events of the transaction, one for each task, in the order of the tasks. No file holds them yet.
+        /// The named task whose line is missing, or `nil` when the test cuts off no named line.
+        let missing: LocalRef?
+
+        /// The events of the transaction, in the order of the tasks. No file holds them yet.
         let events: [Event]
+    }
+
+    /// The board of a fixture before the transaction: the temporary folder, its event log, and some fixture tasks.
+    typealias FixtureBoard = (directory: TemporaryDirectory, log: EventLog, tasks: [LocalRef])
+
+    /// Writes the board fixture to a new temporary folder.
+    ///
+    /// - Parameter taskCount: The count of the fixture tasks that the test uses.
+    /// - Returns: The folder, the event log, and the local refs of the first `taskCount` fixture tasks.
+    static func makeBoard(taskCount: Int) throws -> FixtureBoard {
+        let directory = try TemporaryDirectory()
+        let log = EventLog(repositoryAt: directory.url)
+        let tasks = Array(try LiveGraphApplyTests.writeBoard(to: log).prefix(taskCount))
+        return (directory, log, tasks)
     }
 
     /// Writes the board fixture, and makes the events of one transaction on two of its tasks.
     ///
     /// - Parameter files: The `files` value of each event of the transaction, made from the two tasks. The default
     ///   is the list of the refs of the two tasks.
-    /// - Returns: The fixture.
+    /// - Returns: The fixture, with no missing task.
     static func makeFixture(recording files: FilesRecord = namedFiles(of:)) throws -> Fixture {
-        let directory = try TemporaryDirectory()
-        let log = EventLog(repositoryAt: directory.url)
-        let tasks = Array(try LiveGraphApplyTests.writeBoard(to: log).prefix(transactionFileCount))
-        let events = try transactionEvents(settingTitleOf: tasks, recording: files(tasks))
-        return Fixture(directory: directory, log: log, tasks: tasks, events: events)
+        let board = try makeBoard(taskCount: transactionFileCount)
+        let events = try transactionEvents(settingTitleOf: board.tasks, recording: files(board.tasks))
+        return Fixture(directory: board.directory, log: board.log, tasks: board.tasks, missing: nil, events: events)
     }
 
     /// Makes the events of one transaction that sets ``transactionTitle`` on each of some tasks.
@@ -174,38 +190,18 @@ struct TransactionCheckTests {
         #expect(!incomplete.holdDetail.contains(fixture.tasks[0].description), "\(incomplete.holdDetail)")
     }
 
-    /// A board fixture and the lines of one transaction on two named tasks: the line of the first named task, and a
-    /// stray line of the same transaction in the file of a third task that the list does not name.
-    struct StrayFixture {
-        /// The temporary folder. The value keeps it, so that the folder stays until the test ends.
-        let directory: TemporaryDirectory
-
-        /// The event log of the board.
-        let log: EventLog
-
-        /// The three tasks: the two named tasks, and the task of the stray line.
-        let tasks: [LocalRef]
-
-        /// The named task whose line is missing.
-        let missing: LocalRef
-
-        /// The two lines: the line of the first named task, and the stray line. No file holds them yet.
-        let events: [Event]
-    }
-
-    /// Writes the board fixture, and makes the lines of ``StrayFixture``.
+    /// Writes the board fixture, and makes the lines of one transaction on two named tasks: the line of the first
+    /// named task, and a stray line of the same transaction in the file of a third task that the list does not name.
     ///
-    /// - Returns: The fixture.
-    static func makeStrayFixture() throws -> StrayFixture {
-        let directory = try TemporaryDirectory()
-        let log = EventLog(repositoryAt: directory.url)
-        let tasks = Array(try LiveGraphApplyTests.writeBoard(to: log).prefix(strayTestTaskCount))
-        let named = Array(tasks.prefix(transactionFileCount))
-        let events = try transactionEvents(settingTitleOf: tasks, recording: .named(named))
-        return StrayFixture(
-            directory: directory,
-            log: log,
-            tasks: tasks,
+    /// - Returns: The fixture with the three tasks, the second named task as the missing task, and the two lines.
+    static func makeStrayFixture() throws -> Fixture {
+        let board = try makeBoard(taskCount: strayTestTaskCount)
+        let named = Array(board.tasks.prefix(transactionFileCount))
+        let events = try transactionEvents(settingTitleOf: board.tasks, recording: .named(named))
+        return Fixture(
+            directory: board.directory,
+            log: board.log,
+            tasks: board.tasks,
             missing: named[1],
             events: [events[0], events[transactionFileCount]]
         )
@@ -214,12 +210,13 @@ struct TransactionCheckTests {
     @Test("At load, a line in an unnamed file does not complete a transaction with a named file missing")
     func loadHoldsTransactionWithStrayFile() async throws {
         let fixture = try Self.makeStrayFixture()
+        let missing = try #require(fixture.missing)
         try Self.write(fixture.events, to: fixture.log)
         let loaded = try await BoardLoader(reading: fixture.log).load()
         try Self.expectFixtureTitle(on: fixture.tasks, in: loaded.graph)
         #expect(loaded.heldEvents == fixture.events)
         let incomplete = IncompleteTransactions(among: fixture.events)
-        #expect(incomplete.missingFiles == [fixture.events[0].txn: [fixture.missing]])
+        #expect(incomplete.missingFiles == [fixture.events[0].txn: [missing]])
     }
 
     @Test("At load, a complete transaction is applied")
@@ -262,13 +259,11 @@ struct TransactionCheckTests {
 
     @Test("At load, a node that only a cut-off transaction makes is not in the graph")
     func loadHoldsNodeOfCutOffTransaction() async throws {
-        let directory = try TemporaryDirectory()
-        let log = EventLog(repositoryAt: directory.url)
-        _ = try LiveGraphApplyTests.writeBoard(to: log)
+        let board = try Self.makeBoard(taskCount: 0)
         let newTasks = [LocalRef.task(ULID()), LocalRef.task(ULID())]
         let events = try Self.transactionEvents(settingTitleOf: newTasks, recording: .named(newTasks))
-        try Self.write(events.prefix(1), to: log)
-        let loaded = try await BoardLoader(reading: log).load()
+        try Self.write(events.prefix(1), to: board.log)
+        let loaded = try await BoardLoader(reading: board.log).load()
         #expect(loaded.graph.slot(for: newTasks[0]).flatMap(loaded.graph.node(at:)) == nil)
         #expect(loaded.heldEvents == [events[0]])
     }
@@ -350,9 +345,9 @@ struct TransactionCheckTests {
 
     @Test("LiveGraph.reload holds a transaction again on all its nodes when one of its files is removed")
     func reloadHoldsTransactionWhenFileIsRemoved() async throws {
-        let directory = try TemporaryDirectory()
-        let log = EventLog(repositoryAt: directory.url)
-        let task = try #require(try LiveGraphApplyTests.writeBoard(to: log).first)
+        let board = try Self.makeBoard(taskCount: 1)
+        let log = board.log
+        let task = try #require(board.tasks.first)
         let newTask = LocalRef.task(ULID())
         let events = try Self.transactionEvents(settingTitleOf: [task, newTask], recording: .named([task, newTask]))
         try Self.write(events, to: log)
