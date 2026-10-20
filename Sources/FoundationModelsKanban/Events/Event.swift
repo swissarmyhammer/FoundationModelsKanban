@@ -43,10 +43,11 @@ struct Event: Codable, Hashable, Sendable {
     /// The transaction that this transaction reverses, only on the patches of `undo` and `redo`.
     let undoes: ULID?
 
-    /// The count of the log files of this board that the transaction wrote, or `nil` for a line with no count, for
-    /// example a line of an older version (divergence.md Q23). The load applies the events of a transaction only when
-    /// at least this count of files of the board have lines of the transaction. A line with no count is complete.
-    private(set) var files: Int?
+    /// The log files of this board that the transaction writes, or `nil` for a line with no field, for example a line
+    /// of an older version (divergence.md Q23). A new line names the local ref of each file. A line of an older
+    /// version can hold the count of the files. The load applies the events of a transaction only when the files have
+    /// all lines of the transaction (``IncompleteTransactions``). A line with no field is complete.
+    private(set) var files: TransactionFiles?
 
     /// The GraphQL document of the request.
     let query: String
@@ -69,7 +70,7 @@ struct Event: Codable, Hashable, Sendable {
     ///   - actor: The local ref of the actor.
     ///   - boards: The keys of the other boards that the transaction changes, or `nil` for this board only.
     ///   - undoes: The transaction that this transaction reverses, or `nil`.
-    ///   - files: The count of the log files of this board that the transaction wrote, or `nil` for no count.
+    ///   - files: The log files of this board that the transaction writes, or `nil` for no field.
     ///   - patch: The patch.
     init(
         id: ULID,
@@ -79,7 +80,7 @@ struct Event: Codable, Hashable, Sendable {
         actor: LocalRef,
         boards: [String]? = nil,
         undoes: ULID? = nil,
-        files: Int? = nil,
+        files: TransactionFiles? = nil,
         patch: PatchInput
     ) {
         self.id = id
@@ -147,15 +148,67 @@ extension Event {
         }
     }
 
-    /// Gives this event with the count of the log files of this board that its transaction writes (divergence.md
-    /// Q23).
+    /// Gives this event with the local refs of the log files of this board that its transaction writes (divergence.md
+    /// Q23). A write records only this list, never a count.
     ///
-    /// - Parameter count: The count of the log files.
-    /// - Returns: The event with the count, and the same other values.
-    func recording(fileCount count: Int) -> Event {
+    /// - Parameter refs: The local refs of the nodes of the log files, in any order.
+    /// - Returns: The event with the sorted refs, and the same other values.
+    func recording(files refs: some Sequence<LocalRef>) -> Event {
         var event = self
-        event.files = count
+        event.files = .named(refs)
         return event
+    }
+}
+
+// MARK: - Transaction files
+
+/// The log files of one board that a transaction writes, as each line of the transaction records them (divergence.md
+/// Q23).
+///
+/// In a line, the value is a JSON list of local refs, for example `["column/todo","task/01M5…"]`, or the JSON number
+/// of a line of an older version. The decode reads both forms. The encode writes the form that the value has, so that
+/// an old line that `collectBoards` merges into a board keeps its own field. A new write records only the list.
+enum TransactionFiles: Codable, Hashable, Sendable {
+    /// The count of the files, from a line of an older version. A count cannot tell which file is missing.
+    case count(Int)
+
+    /// The local refs of the nodes of the files, sorted by their text.
+    case refs([LocalRef])
+
+    /// The list of the local refs of some log files, sorted by their text, with no ref two times.
+    ///
+    /// - Parameter refs: The local refs of the nodes of the files, in any order.
+    /// - Returns: The ``refs(_:)`` value.
+    static func named(_ refs: some Sequence<LocalRef>) -> TransactionFiles {
+        .refs(Set(refs).sorted { lhs, rhs in lhs.description < rhs.description })
+    }
+
+    /// Reads the value from a JSON number or a JSON list of local refs.
+    ///
+    /// - Parameter decoder: The decoder.
+    /// - Throws: A decode error when the value is not a number and not a list of texts, or a ``NodeRefError`` when a
+    ///   text of the list is not a valid local ref.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let count = try? container.decode(Int.self) {
+            self = .count(count)
+        } else {
+            self = .refs(try container.decode([LocalRef].self))
+        }
+    }
+
+    /// Writes the value as a JSON number for a count, or as a JSON list of local refs.
+    ///
+    /// - Parameter encoder: The encoder.
+    /// - Throws: An encode error from the encoder.
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .count(let count):
+            try container.encode(count)
+        case .refs(let refs):
+            try container.encode(refs)
+        }
     }
 }
 

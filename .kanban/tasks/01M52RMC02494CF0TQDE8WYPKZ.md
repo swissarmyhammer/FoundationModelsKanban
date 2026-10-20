@@ -91,11 +91,27 @@ comments:
     - evidence: All 7 acceptance items and all 3 Review Findings items are checked. The finding at Commit.swift:873 is dropped by the user decision in divergence.md Q23 "Changed (2026-10-19)". The follow-up task ^ye4xk09 owns the change to a list of refs. No file is changed.
     - next: /review
   timestamp: 2026-10-20T00:53:40.239418+00:00
+- actor: claude-code
+  id: 01m5bcv28hn0z6ggphbehw1akr
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (c5f042b). 0 findings, 0 confirmed, 0 refuted. 0 files reviewed: 6 .kanban files excluded by .reviewignore, divergence.md has no matching validator. All prior Review Findings items are checked. The Commit.swift:873 item is dropped by divergence.md Q23 "Changed (2026-10-19)".
+    - next: task moved to done. ^ye4xk09 owns the change from a file count to a list of refs.
+  timestamp: 2026-10-20T00:54:32.977757+00:00
+- actor: claude-code
+  id: 01m5bcvcbpq1bq3ezgbhgxdfxn
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: no-change — all items checked; Commit.swift:873 dropped by divergence.md Q23 "Changed (2026-10-19)"
+    - test: not run — no code changed since the last green run (swift test, 1691 passed)
+    - commit: c5f042b
+    - review: clean — 0 findings
+  timestamp: 2026-10-20T00:54:43.318650+00:00
 depends_on:
 - 01M52RKV2MX3F84VYXAD5Y7AAY
 - 01M52RM3SJT6S3R1PVF99E0H99
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffa480
 title: Add collectBoards to combine .kanban folders into one target board
 ---
 ## What

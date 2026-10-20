@@ -125,31 +125,57 @@ struct EventTests {
         #expect(try event.encodedLine() == expected)
     }
 
-    // MARK: - File count
+    // MARK: - Transaction files
 
-    @Test("A line with a file count gives the count, and round-trips with the same bytes")
+    /// The `todo` column, a second log file of the transaction of the file list tests.
+    static let todoColumn = LocalRef.column(slug: "todo")
+
+    /// Makes a line of the test event with a `files` value.
+    ///
+    /// - Parameter files: The JSON text of the `files` value.
+    /// - Returns: The line, in the canonical form.
+    static func line(withFiles files: String) -> String {
+        #"{"actor":"actor/claude-code","at":"\#(atText)","files":\#(files),"#
+            + #""id":"\#(eventULID)","ops":["deleteTask"],"#
+            + #""query":"mutation($p: PatchInput!) { patch(input: $p) }","txn":"\#(txnULID)","#
+            + #""variables":{"p":{"delete":true,"node":"task/\#(taskULID)","type":"Task"}}}"#
+    }
+
+    @Test("An old line with a file count gives the count, and round-trips with the same bytes")
     func fileCountRoundTrips() throws {
-        let line = #"{"actor":"actor/claude-code","at":"\#(Self.atText)","files":\#(Self.fileCount),"#
-            + #""id":"\#(Self.eventULID)","ops":["deleteTask"],"#
-            + #""query":"mutation($p: PatchInput!) { patch(input: $p) }","txn":"\#(Self.txnULID)","#
-            + #""variables":{"p":{"delete":true,"node":"task/\#(Self.taskULID)","type":"Task"}}}"#
+        let line = Self.line(withFiles: "\(Self.fileCount)")
         let event = try Event(parsing: line)
-        #expect(event.files == Self.fileCount)
+        #expect(event.files == .count(Self.fileCount))
         #expect(try event.encodedLine() == line)
     }
 
-    @Test("An old line with no file count gives no count")
-    func oldLineHasNoFileCount() throws {
+    @Test("A line with a list of file refs gives the refs, and round-trips with the same bytes")
+    func fileRefsRoundTrip() throws {
+        let line = Self.line(withFiles: #"["\#(Self.todoColumn)","task/\#(Self.taskULID)"]"#)
+        let event = try Event(parsing: line)
+        #expect(event.files == .refs([Self.todoColumn, try Self.taskRef()]))
+        #expect(try event.encodedLine() == line)
+    }
+
+    @Test("A line whose list of file refs holds a ref that is not valid does not decode")
+    func invalidFileRefFails() {
+        let line = Self.line(withFiles: #"["not a ref"]"#)
+        #expect(throws: EventError.self) { try Event(parsing: line) }
+    }
+
+    @Test("An old line with no file field gives no files")
+    func oldLineHasNoFiles() throws {
         #expect(try Event(parsing: Self.planLine).files == nil)
     }
 
-    @Test("An event with a recorded file count writes it in its line")
-    func recordedFileCountIsWritten() throws {
+    @Test("An event with recorded file refs writes them in its line, sorted")
+    func recordedFileRefsAreWrittenSorted() throws {
         let event = try Self.makeEvent(ops: ["deleteTask"], patch: PatchInput(node: Self.taskRef(), delete: true))
-        let counted = event.recording(fileCount: Self.fileCount)
-        #expect(try Event(parsing: counted.encodedLine()).files == Self.fileCount)
-        #expect(counted.id == event.id)
-        #expect(counted.patch == event.patch)
+        let recorded = event.recording(files: [try Self.taskRef(), Self.todoColumn])
+        #expect(try recorded.encodedLine().contains(#""files":["\#(Self.todoColumn)","task/\#(Self.taskULID)"]"#))
+        #expect(try Event(parsing: recorded.encodedLine()).files == .refs([Self.todoColumn, try Self.taskRef()]))
+        #expect(recorded.id == event.id)
+        #expect(recorded.patch == event.patch)
     }
 
     // MARK: - The plan example

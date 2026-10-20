@@ -2,36 +2,47 @@ import ULID
 
 /// The transactions of a board that are not complete in all their log files (divergence.md Q23, S5).
 ///
-/// Each line of a transaction records the count of the log files of its board that the transaction wrote
+/// Each line of a transaction records the local refs of the log files of its board that the transaction writes
 /// (``Event/files``). A crash between the appends of two files, or a copy of the board that misses a file, leaves a
-/// transaction with lines in fewer files than that count. The load and the reload of a live graph do not apply the
-/// events of such a transaction: they hold them. A line with no count is complete. A held transaction applies when
-/// its missing lines arrive, for example when git brings the missing file, at the next load or reload.
+/// transaction with no line in a named file. The load and the reload of a live graph do not apply the events of such
+/// a transaction: they hold them. A line in a file that the list does not name cannot make the transaction complete.
+///
+/// A line of an older version can record the count of the files in place of the list. A transaction whose lines hold
+/// only counts is complete when its lines are in at least that count of files. When the lines of one transaction hold
+/// both forms, the list applies. A line with no field is complete. A held transaction applies when its missing lines
+/// arrive, for example when git brings the missing file, at the next load or reload.
 struct IncompleteTransactions: Sendable {
-    /// The ULIDs of the transactions that are not complete.
-    let ids: Set<ULID>
+    /// The local refs of the missing log files of each transaction that is not complete, sorted by their text, by the
+    /// ULID of the transaction. A transaction that the count check holds has an empty list, because a count cannot
+    /// tell which file is missing.
+    let missingFiles: [ULID: [LocalRef]]
 
     /// Finds the transactions that are not complete among the events of a board.
     ///
     /// - Parameter events: The events of all log files of the board, in any order.
     init(among events: some Sequence<Event>) {
-        ids = Set(
-            Dictionary(grouping: events, by: \.txn).compactMap { txn, transaction in
-                Self.isComplete(transaction) ? nil : txn
-            }
-        )
+        missingFiles = Dictionary(grouping: events, by: \.txn).compactMapValues(Self.missingFiles(of:))
     }
 
-    /// Tells if the events of one transaction are in at least as many log files as their file count says. A
-    /// transaction whose lines have no count is complete. When two lines have different counts, the largest applies.
+    /// Gives the missing log files of one transaction.
+    ///
+    /// The named files are the union of the lists of all lines of the transaction, so that a line that names more
+    /// files than a different line cannot make the transaction complete. With no list, the largest count applies.
     ///
     /// - Parameter transaction: The events of the transaction.
-    /// - Returns: `true` when the transaction is complete.
-    private static func isComplete(_ transaction: [Event]) -> Bool {
-        guard let expected = transaction.compactMap(\.files).max() else {
-            return true
+    /// - Returns: The sorted local refs of the named files with no line of the transaction, an empty list when the
+    ///   count check finds fewer files than the count, or `nil` when the transaction is complete.
+    private static func missingFiles(of transaction: [Event]) -> [LocalRef]? {
+        let written = Set(transaction.map(\.patch.node))
+        let named = Set(transaction.flatMap { event in event.files?.namedRefs ?? [] })
+        guard named.isEmpty else {
+            let missing = named.subtracting(written).sorted { lhs, rhs in lhs.description < rhs.description }
+            return missing.isEmpty ? nil : missing
         }
-        return Set(transaction.map(\.patch.node)).count >= expected
+        guard let expected = transaction.compactMap({ event in event.files?.oldCount }).max() else {
+            return nil
+        }
+        return written.count >= expected ? nil : []
     }
 
     /// Tells if the load holds an event: its transaction is not complete.
@@ -39,19 +50,45 @@ struct IncompleteTransactions: Sendable {
     /// - Parameter event: The event.
     /// - Returns: `true` when the transaction of the event is not complete.
     func holds(_ event: Event) -> Bool {
-        ids.contains(event.txn)
+        missingFiles[event.txn] != nil
     }
 
-    /// Records the transactions that are not complete with swift-log, so that the skip is not silent. No transaction
-    /// records nothing.
+    /// The detail of the hold warning: each transaction that is not complete, with the local refs of its missing log
+    /// files, in the order of the transaction ULIDs. A transaction that the count check holds names no file.
+    var holdDetail: String {
+        missingFiles.sorted { lhs, rhs in lhs.key < rhs.key }
+            .map { txn, refs in "\(txn.ulidString): [\(refs.map(\.description).joined(separator: ", "))]" }
+            .joined(separator: "; ")
+    }
+
+    /// Records the transactions that are not complete with swift-log, with the missing log files of each one, so that
+    /// the skip is not silent. No transaction records nothing.
     func recordHold() {
-        guard !ids.isEmpty else {
+        guard !missingFiles.isEmpty else {
             return
         }
         Log.kanban.warning(
             "The load does not apply the events of transactions that are not complete in all their log files",
-            metadata: ["transactions": "\(ids.map(\.ulidString).sorted())"]
+            metadata: ["missingFiles": "\(holdDetail)"]
         )
+    }
+}
+
+extension TransactionFiles {
+    /// The local refs of the list, or `nil` for a count.
+    fileprivate var namedRefs: [LocalRef]? {
+        guard case .refs(let refs) = self else {
+            return nil
+        }
+        return refs
+    }
+
+    /// The count of an old line, or `nil` for a list.
+    fileprivate var oldCount: Int? {
+        guard case .count(let count) = self else {
+            return nil
+        }
+        return count
     }
 }
 

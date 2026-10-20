@@ -6,11 +6,11 @@ import ULID
 @testable import FoundationModelsKanban
 
 /// Tests the write side of the crash safety of a transaction on many files (divergence.md Q23, S5): each line of a
-/// commit records the count of the files that the transaction wrote in its board, and the commit calls fsync on each
-/// file that it appended to, after all appends of the transaction.
+/// commit records the sorted local refs of the files that the transaction wrote in its board, and the commit calls
+/// fsync on each file that it appended to, after all appends of the transaction.
 ///
 /// Each test writes the board fixture to a temporary folder. No test reads the `.kanban/` folder of this repo.
-@Suite("Commit crash safety: file count and fsync", .watcherBudget)
+@Suite("Commit crash safety: file refs and fsync", .watcherBudget)
 struct CommitCrashSafetyTests {
     /// Runs one call of a session that sets ``CommitTests/callTitle`` on each of some tasks, one mutation field for
     /// each task.
@@ -41,10 +41,10 @@ struct CommitCrashSafetyTests {
         #expect(lastAppend < firstSynchronize)
     }
 
-    // MARK: - File count
+    // MARK: - File refs
 
-    @Test("Each line of a call that writes two files of the board records a file count of two")
-    func linesOfTwoFilesRecordTwo() async throws {
+    @Test("Each line of a call that writes two files of the board records the sorted refs of the two files")
+    func linesOfTwoFilesRecordBothRefs() async throws {
         let directory = try TemporaryDirectory()
         let (log, tasks) = try CommitTests.writeBoard(in: directory)
         var session = try await CommitTests.makeSession(of: log)
@@ -52,11 +52,11 @@ struct CommitCrashSafetyTests {
         try await Self.setCallTitle(of: written, in: &session)
         let events = try written.flatMap { task in try CommitTests.callEvents(of: task, in: log) }
         #expect(events.count == written.count)
-        #expect(events.map(\.files) == Array(repeating: written.count, count: events.count))
+        #expect(events.map(\.files) == Array(repeating: .named(written), count: events.count))
     }
 
-    @Test("Each line of a call that writes one file records a file count of one")
-    func linesOfOneFileRecordOne() async throws {
+    @Test("Each line of a call that writes one file records the ref of the one file")
+    func linesOfOneFileRecordOneRef() async throws {
         let directory = try TemporaryDirectory()
         let (log, tasks) = try CommitTests.writeBoard(in: directory)
         var session = try await CommitTests.makeSession(of: log)
@@ -71,18 +71,18 @@ struct CommitCrashSafetyTests {
         }
         let events = try CommitTests.callEvents(of: tasks[0], in: log)
         #expect(events.map(\.patch) == (try CommitTests.callTitlePatches(of: tasks[0])))
-        #expect(events.map(\.files) == Array(repeating: 1, count: events.count))
+        #expect(events.map(\.files) == Array(repeating: .named([tasks[0]]), count: events.count))
     }
 
-    @Test("The live graph after a commit holds the events with their file count, the same as a fresh load")
-    func liveEventsHoldFileCount() async throws {
+    @Test("The live graph after a commit holds the events with their file refs, the same as a fresh load")
+    func liveEventsHoldFileRefs() async throws {
         let directory = try TemporaryDirectory()
         let (log, tasks) = try CommitTests.writeBoard(in: directory)
         var session = try await CommitTests.makeSession(of: log)
         let written = [tasks[0], tasks[1]]
         try await Self.setCallTitle(of: written, in: &session)
         let liveCallEvents = session.live.events.filter { event in event.at == CommitTests.callTime }
-        #expect(liveCallEvents.map(\.files) == Array(repeating: written.count, count: written.count))
+        #expect(liveCallEvents.map(\.files) == Array(repeating: .named(written), count: written.count))
         try await LiveGraphApplyTests.expectEqualToFreshLoad(session.live, of: log)
     }
 

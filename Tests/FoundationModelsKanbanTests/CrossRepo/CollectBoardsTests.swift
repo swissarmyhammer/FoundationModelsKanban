@@ -414,6 +414,26 @@ struct CollectBoardsTests {
         withExtendedLifetime(fixture.sandbox) {}
     }
 
+    @Test("The lines of the collect transaction list only the files of its new lines, and a load applies them")
+    func collectTransactionListsOnlyItsFiles() async throws {
+        let fixture = try await Self.makeFixture()
+        let graph = try Self.makeTargetGraph(of: fixture)
+        _ = try await Self.collect(fixture.sourcePaths, on: graph)
+        await graph.close()
+        let events = try CrossRepoWriteTests.events(inRepoAt: fixture.target)
+        let collected = events.filter { event in event.ops == [MutationName.collectBoards] }
+        let merged = events.filter { event in event.ops != [MutationName.collectBoards] }
+        let txn = try #require(collected.first?.txn)
+        #expect(collected.allSatisfy { event in event.txn == txn })
+        #expect(collected.allSatisfy { event in event.files == .named(collected.map(\.patch.node)) }, "\(collected)")
+        #expect(!merged.isEmpty)
+        #expect(merged.allSatisfy { event in event.txn != txn && event.files != collected[0].files })
+        let loaded = try await BoardLoader(reading: EventLog(repositoryAt: fixture.target)).load()
+        #expect(Set(collected.map(\.id)).isSubset(of: loaded.events.map(\.id)), "\(loaded.events.map(\.id))")
+        #expect(!loaded.heldEvents.contains { event in event.txn == txn }, "\(loaded.heldEvents)")
+        withExtendedLifetime(fixture.sandbox) {}
+    }
+
     @Test("A write that fails keeps each source folder and leaves no event of the call in the target")
     func failedWriteKeepsSources() async throws {
         let fixture = try await Self.makeFixture()

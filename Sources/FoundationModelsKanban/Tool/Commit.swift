@@ -139,7 +139,7 @@ struct WorkingCopy: Sendable {
 
     /// The events of other boards that a `collectBoards` field added to this board, in the order that the field merged
     /// them (divergence.md M9). The commit writes them as they are: each keeps its id, its transaction, its `ops`, and
-    /// its file count, the same as a git union merge.
+    /// its own `files` value, the same as a git union merge.
     private(set) var merged: [Event] = []
 
     /// The source boards of a `collectBoards` field (divergence.md M9). The commit locks them with this board, checks
@@ -721,7 +721,7 @@ struct CommitSession: Sendable {
     /// locks, and no live graph changes. Thus no log keeps a part of the transaction.
     ///
     /// After the appends of all boards, the commit calls fsync on each file that it appended to (divergence.md Q23).
-    /// Each line records the count of the files of its board that the transaction wrote, so that a load after a
+    /// Each line records the local refs of the files of its board that the transaction writes, so that a load after a
     /// crash between two files does not apply a part of the transaction.
     ///
     /// - Parameters:
@@ -870,8 +870,9 @@ private struct BoardWrite {
     /// their node logs (plan.md §5.4 step 5.3, divergence.md M9). The live graph does not change:
     /// ``adopt(writing:)`` changes it after each append of each board succeeds.
     ///
-    /// Each kept patch records the count of the log files of the board that the transaction writes (divergence.md
-    /// Q23). A merged event keeps its own transaction, its `ops`, and its count.
+    /// Each kept patch records the sorted local refs of the log files of the board that the kept patches write
+    /// (divergence.md Q23). A merged event keeps its own transaction, its `ops`, and its own `files` value, so the list
+    /// of the transaction does not name a file that holds only merged events.
     ///
     /// - Parameters:
     ///   - operations: The names of the public mutations of the full call.
@@ -879,10 +880,10 @@ private struct BoardWrite {
     /// - Returns: The written events, in the order of their ids.
     /// - Throws: An ``EventLogError`` when a log file cannot be written.
     func append(recording operations: [String], changing keys: [String]) throws(EventLogError) -> [Event] {
-        let fileCount = keptNodes.count
+        let files = keptNodes
         let recorded = work.kept.map { event in
             event.recording(operations: operations, changing: keys, inBoard: key.description)
-                .recording(fileCount: fileCount)
+                .recording(files: files)
         }
         let written = work.merged + recorded
         for (ref, events) in OrderedDictionary(grouping: written, by: \.patch.node) {
