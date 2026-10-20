@@ -287,7 +287,9 @@ struct WorkingCopy: Sendable {
 
     /// Adds the events of other boards to the nodes of this board as they are (divergence.md M9, `collectBoards`), the
     /// same as a git union merge: each node folds again from its events and the new events, by event order. An event
-    /// that the node already has adds nothing. The commit writes the new events with no change.
+    /// that the node already has adds nothing. The commit writes the new events with no change. Each event that the
+    /// run makes after the merge has a larger id than each new event (divergence.md S3), so a later patch of the run
+    /// wins over a merged event in the event order.
     ///
     /// - Parameter events: The events of the node logs of the other boards, in any order.
     mutating func merge(_ events: [Event]) {
@@ -300,6 +302,7 @@ struct WorkingCopy: Sendable {
             }
             nodeEvents[ref] = graph.update(folding: current + added, for: ref)
             merged.append(contentsOf: added)
+            stamp.advance(past: added.map(\.id).max())
         }
     }
 

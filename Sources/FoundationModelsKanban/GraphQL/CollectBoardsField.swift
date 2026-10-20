@@ -114,7 +114,9 @@ extension BoardStore {
     ///
     /// The call adds the events of each node log of each source to the node log with the same name in the target, the
     /// same as a git union merge: tasks and comments keep their ULIDs, and a column, a tag, or an actor with the same
-    /// slug becomes one node. Replay decides a field that two boards set by the event order. One `collected` patch for
+    /// slug becomes one node. Replay decides a field that two boards set by the event order. The call also adds each
+    /// line of a source board log whose transaction wrote a merged node log, so that a load of the target applies each
+    /// merged transaction. The target keeps its own board ID, git key, and name. One `collected` patch for
     /// each source makes each name of the source an old name of the target. The call rewrites each old-name link of
     /// the target to the current name (`checkLinks` and `repairLinks`), so a `dependsOn` between two sources becomes a
     /// local ref. It lists each link of a different board that names a source, and rewrites it only with `reach`.
@@ -279,9 +281,10 @@ extension BoardStore {
             }
     }
 
-    /// Writes a `collectBoards` call in one transaction: the events of the sources, one `collected` patch for each
-    /// source, the repairs of the links of the target, and the repairs of the links of the other boards. The target
-    /// obeys the rules of ``runMutation(named:on:at:_:)``: a target with no board gets its board, with a new board ID.
+    /// Writes a `collectBoards` call in one transaction: the events of the sources, their board lines, one board patch
+    /// that keeps the names of the target, one `collected` patch for each source, the repairs of the links of the
+    /// target, and the repairs of the links of the other boards. The target obeys the rules of
+    /// ``runMutation(named:on:at:_:)``: a target with no board gets its board, with a new board ID.
     ///
     /// - Parameters:
     ///   - sources: The source boards.

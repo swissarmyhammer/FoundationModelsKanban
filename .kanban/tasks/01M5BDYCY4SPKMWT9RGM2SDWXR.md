@@ -18,8 +18,24 @@ comments:
     - evidence: 2 files: Sources/FoundationModelsKanban/CrossRepo/BoardCollect.swift, Sources/FoundationModelsKanban/Events/Loader.swift. `swift test`: 1701 tests in 140 suites passed, 0 failures. The only compiler warning is the accepted SwiftPM "missing creator" warning.
     - next: /review
   timestamp: 2026-10-20T01:18:21.324259+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5be8vtwez28fzkpfev431xj
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (bd8c15b); 0 findings, 0 confirmed, 0 refuted; 7 attempts, 0 failed; 2 source files reviewed, 6 .kanban files excluded by .reviewignore.
+    - next: none. The task is in done.
+  timestamp: 2026-10-20T01:19:33.724555+00:00
+- actor: claude-code
+  id: 01m5be955tp2x5k2z6j110exfw
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — CrossRepo/BoardCollect.swift, Events/Loader.swift
+    - test: green — swift test, 1701 passed (run by the implement step on the same tree)
+    - commit: bd8c15b
+    - review: clean — 0 findings
+  timestamp: 2026-10-20T01:19:43.290441+00:00
+position_column: done
+position_ordinal: ffa680
 title: Use the LocalRef order in BoardCollect and the loader in place of the text comparators
 ---
 ## What

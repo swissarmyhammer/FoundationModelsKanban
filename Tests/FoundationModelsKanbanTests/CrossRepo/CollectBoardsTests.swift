@@ -434,6 +434,46 @@ struct CollectBoardsTests {
         withExtendedLifetime(fixture.sandbox) {}
     }
 
+    @Test("A fresh load of the target after collect holds no event and has the task of each source")
+    func freshLoadHoldsNoMergedLine() async throws {
+        let fixture = try await Self.makeFixture()
+        let graph = try Self.makeTargetGraph(of: fixture)
+        _ = try await Self.collect(fixture.sourcePaths, on: graph)
+        await graph.close()
+        let loaded = try await BoardLoader(reading: EventLog(repositoryAt: fixture.target)).load()
+        #expect(loaded.heldEvents.isEmpty, "\(loaded.heldEvents)")
+        let tasks = try [fixture.first.task, fixture.second.task].map(AddUpdateTaskTests.firstTask(in:))
+        #expect(tasks.allSatisfy { task in loaded.graph.isLive(TaskNode.self, for: .task(task)) }, "\(tasks)")
+        withExtendedLifetime(fixture.sandbox) {}
+    }
+
+    /// The time step of the ULIDs of a target engine whose ids sort before each id of the sources: the time of the
+    /// fixture logs, one step before ``KanbanGraphTests/mutationIDs``.
+    static let earlyTargetStep = 0
+
+    @Test("The target keeps its board ID, git key, and name when it merges a board line of a source")
+    func targetKeepsItsBoardNames() async throws {
+        let sandbox = try GitSandbox()
+        let repo = try await sandbox.makeRepo(named: Self.firstSourceName, origin: BoardLocatorTests.appOrigin)
+        let source = try GitGraphFixture.makeGraph(at: repo, mintingFrom: KanbanGraphTests.mutationIDs)
+        _ = try await CrossRepoFixture.addTask(with: "", on: source)
+        await source.close()
+        let target = try GitSandbox.makeFolder(named: Self.targetName, in: sandbox.root)
+        let early = FixedULIDSource(at: ReplayTests.date(atStep: Self.earlyTargetStep))
+        let graph = try GitGraphFixture.makeGraph(at: target, mintingFrom: early)
+        _ = try await CrossRepoFixture.addTask(with: "", on: graph)
+        let before = try BoardIDTests.boardNode(inRepoAt: target)
+        _ = try await Self.collect([repo.path], on: graph)
+        await graph.close()
+        let after = try BoardIDTests.boardNode(inRepoAt: target)
+        #expect(after.ids == before.ids, "\(after.ids)")
+        #expect(after.gitKey == before.gitKey, "\(String(describing: after.gitKey))")
+        #expect(after.name == before.name, "\(after.name)")
+        let sourceKey = try CrossRepoFixture.keyText(of: BoardLocatorTests.appOrigin)
+        #expect(after.oldNames.contains(sourceKey), "\(after.oldNames)")
+        withExtendedLifetime(sandbox) {}
+    }
+
     @Test("A write that fails keeps each source folder and leaves no event of the call in the target")
     func failedWriteKeepsSources() async throws {
         let fixture = try await Self.makeFixture()
