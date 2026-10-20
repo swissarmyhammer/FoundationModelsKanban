@@ -45,8 +45,24 @@ comments:
     - evidence: 5 files — Sources/FoundationModelsKanban/CrossRepo/BoardCollect.swift, Sources/FoundationModelsKanban/Tool/Commit.swift, Sources/FoundationModelsKanban/GraphQL/CollectBoardsField.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CollectBoardsTests.swift, divergence.md; `swift test`: 1703 tests in 140 suites passed, only the accepted SwiftPM "missing creator" warning
     - next: /review ^16js6jx
   timestamp: 2026-10-20T01:38:02.285866+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5bfd8xkyxw0k8ya8vn3kt6q
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (bc0b378); 0 findings, 0 confirmed, 0 refuted; 7 validator runs, 0 failed. 4 files in .kanban/ are not reviewed (.reviewignore). divergence.md is not reviewed (no validator matches it).
+    - next: none. The task is in done.
+  timestamp: 2026-10-20T01:39:26.771452+00:00
+- actor: claude-code
+  id: 01m5bfdkr5grrh57qhrnz52m5f
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — CrossRepo/BoardCollect.swift, Tool/Commit.swift, GraphQL/CollectBoardsField.swift, CollectBoardsTests.swift, divergence.md
+    - test: green — swift test, 1703 passed (run by the implement step on the same tree)
+    - commit: bc0b378
+    - review: clean — 0 findings
+  timestamp: 2026-10-20T01:39:37.861298+00:00
+position_column: done
+position_ordinal: ffa780
 title: Merged collectBoards lines are held after a fresh load when their source transaction also wrote the source board log
 ---
 ## What
