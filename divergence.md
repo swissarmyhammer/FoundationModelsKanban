@@ -573,6 +573,13 @@ All 26 questions have a decision. Section 11 lists the changes to the code and t
 
 - Call fsync on each log file after the appends of a transaction.
 - At load, find each transaction (`txn`) that is not complete in all its files, and do not apply its events. Proposal, accepted in section 11: each event line of a transaction records the count of files that the transaction wrote in this board, so the load can see when a file is missing its part. The field is optional; an old line with no count counts as complete.
+- **Changed (2026-10-19): a list of refs replaces the count.** Each event line of a transaction records the local refs of all the log files that the transaction writes in this board, for example `"files": ["task/01M5…", "column/todo"]`.
+  - The load applies a transaction only when each named ref has a line with that `txn`. A file that the list does not name cannot make a transaction complete.
+  - The hold warning names the missing refs of each held transaction.
+  - The list is on each line of the transaction, so a union merge cannot lose it.
+  - A line with no field is complete. A line with the old number keeps the count check, so the current boards still load. A write records only the list.
+  - Reason: a count cannot tell which file is missing, and a wrong file with the same `txn` can fill it.
+  - Lines that a `collectBoards` call merges from a source keep their own `txn` and their own list. The list of the collect transaction names only the files that hold its new lines (the `collected` events and the link repairs). The merged lines are not part of the collect transaction.
 
 **Q24. Does the lock have a time limit that gives `BOARD_BUSY`?** (S6) **DECIDED:** No. Keep the current behavior: the lock waits with no time limit.
 

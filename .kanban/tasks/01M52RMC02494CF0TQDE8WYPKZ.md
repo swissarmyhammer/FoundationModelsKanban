@@ -75,10 +75,26 @@ comments:
     - blocker: the finding at Commit.swift:873 asks for `writtenNodes.count` as the Q23 file count. This conflicts with divergence.md Q23 and `IncompleteTransactions.isComplete` (Events/TransactionCheck.swift), which count only the nodes that hold lines of the same `txn`. Merged events keep their own `txn` and `files`. With the change, each load holds the collect transaction always.
     - next: a person decides. Drop the finding, or change the Q23 contract (for example, a second count for merged files). Then run /finish ^e8wypkz again.
   timestamp: 2026-10-19T19:41:59.788505+00:00
+- actor: claude-code
+  id: 01m5b5pbrpj7qc2knkp3qgsqpr
+  text: |-
+    ### decision — finding dropped
+    - The user decided Q23: a list of the refs of the written files replaces the count (divergence.md Q23, "Changed (2026-10-19)").
+    - The merged lines of a collect are not part of the collect transaction. `keptNodes` is the correct set. The finding at `Commit.swift:873` is dropped by this written rule.
+    - Follow-up: ^ye4xk09.
+    - next: `/finish ^e8wypkz` runs a fresh review to move the task to done.
+  timestamp: 2026-10-19T22:49:38.838687+00:00
+- actor: claude-code
+  id: 01m5bcserfj6phmefcmc4swzcb
+  text: |-
+    ### implement — no-change
+    - evidence: All 7 acceptance items and all 3 Review Findings items are checked. The finding at Commit.swift:873 is dropped by the user decision in divergence.md Q23 "Changed (2026-10-19)". The follow-up task ^ye4xk09 owns the change to a list of refs. No file is changed.
+    - next: /review
+  timestamp: 2026-10-20T00:53:40.239418+00:00
 depends_on:
 - 01M52RKV2MX3F84VYXAD5Y7AAY
 - 01M52RM3SJT6S3R1PVF99E0H99
-position_column: review
+position_column: doing
 position_ordinal: '80'
 title: Add collectBoards to combine .kanban folders into one target board
 ---
@@ -112,6 +128,6 @@ divergence.md M9 "collectBoards". A user can combine any list of `.kanban` folde
 > - `.kanban/ (from .reviewignore)` — 4 file(s)
 
 - [x] `Sources/FoundationModelsKanban/Tool/Commit.swift:295` `reuse/reuse` — The new merge(_:) builds the current event list of a node with the same expression that apply(_:at:undoing:) already uses. Two copies of this lookup can drift apart, for example if one side later changes its fallback to the live events. Move the expression into one private helper on WorkingCopy, for example `private func events(of ref: LocalRef) -> [Event]`, and call it from both apply(_:at:undoing:) and merge(_:).
-- [ ] `Sources/FoundationModelsKanban/Tool/Commit.swift:873` `completeness/invariant-propagation` — The Q23 file count recorded on each kept event is `keptNodes.count`, but the same transaction also appends merged events to the node logs in `writtenNodes` (`keptNodes` plus the nodes of `work.merged`). The count therefore omits every log file that only holds merged events. A load then treats the transaction as complete after fewer files than were written, so a crash that leaves only some of the files can pass the completeness check and apply a partial transaction. Use the same set for the count as for the writes: `let fileCount = writtenNodes.count`, and compute it before the `recorded` map. Add a test where a collect merges an event into a node that the kept patches do not touch, then check that the recorded `files` equals the number of node logs appended to.
+- [x] `Sources/FoundationModelsKanban/Tool/Commit.swift:873` `completeness/invariant-propagation` — The Q23 file count recorded on each kept event is `keptNodes.count`, but the same transaction also appends merged events to the node logs in `writtenNodes` (`keptNodes` plus the nodes of `work.merged`). The count therefore omits every log file that only holds merged events. A load then treats the transaction as complete after fewer files than were written, so a crash that leaves only some of the files can pass the completeness check and apply a partial transaction. Use the same set for the count as for the writes: `let fileCount = writtenNodes.count`, and compute it before the `recorded` map. Add a test where a collect merges an event into a node that the kept patches do not touch, then check that the recorded `files` equals the number of node logs appended to.
   - **BLOCKER (conflict with a documented contract):** divergence.md Q23 says that each line records "the count of files that the transaction wrote in this board". `IncompleteTransactions.isComplete` (Events/TransactionCheck.swift) groups the events by `txn` and compares the count with the number of distinct nodes that hold lines of that `txn`. A merged event keeps its own `txn` and its own `files`, so it is not part of the collect transaction. The lines of the collect transaction are only in the `keptNodes` logs. With `writtenNodes.count`, each load finds fewer files for the collect `txn` than the count, and holds the collect transaction always (its `collected` names and link repairs never apply). Thus the fix that the finding asks for breaks the load. A person must decide: drop the finding, or change the Q23 contract (for example, a second count for the merged files). The code is not changed for this item.
-- [x] `Tests/FoundationModelsKanbanTests/CrossRepo/CollectBoardsTests.swift:207` `reuse/reuse` — The `errorCode(of:)` helper rebuilds the `extensions.code` lookup that already exists in `ErrorCoverageTests.code(of:)`. The copy repeats the same error-to-code extraction, so a fix to one would not reach the other. Call `ErrorCoverageTests.code(of:)` on the first error from `NameRewriteTests.errors(of:)`, for example `try #require(ErrorCoverageTests.code(of: try #require(NameRewriteTests.errors(of: response).first)))`, and remove the local extraction.
+  - **RESOLVED BY DECISION (2026-10-19):** The user changed Q23. divergence.md Q23 "Changed (2026-10-19)" says: lines that a `collectBoards` call merges keep their own `txn` and their own list, and the list of the collect transaction names only the files that hold its new lines. Thus `keptNodes` is the correct set, and the finding is dropped. ^ye4xk09 replaces the count with a list of refs. No code change in this task.

@@ -31,8 +31,24 @@ comments:
     - evidence: 6 files — Sources/FoundationModelsKanban/CrossRepo/ScanChange.swift, Sources/FoundationModelsKanban/CrossRepo/ScanCache.swift, Sources/FoundationModelsKanban/Tool/KanbanHost.swift, Tests/FoundationModelsKanbanTests/CrossRepo/ScanChangeTests.swift, Tests/FoundationModelsKanbanTests/CrossRepo/ScanCacheTests.swift, Tests/FoundationModelsKanbanTests/CrossRepo/ScanMarksTests.swift; swift test: 1691 tests in 140 suites passed, 0 failures
     - next: review
   timestamp: 2026-10-19T20:06:52.576635+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5awkm520jjpk64v9f4azq4q
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (317bfbb). 6 files reviewed. 0 findings, 0 confirmed, 2 refuted, 0 failed.
+    - next: none. The task is in done.
+  timestamp: 2026-10-19T20:10:51.938761+00:00
+- actor: claude-code
+  id: 01m5awkx0mpggnzra78xh0s1wf
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 6 files
+    - test: green — swift test, 1691 passed
+    - commit: 317bfbb
+    - review: clean — 0 findings
+  timestamp: 2026-10-19T20:11:01.012052+00:00
+position_column: done
+position_ordinal: ffa380
 title: Expire the scan index only when the names of a board change
 ---
 ## What
