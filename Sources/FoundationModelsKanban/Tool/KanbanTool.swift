@@ -10,7 +10,10 @@ import FoundationModelsExtras
 ///
 /// The tool does not run a subscription. When the selected operation is a `subscription`, the tool gives the error
 /// `SUBSCRIPTION_NOT_IN_TOOL`, and the agent then polls `board { history(since:) }`.
-public struct KanbanTool: Tool {
+///
+/// The tool is a ``GraphQLEndpointTool`` (KANBAN-5, EXTRAS-9 rule 1): its one endpoint is the engine that it runs on,
+/// so a host gives a client the `kanban` endpoint over the same live graph and the same serial gate.
+public struct KanbanTool: GraphQLEndpointTool {
     /// The example query of the description. A test runs it, so that it cannot go out of date (plan.md §7.1).
     static let exampleQuery = """
         { board { name nextTask { id shortId title } tasks(filter: "#bug") { edges { node { id title } } } } }
@@ -83,6 +86,12 @@ public struct KanbanTool: Tool {
         self.graph = graph
     }
 
+    /// The endpoints of the tool: the one engine that the tool runs on. The engine is an actor, so each copy of the
+    /// tool gives the same instance, with the same serial gate.
+    public var graphQLEndpoints: [any GraphQLEndpoint] {
+        [graph]
+    }
+
     /// Runs the document of the arguments against the engine.
     ///
     /// A GraphQL error does not throw: the response has it in `errors`. Variables that are not a JSON object give the
@@ -95,6 +104,8 @@ public struct KanbanTool: Tool {
     /// The output is the response of the engine as it is, so the agent sees each warning of the call in
     /// `extensions.warnings` (plan.md §4.4).
     ///
+    /// The model has no client, so the call has no viewer: it reaches each board, the same as before the endpoint.
+    ///
     /// - Parameter arguments: The decoded arguments of the call.
     /// - Returns: The GraphQL response (`{data, errors}`) as JSON text with sorted keys.
     /// - Throws: An I/O fault of the engine, as ``KanbanGraph/execute(query:variables:operationName:)`` tells.
@@ -106,6 +117,7 @@ public struct KanbanTool: Tool {
                 query: query,
                 variables: variables,
                 operationName: operationName,
+                viewer: nil,
                 postingPlansTo: context
             )
         }

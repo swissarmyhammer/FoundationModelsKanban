@@ -58,6 +58,10 @@ extension KanbanResolver {
 // MARK: - Store
 
 extension BoardStore {
+    /// The name of the option of `repairLinks` that reaches each board of the scan, for the error of a call that
+    /// reaches only the board of its folder.
+    static let reachArgument = "\(MutationName.repairLinks)(reach: true)"
+
     /// Rewrites each stored link with an old board name to the current name of its board (divergence.md M9): the
     /// `dependsOn` edges, the assignee URIs, the task URLs in the bodies of the live tasks, and the line of each
     /// tombstone of a moved task. A link with the current key of its board gets a local ref in the stored form.
@@ -103,7 +107,7 @@ extension BoardStore {
         let named = try Self.boardReferences(arguments.boards).map { reference throws(KanbanError) in
             try target(of: .named(reference))
         }
-        let reached = arguments.reach == true ? reachableTargets() : []
+        let reached = arguments.reach == true ? try reachableTargets(for: Self.reachArgument) : []
         guard let reached, let named = named.allValues() else {
             return nil
         }

@@ -175,6 +175,15 @@ let answer = try await session.respond(to: "Which task is next?")
 
 The tool does not close the engine. The tool does not run a subscription.
 
+`KanbanTool` is also a `GraphQLEndpointTool` of FoundationModelsExtras. Its
+`graphQLEndpoints` is a list of one: the engine of the tool, also for a copy of
+the tool. `KanbanGraph` is that `GraphQLEndpoint`, with the name `kanban`, the
+version `1`, and the scope `sessionFolder`. A host gives it to a client, with the
+`GraphQLViewer` of the client in each `execute` and `subscribe` call. A `nil`
+viewer and a `userDevice` viewer reach each board. An `external` viewer reaches
+only the board of the folder of the engine: each other board gives the error
+`UNREACHABLE_BOARD`, the same for a board that exists and a board that does not.
+
 ### 4. Code mode
 
 In code mode, the model writes one JavaScript script that calls more than one

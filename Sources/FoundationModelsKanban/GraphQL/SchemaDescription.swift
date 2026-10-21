@@ -126,6 +126,26 @@ enum SchemaDescription {
 
     // MARK: - Board fields
 
+    /// The `Board.column` field (EXTRAS-9 rule 5).
+    static let boardColumn = singleItem(of: "column", forms: "its slug, its name, column/<slug>")
+
+    /// The `Board.actor` field (EXTRAS-9 rule 5).
+    static let boardActor = singleItem(of: "actor", forms: "its slug, its name, actor/<slug>")
+
+    /// The `Board.tag` field (EXTRAS-9 rule 5).
+    static let boardTag = singleItem(of: "tag", forms: "its slug, its name, tag/<slug>")
+
+    /// Gives the description of a single-item field of the board (EXTRAS-9 rule 5).
+    ///
+    /// - Parameters:
+    ///   - noun: The node type in lowercase, for example `column`.
+    ///   - forms: The short forms of the id of the node, for example `its slug, its name, column/<slug>`.
+    /// - Returns: The description.
+    private static func singleItem(of noun: String, forms: String) -> String {
+        "One live \(noun) of the board by its id: \(forms), or the full kanban:// URI. Null, with the error "
+            + "NOT_FOUND, when no live \(noun) has the id."
+    }
+
     /// The `Board.nextTask` field.
     static let nextTask = """
         The first task in board order that has the \(VirtualTag.ready.rawValue) virtual tag and matches the filter: \

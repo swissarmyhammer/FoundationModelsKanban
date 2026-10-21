@@ -135,7 +135,10 @@ extension BoardStore {
     ///   ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for a board ref.
     ///   ``KanbanError/notFound(type:reference:)`` for a board that cannot be read. An ``EventLogError`` when a
     ///   source cannot be read, or an ``EventError`` when a patch breaks a rule of the log. Then nothing is written.
+    ///   ``KanbanError/unreachableBoards(field:)`` when the call reaches only the board of its folder: the call reads
+    ///   other `.kanban` folders, so it is refused before it reads a source.
     func collectBoards(_ arguments: CollectBoardsArguments, at time: DateTime) throws -> CollectReport? {
+        try reach.checkReachesOtherBoards(for: MutationName.collectBoards)
         guard let target = try target(of: .named(arguments.target)) else {
             return nil
         }
@@ -145,7 +148,7 @@ extension BoardStore {
         }
         guard
             let sources = try collectedSources(named: arguments.sources ?? [], besides: root),
-            let others = otherTargets(besides: [root] + sources.map(\.root))
+            let others = try otherTargets(besides: [root] + sources.map(\.root))
         else {
             return nil
         }
@@ -255,9 +258,10 @@ extension BoardStore {
     ///
     /// - Parameter roots: The root directories of the target and of each source.
     /// - Returns: The boards in scan order, or `nil` when the engine did not scan or load a board yet.
-    private func otherTargets(besides roots: [URL]) -> [MutationTarget]? {
+    /// - Throws: ``KanbanError/unreachableBoards(field:)`` when the call reaches only the board of its folder.
+    private func otherTargets(besides roots: [URL]) throws(KanbanError) -> [MutationTarget]? {
         let paths = Set(roots.map(\.canonicalPath))
-        return reachableTargets()?.filter { target in
+        return try reachableTargets(for: MutationName.collectBoards)?.filter { target in
             view(of: target).source.map { source in !paths.contains(source.directory.canonicalPath) } ?? false
         }
     }

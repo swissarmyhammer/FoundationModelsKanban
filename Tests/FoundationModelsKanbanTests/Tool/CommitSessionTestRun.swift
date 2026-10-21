@@ -9,7 +9,7 @@ extension CommitSession {
     ///
     /// - Parameter call: Runs the call against the store of the working copy, and gives the response.
     /// - Returns: The response of the run that committed, or of the run that kept no patch.
-    /// - Throws: The error of ``run(actingAs:readingRelatedBoardsWith:storingRelatedBoardsWith:admittingCommitsWith:_:)``.
+    /// - Throws: The error of ``run(actingAs:reaching:readingRelatedBoardsWith:storingRelatedBoardsWith:admittingCommitsWith:_:)``.
     mutating func run<Response: Sendable>(
         _ call: @Sendable (BoardStore) async throws -> Response
     ) async throws -> Response {

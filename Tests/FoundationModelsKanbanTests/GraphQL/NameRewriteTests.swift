@@ -266,7 +266,7 @@ struct NameRewriteTests {
         "A root query field that only Board has moves into board",
         arguments: [("tasks", "tasks", " { totalCount }"), ("Tasks", "tasks", " { totalCount }"),
                     ("next_task", "nextTask", " { id }"), ("summaries", "summary", " { total }"),
-                    ("description", "body", ""), ("columnz", "columns", " { name }"),
+                    ("description", "body", ""), ("colunns", "columns", " { name }"),
                     ("history", "history", " { txn }"), ("getTask", "task", #"(id: "\#(Self.taskRef)") { title }"#),
                     ("listTasks", "tasks", " { totalCount }"), ("listColumns", "columns", " { name }"),
                     ("search", "searchTasks", #"(query: "x") { score }"#), ("next", "nextTask", " { id }")]

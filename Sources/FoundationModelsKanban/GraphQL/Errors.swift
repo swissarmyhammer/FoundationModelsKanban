@@ -86,6 +86,17 @@ enum KanbanError: CodedError, Hashable {
 
     /// `BOARD_BUSY`: the log of the board changed during each commit attempt (plan.md §5.4).
     case boardBusy(attempts: Int)
+
+    /// `UNREACHABLE_BOARD`: a client that reaches only the board of the folder of the call named a different board
+    /// (``BoardReach/ownBoard``; EXTRAS-9 rule 4). The reference is the board ref as the call wrote it. The call gives
+    /// this error before it looks for the board, so the error is the same for a board that exists and for a board
+    /// that does not.
+    case unreachableBoard(reference: String)
+
+    /// `UNREACHABLE_BOARD`: a client that reaches only the board of the folder of the call used a field that reads or
+    /// changes other boards, for example `boards` or `collectBoards` (``BoardReach/ownBoard``; EXTRAS-9 rule 4). The
+    /// field is the name of that field or argument.
+    case unreachableBoards(field: String)
 }
 
 // MARK: - Code and message
@@ -122,6 +133,7 @@ extension KanbanError {
         case .invalidOrdinal: "INVALID_ORDINAL"
         case .conflictingPlacement: "CONFLICTING_PLACEMENT"
         case .boardBusy: "BOARD_BUSY"
+        case .unreachableBoard, .unreachableBoards: "UNREACHABLE_BOARD"
         }
     }
 
@@ -191,8 +203,18 @@ extension KanbanError {
         case .boardBusy(let attempts):
             "The board changed during each of the \(attempts) commit attempts, so the call wrote nothing. "
                 + "Send the call again."
+        case .unreachableBoard(let reference):
+            "This client reaches only the board of the folder of its session, so the call cannot name the board "
+                + "\"\(reference)\". \(Self.ownBoardCorrection)"
+        case .unreachableBoards(let field):
+            "This client reaches only the board of the folder of its session, so the call cannot use \(field), "
+                + "which reaches other boards. \(Self.ownBoardCorrection)"
         }
     }
+
+    /// The correction for a call that reaches a board other than the board of the folder of its session.
+    static let ownBoardCorrection = "Leave out the board ref, or name the board of that folder, and then send the "
+        + "call again."
 
     /// Gives the noun of a node type in a message, for example `task`.
     ///

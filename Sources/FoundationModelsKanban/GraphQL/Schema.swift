@@ -26,6 +26,9 @@ actor BoardStore {
     /// The related boards that the run reads (plan.md §6.6).
     private var related: RelatedBoards
 
+    /// The boards that the call can read and change (EXTRAS-9 rule 4).
+    let reach: BoardReach
+
     /// The reads of related boards that the run asked for and that ``related`` does not answer yet. After the run,
     /// the engine loads them, and the call runs again (``CommitSession/run(readingRelatedBoardsWith:_:)``).
     private(set) var requests: Set<BoardRequest> = []
@@ -43,18 +46,21 @@ actor BoardStore {
     ///   - source: The directory, the search, and the events of the board. The default is `nil`: a board in memory
     ///     only.
     ///   - related: The related boards that the run reads. The default reads no related board.
+    ///   - reach: The boards that the call can read and change. The default reaches each board.
     init(
         working work: WorkingCopy,
         boardKey: String,
         actingAs sessionActor: SessionActor,
         from source: BoardSource? = nil,
-        reading related: RelatedBoards = .unavailable
+        reading related: RelatedBoards = .unavailable,
+        reaching reach: BoardReach = .allBoards
     ) {
         self.work = work
         self.boardKey = boardKey
         self.sessionActor = sessionActor
         self.source = source
         self.related = related
+        self.reach = reach
     }
 
     /// The read view of the working graph now. Its cross-board dependencies read the related boards of the run.
@@ -66,14 +72,15 @@ actor BoardStore {
     /// gate).
     ///
     /// GraphQLSwift runs each event of a subscription with the context of the `subscribe` call. Thus, before an event
-    /// runs, the store of that context gets the board as the engine read it through the serial gate.
+    /// runs, the store of that context gets the board as the engine read it through the serial gate. A store that
+    /// reaches only the board of its folder reads no related board of the event (``BoardReach/ownBoard``).
     ///
     /// - Parameter board: The board of the event.
     func replace(with board: EventBoard) {
         work = board.work
         boardKey = board.key
         source = board.source
-        related = board.related
+        related = reach.readsRelatedBoards ? board.related : .unavailable
         requests = []
         relatedWork = [:]
     }
@@ -120,10 +127,15 @@ actor BoardStore {
     ///   ``BoardResolution/notFound``), or `nil` when the engine did not resolve the ref yet. The store then records
     ///   the request, and the call runs again after the load.
     /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the ref.
+    ///   ``KanbanError/unreachableBoard(reference:)`` when the call reaches only the board of its folder and the ref
+    ///   names a different board.
     private func resolution(ofBoardNamed reference: String) throws(KanbanError) -> BoardResolution? {
         let resolver = RefResolver(graph: work.graph, boardKey: boardKey)
         if (try? resolver.storedRef(for: reference, ofType: .board)) != nil {
             return .current
+        }
+        guard reach.readsRelatedBoards else {
+            return try ownBoardResolution(of: reference)
         }
         guard let resolution = related.resolution(ofBoard: reference) else {
             requests.insert(.board(reference))
@@ -135,6 +147,25 @@ actor BoardStore {
         case .notFound:
             throw .boardNotFound(reference: reference, searchRoots: related.searchRoots.map(\.path))
         }
+    }
+
+    /// Finds the board that a board ref names, for a call that reaches only the board of its folder
+    /// (``BoardReach/ownBoard``). A path to the folder of the current board names the current board. Each other ref is
+    /// refused before the call looks for its board, so the refusal is the same for a board that exists and for a
+    /// board that does not.
+    ///
+    /// - Parameter reference: A board ref that names no name of the current board.
+    /// - Returns: ``BoardResolution/current``.
+    /// - Throws: ``KanbanError/unreachableBoard(reference:)`` when the ref is not a path to the folder of the current
+    ///   board.
+    private func ownBoardResolution(of reference: String) throws(KanbanError) -> BoardResolution {
+        guard
+            let directory = source?.directory,
+            BoardIndex.directory(ofPath: reference, currentRoot: directory)?.canonicalPath == directory.canonicalPath
+        else {
+            throw .unreachableBoard(reference: reference)
+        }
+        return .current
     }
 
     /// Finds the nodes of any type that some forgiving refs name, live or tombstoned: `Query.node` and
@@ -186,13 +217,18 @@ actor BoardStore {
         return try board?.node(for: text)
     }
 
+    /// The name of the root query field that lists the boards of the scan: `Query.boards`.
+    static let boardsField = "boards"
+
     /// Gives the read views of the copies of `Query.boards` (plan.md §6.6).
     ///
     /// - Parameter enabled: `true` for the enabled copies only, `false` for the copies that are not enabled only, or
     ///   `nil` for all copies.
     /// - Returns: The read views in scan order, or `nil` when the engine did not scan for the list yet. The store
     ///   then records the request, and the call runs again after the scan.
-    func listedViews(enabled: Bool?) -> [BoardView]? {
+    /// - Throws: ``KanbanError/unreachableBoards(field:)`` when the call reaches only the board of its folder.
+    func listedViews(enabled: Bool?) throws(KanbanError) -> [BoardView]? {
+        try reach.checkReachesOtherBoards(for: Self.boardsField)
         guard let copies = related.copies else {
             requests.insert(.allCopies)
             return nil
@@ -384,9 +420,12 @@ actor BoardStore {
     /// `Query.boards` (divergence.md M9, `repairLinks` with `reach`). A board that cannot be read is not in the list,
     /// and the warning of the response names it.
     ///
+    /// - Parameter field: The name of the field or of the argument that asks for the boards, for the error.
     /// - Returns: The boards in scan order, or `nil` when the engine did not scan for the list or load a board of it
     ///   yet. The store then records the request, and the call runs again after the load.
-    func reachableTargets() -> [MutationTarget]? {
+    /// - Throws: ``KanbanError/unreachableBoards(field:)`` when the call reaches only the board of its folder.
+    func reachableTargets(for field: String) throws(KanbanError) -> [MutationTarget]? {
+        try reach.checkReachesOtherBoards(for: field)
         guard let copies = related.copies else {
             requests.insert(.allCopies)
             return nil
@@ -695,9 +734,9 @@ struct KanbanResolver: Sendable {
     ///   - arguments: The enabled state of the boards to list, or no value for all boards.
     /// - Returns: The boards. The list is empty in a run that the engine runs again after it scans.
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when a graph has no board node. A loaded board always has
-    ///   one.
+    ///   one. ``KanbanError/unreachableBoards(field:)`` when the call reaches only the board of its folder.
     func boards(context: KanbanContext, arguments: BoardsArguments) async throws(KanbanError) -> [BoardObject] {
-        let views = await context.store.listedViews(enabled: arguments.enabled) ?? []
+        let views = try await context.store.listedViews(enabled: arguments.enabled) ?? []
         return try views.map { view throws(KanbanError) in try BoardObject(in: view) }
     }
 
@@ -921,7 +960,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Field("nodes", at: KanbanResolver.nodes) {
                     Argument("ids", at: \.ids)
                 }
-                Field("boards", at: KanbanResolver.boards) {
+                Field(BoardStore.boardsField, at: KanbanResolver.boards) {
                     Argument("enabled", at: \.enabled)
                 }
                 Field("checkLinks", at: KanbanResolver.checkLinks) {
@@ -960,6 +999,18 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Field("task", at: BoardObject.task) {
                     Argument("id", at: \.id)
                 }
+                Field("column", at: BoardObject.column) {
+                    Argument("id", at: \.id)
+                }
+                .description(SchemaDescription.boardColumn)
+                Field("actor", at: BoardObject.actor) {
+                    Argument("id", at: \.id)
+                }
+                .description(SchemaDescription.boardActor)
+                Field("tag", at: BoardObject.tag) {
+                    Argument("id", at: \.id)
+                }
+                .description(SchemaDescription.boardTag)
                 Field("tasks", at: BoardObject.tasks) {
                     Argument("filter", at: \.filter).description(SchemaDescription.taskFilter)
                     Argument("first", at: \.first).defaultValue(TasksArguments.defaultPageSize)

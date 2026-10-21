@@ -317,6 +317,30 @@ struct KanbanErrorTests {
         )
     }
 
+    @Test("UNREACHABLE_BOARD names the board ref and tells the caller to leave it out, with no word on the board")
+    func unreachableBoardMessage() {
+        let error = KanbanError.unreachableBoard(reference: CrossRepoReadTests.missingKey)
+        #expect(error.code == ViewerReachTests.unreachableCode)
+        #expect(
+            error.message
+                == "This client reaches only the board of the folder of its session, so the call cannot name the board "
+                + "\"\(CrossRepoReadTests.missingKey)\". Leave out the board ref, or name the board of that folder, and "
+                + "then send the call again."
+        )
+    }
+
+    @Test("UNREACHABLE_BOARD for a field that reaches other boards names the field and tells the caller to leave it out")
+    func unreachableBoardsMessage() {
+        let error = KanbanError.unreachableBoards(field: BoardStore.boardsField)
+        #expect(error.code == ViewerReachTests.unreachableCode)
+        #expect(
+            error.message
+                == "This client reaches only the board of the folder of its session, so the call cannot use boards, "
+                + "which reaches other boards. Leave out the board ref, or name the board of that folder, and then send "
+                + "the call again."
+        )
+    }
+
     @Test("SUBSCRIPTION_NOT_IN_TOOL with the kanban hint tells the agent to use the history")
     func subscriptionNotInToolMessage() {
         #expect(

@@ -37,6 +37,15 @@ enum KanbanFieldAliases {
         [type, "\(type)Id", "ref", "uri", "key"]
     }
 
+    /// The other keys of a column, an actor, or a tag in its single-item field of the board (EXTRAS-9 rule 5): the
+    /// aliases of a node ref, its slug, and its name.
+    ///
+    /// - Parameter type: The GraphQL name of the node type in lowercase, for example `column`.
+    /// - Returns: The aliases of `id`.
+    private static func itemAliases(ofType type: String) -> [String] {
+        refAliases(ofType: type) + ["slug", "name"]
+    }
+
     /// The aliases of the page size of a list.
     private static let pageSize = ["topK", "limit", "pageSize", "count", "size"]
 
@@ -139,6 +148,9 @@ enum KanbanFieldAliases {
         "Mutation.collectBoards": boardCollect,
         "Query.node": ["id": ["task", "column", "actor", "tag", "comment", "ref", "uri", "key", "nodeId"]],
         "Board.task": ["id": taskID],
+        "Board.column": ["id": itemAliases(ofType: "column")],
+        "Board.actor": ["id": itemAliases(ofType: "actor")],
+        "Board.tag": ["id": itemAliases(ofType: "tag")],
         "Board.tasks": ["first": pageSize, "after": ["cursor"]],
         "Board.searchTasks": ["first": pageSize],
         "Board.history": ["first": pageSize],

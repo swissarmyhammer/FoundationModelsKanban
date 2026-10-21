@@ -49,8 +49,24 @@ comments:
     - evidence: amended the unpushed HEAD 9523924 with a new message only (`git commit --amend --only`, nothing staged). New HEAD is 2fb3fe16825d227f9761e51750c2bb38ce6f7ebd, and `git diff 9523924 HEAD` is empty, so the tree did not change. `git status -sb` shows main ahead of origin/main by 2. The commit body now has the section "Intentional output changes": (1) introspection of `scalar DateTime`/`scalar JSON` returns the toolkit descriptions; (2) the KanbanTool parameter schema root is `GraphQLArguments` with the description "One GraphQL request." (before: `KanbanArguments`, "One GraphQL request to the kanban task graph."), and KanbanTool.description still gives the kanban context; (3) a subscription whose source stream throws a CodedError ends with one final coded `{"errors":[...]}` response and then ends normally. The finding `commit 9523924` `acceptance-criteria/tests` is checked [x].
     - next: /review ^jk3fc4g (review sha HEAD~1..HEAD at 2fb3fe1)
   timestamp: 2026-10-21T12:15:38.087178+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5f6nghtgc53qy94rp27m463
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` at 56646c4: engine counts findings 0, confirmed 0, refuted 0 (66 files reviewed; 6 .kanban/ files ignored by .reviewignore; plan.md has no validator; the code-hygiene Swift tool rules declined only the six deleted GraphQL files). `git diff 9523924 HEAD` touches only .kanban/tasks/01M5F234JM2BZEQ1TDMJK3FC4G.{md,jsonl}, so the code tree is the same as 9523924. The HEAD commit body has the section "Intentional output changes" with all three changes: (1) toolkit descriptions for `scalar DateTime`/`scalar JSON` in introspection; (2) parameter schema root `GraphQLArguments`, "One GraphQL request." (before: `KanbanArguments`, "One GraphQL request to the kanban task graph."); (3) a subscription whose source throws a CodedError ends with one final coded `{"errors":[...]}` response. The prior finding `commit 9523924` `acceptance-criteria/tests` is checked. All 5 acceptance criteria and both Tests items are now ticked, per the 07:06 acceptance check and the green test record (1700 tests in 140 suites, 0 failed).
+    - next: none. The task is in done. Commits are not pushed yet (main is 2 ahead of origin/main). ^d7sgpaz (KANBAN-5) is unblocked.
+  timestamp: 2026-10-21T12:23:37.274472+00:00
+- actor: claude-code
+  id: 01m5f6p8qtyvrszdfjdkmhdfpw
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — amended commit message to list intended output changes; finding checked
+    - test: green — code tree identical to 9523924 (1700 / 140 green); not re-run
+    - commit: 56646c4 (amend, folded .kanban state)
+    - review: clean — 0 findings
+  timestamp: 2026-10-21T12:24:02.042153+00:00
+position_column: done
+position_ordinal: ffa980
 title: Move the GraphQL layer to the Extras toolkit and align the GraphQL/Graphiti declarations with Extras
 ---
 ## What
@@ -69,15 +85,15 @@ Kanban-only parts stay: `RemovedParameters.swift` (old Rust parameter compat), t
 Package.swift (EXTRAS-9 rev 2 rule 2, the same as ACPAgent): keep declaring GraphQL and Graphiti, but only with the Extras URLs and Extras version floors (today `https://github.com/GraphQLSwift/GraphQL.git` from 4.3.0 and `https://github.com/GraphQLSwift/Graphiti.git` from 3.1.0, which kanban already has). Rewrite the manifest comments to say that the pins follow Extras and are not their own choice. The 57 `import GraphQL`/`import Graphiti` lines stay.
 
 ## Acceptance Criteria
-- [ ] No file under Sources/FoundationModelsKanban/GraphQL duplicates a toolkit part (CodedError protocol, ResponseWarnings, NameRewrite, DocumentRewriter, NameMatcher, VariableReads, JSONListText, DateTime/JSON scalars)
-- [ ] The GraphQL and Graphiti declarations in Package.swift use the same URLs and floors as FoundationModelsExtras/Package.swift
-- [ ] Alias names still rewrite and show in `extensions.rewrites`; old Rust parameter names still work
-- [ ] `extensions.txn` and `extensions.warnings` are unchanged for existing calls
-- [ ] A subscription through KanbanTool gives `SUBSCRIPTION_NOT_IN_TOOL`, with a hint that names the query to read again (rule 10)
+- [x] No file under Sources/FoundationModelsKanban/GraphQL duplicates a toolkit part (CodedError protocol, ResponseWarnings, NameRewrite, DocumentRewriter, NameMatcher, VariableReads, JSONListText, DateTime/JSON scalars)
+- [x] The GraphQL and Graphiti declarations in Package.swift use the same URLs and floors as FoundationModelsExtras/Package.swift
+- [x] Alias names still rewrite and show in `extensions.rewrites`; old Rust parameter names still work
+- [x] `extensions.txn` and `extensions.warnings` are unchanged for existing calls
+- [x] A subscription through KanbanTool gives `SUBSCRIPTION_NOT_IN_TOOL`, with a hint that names the query to read again (rule 10)
 
 ## Tests
-- [ ] The full existing suite is green (`swift test`), with no response JSON drift except intentional changes listed in the commit
-- [ ] The existing alias/rewrite, warnings and Rust-compat tests pass unchanged
+- [x] The full existing suite is green (`swift test`), with no response JSON drift except intentional changes listed in the commit
+- [x] The existing alias/rewrite, warnings and Rust-compat tests pass unchanged
 
 ## Review Findings (2026-10-21 07:06)
 

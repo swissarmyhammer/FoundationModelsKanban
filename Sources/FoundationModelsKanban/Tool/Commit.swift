@@ -522,6 +522,8 @@ struct CommitSession: Sendable {
     ///
     /// - Parameters:
     ///   - actor: The session actor: the actor of each event of the call.
+    ///   - reach: The boards that the call can read and change (EXTRAS-9 rule 4). The store of each run gets it. The
+    ///     default reaches each board.
     ///   - load: Loads the related boards of some requests, and gives the new related boards of the run. The value
     ///     must answer each request. The default loads no board, so the run reads no related board.
     ///   - store: Stores the sessions of the related boards that a commit attempt changed, and gives the new related
@@ -535,6 +537,7 @@ struct CommitSession: Sendable {
     ///   locked, or written. An error of the loader. The error of `admit`. The error of the call.
     mutating func run<Response: Sendable>(
         actingAs actor: SessionActor,
+        reaching reach: BoardReach = .allBoards,
         readingRelatedBoardsWith load: RelatedBoardLoad = { _, _ in .unavailable },
         storingRelatedBoardsWith store: RelatedBoardStore = { _, related in related },
         admittingCommitsWith admit: CommitAdmission = { _ in },
@@ -543,7 +546,13 @@ struct CommitSession: Sendable {
         let initialRequests = RelatedBoards.loadable.crossBoardRequests(of: live.graph, inBoard: key.description)
         var related = try await load(.loadable, initialRequests)
         for _ in 1...Self.maximumRuns {
-            let (response, work, relatedWork) = try await runReading(&related, actingAs: actor, loadingWith: load, call)
+            let (response, work, relatedWork) = try await runReading(
+                &related,
+                actingAs: actor,
+                reaching: reach,
+                loadingWith: load,
+                call
+            )
             guard work.hasChanges || relatedWork.contains(where: \.hasPatches) else {
                 return response
             }
@@ -569,6 +578,7 @@ struct CommitSession: Sendable {
     /// - Parameters:
     ///   - related: The related boards of the run. The loop gives the related boards of the last run back.
     ///   - actor: The session actor: the actor of each event of the call.
+    ///   - reach: The boards that the call can read and change.
     ///   - load: Loads the related boards of some requests.
     ///   - call: Runs the call against the store of the working copy, and gives the response.
     /// - Returns: The response, the working copy, and the working copy of each related board that the last run
@@ -577,6 +587,7 @@ struct CommitSession: Sendable {
     private mutating func runReading<Response: Sendable>(
         _ related: inout RelatedBoards,
         actingAs actor: SessionActor,
+        reaching reach: BoardReach,
         loadingWith load: RelatedBoardLoad,
         _ call: @Sendable (BoardStore) async throws -> Response
     ) async throws -> (response: Response, work: WorkingCopy, relatedWork: [RelatedWork]) {
@@ -586,7 +597,8 @@ struct CommitSession: Sendable {
                 boardKey: key.description,
                 actingAs: actor,
                 from: source,
-                reading: related
+                reading: related,
+                reaching: reach
             )
             let response = try await call(store)
             let work = await store.work

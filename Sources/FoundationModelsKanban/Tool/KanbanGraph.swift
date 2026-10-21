@@ -22,7 +22,12 @@ import GraphQL
 /// The view also reads the related boards: the boards of the other repos that the ``BoardLocator`` finds (plan.md
 /// §6.6). A call loads a related board when it names the board (`Query.board(id:)`, `Query.boards`, `node(id:)` with
 /// a URI of the board) or when a cross-board dependency reads it. The host keeps the board in memory after that.
-public actor KanbanGraph {
+///
+/// The view is the `kanban` ``GraphQLEndpoint`` of its folder (KANBAN-5, EXTRAS-9): ``KanbanTool`` gives it in
+/// ``KanbanTool/graphQLEndpoints``, so a host and the model use the same engine and the same serial gate. The
+/// ``GraphQLViewer`` of a call gives its reach (``BoardReach``): an `external` client reaches only the board of the
+/// working directory.
+public actor KanbanGraph: GraphQLEndpoint {
     /// The working directory of the session. The board is in the `.kanban/` directory of the top folder of its
     /// worktree, or outside git in the nearest folder up that has a `.kanban/` (divergence.md §16, M9).
     private let workingDirectory: URL
@@ -43,7 +48,7 @@ public actor KanbanGraph {
     private let observer: (any KanbanCallObserver)?
 
     /// The public schema that each call runs against.
-    private let schema: PublicSchema
+    private let publicSchema: PublicSchema
 
     /// The change feed of each board that the view loaded. The subscribers of the view are in them (plan.md §6.7).
     private let feeds = SessionFeeds()
@@ -98,7 +103,7 @@ public actor KanbanGraph {
         sessionActor = actor
         self.locator = locator
         self.observer = observer
-        schema = try PublicSchema(extendedWith: extend)
+        publicSchema = try PublicSchema(extendedWith: extend)
     }
 
     /// Makes a view with its own host, with a key reader, a clock, a session actor, a ULID source, a locator, an
@@ -181,6 +186,23 @@ public actor KanbanGraph {
         }
     }
 
+    // MARK: - Endpoint
+
+    /// The name of the endpoint: the name of the tool (EXTRAS-9 rule 1).
+    public nonisolated let name = "kanban"
+
+    /// The version of the schema of the endpoint (EXTRAS-9 rule 1). A change that removes or renames a field, or
+    /// makes a field stricter, increases it.
+    public nonisolated let version = "1"
+
+    /// The scope of the endpoint: the board of the folder of a session (EXTRAS-9 rule 3).
+    public nonisolated let scope = GraphQLEndpointScope.sessionFolder
+
+    /// The public schema of the view in the GraphQL schema definition language (SDL).
+    public nonisolated var schema: String {
+        publicSchema.sdl
+    }
+
     // MARK: - Public API
 
     /// Runs one GraphQL document against the board (plan.md §5.4).
@@ -198,7 +220,36 @@ public actor KanbanGraph {
     ///   when a log file cannot be read, locked, or written, or a ``BoardWatcherError`` when the file watcher of a
     ///   board cannot start.
     public func execute(query: String, variables: [String: Map], operationName: String?) async throws -> String {
-        try await execute(query: query, variables: variables, operationName: operationName, postingPlansTo: nil)
+        try await execute(query: query, variables: variables, operationName: operationName, viewer: nil)
+    }
+
+    /// Runs one GraphQL document against the board for a client, as ``execute(query:variables:operationName:)``
+    /// does (``GraphQLEndpoint``).
+    ///
+    /// The viewer gives the reach of the call (``BoardReach``): `nil` and a `userDevice` client reach each board, as
+    /// the call with no viewer does. An `external` client reaches only the board of the working directory, and each
+    /// ref to a different board gives `UNREACHABLE_BOARD`.
+    ///
+    /// - Parameters:
+    ///   - query: The GraphQL document.
+    ///   - variables: The values of the variables of the document.
+    ///   - operationName: The operation of the document to run, or `nil` when the document has one operation.
+    ///   - viewer: The client that makes the call, or `nil` for the agent of the session.
+    /// - Returns: The GraphQL response (`{data, errors}`) as JSON text with sorted keys.
+    /// - Throws: An I/O fault only, the same as ``execute(query:variables:operationName:)``.
+    public func execute(
+        query: String,
+        variables: [String: Map],
+        operationName: String?,
+        viewer: GraphQLViewer?
+    ) async throws -> String {
+        try await execute(
+            query: query,
+            variables: variables,
+            operationName: operationName,
+            viewer: viewer,
+            postingPlansTo: nil
+        )
     }
 
     /// Runs one GraphQL document against the board, as ``execute(query:variables:operationName:)`` does, and posts
@@ -210,6 +261,8 @@ public actor KanbanGraph {
     ///   - query: The GraphQL document.
     ///   - variables: The values of the variables of the document.
     ///   - operationName: The operation of the document to run, or `nil` when the document has one operation.
+    ///   - viewer: The client that makes the call, or `nil` for the agent of the session. It gives the reach of the
+    ///     call (``BoardReach``).
     ///   - context: The context of the tool call that gets the plans, or `nil` for no post.
     /// - Returns: The GraphQL response (`{data, errors}`) as JSON text with sorted keys.
     /// - Throws: An I/O fault only, the same as ``execute(query:variables:operationName:)``.
@@ -217,15 +270,18 @@ public actor KanbanGraph {
         query: String,
         variables: [String: Map],
         operationName: String?,
+        viewer: GraphQLViewer?,
         postingPlansTo context: ToolContext?
     ) async throws -> String {
-        try await runningOnBoard(postingPlansTo: context) { board, held in
+        let reach = BoardReach(viewer: viewer)
+        return try await runningOnBoard(postingPlansTo: context) { board, held in
             try await self.respond(
                 to: query,
                 variables: variables,
                 operationName: operationName,
                 on: board,
-                holding: held
+                holding: held,
+                reaching: reach
             )
         }
     }
@@ -255,6 +311,29 @@ public actor KanbanGraph {
         variables: [String: Map],
         operationName: String?
     ) async throws -> AsyncThrowingStream<String, Error> {
+        try await subscribe(query: query, variables: variables, operationName: operationName, viewer: nil)
+    }
+
+    /// Starts one GraphQL subscription against the board for a client, as
+    /// ``subscribe(query:variables:operationName:)`` does (``GraphQLEndpoint``).
+    ///
+    /// The viewer gives the reach of the subscription (``BoardReach``): an `external` client observes only the board
+    /// of the working directory, and the events of its stream read no other board.
+    ///
+    /// - Parameters:
+    ///   - query: The subscription document.
+    ///   - variables: The values of the variables of the document.
+    ///   - operationName: The operation of the document to run, or `nil` when the document has one operation.
+    ///   - viewer: The client that makes the call, or `nil` for the agent of the session.
+    /// - Returns: The GraphQL response (`{data, errors}`) of each event, as JSON text with sorted keys.
+    /// - Throws: An I/O fault only, the same as ``execute(query:variables:operationName:)``.
+    public func subscribe(
+        query: String,
+        variables: [String: Map],
+        operationName: String?,
+        viewer: GraphQLViewer?
+    ) async throws -> AsyncThrowingStream<String, Error> {
+        let reach = BoardReach(viewer: viewer)
         await host.register(self)
         return try await runningOnBoard(postingPlansTo: nil) { board, held in
             try await self.startSubscription(
@@ -262,7 +341,8 @@ public actor KanbanGraph {
                 variables: variables,
                 operationName: operationName,
                 on: board,
-                holding: held
+                holding: held,
+                reaching: reach
             )
         }
     }
@@ -507,6 +587,7 @@ public actor KanbanGraph {
     ///   - operationName: The operation of the document to run, or `nil`.
     ///   - board: The board of the working directory, or the error that stops each call.
     ///   - held: The gates that the call holds.
+    ///   - reach: The boards that the call can read and change.
     /// - Returns: The result of the call. Its value is the response as JSON text with sorted keys.
     /// - Throws: A ``BoardKeyError``, a ``BoardWatcherError``, or an ``EventLogError`` when a board cannot load or a
     ///   commit cannot write. ``GateShortfall`` when the call needs one more gate.
@@ -515,12 +596,14 @@ public actor KanbanGraph {
         variables: [String: Map],
         operationName: String?,
         on board: Result<BoardEngine, any Error>,
-        holding held: HeldGates
+        holding held: HeldGates,
+        reaching reach: BoardReach
     ) async throws -> CallResult<String> {
         let answer: (KanbanError, [ResponseWarning]) throws -> String = { failure, warnings in
             try failure.responseJSON(warnings: warnings)
         }
-        return try await runSchemaCall(on: board, holding: held, answeringFailureWith: answer) { schema, context in
+        let run = SchemaRun(board: board, held: held, reach: reach)
+        return try await runSchemaCall(run, answeringFailureWith: answer) { schema, context in
             try await schema.respond(
                 to: query,
                 variables: variables,
@@ -540,6 +623,7 @@ public actor KanbanGraph {
     ///   - operationName: The operation of the document to run, or `nil`.
     ///   - board: The board of the working directory, or the error that stops each call.
     ///   - held: The gates that the call holds.
+    ///   - reach: The boards that the subscription can read.
     /// - Returns: The result of the start. Its value is the response of each event as JSON text with sorted keys. A
     ///   subscription that cannot start gives a stream with one response with the error.
     /// - Throws: A ``BoardKeyError``, a ``BoardWatcherError``, or an ``EventLogError`` when a board cannot load.
@@ -548,7 +632,8 @@ public actor KanbanGraph {
         variables: [String: Map],
         operationName: String?,
         on board: Result<BoardEngine, any Error>,
-        holding held: HeldGates
+        holding held: HeldGates,
+        reaching reach: BoardReach
     ) async throws -> CallResult<AsyncThrowingStream<String, Error>> {
         // The warnings list of plan.md §4.4 is for a call: a response of a subscription has no warnings.
         let answer: (KanbanError, [ResponseWarning]) throws -> AsyncThrowingStream<String, Error> = { failure, _ in
@@ -558,7 +643,8 @@ public actor KanbanGraph {
                 continuation.finish()
             }
         }
-        return try await runSchemaCall(on: board, holding: held, answeringFailureWith: answer) { schema, context in
+        let run = SchemaRun(board: board, held: held, reach: reach)
+        return try await runSchemaCall(run, answeringFailureWith: answer) { schema, context in
             try await schema.subscribe(
                 to: query,
                 variables: variables,
@@ -575,8 +661,7 @@ public actor KanbanGraph {
     /// board or of a related board that the call names, gives `INCOMPATIBLE_BOARD` (divergence.md Q6).
     ///
     /// - Parameters:
-    ///   - board: The board of the working directory, or the error that stops each call.
-    ///   - held: The gates that the call holds.
+    ///   - run: The board of the working directory, the gates that the call holds, and the reach of the call.
     ///   - answer: Gives the output of a ``KanbanError`` that fails the call as a whole, from the error and the
     ///     warnings that the last run of the call collected (plan.md §4.4), for example the warnings of the removed
     ///     Rust parameters of a call that fails with `BOARD_BUSY`.
@@ -586,16 +671,15 @@ public actor KanbanGraph {
     /// - Throws: A ``BoardKeyError``, a ``BoardWatcherError``, or an ``EventLogError`` when a board cannot load or a
     ///   commit cannot write. ``GateShortfall`` when the call needs one more gate. An error from the JSON encoder.
     private func runSchemaCall<Output: Sendable>(
-        on board: Result<BoardEngine, any Error>,
-        holding held: HeldGates,
+        _ run: SchemaRun,
         answeringFailureWith answer: (KanbanError, [ResponseWarning]) throws -> Output,
         _ call: @Sendable (PublicSchema, KanbanContext) async throws -> Output
     ) async throws -> CallResult<Output> {
-        let schema = schema
+        let schema = publicSchema
         let lastRun = LastRunWarnings()
         do {
             return .completed(
-                try await runCall(on: board, holding: held, recordingWarningsIn: lastRun) { context in
+                try await runCall(run, recordingWarningsIn: lastRun) { context in
                     try await call(schema, context)
                 }
             )
@@ -616,8 +700,8 @@ public actor KanbanGraph {
     /// the changed files of a different process before the call fails.
     ///
     /// - Parameters:
-    ///   - board: The board of the working directory, or the error that stops each call.
-    ///   - held: The gates that the call holds.
+    ///   - run: The board of the working directory, the gates that the call holds, and the reach of the call. A
+    ///     call that reaches only the board of its folder loads no related board (``BoardReach/ownBoard``).
     ///   - lastRun: Gets the warnings collector of each run when the run starts, so that it holds the collector of the
     ///     last run when the call fails as a whole.
     ///   - call: Runs the document against the context of one run, and gives the response.
@@ -626,12 +710,12 @@ public actor KanbanGraph {
     ///   commits. A ``BoardKeyError``, a ``BoardWatcherError``, or an ``EventLogError`` when a board cannot load or a
     ///   commit cannot write. A ``KanbanError`` of the commit, for example ``KanbanError/boardBusy(attempts:)``.
     private func runCall<Response: Sendable>(
-        on board: Result<BoardEngine, any Error>,
-        holding held: HeldGates,
+        _ run: SchemaRun,
         recordingWarningsIn lastRun: LastRunWarnings,
         _ call: @Sendable (KanbanContext) async throws -> Response
     ) async throws -> Response {
-        let engine = try board.get()
+        let (held, reach) = (run.held, run.reach)
+        let engine = try run.board.get()
         guard held.holds(engine) else {
             throw GateShortfall(engines: [engine])
         }
@@ -644,8 +728,12 @@ public actor KanbanGraph {
         do {
             let response = try await session.run(
                 actingAs: sessionActor,
+                reaching: reach,
                 readingRelatedBoardsWith: { related, requests in
-                    try await self.relatedBoards(updating: related, toAnswer: requests, current: copy)
+                    guard reach.readsRelatedBoards else {
+                        return .unavailable
+                    }
+                    return try await self.relatedBoards(updating: related, toAnswer: requests, current: copy)
                 },
                 storingRelatedBoardsWith: { sessions, related in
                     await self.storeRelatedBoards(sessions, in: related, around: copy.directory)
@@ -1285,6 +1373,21 @@ extension Array where Element: Sendable {
         }
         return try results.sorted { lhs, rhs in lhs.position < rhs.position }.map { entry in try entry.result.get() }
     }
+}
+
+// MARK: - Schema run
+
+/// The inputs of one run of the public schema inside the serial gates: the board of the working directory, the
+/// gates that the call holds, and the reach of the call.
+private struct SchemaRun: Sendable {
+    /// The board of the working directory, or the error that stops each call.
+    let board: Result<BoardEngine, any Error>
+
+    /// The gates that the call holds.
+    let held: HeldGates
+
+    /// The boards that the call can read and change (EXTRAS-9 rule 4).
+    let reach: BoardReach
 }
 
 // MARK: - Call result
