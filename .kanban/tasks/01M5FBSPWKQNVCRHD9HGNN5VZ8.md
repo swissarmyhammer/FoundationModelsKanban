@@ -78,8 +78,24 @@ comments:
     - evidence: 6 files — Sources/FoundationModelsKanban/GraphQL/{ColumnActorMutations,CommentMutations,MutationResolvers,TaskOperationMutations,UndoMutations,SharedInputMutation}.swift. periphery scan: 0 generic_type_param findings (6 before). `swift test`: 1751 tests in 146 suites passed, no package warnings. IntegrationTests `swift build --build-tests`: Build complete. Findings 6/6 ticked; task left in doing, not committed.
     - next: /review
   timestamp: 2026-10-21T23:09:46.471445+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5gbrkb2xep5bfz2s0ce9yng
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (7ac384d) — 0 findings, 0 confirmed, 0 refuted; 7 validator runs attempted, 0 failed; 6 files reviewed, 2 .kanban files excluded by .reviewignore; all 6 findings from 2026-10-21 17:46 checked
+    - next: none — task moved to done
+  timestamp: 2026-10-21T23:11:55.746986+00:00
+- actor: claude-code
+  id: 01m5gbrxn8qm0jb0jw1az813m1
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — shared input structs expose inputTypeName from the Mutation marker (6 files)
+    - test: green — swift test 1751 tests / 146 suites; periphery 0 generic_type_param; IntegrationTests build-tests
+    - commit: 7ac384d
+    - review: clean — 0 findings, all 6 prior checked, task moved to done
+  timestamp: 2026-10-21T23:12:06.312106+00:00
+position_column: done
+position_ordinal: ffb180
 title: 'EXTRAS-9 rule 7: give each mutation the form verbNoun(input: VerbNounInput!)'
 ---
 ## What
