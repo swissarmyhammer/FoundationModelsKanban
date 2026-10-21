@@ -1,8 +1,20 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8680'
+comments:
+- actor: claude-code
+  id: 01m5g85e8qhn35vndr8tp47jkd
+  text: 'Research: verified against code. `Readiness.hasVirtualTag`: READY = live && !isDone && isReady; BLOCKED = live && !isReady (done or not); DELETED = isDeleted; DONE = live && isDone. `BlockerWalk.blockers`: a dependency blocks when `!isDone(target) || hasDependencyPath(from: target, to: slot)`; dependencies come from `Graph.liveDependencies`, which drops tombstoned targets; an unresolved target is not done (`related.isDone`). Terminal column = `ColumnOrder.terminal` = last live column by `order`. `FilterExpr.names` makes `^` and `~task` atoms name DELETED, so they also list deleted tasks (`SchemaDescription.taskFilter` says the same). `SchemaDescription.taskBlockedBy`: blockedBy lists each dependency that is not done or is in a cycle with the task, without unresolved ones — so SKILL.md''s "`blockedBy` lists the dependencies that are not done" is also wrong and in scope. SKILL.md already uses `INCOMPATIBLE_BOARD` (matches `Errors.swift`); no `BOARD_INCOMPATIBLE` in the file. KanbanSkillTests reads SKILL.md (virtual tag table names each tag, examples run). No validators match .md files.'
+  timestamp: 2026-10-21T22:09:02.231091+00:00
+- actor: claude-code
+  id: 01m5g88btbvv9xtw0xsbazsmq2
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Documentation/kanban/SKILL.md. Rewrote the nextTask ready sentence, the Dependencies lead sentence (a dependency blocks when not done or it leads back to the task; a dependency on a deleted task is ignored), the `blockedBy` bullet (lists the blocking dependencies, not the unresolved ones — the old "not done" wording missed done dependencies in a cycle), and the READY/BLOCKED/DELETED/DONE table rows (DELETED now names `^id` and `~task` atoms). `INCOMPATIBLE_BOARD` was already correct; no `BOARD_INCOMPATIBLE` in the file. `swift test --filter KanbanSkillTests`: 8 tests passed. `swift test`: 1750 tests in 146 suites passed, 0 failures, no compiler warnings (only the external mlx-swift bundle "missing creator" build-system note).
+    - next: /review. Not committed.
+  timestamp: 2026-10-21T22:10:38.027786+00:00
+position_column: doing
+position_ordinal: '80'
 title: Correct the READY, BLOCKED and DELETED text in Documentation/kanban/SKILL.md to match the virtual tag rules
 ---
 ## What
@@ -16,8 +28,8 @@ The code (`Readiness.hasVirtualTag`, `BlockerWalk.blockers(ofTaskAt:)`, `Graph.l
 Rewrite those lines so they are plainly true. Keep the wording short.
 
 ## Acceptance Criteria
-- [ ] The SKILL.md virtual tag table, the nextTask paragraph, and the blocked sentence match the code
-- [ ] KanbanSkillTests pass
+- [x] The SKILL.md virtual tag table, the nextTask paragraph, and the blocked sentence match the code
+- [x] KanbanSkillTests pass
 
 ## Tests
-- [ ] `swift test` is green
+- [x] `swift test` is green

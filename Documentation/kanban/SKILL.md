@@ -76,7 +76,7 @@ return r.data;
 
 ### 1. Get the next task
 
-`nextTask` gives the first ready task in board order: the column order, then the place in the column. A ready task is open, and each of its dependencies is done. Add a filter to choose the work.
+`nextTask` gives the first ready task in board order: the column order, then the place in the column. A ready task is live and not done, and no dependency blocks it. Add a filter to choose the work.
 
 ```js
 const r = await tools.kanban({ query: `{ board { nextTask(filter: "#bug") { id title ready } } }` });
@@ -206,11 +206,11 @@ return { titles, prefix: prefix.errors[0].extensions.code };
 
 ## Dependencies
 
-A task is blocked until each of its dependencies is done. A task is done when it is in the last column (the column with the highest `order`).
+A dependency blocks a task when it is not done, or when it leads back to the task through dependencies. A dependency on a deleted task is ignored. A task is done when it is in the last column (the column with the highest `order`).
 
 - Put the dependencies in `dependsOn`. The input name `blockedBy` also works, but `dependsOn` is the correct name.
 - A dependency on a task of the same board can be each ref of the table above. A dependency on a task of a different repo must be the full `kanban://<board-key>/task/<ULID>` URI.
-- `blockedBy` in a response lists the dependencies that are not done.
+- `blockedBy` in a response lists the dependencies that block the task. A dependency that does not resolve is not in it.
 - A dependency that no loaded board has blocks the task, and `unresolvedDependsOn` shows its URI. The write gives a warning: `DEPENDENCY_BOARD_NOT_FOUND` for a board that the tool cannot find, or `DEPENDENCY_TASK_NOT_FOUND` for a task that a found board does not have.
 - A dependency that makes a cycle gives `DEPENDENCY_CYCLE`.
 
@@ -282,11 +282,11 @@ The tool calculates these tags. A filter uses them as `#READY`, `#DONE`, and so 
 
 | Tag | The task |
 |---|---|
-| `READY` | is open, and each of its dependencies is done. |
-| `BLOCKED` | has at least one dependency that is not done. |
+| `READY` | is live and not done, and no dependency blocks it. |
+| `BLOCKED` | is live, and a dependency that is not deleted is not done or leads back to the task. |
 | `CONFLICT` | has a conflict block in its body, from a merge of two body changes. |
-| `DELETED` | is deleted. A list shows a deleted task only when the filter names `#DELETED`. |
-| `DONE` | is in the last column. |
+| `DELETED` | is deleted. A list shows a deleted task only when the filter names `#DELETED`, or has a `^id` or `~task` atom. |
+| `DONE` | is live, and it is in the terminal column: the last column. |
 | `HIGH` | is in the first third of the open tasks, in board order. |
 | `MEDIUM` | is in the second third of the open tasks. |
 | `LOW` | is in the last third of the open tasks. |

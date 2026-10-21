@@ -22,10 +22,26 @@ comments:
     - evidence: 5 files — Sources/FoundationModelsKanban/GraphQL/SchemaDescription.swift, Sources/FoundationModelsKanban/GraphQL/CollectBoardsField.swift, Sources/FoundationModelsKanban/CrossRepo/LinkCheck.swift, Sources/FoundationModelsKanban/Derived/VirtualTags.swift, Tests/Fixtures/kanban.graphql. Golden test RED, then recorded, then GREEN (4 passed). `swift test`: 1750 tests in 146 suites passed, exit 0. The only build warning is the third-party "missing creator for mutated node … mlx-swift_Cmlx.bundle". There are no package-code warnings. All 3 checkboxes are ticked. Not committed; the task stays in doing.
     - next: /review
   timestamp: 2026-10-21T22:05:10.024768+00:00
+- actor: claude-code
+  id: 01m5g83ab5b6ts91qgs7jt61nm
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (01c7e8d) — 0 findings, 0 confirmed, 0 refuted; 7 validator runs attempted, 0 failed; 4 files reviewed; 6 .kanban files excluded by .reviewignore; Tests/Fixtures/kanban.graphql matched no validator
+    - next: none — task moved to done
+  timestamp: 2026-10-21T22:07:52.677332+00:00
+- actor: claude-code
+  id: 01m5g83kks40849k8xzjg6h8qe
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — link, collect, virtual-tag descriptions and doc comments; golden re-recorded (5 files)
+    - test: green — swift test 1750 tests / 146 suites
+    - commit: 01c7e8d
+    - review: clean — 0 findings, task moved to done
+  timestamp: 2026-10-21T22:08:02.169097+00:00
 depends_on:
 - 01M5F23SEC4X5S9D80NESC56VK
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffaf80
 title: Correct the older schema descriptions that do not match their resolvers (links, collect results, virtual tags)
 ---
 ## What
