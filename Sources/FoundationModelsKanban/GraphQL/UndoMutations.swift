@@ -6,29 +6,21 @@ import ULID
 // MARK: - Names
 
 extension MutationName {
-    /// The mutation that reverses a transaction.
-    static let undo = "undo"
+    /// The mutation that reverses a transaction, and gives the `Change` that it wrote (EXTRAS-9 rule 7).
+    static let undoChange = "undoChange"
 
-    /// The mutation that reverses an undo transaction.
-    static let redo = "redo"
-}
-
-extension ReverseDirection {
-    /// The name of the public mutation of the direction, for the `ops` of the events.
-    fileprivate var operation: String {
-        switch self {
-        case .undo: MutationName.undo
-        case .redo: MutationName.redo
-        }
-    }
+    /// The mutation that reverses an undo transaction, and gives the `Change` that it wrote (EXTRAS-9 rule 7).
+    static let redoChange = "redoChange"
 }
 
 // MARK: - Arguments
 
-/// The `input` object of `undo` and `redo` (plan.md §4.2, §6.5).
-private struct UndoInput: Decodable, Sendable {
-    /// The transaction to reverse for `undo`, or the original transaction whose undo `redo` reverses, or `nil` for
-    /// the newest target of the session actor.
+/// The `input` object of `undoChange` or `redoChange` (plan.md §4.2, §6.5). Each mutation has its own `input` type,
+/// `UndoChangeInput` or `RedoChangeInput` (``SharedInputMutation``), that ``SchemaBuilder/makeReverseInput(of:)``
+/// gives.
+private struct ReverseInput<Mutation: SharedInputMutation>: Decodable, Sendable {
+    /// The transaction to reverse for `undoChange`, or the original transaction whose undo `redoChange` reverses, or
+    /// `nil` for the newest target of the session actor.
     let txn: NodeID?
 
     /// `true` to write the inverse also when a later transaction conflicts with it.
@@ -47,38 +39,49 @@ private struct UndoInput: Decodable, Sendable {
     let boards: [String]?
 }
 
+/// The `undoChange` mutation, for its `input` type `UndoChangeInput`.
+private enum UndoChangeMutation: SharedInputMutation {
+    /// The name of the mutation.
+    static let name = MutationName.undoChange
+}
+
+/// The `redoChange` mutation, for its `input` type `RedoChangeInput`.
+private enum RedoChangeMutation: SharedInputMutation {
+    /// The name of the mutation.
+    static let name = MutationName.redoChange
+}
+
 // MARK: - Resolvers
 
 extension KanbanResolver {
-    /// Resolves `Mutation.undo`: reverses a transaction with inverse patches (plan.md §6.5).
+    /// Resolves `Mutation.undoChange`: reverses a transaction with inverse patches (plan.md §6.5).
     ///
     /// - Parameters:
     ///   - context: The context of the call.
-    ///   - arguments: The transaction, the force flag, the board, and the named copies. The `input` argument is
-    ///     optional, because ``UndoInput`` has no required field (plan.md §4.2). No `input` gives the newest target
-    ///     and no force.
+    ///   - arguments: The transaction, the force flag, the board, and the named copies. ``ReverseInput`` has no
+    ///     required field (plan.md §4.2), so `input: {}` gives the newest target and no force.
     /// - Returns: The change that the undo wrote. The GraphQL field is nullable, so that an error gives `null` for this
     ///   field only, and the other fields of the call keep their data.
     /// - Throws: An error of ``BoardStore/reverse(_:with:at:)``.
-    fileprivate func undo(
+    fileprivate func undoChange(
         context: KanbanContext,
-        arguments: OptionalInputArguments<UndoInput>
+        arguments: InputArguments<ReverseInput<UndoChangeMutation>>
     ) async throws -> Change? {
         try await context.store.reverse(.undo, with: arguments.input, at: context.clock())
     }
 
-    /// Resolves `Mutation.redo`: reverses an undo transaction with inverse patches (plan.md §6.5).
+    /// Resolves `Mutation.redoChange`: reverses an undo transaction with inverse patches (plan.md §6.5).
     ///
     /// - Parameters:
     ///   - context: The context of the call.
-    ///   - arguments: The transaction, the force flag, the board, and the named copies. The `input` argument is
-    ///     optional, the same as for `undo`.
+    ///   - arguments: The transaction, the force flag, the board, and the named copies. `input: {}` gives the newest
+    ///     target and no force, the same as for `undoChange`.
     /// - Returns: The change that the redo wrote. The GraphQL field is nullable, so that an error gives `null` for this
     ///   field only, and the other fields of the call keep their data.
     /// - Throws: An error of ``BoardStore/reverse(_:with:at:)``.
-    fileprivate func redo(
+    fileprivate func redoChange(
         context: KanbanContext,
-        arguments: OptionalInputArguments<UndoInput>
+        arguments: InputArguments<ReverseInput<RedoChangeMutation>>
     ) async throws -> Change? {
         try await context.store.reverse(.redo, with: arguments.input, at: context.clock())
     }
@@ -87,9 +90,9 @@ extension KanbanResolver {
 // MARK: - Store
 
 extension BoardStore {
-    /// Runs one `undo` or `redo` field: finds the target transaction, checks the conflicts, writes the inverse
-    /// patches with `undoes` = the target in each board that the transaction changed, and gives the change that the
-    /// field wrote (plan.md §6.5, many boards).
+    /// Runs one `undoChange` or `redoChange` field: finds the target transaction, checks the conflicts, writes the
+    /// inverse patches with `undoes` = the target in each board that the transaction changed, and gives the change
+    /// that the field wrote (plan.md §6.5, many boards).
     ///
     /// The field searches the board that the input names, else the current board and the loaded related boards. A
     /// transaction that spans boards names the keys of the other boards in `boards`. The field finds each copy of
@@ -99,7 +102,8 @@ extension BoardStore {
     ///
     /// - Parameters:
     ///   - direction: `undo` or `redo`.
-    ///   - input: The transaction, the force flag, the board, and the named copies, or `nil`.
+    ///   - input: The transaction, the force flag, the board, and the named copies. The mutation of the `input` type
+    ///     is the public mutation of the field, and its name is the operation of the events.
     ///   - time: The time of the change.
     /// - Returns: The change of the patches that the field kept, with the updates of each board, or `nil` when the
     ///   engine did not load a board yet. The store then records the request, and the call runs again after the load.
@@ -111,23 +115,23 @@ extension BoardStore {
     ///   transaction conflicts and the call does not force: also a later transaction of a different loaded board that
     ///   refers to a node that the undo makes a tombstone (divergence.md X6). An error of a graph rule (plan.md §3.3).
     ///   An ``EventError`` when a patch breaks a rule of the log.
-    fileprivate func reverse(
+    fileprivate func reverse<Mutation: SharedInputMutation>(
         _ direction: ReverseDirection,
-        with input: UndoInput?,
+        with input: ReverseInput<Mutation>,
         at time: DateTime
     ) throws -> Change? {
-        let searched = try searchedBoards(namedBy: input?.board)
-        let named = try targets(namedBy: input?.boards ?? [])
+        let searched = try searchedBoards(namedBy: input.board)
+        let named = try targets(namedBy: input.boards ?? [])
         guard let searched, let named else {
             return nil
         }
-        let found = try newestTarget(of: direction, named: input?.txn?.text, in: searched)
+        let found = try newestTarget(of: direction, named: input.txn?.text, in: searched)
         guard let boards = try boards(of: found.txn, foundIn: found.board, among: named) else {
             return nil
         }
-        let (actor, isForced) = (sessionActor, input?.force == true)
+        let (actor, isForced) = (sessionActor, input.force == true)
         let references = isForced ? [] : try laterReferences(to: found.txn, tombstonedIn: boards)
-        let changes = try runField(as: direction.operation, inEach: boards) { work, key in
+        let changes = try runField(as: Mutation.name, inEach: boards) { work, key in
             try work.applyMutationRules(actingAs: actor, inBoard: key, at: time) { work in
                 try work.reverse(found.txn, forcing: isForced, alsoConflictingWith: references, inBoard: key, at: time)
             }
@@ -433,23 +437,43 @@ extension NodeInverse {
 // MARK: - Schema
 
 extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanContext {
-    /// Adds the `undo` and `redo` mutations and their `input` type (plan.md §4.2, §6.5). Each one gives the `Change`
-    /// that it wrote.
+    /// Gives the `input` type of `undoChange` or `redoChange` (``ReverseInput``), with the name of the mutation
+    /// (EXTRAS-9 rule 7), so that the fields have one definition.
+    ///
+    /// - Parameter mutation: The mutation of the `input` type.
+    /// - Returns: The `input` type `<Mutation>Input`, with its fields `txn`, `force`, `board`, and `boards`.
+    fileprivate static func makeReverseInput<Mutation: SharedInputMutation>(
+        of mutation: Mutation.Type
+    ) -> Input<KanbanResolver, KanbanContext, ReverseInput<Mutation>> {
+        Input(ReverseInput<Mutation>.self, as: mutation.inputTypeName) {
+            InputField("txn", at: \.txn).description(SchemaDescription.undoTransaction)
+            InputField("force", at: \.force).description(SchemaDescription.undoForce)
+            InputField("board", at: \.board).description(SchemaDescription.boardOfTransaction)
+            InputField("boards", at: \.boards).description(SchemaDescription.copiesOfTransaction)
+        }
+        .description(SchemaDescription.mutationFields(of: mutation.name))
+    }
+
+    /// Adds the `undoChange` and `redoChange` mutations and their `input` types (plan.md §4.2, §6.5). Each one gives
+    /// the `Change` that it wrote.
     ///
     /// - Returns: This builder, for method chaining.
     func addUndoMutations() -> Self {
         add {
-            Input(UndoInput.self) {
-                InputField("txn", at: \.txn).description(SchemaDescription.undoTransaction)
-                InputField("force", at: \.force).description(SchemaDescription.undoForce)
-                InputField("board", at: \.board).description(SchemaDescription.boardOfTransaction)
-                InputField("boards", at: \.boards).description(SchemaDescription.copiesOfTransaction)
-            }
-            .description(SchemaDescription.undoInput)
+            Self.makeReverseInput(of: UndoChangeMutation.self)
+            Self.makeReverseInput(of: RedoChangeMutation.self)
         }
         .addMutation {
-            Self.mutationField(MutationName.undo, at: KanbanResolver.undo, description: SchemaDescription.undo)
-            Self.mutationField(MutationName.redo, at: KanbanResolver.redo, description: SchemaDescription.redo)
+            Self.mutationField(
+                MutationName.undoChange,
+                at: KanbanResolver.undoChange,
+                description: SchemaDescription.undoChange
+            )
+            Self.mutationField(
+                MutationName.redoChange,
+                at: KanbanResolver.redoChange,
+                description: SchemaDescription.redoChange
+            )
         }
     }
 }

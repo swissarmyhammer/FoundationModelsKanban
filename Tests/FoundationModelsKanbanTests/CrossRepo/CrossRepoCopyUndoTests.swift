@@ -4,10 +4,10 @@ import ULID
 
 @testable import FoundationModelsKanban
 
-/// Tests `undo` and `redo` of a call that changed the current board and the second copy of a related repo
-/// (divergence.md X5, S8): each worktree has its own board with the same key, so the `boards` value of the events
-/// cannot tell which copy the call changed. The undo finds each copy by its events, writes nothing when no loaded
-/// copy has them, and takes a copy that its `boards` input names by a path.
+/// Tests `undoChange` and `redoChange` of a call that changed the current board and the second copy of a related
+/// repo (divergence.md X5, S8): each worktree has its own board with the same key, so the `boards` value of the
+/// events cannot tell which copy the call changed. The undo finds each copy by its events, writes nothing when no
+/// loaded copy has them, and takes a copy that its `boards` input names by a path.
 ///
 /// Each test makes the current repo, the related repo, and a worktree of the related repo in a ``GitSandbox``. The
 /// related repo comes first in scan order, so its key resolves to the first copy, and the worktree is the second
@@ -137,20 +137,20 @@ struct CrossRepoCopyUndoTests {
         expectOneReverse(of: call.txn, wrote: try lastEvents(of: call, in: repos), deleting: true)
     }
 
-    /// Expects that one `undo` or `redo` transaction that reversed a transaction wrote each event, with
+    /// Expects that one `undoChange` or `redoChange` transaction that reversed a transaction wrote each event, with
     /// `undoes` = the reversed transaction.
     ///
     /// - Parameters:
-    ///   - txn: The reversed transaction: the call for an `undo`, the undo for a `redo`.
+    ///   - txn: The reversed transaction: the call for an `undoChange`, the undo for a `redoChange`.
     ///   - events: The newest event of each task that the call added.
-    ///   - isDeleted: `true` when each event must be a tombstone (an `undo` of the call), `false` when each event must
-    ///     make the task live again (a `redo` of the call).
+    ///   - isDeleted: `true` when each event must be a tombstone (an `undoChange` of the call), `false` when each
+    ///     event must make the task live again (a `redoChange` of the call).
     static func expectOneReverse(of txn: ULID, wrote events: [Event], deleting isDeleted: Bool) {
         #expect(events.allSatisfy { event in event.patch.delete == isDeleted && event.undoes == txn }, "\(events)")
         #expect(Set(events.map(\.txn)).count == 1)
     }
 
-    /// Makes the `input` fields of an `undo` of a transaction with a `boards` list.
+    /// Makes the `input` fields of an `undoChange` of a transaction with a `boards` list.
     ///
     /// - Parameters:
     ///   - txn: The transaction to reverse.
@@ -189,7 +189,7 @@ struct CrossRepoCopyUndoTests {
         let app = try GitGraphFixture.makeGraph(at: repos.app)
         let call = try await Self.addTaskToAppAndSecondCopy(of: repos, on: app)
         try await CrossRepoUndoTests.runWithNoErrors(CrossRepoUndoTests.undoField, on: app)
-        let redo = UndoTests.reverseField(MutationName.redo, with: "")
+        let redo = UndoTests.reverseField(MutationName.redoChange, with: "")
         try await CrossRepoUndoTests.runWithNoErrors(redo, on: app)
         let events = try Self.lastEvents(of: call, in: repos)
         #expect(events.allSatisfy { event in event.patch.delete == false && event.undoes != nil }, "\(events)")
@@ -203,19 +203,20 @@ struct CrossRepoCopyUndoTests {
         let writer = try await host.session(workingDirectory: repos.app, actor: KanbanHostTests.firstActor)
         let call = try await Self.addTaskToAppAndSecondCopy(of: repos, on: writer)
         let reader = try await host.session(workingDirectory: repos.app, actor: KanbanHostTests.secondActor)
-        let undo = UndoTests.reverseField(MutationName.undo, with: UndoTests.txnInput(call.txn))
+        let undo = UndoTests.reverseField(MutationName.undoChange, with: UndoTests.txnInput(call.txn))
         try await CrossRepoUndoTests.runWithNoErrors(undo, on: reader)
         try Self.expectUndone(call, in: repos)
         await host.close()
     }
 
-    @Test("undo(boards:) with the path of the second copy reaches a copy that no engine loaded")
+    @Test("undoChange(input: { boards }) with the path of the second copy reaches a copy that no engine loaded")
     func boardsInputNamesSecondCopy() async throws {
         let repos = try await Copies.make()
         let call = try await Self.addTaskWithEngineClosed(in: repos)
         let app = try GitGraphFixture.makeGraph(at: repos.app, mintingFrom: GitGraphFixture.secondEngineIDs)
         let input = Self.txnInput(call.txn, boards: [repos.secondCopy.path])
-        try await CrossRepoUndoTests.runWithNoErrors(UndoTests.reverseField(MutationName.undo, with: input), on: app)
+        let undo = UndoTests.reverseField(MutationName.undoChange, with: input)
+        try await CrossRepoUndoTests.runWithNoErrors(undo, on: app)
         try Self.expectUndone(call, in: repos)
         await app.close()
     }
@@ -281,7 +282,7 @@ struct CrossRepoCopyUndoTests {
         let undone = try repos.lastEvents()
         Self.expectOneReverse(of: repos.call.txn, wrote: undone, deleting: true)
         let undoTxn = try #require(undone.first).txn
-        let redo = UndoTests.reverseField(MutationName.redo, with: "")
+        let redo = UndoTests.reverseField(MutationName.redoChange, with: "")
         try await CrossRepoUndoTests.runWithNoErrors(redo, on: repos.graph)
         Self.expectOneReverse(of: undoTxn, wrote: try repos.lastEvents(), deleting: false)
         await repos.graph.close()
@@ -295,13 +296,18 @@ struct CrossRepoCopyUndoTests {
         let call = try await Self.addTaskWithEngineClosed(in: repos)
         let before = try Self.boardState(of: repos)
         let app = try GitGraphFixture.makeGraph(at: repos.app, mintingFrom: GitGraphFixture.secondEngineIDs)
-        let undo = UndoTests.reverseField(MutationName.undo, with: UndoTests.txnInput(call.txn))
+        let undo = UndoTests.reverseField(MutationName.undoChange, with: UndoTests.txnInput(call.txn))
         let response = try await CommentTests.run(undo, on: app)
         let expected = KanbanError.transactionBoardNotLoaded(
             transaction: call.txn.ulidString,
             board: try CrossRepoWriteTests.libKey()
         )
-        try ErrorCoverageTests.expectFailure(of: MutationName.undo, in: response, giving: expected, coded: "NOT_FOUND")
+        try ErrorCoverageTests.expectFailure(
+            of: MutationName.undoChange,
+            in: response,
+            giving: expected,
+            coded: "NOT_FOUND"
+        )
         let after = try Self.boardState(of: repos)
         #expect(after.logs == before.logs)
         #expect(after.firstCopyHasBoard == before.firstCopyHasBoard)

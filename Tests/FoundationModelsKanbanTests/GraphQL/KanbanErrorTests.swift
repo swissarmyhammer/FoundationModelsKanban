@@ -140,7 +140,8 @@ struct KanbanErrorTests {
             error.message
                 == "Transaction \"01KTXN0001\" also changed the board \"github.com/o/lib\", and no loaded copy of "
                 + "that board has its changes, so the call wrote nothing on any board. Name the copy by its path, "
-                + "for example undo(txn: \"01KTXN0001\", boards: [\"/path/to/copy\"]), and then send the call again."
+                + "for example undoChange(input: { txn: \"01KTXN0001\", boards: [\"/path/to/copy\"] }), and then "
+                + "send the call again."
         )
     }
 
@@ -223,7 +224,7 @@ struct KanbanErrorTests {
         #expect(
             KanbanError.nothingToUndo.message
                 == "There is no transaction to undo. Use board { history } to find the id of a transaction, "
-                + "and then send undo(txn: <id>)."
+                + "and then send undoChange(input: { txn: <id> })."
         )
     }
 
@@ -237,7 +238,7 @@ struct KanbanErrorTests {
             error.message
                 == "Later transactions changed the same properties as transaction \"01KTXN0001\": "
                 + "01KTXN0002, 01KTXN0003. Undo these transactions first, "
-                + "or send undo(txn: \"01KTXN0001\", force: true) to write the inverse anyway."
+                + "or send undoChange(input: { txn: \"01KTXN0001\", force: true }) to write the inverse anyway."
         )
     }
 
@@ -382,7 +383,7 @@ struct KanbanErrorTests {
 
     @Test("The JSON form decodes to the same value")
     func responseErrorRoundTrip() throws {
-        let original = CodedErrorJSON(KanbanError.nothingToUndo, at: [.key("undo"), .index(0)])
+        let original = CodedErrorJSON(KanbanError.nothingToUndo, at: [.key("undoChange"), .index(0)])
         let data = try JSONEncoder().encode(original)
         #expect(try JSONDecoder().decode(CodedErrorJSON.self, from: data) == original)
     }

@@ -286,7 +286,7 @@ The root has only four fields. All other reads go down the tree from `board`. Fo
 
 Each Rust write op becomes one mutation field. The names use the `verbNoun` form. Each public mutation writes one or more property patches to the log (§5.1).
 
-Each mutation takes one `input` object. The table lists the fields of that object. `input` is optional when it has no required field: `initBoard`, `updateBoard`, `addTag`, `undo`, and `redo`.
+Each mutation takes one `input` object. The table lists the fields of that object. Each mutation has the form `verbNoun(input: VerbNounInput!)`, with its own input type, for example `UndoChangeInput` for `undoChange` (endpoint version `2`). `input` is required, also when no field of it is required, for example for `initBoard`, `updateBoard`, `addActor`, `addTag`, `undoChange`, `redoChange`, `repairLinks`, and `collectBoards`. A call that gives no field sends `input: {}`, for example `mutation { initBoard(input: {}) { name } }`.
 
 **Notation.** In this plan, `f(x: v)` means `f(input: { x: v })`.
 
@@ -303,8 +303,8 @@ These mutations also have an optional `board` field in `input`, because they nam
 | `assignTask` / `unassignTask` | `id!`, `actor!` | task: `add` / `remove` on `assignees` |
 | `tagTask` / `untagTask` | `id!`, `tags!` | task: `add` / `remove` on `tags` (plus a tag `set` patch for each unknown tag) |
 | `deleteTask` / `undeleteTask` | `id!` | task: `delete` true / false |
-| `undo` | `txn` (optional), `force`, `board` (optional) | the inverse patches of the transaction (§6.5) |
-| `redo` | `txn` (optional), `force`, `board` (optional) | the inverse patches of an `undo` transaction (§6.5) |
+| `undoChange` | `txn` (optional), `force`, `board` (optional) | the inverse patches of the transaction (§6.5) |
+| `redoChange` | `txn` (optional), `force`, `board` (optional) | the inverse patches of an `undoChange` transaction (§6.5) |
 | `addColumn` / `updateColumn` / `deleteColumn` / `undeleteColumn` | `id`, `name`, `order`, `body` | column: `set`, `edit body` / `delete` true / false |
 | `addActor` / `updateActor` / `deleteActor` / `undeleteActor` | `id`, `name`, `color`, `body`, `ensure` | actor: `set`, `edit body` / `delete` true / false |
 | `addTag` / `updateTag` / `deleteTag` / `undeleteTag` | `id` (slug), `name`, `color`, `body` | tag: `set`, `edit body` / `delete` true / false (`addTag` is idempotent on slug). `updateTag` does not change the slug. |
@@ -341,7 +341,7 @@ The response follows the GraphQL specification: `{ "data": …, "errors": [ … 
 - The codes are: `INVALID_VARIABLES`, `NOT_FOUND`, `AMBIGUOUS_ID`, `ACTOR_NOT_FOUND`, `DUPLICATE_ID`, `COLUMN_NOT_EMPTY`, `DEPENDENCY_CYCLE`, `TAG_RENAME_CYCLE`, `NOTHING_TO_UNDO`, `UNDO_CONFLICT`, `INVALID_FILTER`, `INVALID_TAG_NAME`, `INVALID_SLUG`, `INVALID_ORDINAL`, `CONFLICTING_PLACEMENT`, `BOARD_BUSY`, `UNREACHABLE_BOARD`, `SUBSCRIPTION_NOT_IN_TOOL`, `GRAPHQL_PARSE_FAILED`, `GRAPHQL_VALIDATION_FAILED`, `AMBIGUOUS_NAME`, `INTERNAL`.
 - `GRAPHQL_PARSE_FAILED` is for a document with a syntax error. `GRAPHQL_VALIDATION_FAILED` is for a document that is not valid for the schema, for example an unknown field, an argument of the wrong type, or a variable value of the wrong type. `AMBIGUOUS_NAME` is for a name that matches two or more names in the name rewrite (§4.5). These three errors keep the message of the GraphQL engine or of the rewrite.
 - `INTERNAL` is for an error of a resolver that is not one of the codes above, for example an error of the event log rules. The error keeps the message of the GraphQL engine.
-- `UNREACHABLE_BOARD` is for a call of an `external` client (KANBAN-5) that names a board other than the board of the folder of the engine, by a board ref, a node URI, `boards`, `collectBoards`, `repairLinks(reach: true)`, or the undo of a transaction that changed another board. The call gives it before it looks for the board, so the error is the same for a board that exists and a board that does not.
+- `UNREACHABLE_BOARD` is for a call of an `external` client (KANBAN-5) that names a board other than the board of the folder of the engine, by a board ref, a node URI, `boards`, `collectBoards`, `repairLinks(input: { reach: true })`, or the undo of a transaction that changed another board. The call gives it before it looks for the board, so the error is the same for a board that exists and a board that does not.
 - `CONFLICTING_PLACEMENT` is for an input that gives more than one place field. The message names the place fields that the input gave, and tells the caller to give only one of them. Of the inputs, only `moveTask` has more than one place field (`ordinal`, `before`, `after`). `addTask` has only `ordinal`, so it cannot give this error.
 - The message must tell the model how to correct the call. For example, an `AMBIGUOUS_ID` error gives the matching ids.
 - A syntax or validation error gives the GraphQL "did you mean" suggestion. This is after the name rewrite in §4.5.
@@ -407,7 +407,7 @@ All refs are in the stored form of §3.2. The first `dependsOn` target is in the
 | `txn` | The transaction ULID. All patches of one tool call have the same `txn` (§6.5). |
 | `ops` | The names of the public mutations in the tool call, for example `["moveTask"]`. Only for `history`. Replay does not use it. |
 | `boards` | Only when the transaction changes more than one board: the keys of the **other** boards that it changes. The board of this log is implied, so its own key is not stored. `undo` uses it (§6.5). |
-| `undoes` | Only on the patches of `undo` and `redo`: the `txn` that this transaction reverses. |
+| `undoes` | Only on the patches of `undoChange` and `redoChange`: the `txn` that this transaction reverses. |
 | `query`, `variables` | A GraphQL request to the internal `patch` mutation. |
 
 The `PatchInput` has these parts. Each part is optional, except `node` and `type`:
@@ -763,10 +763,10 @@ See §12, item 6.
 
 Undo uses the event log. It never deletes or changes a line in the log. It appends new patches that put the old values back.
 
-- **Transaction.** All patches of one tool call have the same `txn`. This includes all mutation fields in the document. `undo` reverses one transaction. Thus, "undo my last call" reverses the full call.
-- **`undo`** with no argument reverses the newest transaction of the session actor that is not already undone. It skips transactions that have `undoes` set (undo and redo transactions). Thus, two `undo` calls reverse the two newest original calls. `undo(txn:)` reverses a given transaction, also one from a different actor. If that transaction is already undone, `undo(txn:)` writes nothing and returns `NOTHING_TO_UNDO`, also with `force: true`. `force` overrides only a conflict.
-- **Scope.** `undo` and `redo` with no argument look in the current board and in the boards that `KanbanGraph` has already loaded (§5.6). They do not load other boards. A transaction that spans boards is still found, because its patches are also in the log of each board that it changed. To undo a transaction in a board that is not loaded, the agent gives `txn` and `board`.
-- **`redo`** with no argument reverses the newest `undo` transaction of the session actor that is not already reversed. A redo is an undo of an undo, so the conflict rule and `force` apply to it in the same way. `redo(txn:)` takes the original transaction, not the `undo` transaction: it reverses the `undo` transaction that made the original transaction undone. If the original transaction is not undone, `redo(txn:)` writes nothing and returns `NOTHING_TO_UNDO`, also with `force: true`.
+- **Transaction.** All patches of one tool call have the same `txn`. This includes all mutation fields in the document. `undoChange` reverses one transaction. Thus, "undo my last call" reverses the full call.
+- **`undoChange`** with no `txn` (`undoChange(input: {})`) reverses the newest transaction of the session actor that is not already undone. It skips transactions that have `undoes` set (undo and redo transactions). Thus, two `undoChange` calls reverse the two newest original calls. `undoChange(txn:)` reverses a given transaction, also one from a different actor. If that transaction is already undone, `undoChange(txn:)` writes nothing and returns `NOTHING_TO_UNDO`, also with `force: true`. `force` overrides only a conflict.
+- **Scope.** `undoChange` and `redoChange` with no `txn` look in the current board and in the boards that `KanbanGraph` has already loaded (§5.6). They do not load other boards. A transaction that spans boards is still found, because its patches are also in the log of each board that it changed. To undo a transaction in a board that is not loaded, the agent gives `txn` and `board`.
+- **`redoChange`** with no `txn` (`redoChange(input: {})`) reverses the newest `undoChange` transaction of the session actor that is not already reversed. A redo is an undo of an undo, so the conflict rule and `force` apply to it in the same way. `redoChange(txn:)` takes the original transaction, not the `undoChange` transaction: it reverses the `undoChange` transaction that made the original transaction undone. If the original transaction is not undone, `redoChange(txn:)` writes nothing and returns `NOTHING_TO_UNDO`, also with `force: true`.
 - **Undone state is derived from the log.** A transaction is undone when a later transaction has `undoes` = its `txn`, and that later transaction is not itself undone. Thus, there is no stack to store, and after a git merge, the undo history includes both branches.
 - **Inverse patches.** The tool calculates them from the projection just before the transaction:
 
@@ -784,11 +784,11 @@ Undo uses the event log. It never deletes or changes a line in the log. It appen
   | the first patch of the board, of a default column of auto-init, and of the session actor that the call made automatically (§6) | no inverse: the node stays |
 
   Patches hold only the properties that changed (§5.4), so each inverse is exact.
-- **Conflict.** A later transaction that is not undone can change the same property of the same node (for a set: the same member). For a node that the inverse makes a tombstone (a node that the transaction made, or made live again), a later edge to that node is also a conflict. The session actor stays, so a later call by the same session actor is not a conflict. For the body, the rule is different: a later edit to the body is a conflict only if the reversed diff does not apply to the current body with the rules of §5.5. Thus, an undo of a body change works after a later change to other lines. In a conflict, `undo` writes nothing and returns `UNDO_CONFLICT`. The error gives the later transactions. `undo(txn: <id>, force: true)` writes the inverse anyway, and the undo then wins (last write wins).
+- **Conflict.** A later transaction that is not undone can change the same property of the same node (for a set: the same member). For a node that the inverse makes a tombstone (a node that the transaction made, or made live again), a later edge to that node is also a conflict. The session actor stays, so a later call by the same session actor is not a conflict. For the body, the rule is different: a later edit to the body is a conflict only if the reversed diff does not apply to the current body with the rules of §5.5. Thus, an undo of a body change works after a later change to other lines. In a conflict, `undoChange` writes nothing and returns `UNDO_CONFLICT`. The error gives the later transactions. `undoChange(input: { txn: <id>, force: true })` writes the inverse anyway, and the undo then wins (last write wins).
 - **Graph rules still apply.** An inverse that breaks a rule in §3.3 is refused. For example, an undo of `deleteColumn` that would put back a column is accepted, but an undo of `addColumn` when the column now has tasks gives `COLUMN_NOT_EMPTY`.
-- **Many boards.** A transaction that changes more than one board records the keys of the other boards in `boards` on each of its patches (§5.1). This is possible because the call writes all its patches at the end (§5.4). `undo` and `redo` of such a transaction need all those boards. If one board is not in the index, they write nothing and return `NOT_FOUND`, and the message names the missing board.
+- **Many boards.** A transaction that changes more than one board records the keys of the other boards in `boards` on each of its patches (§5.1). This is possible because the call writes all its patches at the end (§5.4). `undoChange` and `redoChange` of such a transaction need all those boards. If one board is not in the index, they write nothing and return `NOT_FOUND`, and the message names the missing board.
 - **`history`** (on `Board`) lists the transactions that changed that board, newest first, with `txn`, time, actor, `ops`, `boards`, `undone`, and the `updates` of each node (§6.7). It takes only a filter (§6.3), and `since` and `first` for paging. For example, `history(filter: "^<id>")` gives the transactions that changed one node, and `history(filter: "~column")` the transactions that changed a column. The actor of a transaction is `Change.actor`: there is no actor filter, because `@x` means only "assigned to x". The agent uses it to find a `txn` to undo.
-- **Result.** `undo` and `redo` return the `Change` that they wrote. The caller can select its `updates` (§6.7).
+- **Result.** `undoChange` and `redoChange` return the `Change` that they wrote. The caller can select its `updates` (§6.7).
 
 See §12, item 12.
 

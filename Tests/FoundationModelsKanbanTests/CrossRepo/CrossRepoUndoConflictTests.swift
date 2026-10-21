@@ -4,12 +4,13 @@ import ULID
 
 @testable import FoundationModelsKanban
 
-/// Tests the `undo` conflict rule across boards (plan.md §6.5 "Conflict", divergence.md X6 and R13): a later edge to a
-/// node that the undo would tombstone is a conflict, also when the edge comes from a task of a different board.
+/// Tests the `undoChange` conflict rule across boards (plan.md §6.5 "Conflict", divergence.md X6 and R13): a later
+/// edge to a node that the undo would tombstone is a conflict, also when the edge comes from a task of a different
+/// board.
 ///
 /// Each test makes the example of divergence.md X6 in two real git repos side by side in a ``GitSandbox``. Call 1
-/// adds `lib#X`. Call 2 adds `app#Y`. Then `undo(call1)` runs on the engine of the current repo, which has loaded both
-/// boards.
+/// adds `lib#X`. Call 2 adds `app#Y`. Then `undoChange(input: { txn: call1 })` runs on the engine of the current repo,
+/// which has loaded both boards.
 @Suite("Cross-repo: undo conflict across boards", .watcherBudget)
 struct CrossRepoUndoConflictTests {
     /// The example: the task `X` of the related board, the transaction of call 1, and the transaction of call 2.
@@ -46,8 +47,8 @@ struct CrossRepoUndoConflictTests {
         return Example(libTask: libTask, first: first, second: second)
     }
 
-    /// Makes the example, runs `undo(call1)`, and expects `UNDO_CONFLICT` with call 2, and no change to the logs of
-    /// either repo.
+    /// Makes the example, runs `undoChange(input: { txn: call1 })`, and expects `UNDO_CONFLICT` with call 2, and no
+    /// change to the logs of either repo.
     ///
     /// - Parameter input: Makes the other fields of the `input` object of call 2 from the full URI of `X`.
     /// - Throws: An error when the example cannot be made, or a log cannot be read.
@@ -56,9 +57,9 @@ struct CrossRepoUndoConflictTests {
         let app = try GitGraphFixture.makeGraph(at: repos.app)
         let example = try await makeExample(in: repos, on: app, addingY: input)
         let before = try UndeleteCycleTests.logTexts(of: repos)
-        let field = UndoTests.reverseField(MutationName.undo, with: UndoTests.txnInput(example.first))
+        let field = UndoTests.reverseField(MutationName.undoChange, with: UndoTests.txnInput(example.first))
         try ErrorCoverageTests.expectFailure(
-            of: MutationName.undo,
+            of: MutationName.undoChange,
             in: try await CommentTests.run(field, on: app),
             giving: .undoConflict(
                 transaction: example.first.ulidString,
@@ -70,8 +71,8 @@ struct CrossRepoUndoConflictTests {
         await app.close()
     }
 
-    /// Makes the example, runs `undo(call1)`, and expects success with no errors, a tombstone for `lib#X` in the log of
-    /// the related repo, and `undoes` set to call 1.
+    /// Makes the example, runs `undoChange(input: { txn: call1 })`, and expects success with no errors, a tombstone
+    /// for `lib#X` in the log of the related repo, and `undoes` set to call 1.
     ///
     /// - Parameters:
     ///   - isForced: `true` to send `force: true`, which writes the inverse also when a later transaction conflicts.
@@ -82,7 +83,8 @@ struct CrossRepoUndoConflictTests {
         let app = try GitGraphFixture.makeGraph(at: repos.app)
         let example = try await makeExample(in: repos, on: app, addingY: input)
         let txnInput = UndoTests.txnInput(example.first, forcing: isForced)
-        try await CrossRepoUndoTests.runWithNoErrors(UndoTests.reverseField(MutationName.undo, with: txnInput), on: app)
+        let undo = UndoTests.reverseField(MutationName.undoChange, with: txnInput)
+        try await CrossRepoUndoTests.runWithNoErrors(undo, on: app)
         let undoEvent = try CrossRepoUndoTests.lastEvent(ofTask: example.libTask, inRepoAt: repos.lib)
         #expect(undoEvent.patch.delete == true)
         #expect(undoEvent.undoes == example.first)

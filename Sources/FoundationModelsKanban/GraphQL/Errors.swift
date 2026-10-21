@@ -16,9 +16,9 @@ enum KanbanError: CodedError, Hashable {
     /// the scan looked in, in scan order.
     case boardNotFound(reference: String, searchRoots: [String])
 
-    /// `NOT_FOUND`: `undo` or `redo` of a transaction cannot reach a board that the transaction changed: no loaded
-    /// copy of the board has the events of the transaction (plan.md §6.5, many boards; divergence.md X5, S8). The
-    /// call writes nothing on any board. The transaction is its ULID, and the board is the key of that board.
+    /// `NOT_FOUND`: `undoChange` or `redoChange` of a transaction cannot reach a board that the transaction changed: no
+    /// loaded copy of the board has the events of the transaction (plan.md §6.5, many boards; divergence.md X5, S8).
+    /// The call writes nothing on any board. The transaction is its ULID, and the board is the key of that board.
     case transactionBoardNotLoaded(transaction: String, board: String)
 
     /// `INCOMPATIBLE_BOARD`: a `.kanban/` directory has a file or a directory of the old Rust kanban, so the engine
@@ -150,7 +150,8 @@ extension KanbanError {
         case .transactionBoardNotLoaded(let transaction, let board):
             "Transaction \"\(transaction)\" also changed the board \"\(board)\", and no loaded copy of that board has "
                 + "its changes, so the call wrote nothing on any board. Name the copy by its path, for example "
-                + "undo(txn: \"\(transaction)\", boards: [\"/path/to/copy\"]), and then send the call again."
+                + "\(MutationName.undoChange)(input: { txn: \"\(transaction)\", boards: [\"/path/to/copy\"] }), and "
+                + "then send the call again."
         case .incompatibleBoard(let directory):
             "There is an incompatible board at `\(directory)`. Remove it, then try again."
         case .ambiguousID(let reference, let matches):
@@ -173,11 +174,12 @@ extension KanbanError {
                 + "Rename the tag to a name that is not in the cycle."
         case .nothingToUndo:
             "There is no transaction to undo. Use board { history } to find the id of a transaction, "
-                + "and then send undo(txn: <id>)."
+                + "and then send \(MutationName.undoChange)(input: { txn: <id> })."
         case .undoConflict(let transaction, let laterTransactions):
             "Later transactions changed the same properties as transaction \"\(transaction)\": "
                 + "\(laterTransactions.joined(separator: Self.listSeparator)). Undo these transactions first, "
-                + "or send undo(txn: \"\(transaction)\", force: true) to write the inverse anyway."
+                + "or send \(MutationName.undoChange)(input: { txn: \"\(transaction)\", force: true }) to write the "
+                + "inverse anyway."
         case .invalidFilter(let filter, let position, let detail, let example):
             "The filter \"\(filter)\" is not valid at \(position.lowerBound)..\(position.upperBound): \(detail). "
                 + "Correct the filter, for example: \(example)"

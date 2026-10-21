@@ -14,8 +14,9 @@ struct KanbanEndpointTests {
     /// The name of the endpoint: the noun of the tool (EXTRAS-9 rule 1).
     static let endpointName = "kanban"
 
-    /// The version of the schema of the endpoint (EXTRAS-9 rule 1).
-    static let endpointVersion = "1"
+    /// The version of the schema of the endpoint (EXTRAS-9 rule 1). Version 2 gives each mutation the form
+    /// `verbNoun(input: VerbNounInput!)` (EXTRAS-9 rule 7).
+    static let endpointVersion = "2"
 
     /// A query whose response does not change between two calls on one board.
     static let boardQuery = "{ board { name columns { id name } tasks { edges { node { id title } } } } }"
@@ -29,7 +30,7 @@ struct KanbanEndpointTests {
 
     // MARK: - Tool
 
-    @Test("The tool gives one endpoint with the name kanban, the version 1, and the session-folder scope")
+    @Test("The tool gives one endpoint with the name kanban, the version 2, and the session-folder scope")
     func toolGivesEndpoint() async throws {
         let directory = try TemporaryDirectory()
         let tool = try KanbanToolTests.makeTool(inRepoAt: directory.url)

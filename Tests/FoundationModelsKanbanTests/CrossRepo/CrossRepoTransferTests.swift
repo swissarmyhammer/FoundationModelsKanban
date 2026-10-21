@@ -6,8 +6,8 @@ import ULID
 
 /// Tests the move and the copy of a task to a different board (divergence.md Q21, E6, G8): `moveTask` with a
 /// `board` field, and `copyTask`. The new task keeps its refs to the old board as full URIs, each missing tag is made
-/// on the target board, a move tombstones the old task and adds a line with the new URI to its body, and one `undo`
-/// reverses both boards.
+/// on the target board, a move tombstones the old task and adds a line with the new URI to its body, and one
+/// `undoChange` reverses both boards.
 ///
 /// Each test makes two real git repos side by side in a ``GitSandbox``. No test reads or changes the `.kanban/`
 /// directory of this repo.

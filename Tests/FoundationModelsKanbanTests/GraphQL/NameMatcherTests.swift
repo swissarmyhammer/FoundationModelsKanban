@@ -23,7 +23,8 @@ struct NameMatcherTests {
     /// The top-level mutations of plan.md §4.2.
     static let mutations = [
         "initBoard", "updateBoard", "addTask", "updateTask", "moveTask", "completeTask", "assignTask",
-        "unassignTask", "tagTask", "untagTask", "deleteTask", "undeleteTask", "undo", "redo", "addColumn",
+        "unassignTask", "tagTask", "untagTask", "deleteTask", "undeleteTask", "undoChange", "redoChange",
+        "addColumn",
         "updateColumn", "deleteColumn", "undeleteColumn", "addActor", "updateActor", "deleteActor", "undeleteActor",
         "addTag", "updateTag", "deleteTag", "undeleteTag", "renameTag", "addComment", "updateComment",
         "deleteComment", "undeleteComment",

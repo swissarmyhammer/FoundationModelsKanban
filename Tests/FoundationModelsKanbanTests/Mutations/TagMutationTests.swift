@@ -397,9 +397,10 @@ struct TagMutationTests {
         #expect(error == .notFound(type: .tag, reference: uri))
     }
 
-    @Test("addTag with no input argument passes validation and gives INVALID_TAG_NAME")
-    func addTagWithoutInput() async throws {
-        let response = try await ErrorCoverageTests.respond(toMutationOf: "\(MutationName.addTag) \(Self.tagSelection)")
+    @Test("addTag with an empty input passes validation and gives INVALID_TAG_NAME")
+    func addTagWithEmptyInput() async throws {
+        let field = "\(MutationName.addTag)(input: {}) \(Self.tagSelection)"
+        let response = try await ErrorCoverageTests.respond(toMutationOf: field)
         try ErrorCoverageTests.expectFailure(
             of: MutationName.addTag,
             in: response,

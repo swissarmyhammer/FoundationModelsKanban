@@ -316,7 +316,7 @@ struct KanbanHostTests {
         _ = try await CrossRepoFixture.addTask(with: "", on: first)
         let response = try await CommentTests.run(CrossRepoUndoTests.undoField, on: second)
         try ErrorCoverageTests.expectFailure(
-            of: MutationName.undo,
+            of: MutationName.undoChange,
             in: response,
             giving: .nothingToUndo,
             coded: "NOTHING_TO_UNDO"

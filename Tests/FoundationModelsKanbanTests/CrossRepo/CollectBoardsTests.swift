@@ -6,8 +6,8 @@ import ULID
 
 /// Tests `Mutation.collectBoards` (divergence.md M9): the union of the node logs of each source board in the target
 /// board, one node for each slug, the `collected` names of the target, the link repairs, the removal of each source
-/// `.kanban/`, `dryRun`, a target with no board, a source of the old Rust kanban, `undo`, and the links of other
-/// boards.
+/// `.kanban/`, `dryRun`, a target with no board, a source of the old Rust kanban, `undoChange`, and the links of
+/// other boards.
 ///
 /// Each test makes its folders in a ``GitSandbox``, which is not in a git repo. Each board is a bare folder, so its key
 /// is its board ID. Each engine of a test has its own ULID source, so that two boards never mint the same ULID.
@@ -141,17 +141,18 @@ struct CollectBoardsTests {
     ///
     /// - Parameters:
     ///   - sources: The board refs of the sources.
-    ///   - options: The other arguments, for example `dryRun: true`, or `""` for none.
+    ///   - options: The other fields of the `input` object, for example `dryRun: true`, or `""` for none.
     /// - Returns: The field with ``collectSelection``.
     static func collectField(of sources: [String], with options: String = "") -> String {
-        "\(MutationName.collectBoards)(sources: \(AddUpdateTaskTests.list(of: sources)) \(options)) \(collectSelection)"
+        let input = "sources: \(AddUpdateTaskTests.list(of: sources)) \(options)"
+        return "\(MutationName.collectBoards)(input: { \(input) }) \(collectSelection)"
     }
 
     /// Runs `collectBoards` with no error.
     ///
     /// - Parameters:
     ///   - sources: The board refs of the sources.
-    ///   - options: The other arguments, for example `dryRun: true`, or `""` for none.
+    ///   - options: The other fields of the `input` object, for example `dryRun: true`, or `""` for none.
     ///   - graph: The engine.
     /// - Returns: The `collectBoards` object of the response.
     /// - Throws: An error when the response has an error or no object.
@@ -324,7 +325,7 @@ struct CollectBoardsTests {
         withExtendedLifetime(fixture.sandbox) {}
     }
 
-    @Test("undo does not reverse collectBoards")
+    @Test("undoChange does not reverse collectBoards")
     func undoDoesNotReverseCollect() async throws {
         let fixture = try await Self.makeFixture()
         let graph = try Self.makeTargetGraph(of: fixture)

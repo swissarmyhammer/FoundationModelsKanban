@@ -96,7 +96,8 @@ struct AliasTableTests {
         AliasRow.rows(on: ["addTask", "updateTask", "tagTask", "untagTask"], mapping: ["labels", "label"], to: "tags"),
         AliasRow.rows(on: ["renameTag"], mapping: ["tag", "old", "oldName"], to: "from"),
         AliasRow.rows(on: ["renameTag"], mapping: ["name", "new", "newName"], to: "to"),
-        AliasRow.rows(on: ["undo", "redo"], mapping: ["transaction", "txnId", "txn_id", "id"], to: "txn"),
+        AliasRow.rows(on: [MutationName.undoChange, MutationName.redoChange],
+                      mapping: ["transaction", "txnId", "txn_id", "id"], to: "txn"),
     ].flatMap { rows in rows }
 
     /// The rows of the arguments of the fields of `Board`.
@@ -205,6 +206,15 @@ struct AliasTableTests {
     func assigneeMutationGetsCanonicalName(written: String, canonical: String) throws {
         let rewritten = try Self.rewritten(from: "mutation { \(written)(input: { id: \"a\", actor: \"b\" }) { id } }")
         #expect(rewritten.text == "mutation { \(written): \(canonical)(input: { id: \"a\", actor: \"b\" }) { id } }")
+    }
+
+    @Test(
+        "The bare verbs undo and redo give undoChange and redoChange (EXTRAS-9 rule 7)",
+        arguments: [("undo", MutationName.undoChange), ("redo", MutationName.redoChange)]
+    )
+    func bareReverseVerbGetsCanonicalName(written: String, canonical: String) throws {
+        let rewritten = try Self.rewritten(from: "mutation { \(written)(input: {}) { txn } }")
+        #expect(rewritten.text == "mutation { \(written): \(canonical)(input: {}) { txn } }")
     }
 
     // MARK: - Selection fields

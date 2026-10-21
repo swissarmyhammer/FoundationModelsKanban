@@ -10,8 +10,9 @@ import FoundationModelsExtras
 /// in a task input and `actor` in the input of `assignTask`. When two names of one position have the same alias, the
 /// name of the agent gives `AMBIGUOUS_NAME`.
 ///
-/// One input type can be the input of more than one field: `NodeReferenceInput` is the input of `deleteTask` and of
-/// `deleteColumn`. So the aliases of its fields come from the mutation that holds it.
+/// Each mutation has an `input` type of its own name (EXTRAS-9 rule 7), so the aliases of the fields of an `input`
+/// object are by the name of its type, also when two mutations share the shape of the type: `DeleteTaskInput` and
+/// `DeleteColumnInput` have the same fields, and different aliases.
 enum KanbanFieldAliases {
     /// The aliases that are safe at each position of a document. The old names `description` (Board, Tag, Task) and
     /// `text` (Comment) are aliases of `body` (plan.md §12, item 19). `label` is an alias of `tags`, because no field,
@@ -99,22 +100,46 @@ enum KanbanFieldAliases {
         "dryRun": ["dry", "preview", "simulate", "whatIf", "plan"],
     ]
 
-    /// The aliases of the arguments of `repairLinks` (divergence.md M9): the boards, the reach option, and the dry run
-    /// option.
+    /// The aliases of the fields of `RepairLinksInput` (divergence.md M9): the boards, the reach option, and the dry
+    /// run option.
     private static let linkRepair = repairOptions.merging(["boards": linkBoards]) { option, _ in option }
 
-    /// The aliases of the arguments of `collectBoards` (divergence.md M9): the source boards, the target board, the
+    /// The aliases of the fields of `CollectBoardsInput` (divergence.md M9): the source boards, the target board, the
     /// reach option, and the dry run option.
     private static let boardCollect = repairOptions.merging([
         "sources": ["source", "boards", "board", "from", "folders", "folder", "paths", "path", "repos", "repo"],
         "target": ["into", "to", "destination", "targetBoard", "toBoard"],
     ]) { option, _ in option }
 
-    /// The aliases of each object type and each `input` object type, by its GraphQL name.
+    /// The aliases of the fields of `AssignTaskInput` and `UnassignTaskInput`: the task and the actor.
+    private static let taskAssignee = ["id": taskID, "actor": ["assignee", "actorId", "user", "who"]]
+
+    /// The aliases of the fields of an `input` type that names one comment, and can name the task of the comment.
+    private static let commentReference = ["id": commentID, "task": commentTask]
+
+    /// The aliases of the fields of `InitBoardInput` and `UpdateBoardInput`.
+    private static let boardChange = ["model": model]
+
+    /// The aliases of the fields of `UndoChangeInput` and `RedoChangeInput`.
+    private static let reverseInput = ["txn": ["transaction", "txnId", "id"]]
+
+    /// Gives the aliases of the `id` field of an `input` type that names one node of its own node type.
+    ///
+    /// - Parameter type: The GraphQL name of the node type in lowercase, for example `task`.
+    /// - Returns: The aliases of the `id` field.
+    private static func nodeReference(ofType type: String) -> [String: [String]] {
+        ["id": refAliases(ofType: type)]
+    }
+
+    /// The aliases of each object type and each `input` object type, by its GraphQL name. The alias of a mutation
+    /// name can be the bare verb (EXTRAS-9 rule 7): `undo` names `undoChange`.
     private static let byType: [String: [String: [String]]] = [
         "Task": ["column": ["status", "state", "lane"]],
         "TaskConnection": ["totalCount": ["count", "total"]],
-        "Mutation": ["unassignTask": ["removeAssignee"], "assignTask": ["addAssignee"]],
+        "Mutation": [
+            "unassignTask": ["removeAssignee"], "assignTask": ["addAssignee"], "undoChange": ["undo"],
+            "redoChange": ["redo"],
+        ],
         "Subscription": ["changes": ["kanbanChanges"]],
         "AddTaskInput": [
             "title": title, "column": column, "assignees": assignees, "dependsOn": dependsOn, "priority": priority,
@@ -125,28 +150,41 @@ enum KanbanFieldAliases {
         ],
         "MoveTaskInput": taskPlacement,
         "CopyTaskInput": taskPlacement,
-        "AssignTaskInput": ["id": taskID, "actor": ["assignee", "actorId", "user", "who"]],
-        "TagTaskInput": ["id": taskID],
+        "CompleteTaskInput": nodeReference(ofType: "task"),
+        "AssignTaskInput": taskAssignee,
+        "UnassignTaskInput": taskAssignee,
+        "TagTaskInput": nodeReference(ofType: "task"),
+        "UntagTaskInput": nodeReference(ofType: "task"),
+        "DeleteTaskInput": nodeReference(ofType: "task"),
+        "UndeleteTaskInput": nodeReference(ofType: "task"),
         "AddCommentInput": ["task": commentTask, "actor": ["author", "user"]],
-        "UpdateCommentInput": ["id": commentID, "task": commentTask],
-        "CommentReferenceInput": ["id": commentID, "task": commentTask],
-        "UpdateColumnInput": ["id": refAliases(ofType: "column")],
+        "UpdateCommentInput": commentReference,
+        "DeleteCommentInput": commentReference,
+        "UndeleteCommentInput": commentReference,
+        "UpdateColumnInput": nodeReference(ofType: "column"),
+        "DeleteColumnInput": nodeReference(ofType: "column"),
+        "UndeleteColumnInput": nodeReference(ofType: "column"),
         "AddActorInput": ["avatar": avatar],
         "UpdateActorInput": ["id": refAliases(ofType: "actor"), "avatar": avatar],
-        "BoardInput": ["model": model],
-        "UpdateTagInput": ["id": refAliases(ofType: "tag")],
+        "DeleteActorInput": nodeReference(ofType: "actor"),
+        "UndeleteActorInput": nodeReference(ofType: "actor"),
+        "InitBoardInput": boardChange,
+        "UpdateBoardInput": boardChange,
+        "UpdateTagInput": nodeReference(ofType: "tag"),
+        "DeleteTagInput": nodeReference(ofType: "tag"),
+        "UndeleteTagInput": nodeReference(ofType: "tag"),
         "RenameTagInput": ["from": ["tag", "old", "oldName"], "to": ["name", "new", "newName"]],
-        "UndoInput": ["txn": ["transaction", "txnId", "id"]],
+        "UndoChangeInput": reverseInput,
+        "RedoChangeInput": reverseInput,
+        "RepairLinksInput": linkRepair,
+        "CollectBoardsInput": boardCollect,
     ]
 
-    /// The aliases of the arguments of each field, and of the `input` fields under each field, by the coordinate
-    /// `Type.field`. The input of the delete and the undelete mutations is `NodeReferenceInput` for each node type,
-    /// so its aliases come from the mutation.
+    /// The aliases of the arguments of each field, by the coordinate `Type.field`. A mutation has no argument but
+    /// `input`, so the aliases of its fields are in ``byType``, by the name of its `input` type.
     private static let byField: [String: [String: [String]]] = [
         "Query.board": ["id": ["path", "board", "key", "repo"]],
         "Query.checkLinks": ["boards": linkBoards],
-        "Mutation.repairLinks": linkRepair,
-        "Mutation.collectBoards": boardCollect,
         "Query.node": ["id": ["task", "column", "actor", "tag", "comment", "ref", "uri", "key", "nodeId"]],
         "Board.task": ["id": taskID],
         "Board.column": ["id": itemAliases(ofType: "column")],
@@ -155,15 +193,6 @@ enum KanbanFieldAliases {
         "Board.tasks": ["first": pageSize, "after": ["cursor"]],
         "Board.searchTasks": ["first": pageSize],
         "Board.history": ["first": pageSize],
-        "Mutation.completeTask": ["id": taskID],
-        "Mutation.deleteTask": ["id": taskID],
-        "Mutation.undeleteTask": ["id": taskID],
-        "Mutation.deleteColumn": ["id": refAliases(ofType: "column")],
-        "Mutation.undeleteColumn": ["id": refAliases(ofType: "column")],
-        "Mutation.deleteActor": ["id": refAliases(ofType: "actor")],
-        "Mutation.undeleteActor": ["id": refAliases(ofType: "actor")],
-        "Mutation.deleteTag": ["id": refAliases(ofType: "tag")],
-        "Mutation.undeleteTag": ["id": refAliases(ofType: "tag")],
     ]
 
     /// The alias tables of the public schema, for the toolkit name rewrite.

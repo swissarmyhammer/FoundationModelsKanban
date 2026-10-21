@@ -50,8 +50,10 @@ private struct MoveTaskInput: TaskPlacementInput {
     }
 }
 
-/// The `input` object of `assignTask` and `unassignTask` (plan.md §4.2).
-private struct AssignTaskInput: TaskReferenceInput {
+/// The `input` object of `assignTask` or `unassignTask` (plan.md §4.2). Each mutation has its own `input` type,
+/// `AssignTaskInput` or `UnassignTaskInput` (``SharedInputMutation``), that
+/// ``SchemaBuilder/makeAssignTaskInput(of:)`` gives.
+private struct AssignTaskInput<Mutation: SharedInputMutation>: TaskReferenceInput {
     /// The task: a full URI or a short form (plan.md §3.2).
     let id: NodeID
 
@@ -59,13 +61,56 @@ private struct AssignTaskInput: TaskReferenceInput {
     let actor: NodeID
 }
 
-/// The `input` object of `tagTask` and `untagTask` (plan.md §4.2).
-private struct TagTaskInput: TaskReferenceInput {
+/// The `input` object of `tagTask` or `untagTask` (plan.md §4.2). Each mutation has its own `input` type,
+/// `TagTaskInput` or `UntagTaskInput` (``SharedInputMutation``), that ``SchemaBuilder/makeTagTaskInput(of:)`` gives.
+private struct TagTaskInput<Mutation: SharedInputMutation>: TaskReferenceInput {
     /// The task: a full URI or a short form (plan.md §3.2).
     let id: NodeID
 
     /// The tag names, slugs, stored local forms `tag/<slug>`, or tag URIs.
     let tags: [String]
+}
+
+/// The `completeTask` mutation, for its `input` type `CompleteTaskInput`.
+private enum CompleteTaskMutation: SharedInputMutation {
+    /// The name of the mutation.
+    static let name = MutationName.completeTask
+}
+
+/// The `assignTask` mutation, for its `input` type `AssignTaskInput`.
+private enum AssignTaskMutation: SharedInputMutation {
+    /// The name of the mutation.
+    static let name = MutationName.assignTask
+}
+
+/// The `unassignTask` mutation, for its `input` type `UnassignTaskInput`.
+private enum UnassignTaskMutation: SharedInputMutation {
+    /// The name of the mutation.
+    static let name = MutationName.unassignTask
+}
+
+/// The `tagTask` mutation, for its `input` type `TagTaskInput`.
+private enum TagTaskMutation: SharedInputMutation {
+    /// The name of the mutation.
+    static let name = MutationName.tagTask
+}
+
+/// The `untagTask` mutation, for its `input` type `UntagTaskInput`.
+private enum UntagTaskMutation: SharedInputMutation {
+    /// The name of the mutation.
+    static let name = MutationName.untagTask
+}
+
+/// The `deleteTask` mutation, for its `input` type `DeleteTaskInput`.
+private enum DeleteTaskMutation: SharedInputMutation {
+    /// The name of the mutation.
+    static let name = MutationName.deleteTask
+}
+
+/// The `undeleteTask` mutation, for its `input` type `UndeleteTaskInput`.
+private enum UndeleteTaskMutation: SharedInputMutation {
+    /// The name of the mutation.
+    static let name = MutationName.undeleteTask
 }
 
 /// The side of a neighbor task where a moved task goes. The raw value is the name of the place field of the input.
@@ -198,7 +243,7 @@ extension KanbanResolver {
     ///   column.
     fileprivate func completeTask(
         context: KanbanContext,
-        arguments: InputArguments<NodeReferenceInput>
+        arguments: InputArguments<NodeReferenceInput<CompleteTaskMutation>>
     ) async throws -> TaskObject? {
         let input = arguments.input
         return try await context.changeTask(input.id, named: MutationName.completeTask) { work, _, ref, time in
@@ -219,9 +264,9 @@ extension KanbanResolver {
     ///   ``KanbanError/actorNotFound(reference:)`` when the actor names no live actor.
     fileprivate func assignTask(
         context: KanbanContext,
-        arguments: InputArguments<AssignTaskInput>
+        arguments: InputArguments<AssignTaskInput<AssignTaskMutation>>
     ) async throws -> TaskObject? {
-        try await changeAssignee(to: true, as: MutationName.assignTask, context: context, arguments)
+        try await changeAssignee(to: true, context: context, arguments)
     }
 
     /// Resolves `Mutation.unassignTask`: writes a `remove` of the actor on `assignees`. An actor that the task does
@@ -235,29 +280,28 @@ extension KanbanResolver {
     ///   ``KanbanError/actorNotFound(reference:)`` when the actor names no actor, live or tombstoned.
     fileprivate func unassignTask(
         context: KanbanContext,
-        arguments: InputArguments<AssignTaskInput>
+        arguments: InputArguments<AssignTaskInput<UnassignTaskMutation>>
     ) async throws -> TaskObject? {
-        try await changeAssignee(to: false, as: MutationName.unassignTask, context: context, arguments)
+        try await changeAssignee(to: false, context: context, arguments)
     }
 
     /// Writes an `add` or a `remove` of one actor on the `assignees` of a task.
     ///
     /// - Parameters:
     ///   - isAssigned: `true` to add the actor, `false` to remove it.
-    ///   - operation: The name of the public mutation.
     ///   - context: The context of the call.
-    ///   - arguments: The task and the actor. A remove can also name a tombstoned actor.
+    ///   - arguments: The task and the actor. A remove can also name a tombstoned actor. The mutation of the `input`
+    ///     type is the public mutation of the call.
     /// - Returns: The task after the change.
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live task has the id.
     ///   ``KanbanError/actorNotFound(reference:)`` when the actor names no actor that the change accepts.
-    private func changeAssignee(
+    private func changeAssignee<Mutation: SharedInputMutation>(
         to isAssigned: Bool,
-        as operation: String,
         context: KanbanContext,
-        _ arguments: InputArguments<AssignTaskInput>
+        _ arguments: InputArguments<AssignTaskInput<Mutation>>
     ) async throws -> TaskObject? {
         let input = arguments.input
-        return try await context.changeTask(input.id, named: operation) { work, resolver, ref, time in
+        return try await context.changeTask(input.id, named: Mutation.name) { work, resolver, ref, time in
             let actor = try resolver.actorRef(for: input.actor, includingTombstones: !isAssigned)
             let edges = [PropertyName.assignees: [StoredRef.local(actor)]]
             let patch = try isAssigned ? PatchInput(node: ref, add: edges) : PatchInput(node: ref, remove: edges)
@@ -278,7 +322,7 @@ extension KanbanResolver {
     ///   ``KanbanError/virtualTagName(tag:)`` when a new tag would get the name of a virtual tag as its slug.
     fileprivate func tagTask(
         context: KanbanContext,
-        arguments: InputArguments<TagTaskInput>
+        arguments: InputArguments<TagTaskInput<TagTaskMutation>>
     ) async throws -> TaskObject? {
         let input = arguments.input
         return try await context.changeTask(input.id, named: MutationName.tagTask) { work, resolver, ref, time in
@@ -298,7 +342,7 @@ extension KanbanResolver {
     ///   ``KanbanError/invalidTagName(name:)`` when a name gives an empty slug.
     fileprivate func untagTask(
         context: KanbanContext,
-        arguments: InputArguments<TagTaskInput>
+        arguments: InputArguments<TagTaskInput<UntagTaskMutation>>
     ) async throws -> TaskObject? {
         let input = arguments.input
         return try await context.changeTask(input.id, named: MutationName.untagTask) { work, resolver, ref, time in
@@ -316,9 +360,9 @@ extension KanbanResolver {
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live task has the id.
     fileprivate func deleteTask(
         context: KanbanContext,
-        arguments: InputArguments<NodeReferenceInput>
+        arguments: InputArguments<NodeReferenceInput<DeleteTaskMutation>>
     ) async throws -> TaskObject? {
-        try await changeDeleted(to: true, ofType: .task, as: MutationName.deleteTask, context: context, arguments)
+        try await changeDeleted(to: true, ofType: .task, context: context, arguments)
     }
 
     /// Resolves `Mutation.undeleteTask`: makes a tombstoned task live again. A live task does not change. The task
@@ -333,9 +377,9 @@ extension KanbanResolver {
     ///   nothing, and the task stays a tombstone.
     fileprivate func undeleteTask(
         context: KanbanContext,
-        arguments: InputArguments<NodeReferenceInput>
+        arguments: InputArguments<NodeReferenceInput<UndeleteTaskMutation>>
     ) async throws -> TaskObject? {
-        try await changeDeleted(to: false, ofType: .task, as: MutationName.undeleteTask, context: context, arguments)
+        try await changeDeleted(to: false, ofType: .task, context: context, arguments)
     }
 }
 
@@ -613,24 +657,52 @@ extension Slug {
 // MARK: - Schema
 
 extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanContext {
+    /// Gives the `input` type of `assignTask` or `unassignTask` (``AssignTaskInput``), with the name of the mutation
+    /// (EXTRAS-9 rule 7), so that the fields have one definition.
+    ///
+    /// - Parameter mutation: The mutation of the `input` type.
+    /// - Returns: The `input` type `<Mutation>Input`, with its fields `id` and `actor`.
+    fileprivate static func makeAssignTaskInput<Mutation: SharedInputMutation>(
+        of mutation: Mutation.Type
+    ) -> Input<KanbanResolver, KanbanContext, AssignTaskInput<Mutation>> {
+        Input(AssignTaskInput<Mutation>.self, as: mutation.inputTypeName) {
+            Self.makeTaskReferenceField()
+            InputField("actor", at: \.actor).description(SchemaDescription.actorReference)
+        }
+        .description(SchemaDescription.mutationFields(of: mutation.name))
+    }
+
+    /// Gives the `input` type of `tagTask` or `untagTask` (``TagTaskInput``), with the name of the mutation (EXTRAS-9
+    /// rule 7), so that the fields have one definition.
+    ///
+    /// - Parameter mutation: The mutation of the `input` type.
+    /// - Returns: The `input` type `<Mutation>Input`, with its fields `id` and `tags`.
+    fileprivate static func makeTagTaskInput<Mutation: SharedInputMutation>(
+        of mutation: Mutation.Type
+    ) -> Input<KanbanResolver, KanbanContext, TagTaskInput<Mutation>> {
+        Input(TagTaskInput<Mutation>.self, as: mutation.inputTypeName) {
+            Self.makeTaskReferenceField()
+            InputField("tags", at: \.tags).description(SchemaDescription.tagTaskTags)
+        }
+        .description(SchemaDescription.mutationFields(of: mutation.name))
+    }
+
     /// Adds the task operation mutations and their `input` types (plan.md §4.2): `moveTask`, `completeTask`,
-    /// `assignTask`, `unassignTask`, `tagTask`, `untagTask`, `deleteTask`, and `undeleteTask`. The mutations that name
-    /// only the task use the `input` type of ``NodeReferenceInput``, which ``addColumnActorMutations()`` adds.
+    /// `assignTask`, `unassignTask`, `tagTask`, `untagTask`, `deleteTask`, and `undeleteTask`. Each mutation has an
+    /// `input` type of its own name (EXTRAS-9 rule 7). The mutations that name only the task use the `input` types of
+    /// ``NodeReferenceInput``.
     ///
     /// - Returns: This builder, for method chaining.
     func addTaskOperationMutations() -> Self {
         add {
             Input(MoveTaskInput.self, Self.placementFields).description(SchemaDescription.moveTaskInput)
-            Input(AssignTaskInput.self) {
-                Self.makeTaskReferenceField()
-                InputField("actor", at: \.actor).description(SchemaDescription.actorReference)
-            }
-            .description(SchemaDescription.assignTaskInput)
-            Input(TagTaskInput.self) {
-                Self.makeTaskReferenceField()
-                InputField("tags", at: \.tags).description(SchemaDescription.tagTaskTags)
-            }
-            .description(SchemaDescription.tagTaskInput)
+            Self.makeNodeReferenceInput(of: CompleteTaskMutation.self)
+            Self.makeAssignTaskInput(of: AssignTaskMutation.self)
+            Self.makeAssignTaskInput(of: UnassignTaskMutation.self)
+            Self.makeTagTaskInput(of: TagTaskMutation.self)
+            Self.makeTagTaskInput(of: UntagTaskMutation.self)
+            Self.makeNodeReferenceInput(of: DeleteTaskMutation.self)
+            Self.makeNodeReferenceInput(of: UndeleteTaskMutation.self)
         }
         .addMutation {
             Self.mutationField(

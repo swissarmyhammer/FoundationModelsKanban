@@ -4,24 +4,24 @@ extension SchemaDescription {
     // MARK: - Change
 
     /// The `Change` type. The text holds only what is true on each path that gives a change: `Board.history`
-    /// (``ChangeBuilder/change(of:markingUndone:)``), `Subscription.changes` (``ChangeRound``), and `undo` and `redo`
-    /// (``BoardStore/reverse(_:with:at:)``). ``ChangeBuilder`` and ``ChangeRound`` hold the exact rules that put each
-    /// update in a change.
+    /// (``ChangeBuilder/change(of:markingUndone:)``), `Subscription.changes` (``ChangeRound``), and `undoChange` and
+    /// `redoChange` (``BoardStore/reverse(_:with:at:)``). ``ChangeBuilder`` and ``ChangeRound`` hold the exact rules
+    /// that put each update in a change.
     static let change = """
         One transaction: its txn, time, actor, mutations, and boards, and its node updates. Board.history and \
-        Subscription.changes give the updates of the nodes of one board; undo and redo give the updates of each \
-        board that they changed, those of the first board first. An update tells which node changed and which \
-        tracked fields changed; read the nodes again for their new values. Transactions read together, for example \
-        after a git pull, give one Change each. The updates need not match the nodes that the transaction wrote: \
-        they can hold a node that it did not write, for example a task that becomes ready when its dependency is \
-        done, or the board summary, and leave out a node that it wrote, for example when a later transaction read \
+        Subscription.changes give the updates of the nodes of one board; undoChange and redoChange give the updates \
+        of each board that they changed, those of the first board first. An update tells which node changed and \
+        which tracked fields changed; read the nodes again for their new values. Transactions read together, for \
+        example after a git pull, give one Change each. The updates need not match the nodes that the transaction \
+        wrote: they can hold a node that it did not write, for example a task that becomes ready when its dependency \
+        is done, or the board summary, and leave out a node that it wrote, for example when a later transaction read \
         with it wrote that node too.
         """
 
     /// The `Change.cursor` field (``Change/cursor(context:arguments:)``).
     static let changeCursor = """
-        Give it as after to changes to get the changes after this one. A Change of Board.history, undo, or redo \
-        gives the cursor of the first board of boards as the call reads it.
+        Give it as after to changes to get the changes after this one. A Change of Board.history, undoChange, or \
+        redoChange gives the cursor of the first board of boards as the call reads it.
         """
 
     /// The `Change.added` field.
@@ -38,8 +38,8 @@ extension SchemaDescription {
 
     /// The `Change.txn` field (``UndoLog/target(of:named:by:)``).
     static let changeTxn = """
-        The ULID of the transaction. Give it as txn to undo to reverse this change, or to redo to reverse its undo. A \
-        collectBoards change cannot be reversed.
+        The ULID of the transaction. Give it as txn to undoChange to reverse this change, or to redoChange to reverse \
+        its undo. A collectBoards change cannot be reversed.
         """
 
     /// The `Change.at` field.

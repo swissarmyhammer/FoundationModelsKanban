@@ -34,7 +34,8 @@ return { board: r.data.board, errors: r.errors ?? [], warnings: r.extensions?.wa
 
 - Each error has `extensions.code`, for example `NOT_FOUND`. The `message` tells you how to correct the call.
 - Read `extensions.warnings` after each call. A warning tells you that the call did the work in a different way than you asked. Each warning has a `message` and a `code`. The call is done, and its changes are written.
-- All mutation fields of one document are one transaction. `undo` reverses all of the transaction.
+- Each mutation takes one `input` argument, and `input` is required. A mutation with no field to give takes `input: {}`, for example `mutation { undoChange(input: {}) { ops } }`.
+- All mutation fields of one document are one transaction. `undoChange` reverses all of the transaction.
 - To learn the schema, query `__schema` or `__type`.
 
 ## The board
@@ -46,7 +47,7 @@ return { board: r.data.board, errors: r.errors ?? [], warnings: r.extensions?.wa
 - A `.kanban/` folder of the old Rust kanban gives `INCOMPATIBLE_BOARD`. Do not change that folder. Tell the user to remove it. Remove it only when the user tells you to remove it.
 - `boards` does not show a related repo with a Rust `.kanban/` folder. The call continues, and the warning `INCOMPATIBLE_BOARD` names that repo. Only a call that names that board stops with the error `INCOMPATIBLE_BOARD`.
 - A call names the current board, unless an input `board` field or a full `kanban://` URI names a different board.
-- Each session has its own actor. Your changes have your actor, so `undo` with no `txn` reverses only your work.
+- Each session has its own actor. Your changes have your actor, so `undoChange` with no `txn` reverses only your work.
 
 ## Add tasks
 
@@ -388,29 +389,29 @@ return r.data;
 
 ## Undo and redo
 
-- `undo` with no `txn` reverses your newest transaction that is not undone. Your actor is the actor of your session, so `undo` does not reverse the work of a different session.
-- `redo` reverses your newest `undo`.
-- `history` lists the transactions, newest first. To reverse a given transaction, give its `txn`: `undo(input: { txn: "<txn>" })`.
+- `undoChange(input: {})` with no `txn` reverses your newest transaction that is not undone. Your actor is the actor of your session, so `undoChange` does not reverse the work of a different session.
+- `redoChange(input: {})` reverses your newest `undoChange`.
+- `history` lists the transactions, newest first. To reverse a given transaction, give its `txn`: `undoChange(input: { txn: "<txn>" })`.
 - A later change to the same data gives `UNDO_CONFLICT`. Read the later transactions in the message before you use `force: true`.
 
 ```js
 await tools.kanban({ query: `mutation { addTask(input: { title: "A wrong task" }) { title } }` });
-const undo = await tools.kanban({ query: `mutation { undo { ops } }` });
+const undo = await tools.kanban({ query: `mutation { undoChange(input: {}) { ops } }` });
 const history = await tools.kanban({ query: `{ board { history(first: 2) { ops undone } } }` });
 const deleted = await tools.kanban({ query: `{ board { tasks(filter: "#DELETED") { nodes { title } } } }` });
-const redo = await tools.kanban({ query: `mutation { redo { ops } }` });
+const redo = await tools.kanban({ query: `mutation { redoChange(input: {}) { ops } }` });
 const back = await tools.kanban({ query: `{ board { task(id: "a-wrong-task") { title } } }` });
 return {
-  undo: undo.data.undo.ops,
+  undo: undo.data.undoChange.ops,
   history: history.data.board.history,
   deleted: deleted.data.board.tasks.nodes.map(t => t.title),
-  redo: redo.data.redo.ops,
+  redo: redo.data.redoChange.ops,
   back: back.data.board.task.title
 };
 ```
 
 ```json
-{"back":"A wrong task","deleted":["A wrong task"],"history":[{"ops":["undo"],"undone":false},{"ops":["addTask"],"undone":true}],"redo":["redo"],"undo":["undo"]}
+{"back":"A wrong task","deleted":["A wrong task"],"history":[{"ops":["undoChange"],"undone":false},{"ops":["addTask"],"undone":true}],"redo":["redoChange"],"undo":["undoChange"]}
 ```
 
 ## Forgiving names

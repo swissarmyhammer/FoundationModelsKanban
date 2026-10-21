@@ -57,14 +57,21 @@ extension SchemaDescription {
 
     // MARK: - Input arguments
 
-    /// The `input` argument of a mutation whose `input` type has a required field.
-    static let mutationInput = "The input object of the call. Its type tells what each field does."
-
-    /// The `input` argument of a mutation whose `input` type has no required field (plan.md §4.2).
-    static let optionalMutationInput = """
-        The input object of the call. Its type tells what each field does. No field is required, so the call can \
-        leave out the input.
+    /// The `input` argument of a mutation (EXTRAS-9 rule 7). The argument is required also when its type has no
+    /// required field.
+    static let mutationInput = """
+        The input object of the call. Its type tells what each field does. The input is required: a call that sets no \
+        field sends input: {}.
         """
+
+    /// Gives the description of the `input` type of a mutation whose type has only the fields of the mutation, for
+    /// example `AssignTaskInput`.
+    ///
+    /// - Parameter mutation: The name of the mutation, from ``MutationName``.
+    /// - Returns: The description, for example "The fields of assignTask.".
+    static func mutationFields(of mutation: String) -> String {
+        "The fields of \(mutation)."
+    }
 
     // MARK: - Board mutations
 
@@ -193,16 +200,16 @@ extension SchemaDescription {
 
     // MARK: - Undo mutations
 
-    /// The `Mutation.undo` field.
-    static let undo = """
+    /// The `Mutation.undoChange` field.
+    static let undoChange = """
         Reverses a transaction: it writes the inverse of each change of the transaction. No txn reverses the newest \
         transaction of the session actor that is not undone, is not an undo or a redo, and comes after the newest \
         collectBoards transaction. A collectBoards transaction cannot be reversed. A later change that conflicts with \
         the inverse gives UNDO_CONFLICT, unless force is true.
         """
 
-    /// The `Mutation.redo` field.
-    static let redo = """
+    /// The `Mutation.redoChange` field.
+    static let redoChange = """
         Reverses the undo of a transaction. No txn reverses the newest undo of the session actor that is not undone, \
         is not a redo, and comes after the newest collectBoards transaction.
         """
@@ -247,13 +254,15 @@ extension SchemaDescription {
 
     // MARK: - Board input
 
-    /// The `BoardInput` type.
-    static let boardInput = """
-        The fields of initBoard and updateBoard. A name, model, or body that is not set does not change, and null \
-        clears it.
-        """
+    /// Gives the description of the `input` type of a board mutation: `InitBoardInput` or `UpdateBoardInput`.
+    ///
+    /// - Parameter mutation: The name of the mutation: `initBoard` or `updateBoard`.
+    /// - Returns: The description.
+    static func boardInput(of mutation: String) -> String {
+        "\(mutationFields(of: mutation)) A name, model, or body that is not set does not change, and null clears it."
+    }
 
-    /// The `name` field of `BoardInput`.
+    /// The `name` field of `InitBoardInput` and `UpdateBoardInput`.
     static let boardName = "The name of the board."
 
     // MARK: - Column and actor inputs
@@ -303,13 +312,16 @@ extension SchemaDescription {
         body; null for the name gives no change and a warning.
         """
 
-    /// The `NodeReferenceInput` type.
-    static let nodeReferenceInput = """
-        The node of a call that names one node: completeTask, and the delete and undelete calls of columns, actors, \
-        tasks, and tags.
-        """
+    /// Gives the description of the `input` type of a mutation that names one node and has no other field: the type of
+    /// ``NodeReferenceInput``, for example `DeleteTaskInput`.
+    ///
+    /// - Parameter mutation: The name of the mutation, for example `deleteTask`.
+    /// - Returns: The description, for example "The node of deleteTask.".
+    static func nodeReferenceInput(of mutation: String) -> String {
+        "The node of \(mutation)."
+    }
 
-    /// The `id` field of `NodeReferenceInput`.
+    /// The `id` field of the `input` type of ``NodeReferenceInput``.
     static let nodeReference = "The node: a full URI or a short form."
 
     // MARK: - Task inputs
@@ -379,13 +391,7 @@ extension SchemaDescription {
     /// The `after` field of `MoveTaskInput` and `CopyTaskInput` (divergence.md P1).
     static let placementAfter = "The task to put this task after: a full URI or a short form. \(missingNeighbor)"
 
-    /// The `AssignTaskInput` type.
-    static let assignTaskInput = "The fields of assignTask and unassignTask."
-
-    /// The `TagTaskInput` type.
-    static let tagTaskInput = "The fields of tagTask and untagTask."
-
-    /// The `tags` field of `TagTaskInput`.
+    /// The `tags` field of `TagTaskInput` and `UntagTaskInput`.
     static let tagTaskTags = "The tags to add or to remove. \(tagForms)"
 
     // MARK: - Comment inputs
@@ -410,8 +416,14 @@ extension SchemaDescription {
         The fields of updateComment. A body that is not set does not change, and null clears it.
         """
 
-    /// The `CommentReferenceInput` type.
-    static let commentReferenceInput = "The comment of deleteComment and undeleteComment."
+    /// Gives the description of the `input` type of a comment mutation that names one comment: the type of
+    /// ``CommentReferenceInput``, `DeleteCommentInput` or `UndeleteCommentInput`.
+    ///
+    /// - Parameter mutation: The name of the mutation: `deleteComment` or `undeleteComment`.
+    /// - Returns: The description, for example "The comment of deleteComment.".
+    static func commentReferenceInput(of mutation: String) -> String {
+        "The comment of \(mutation)."
+    }
 
     // MARK: - Tag inputs
 
@@ -461,18 +473,16 @@ extension SchemaDescription {
     /// The `to` field of `RenameTagInput`.
     static let renameTo = "The new tag name."
 
-    // MARK: - Undo input
+    // MARK: - Undo inputs
 
-    /// The `UndoInput` type.
-    static let undoInput = "The fields of undo and redo."
-
-    /// The `txn` field of `UndoInput`.
+    /// The `txn` field of `UndoChangeInput` and `RedoChangeInput`.
     static let undoTransaction = """
-        For undo, the transaction to reverse. For redo, the original transaction whose undo to reverse. No txn gives \
-        the newest target of the session actor after the newest collectBoards transaction: for undo, a transaction \
-        that is not undone and is not an undo or a redo; for redo, an undo that is not undone and is not a redo.
+        For undoChange, the transaction to reverse. For redoChange, the original transaction whose undo to reverse. \
+        No txn gives the newest target of the session actor after the newest collectBoards transaction: for \
+        undoChange, a transaction that is not undone and is not an undo or a redo; for redoChange, an undo that is \
+        not undone and is not a redo.
         """
 
-    /// The `force` field of `UndoInput`.
+    /// The `force` field of `UndoChangeInput` and `RedoChangeInput`.
     static let undoForce = "True writes the inverse also when a later change conflicts with it."
 }

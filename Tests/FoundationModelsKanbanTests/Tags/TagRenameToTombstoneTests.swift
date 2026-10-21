@@ -7,7 +7,8 @@ import ULID
 
 /// Tests `renameTag` to the slug of a tag that exists (plan.md §6.2, §6.5). A rename to a slug that exists is a merge.
 /// When the target is a tombstone, the rename writes `delete: false` on it, and the tasks with the old tag show the
-/// target. `undo` of the rename reverses the two patches. When the target is live, the rename writes no patch on it.
+/// target. `undoChange` of the rename reverses the two patches. When the target is live, the rename writes no patch
+/// on it.
 ///
 /// Each test runs ``ChangeBuilderTests/baseSetup``, which adds ``TagMutationTests/bug``, in a commit session of the
 /// fixture board. Then the test runs a `tagTask` of the fixture task with `bug` and an `addTag` of

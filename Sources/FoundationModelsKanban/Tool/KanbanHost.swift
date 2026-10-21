@@ -127,7 +127,7 @@ public actor KanbanHost {
     /// - Parameters:
     ///   - workingDirectory: The working directory of the session.
     ///   - actor: The name of the session actor: the actor of each change that the session writes. Give each session
-    ///     its own actor, so that `undo` with no argument stays in its session. `nil` gives the name of the OS user.
+    ///     its own actor, so that `undoChange(input: {})` stays in its session. `nil` gives the name of the OS user.
     /// - Returns: The session view. Its calls with no board go to the board of the working directory.
     /// - Throws: ``KanbanError/incompatibleBoard(directory:)`` when the `.kanban/` directory is a board of the old
     ///   Rust kanban (divergence.md Q6). ``KanbanError/invalidSlug(name:)`` when the actor name gives an empty slug.

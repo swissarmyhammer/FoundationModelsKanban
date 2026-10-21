@@ -6,7 +6,7 @@ import ULID
 
 /// Tests `Mutation.repairLinks` (divergence.md M9): the rewrite of each link with an old board name to the current
 /// name of the board, in each link field (`dependsOn`, an assignee URI, a task URL in a body, the line of a moved
-/// task), one `undo` of the rewrite, `dryRun`, the boards that the call writes to, and a dangling link.
+/// task), one `undoChange` of the rewrite, `dryRun`, the boards that the call writes to, and a dangling link.
 ///
 /// Each test makes real git repos in a ``GitSandbox``. The engines read the worktree tops and the board keys from git.
 @Suite("repairLinks", .watcherBudget)
@@ -47,15 +47,16 @@ struct RepairLinksTests {
     /// Runs `Mutation.repairLinks`, and expects that the response has no error.
     ///
     /// - Parameters:
-    ///   - arguments: The arguments of the field, for example `(dryRun: true)`, or the empty text.
+    ///   - input: The fields of the `input` object, for example `dryRun: true`, or `""` for an empty `input` object.
     ///   - graph: The engine.
     /// - Returns: The links of the response, and the response JSON text.
     /// - Throws: An error when the response has no list of links.
     static func repairs(
-        with arguments: String = "",
+        with input: String = "",
         on graph: KanbanGraph
     ) async throws -> (repairs: [Repair], response: String) {
-        let field = "\(MutationName.repairLinks)\(arguments) \(repairSelection)"
+        let argument = input.isEmpty ? "(input: {})" : "(input: { \(input) })"
+        let field = "\(MutationName.repairLinks)\(argument) \(repairSelection)"
         let response = try await CrossRepoUndoTests.runWithNoErrors(field, on: graph)
         let objects = try #require(
             KanbanGraphTests.data(of: response)[MutationName.repairLinks] as? [[String: Any]],
@@ -151,8 +152,8 @@ struct RepairLinksTests {
         return OldNameBoard(repos: repos, graph: try CrossRepoTransferTests.makeLibGraph(in: repos))
     }
 
-    /// Runs `repairLinks` and then one `undo` on a board whose links have one old board name, and expects that the
-    /// undo puts back each link: `checkLinks` after the undo gives the same links as before the repair.
+    /// Runs `repairLinks` and then one `undoChange` on a board whose links have one old board name, and expects that
+    /// the undo puts back each link: `checkLinks` after the undo gives the same links as before the repair.
     ///
     /// - Parameter graph: The engine of the board that holds the links.
     /// - Returns: The links before the repair, and the response of the repair.
@@ -326,12 +327,12 @@ struct RepairLinksTests {
         #expect(result.before.map(\.field) == [LinkField.assignee, LinkField.body].map(\.rawValue))
     }
 
-    @Test("repairLinks(dryRun: true) writes nothing, and lists the same changes as the call that writes")
+    @Test("repairLinks(input: { dryRun: true }) writes nothing, and lists the same changes as the call that writes")
     func dryRunWritesNothing() async throws {
         let renamed = try await CheckLinksTests.makeRenamedLib(completingTarget: false)
         let app = try GitGraphFixture.makeGraph(at: renamed.repos.app)
         let before = try await CheckLinksTests.checks(on: app)
-        let dryRun = try await Self.repairs(with: "(dryRun: true)", on: app)
+        let dryRun = try await Self.repairs(with: "dryRun: true", on: app)
         let afterDryRun = try await CheckLinksTests.checks(on: app)
         let written = try await Self.repairs(on: app)
         await app.close()
@@ -348,7 +349,7 @@ struct RepairLinksTests {
         let appBoard = #"(boards: ["\#(BoardLocatorTests.appName)"])"#
         let named = try await Self.repairs(on: lib)
         let afterNamed = try await CheckLinksTests.checks(with: appBoard, on: lib)
-        let reached = try await Self.repairs(with: "(reach: true)", on: lib)
+        let reached = try await Self.repairs(with: "reach: true", on: lib)
         let afterReach = try await CheckLinksTests.checks(with: appBoard, on: lib)
         await lib.close()
         #expect(named.repairs.isEmpty, "\(named.response)")
@@ -362,8 +363,8 @@ struct RepairLinksTests {
     func forgivingArgumentNames() async throws {
         let renamed = try await CheckLinksTests.makeRenamedLib(completingTarget: false)
         let lib = try CrossRepoTransferTests.makeLibGraph(in: renamed.repos)
-        let arguments = #"(board: "\#(BoardLocatorTests.appName)", reachable: false, preview: true)"#
-        let result = try await Self.repairs(with: arguments, on: lib)
+        let input = #"board: "\#(BoardLocatorTests.appName)", reachable: false, preview: true"#
+        let result = try await Self.repairs(with: input, on: lib)
         let after = try await CheckLinksTests.checks(with: #"(board: "\#(BoardLocatorTests.appName)")"#, on: lib)
         await lib.close()
         let newTarget = try Self.uri(renamed.target, withKey: renamed.newKey)

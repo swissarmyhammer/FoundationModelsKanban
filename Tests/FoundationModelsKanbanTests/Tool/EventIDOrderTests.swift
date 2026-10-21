@@ -127,7 +127,7 @@ struct EventIDOrderTests {
         var (session, task) = try await Self.session(mintingFrom: Self.descendingIDs, inRepoAt: directory)
         let target = try await Self.run(UndoTests.titleField(Self.firstTitle, of: task), in: &session)
         let txn = try #require(target.events.first?.txn)
-        let undoField = UndoTests.reverseField(MutationName.undo, with: UndoTests.txnInput(txn))
+        let undoField = UndoTests.reverseField(MutationName.undoChange, with: UndoTests.txnInput(txn))
         let undo = try await Self.run(undoField, in: &session)
         Self.expect(undo.events, after: try #require(target.events.map(\.id).max()))
         Self.expect(undo.events, after: undo.largestBefore)

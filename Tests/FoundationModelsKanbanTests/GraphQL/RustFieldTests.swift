@@ -56,7 +56,8 @@ struct RustFieldTests {
         "VirtualTag": ["name", "color", "description"],
         "AddActorInput": ["avatar"],
         "UpdateActorInput": ["avatar"],
-        "BoardInput": ["model"],
+        "InitBoardInput": ["model"],
+        "UpdateBoardInput": ["model"],
     ]
 
     // MARK: - Helpers
@@ -134,7 +135,7 @@ struct RustFieldTests {
     }
 
     @Test("addActor with no id and no name gives INVALID_SLUG", arguments: [
-        "mutation { addActor { id } }",
+        "mutation { addActor(input: {}) { id } }",
         #"mutation { addActor(input: { avatar: "\#(robotAvatar)" }) { id } }"#,
     ])
     func addActorWithNoIDAndNoName(mutation: String) async throws {
@@ -180,7 +181,7 @@ struct RustFieldTests {
     @Test("A board that no patch gave a model has a null model, and a null model writes an unset of the model")
     func nullModelClearsModel() async throws {
         let directory = try TemporaryDirectory()
-        let mutation = #"mutation { first: updateBoard { model } "#
+        let mutation = #"mutation { first: updateBoard(input: {}) { model } "#
             + #"second: updateBoard(input: { model: "\#(Self.haiku)" }) { model } "#
             + "third: updateBoard(input: { model: null }) { model } }"
         let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)

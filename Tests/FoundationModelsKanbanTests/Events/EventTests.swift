@@ -46,7 +46,7 @@ struct EventTests {
 
     /// A line in the canonical form, with sorted keys, that uses each optional part of the envelope and the patch.
     static let canonicalLine = #"{"actor":"actor/claude-code","at":"\#(atText)","boards":["\#(otherKey)"],"#
-        + #""id":"\#(eventULID)","ops":["undo"],"query":"mutation($p: PatchInput!) { patch(input: $p) }","#
+        + #""id":"\#(eventULID)","ops":["undoChange"],"query":"mutation($p: PatchInput!) { patch(input: $p) }","#
         + #""txn":"\#(txnULID)","undoes":"\#(taskULID)","#
         + #""variables":{"p":{"delete":false,"edit":{"body":"@@ -1,1 +1,1 @@\n-old\n+new\n"},"#
         + #""node":"task/\#(taskULID)","remove":{"tags":["tag/bug"]},"#

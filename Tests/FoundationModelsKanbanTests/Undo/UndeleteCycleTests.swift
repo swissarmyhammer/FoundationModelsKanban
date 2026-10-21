@@ -5,7 +5,7 @@ import ULID
 @testable import FoundationModelsKanban
 
 /// Tests the `dependsOn` cycle rule when a tombstoned task becomes live again (plan.md §3.3 rule 6, divergence.md X7):
-/// `undeleteTask`, and an `undo` of a `deleteTask`, run the same cycle check as a write of `dependsOn`.
+/// `undeleteTask`, and an `undoChange` of a `deleteTask`, run the same cycle check as a write of `dependsOn`.
 ///
 /// Each test makes the example of divergence.md X7. A depends on B, and B depends on C. Then B is deleted, and C gets
 /// a dependency on A. The cycle A → B → C → A is not there while B is a tombstone, and it comes back when B is live
@@ -142,8 +142,8 @@ struct UndeleteCycleTests {
 
     @Test("undo of the delete of B after C depends on A gives DEPENDENCY_CYCLE and writes nothing")
     func undoOfDeleteThatClosesCycleIsRefused() async throws {
-        try await Self.expectOneBoardCycle(of: MutationName.undo) { example in
-            UndoTests.reverseField(MutationName.undo, with: UndoTests.txnInput(example.deleteTransaction))
+        try await Self.expectOneBoardCycle(of: MutationName.undoChange) { example in
+            UndoTests.reverseField(MutationName.undoChange, with: UndoTests.txnInput(example.deleteTransaction))
         }
     }
 

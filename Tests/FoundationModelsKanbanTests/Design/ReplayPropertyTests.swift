@@ -272,10 +272,10 @@ extension Design.ReplayPropertyTests {
         /// `renameTag` from one tag to a different tag.
         case renameTag
 
-        /// `undo` of the newest transaction of the session actor.
+        /// `undoChange` of the newest transaction of the session actor.
         case undo
 
-        /// `redo` of the newest undo of the session actor.
+        /// `redoChange` of the newest undo of the session actor.
         case redo
 
         /// The name of the public mutation of the call.
@@ -293,8 +293,8 @@ extension Design.ReplayPropertyTests {
             case .undeleteTask: MutationName.undeleteTask
             case .addComment: MutationName.addComment
             case .renameTag: MutationName.renameTag
-            case .undo: MutationName.undo
-            case .redo: MutationName.redo
+            case .undo: MutationName.undoChange
+            case .redo: MutationName.redoChange
             }
         }
 

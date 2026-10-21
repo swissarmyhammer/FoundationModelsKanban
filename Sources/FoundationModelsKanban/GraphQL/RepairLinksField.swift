@@ -12,8 +12,9 @@ extension MutationName {
 
 // MARK: - Arguments
 
-/// The arguments of `Mutation.repairLinks` (divergence.md M9).
-struct RepairLinksArguments: Codable, Sendable {
+/// The `input` object of `repairLinks` (divergence.md M9, EXTRAS-9 rule 7). No field is required, so `input: {}`
+/// rewrites the links of the current board.
+struct RepairLinksInput: Codable, Sendable {
     /// The boards whose links to rewrite: each a board key, a repo directory name, a path, or the URI of a board.
     /// `nil` or an empty list names the current board.
     let boards: [String]?
@@ -49,29 +50,29 @@ extension KanbanResolver {
     /// - Throws: The errors of ``BoardStore/repairLinks(_:at:)``.
     fileprivate func repairLinks(
         context: KanbanContext,
-        arguments: RepairLinksArguments
+        arguments: InputArguments<RepairLinksInput>
     ) async throws -> [LinkRepair]? {
-        try await context.store.repairLinks(arguments, at: context.clock()) ?? []
+        try await context.store.repairLinks(arguments.input, at: context.clock()) ?? []
     }
 }
 
 // MARK: - Store
 
 extension BoardStore {
-    /// The name of the option of `repairLinks` that reaches each board of the scan, for the error of a call that
+    /// The call form of the option of `repairLinks` that reaches each board of the scan, for the error of a call that
     /// reaches only the board of its folder.
-    static let reachArgument = "\(MutationName.repairLinks)(reach: true)"
+    static let reachArgument = "\(MutationName.repairLinks)(input: { reach: true })"
 
     /// Rewrites each stored link with an old board name to the current name of its board (divergence.md M9): the
     /// `dependsOn` edges, the assignee URIs, the task URLs in the bodies of the live tasks, and the line of each
     /// tombstone of a moved task. A link with the current key of its board gets a local ref in the stored form.
     ///
     /// The call writes only to the boards that it names, and with `reach` also to each board that the scan reaches.
-    /// All the rewrites are one transaction of the call, so one `undo` reverses them. With `dryRun`, the call lists
-    /// the same changes and writes nothing. A dangling link is in the list, and the call does not change it.
+    /// All the rewrites are one transaction of the call, so one `undoChange` reverses them. With `dryRun`, the call
+    /// lists the same changes and writes nothing. A dangling link is in the list, and the call does not change it.
     ///
     /// - Parameters:
-    ///   - arguments: The boards, the reach option, and the dry run option.
+    ///   - input: The boards, the reach option, and the dry run option.
     ///   - time: The time of the change.
     /// - Returns: Each link with an old board name and each dangling link, by board in the order of the boards, or
     ///   `nil` when the engine did not load a board yet. The store then records the requests, and the call runs again
@@ -79,8 +80,8 @@ extension BoardStore {
     /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for a board ref.
     ///   ``KanbanError/notFound(type:reference:)`` for a named board that cannot be read. An ``EventError`` when a
     ///   patch breaks a rule of the log. Then no board keeps a patch.
-    func repairLinks(_ arguments: RepairLinksArguments, at time: DateTime) throws -> [LinkRepair]? {
-        guard let targets = try repairTargets(of: arguments) else {
+    func repairLinks(_ input: RepairLinksInput, at time: DateTime) throws -> [LinkRepair]? {
+        guard let targets = try repairTargets(of: input) else {
             return nil
         }
         let found = targets.map { target in
@@ -91,7 +92,7 @@ extension BoardStore {
         guard let boards = found.allValues() else {
             return nil
         }
-        if arguments.dryRun != true {
+        if input.dryRun != true {
             try write(boards, as: MutationName.repairLinks, at: time)
         }
         return boards.flatMap(\.repairs)
@@ -100,14 +101,14 @@ extension BoardStore {
     /// Finds the boards of a `repairLinks` call: the named boards, and with `reach` each board that the scan reaches.
     /// A board that two refs name is one time in the list.
     ///
-    /// - Parameter arguments: The boards and the reach option.
+    /// - Parameter input: The boards and the reach option.
     /// - Returns: The boards, the named boards first, or `nil` when the engine did not load a board yet.
     /// - Throws: The errors of ``target(of:)``.
-    private func repairTargets(of arguments: RepairLinksArguments) throws(KanbanError) -> [MutationTarget]? {
-        let named = try Self.boardReferences(arguments.boards).map { reference throws(KanbanError) in
+    private func repairTargets(of input: RepairLinksInput) throws(KanbanError) -> [MutationTarget]? {
+        let named = try Self.boardReferences(input.boards).map { reference throws(KanbanError) in
             try target(of: .named(reference))
         }
-        let reached = arguments.reach == true ? try reachableTargets(for: Self.reachArgument) : []
+        let reached = input.reach == true ? try reachableTargets(for: Self.reachArgument) : []
         guard let reached, let named = named.allValues() else {
             return nil
         }
@@ -197,7 +198,8 @@ extension WorkingCopy {
 // MARK: - Schema
 
 extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanContext {
-    /// Adds the `repairLinks` mutation and its `LinkRepair` type (divergence.md M9).
+    /// Adds the `repairLinks` mutation, its `input` type `RepairLinksInput`, and its `LinkRepair` type (divergence.md
+    /// M9, EXTRAS-9 rule 7).
     ///
     /// - Returns: This builder, for method chaining.
     func addRepairLinksMutation() -> Self {
@@ -209,14 +211,19 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 fields: Self.linkCheckFields(of: \.check) + Self.linkRepairFields()
             )
             .description(SchemaDescription.linkRepair)
+            Input(RepairLinksInput.self) {
+                InputField("boards", at: \.boards).description(SchemaDescription.boardsToRepair)
+                InputField("reach", at: \.reach).description(SchemaDescription.repairReach)
+                InputField("dryRun", at: \.dryRun).description(SchemaDescription.repairDryRun)
+            }
+            .description(SchemaDescription.repairLinksInput)
         }
         .addMutation {
-            Field(MutationName.repairLinks, at: KanbanResolver.repairLinks) {
-                Argument("boards", at: \.boards).description(SchemaDescription.boardsToRepair)
-                Argument("reach", at: \.reach).description(SchemaDescription.repairReach)
-                Argument("dryRun", at: \.dryRun).description(SchemaDescription.repairDryRun)
-            }
-            .description(SchemaDescription.repairLinks)
+            Self.mutationField(
+                MutationName.repairLinks,
+                at: KanbanResolver.repairLinks,
+                description: SchemaDescription.repairLinks
+            )
         }
     }
 

@@ -71,7 +71,7 @@ let graph = try await KanbanHost.shared.session(
   for this commit.
 - `actor` is the name of the actor of your changes. `nil` uses the name of the
   user of the operating system. Give each session its own actor, so that
-  `undo` with no argument stays in its session.
+  `undoChange(input: {})` with no `txn` stays in its session.
 - `session` loads the board before it returns. A query on a folder with no
   `.kanban/` directory gives an empty board, and it writes no file.
 - The first mutation makes the board. The new board has the default columns
@@ -178,7 +178,7 @@ The tool does not close the engine. The tool does not run a subscription.
 `KanbanTool` is also a `GraphQLEndpointTool` of FoundationModelsExtras. Its
 `graphQLEndpoints` is a list of one: the engine of the tool, also for a copy of
 the tool. `KanbanGraph` is that `GraphQLEndpoint`, with the name `kanban`, the
-version `1`, and the scope `sessionFolder`. A host gives it to a client, with the
+version `2`, and the scope `sessionFolder`. A host gives it to a client, with the
 `GraphQLViewer` of the client in each `execute` and `subscribe` call. A `nil`
 viewer and a `userDevice` viewer reach each board. An `external` viewer reaches
 only the board of the folder of the engine: each other board gives the error

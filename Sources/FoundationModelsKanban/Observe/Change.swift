@@ -169,8 +169,8 @@ struct NodeUpdate: Sendable {
 /// ``ChangeBuilder`` makes it from the projection before and after the batch of the transaction. ``ChangeBuilder``
 /// and ``ChangeRound`` tell which ``NodeUpdate`` values each change of a batch has: an update can be in the change
 /// of a transaction that did not write its node. `Board.history` and `Subscription.changes` give changes with the
-/// updates of one board. `undo` and `redo` give one change with the updates of each board that they changed, the
-/// updates of the first board first (``BoardStore/reverse(_:with:at:)``).
+/// updates of one board. `undoChange` and `redoChange` give one change with the updates of each board that they
+/// changed, the updates of the first board first (``BoardStore/reverse(_:with:at:)``).
 struct Change: Sendable {
     /// The transaction ULID.
     let txn: NodeID
@@ -192,7 +192,7 @@ struct Change: Sendable {
     /// `true` when a later transaction that is not undone reverses this transaction (plan.md §6.5).
     let undone: Bool
 
-    /// The transaction that this transaction reverses, only for `undo` and `redo`.
+    /// The transaction that this transaction reverses, only for `undoChange` and `redoChange`.
     let undoes: NodeID?
 
     /// The updates of the nodes: the updates of the patched nodes in the order of the first patch of each node, then
@@ -264,8 +264,8 @@ struct Change: Sendable {
     }
 
     /// Resolves `Change.cursor`: the cursor of the change in the change log of its board. A change of `Board.history`,
-    /// `undo`, or `redo` has no log cursor: it gives the cursor of the first board of ``boards`` as the call reads it,
-    /// so that `changes(after:)` with it gives the changes after that read.
+    /// `undoChange`, or `redoChange` has no log cursor: it gives the cursor of the first board of ``boards`` as the
+    /// call reads it, so that `changes(after:)` with it gives the changes after that read.
     ///
     /// - Parameter context: The context of the call. Its store finds the board of the transaction.
     /// - Returns: The cursor.
@@ -341,7 +341,7 @@ extension KanbanContext {
 
 extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanContext {
     /// Adds the `Change`, `NodeUpdate`, and `FieldChange` types and their enums (plan.md §4.1). `Board.history`,
-    /// `Subscription.changes`, `Mutation.undo`, and `Mutation.redo` give these types.
+    /// `Subscription.changes`, `Mutation.undoChange`, and `Mutation.redoChange` give these types.
     ///
     /// - Returns: This builder, for method chaining.
     func addChangeTypes() -> Self {

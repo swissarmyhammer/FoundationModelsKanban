@@ -192,8 +192,9 @@ public actor KanbanGraph: GraphQLEndpoint {
     public nonisolated let name = "kanban"
 
     /// The version of the schema of the endpoint (EXTRAS-9 rule 1). A change that removes or renames a field, or
-    /// makes a field stricter, increases it.
-    public nonisolated let version = "1"
+    /// makes a field stricter, increases it. Version 2 gives each mutation the form `verbNoun(input: VerbNounInput!)`
+    /// (EXTRAS-9 rule 7): one required argument `input`, whose type has the name of the mutation.
+    public nonisolated let version = "2"
 
     /// The scope of the endpoint: the board of the folder of a session (EXTRAS-9 rule 3).
     public nonisolated let scope = GraphQLEndpointScope.sessionFolder
@@ -1092,7 +1093,7 @@ public actor KanbanGraph: GraphQLEndpoint {
     /// §6.6). The loop also loads each board that a cross-board dependency or assignee of a loaded board names, so
     /// that the readiness of a task of a related board reads its own dependencies, and its assignees read their own
     /// boards. The result holds each related board that the view loaded, also when the run asks for no board, because
-    /// `undo` and `redo` with no `txn` search the loaded boards (plan.md §6.5, scope).
+    /// `undoChange` and `redoChange` with no `txn` search the loaded boards (plan.md §6.5, scope).
     ///
     /// Each round of the loop answers its open requests at the same time (divergence.md §16, L5). Each load goes
     /// through the table of the host, so two requests for the same board wait for one load.

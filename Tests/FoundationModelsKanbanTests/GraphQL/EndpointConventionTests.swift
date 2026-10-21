@@ -27,28 +27,6 @@ struct EndpointConventionTests {
         to: probeCanonicalName
     )
 
-    /// The id of the task that gives each mutation the form `verbNoun(input: VerbNounInput!)`. It removes the
-    /// exception of rule 7.
-    ///
-    /// The exception stands because no mutation that breaks rule 7 can change and keep its old form as an alias: the
-    /// rewrite of the toolkit does not rename a type name in a variable definition, cannot move top-level arguments
-    /// into an `input` object, and cannot give a default for a missing required `input` (plan.md §4 makes `input`
-    /// optional when it has no required field).
-    static let mutationFormTask = "gnn5vz8"
-
-    /// The rules that the endpoint does not obey yet, each with the task that removes it.
-    static let exceptions = [
-        GraphQLConventionException(rule: .mutations, removedBy: mutationFormTask),
-    ]
-
-    /// The mutations that break rule 7 under its exception, in the order of the schema. A new mutation must have the
-    /// form of rule 7, so this list only gets shorter.
-    static let mutationsOutsideRule7 = [
-        "initBoard", "updateBoard", "deleteColumn", "undeleteColumn", "addActor", "deleteActor", "undeleteActor",
-        "completeTask", "unassignTask", "untagTask", "deleteTask", "undeleteTask", "deleteComment", "undeleteComment",
-        "addTag", "deleteTag", "undeleteTag", "undo", "redo", "repairLinks", "collectBoards",
-    ]
-
     /// The board ref of the errors that name a board.
     static let boardReference = BoardLocatorTests.libName
 
@@ -97,12 +75,11 @@ struct EndpointConventionTests {
 
     // MARK: - Helpers
 
-    /// Runs the conformance check on an engine of a fixture board.
+    /// Runs the conformance check on an engine of a fixture board, with no exception: the endpoint obeys each rule.
     ///
-    /// - Parameter exceptions: The rules that the check does not report.
     /// - Returns: The problems of the check.
     /// - Throws: An error when the fixture cannot be written or the engine cannot start.
-    static func conformanceProblems(excepting exceptions: [GraphQLConventionException]) async throws -> [String] {
+    static func conformanceProblems() async throws -> [String] {
         let directory = try TemporaryDirectory()
         _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
         let graph = try KanbanGraphTests.makeGraph(at: directory.url)
@@ -111,7 +88,7 @@ struct EndpointConventionTests {
             scope: .sessionFolder,
             probe: probe,
             codes: codes,
-            exceptions: exceptions
+            exceptions: []
         )
         await graph.close()
         return problems
@@ -131,21 +108,8 @@ struct EndpointConventionTests {
         #expect(undescribed == [])
     }
 
-    @Test("The endpoint passes the conformance check with the alias probe createTask, under the exceptions")
+    @Test("The endpoint passes the conformance check with the alias probe createTask, with no exception")
     func endpointConforms() async throws {
-        #expect(try await Self.conformanceProblems(excepting: Self.exceptions) == [])
-    }
-
-    @Test("With no exception, rule 7 reports only the mutations of the rule-7 exception, and no rule reports more")
-    func onlyKnownMutationsBreakRule7() async throws {
-        let rule7 = GraphQLConventionRule.mutations.name
-        let problems = try await Self.conformanceProblems(excepting: [])
-        let reported = problems.filter { problem in problem.hasPrefix(rule7) }
-        let named = Self.mutationsOutsideRule7.filter { mutation in
-            reported.contains { problem in problem.contains("mutation \(mutation)(") }
-        }
-        #expect(named == Self.mutationsOutsideRule7, "\(reported)")
-        #expect(reported.count == Self.mutationsOutsideRule7.count, "\(reported)")
-        #expect(problems.filter { problem in !problem.hasPrefix(rule7) } == [])
+        #expect(try await Self.conformanceProblems() == [])
     }
 }

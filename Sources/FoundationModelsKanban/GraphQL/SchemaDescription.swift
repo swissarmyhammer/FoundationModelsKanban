@@ -54,13 +54,13 @@ enum SchemaDescription {
         nodes of this board.
         """
 
-    /// The `board` field of `UndoInput`.
+    /// The `board` field of `UndoChangeInput` and `RedoChangeInput`.
     static let boardOfTransaction = """
         The board that holds the transaction. \(boardForms) No value searches the current board and the loaded \
         related boards.
         """
 
-    /// The `boards` field of `UndoInput`.
+    /// The `boards` field of `UndoChangeInput` and `RedoChangeInput`.
     static let copiesOfTransaction = """
         More copies of the other boards of the transaction to reverse, for example the path of a second worktree of \
         a repo.
@@ -162,7 +162,7 @@ enum SchemaDescription {
         a live task that is not done, and that no dependency stops. Null when no task is ready.
         """
 
-    /// The `Board.model` field and the `model` field of `BoardInput` (divergence.md Q19).
+    /// The `Board.model` field and the `model` field of `InitBoardInput` and `UpdateBoardInput` (divergence.md Q19).
     static let boardModel = """
         The model of the board as text, for example the chat model haiku, or null. The board does not check the text.
         """
@@ -251,7 +251,8 @@ enum SchemaDescription {
 
     // MARK: - Comment inputs
 
-    /// The `task` field of `UpdateCommentInput` and `CommentReferenceInput` (divergence.md E5, K16).
+    /// The `task` field of `UpdateCommentInput`, `DeleteCommentInput`, and `UndeleteCommentInput` (divergence.md E5,
+    /// K16).
     static let commentTask = """
         The task of the comment. The comment id alone names the comment. When this task is not the task of the \
         comment, the call gives NOT_FOUND and changes nothing.
@@ -303,21 +304,26 @@ enum SchemaDescription {
     static let repairLinks = """
         Rewrites each \(LinkStatus.oldName.rawValue) link of the boards to the current name of its board, and lists \
         each \(LinkStatus.oldName.rawValue) and \(LinkStatus.dangling.rawValue) link. A \
-        \(LinkStatus.dangling.rawValue) link does not change. One undo reverses the rewrite in each board.
+        \(LinkStatus.dangling.rawValue) link does not change. One undoChange reverses the rewrite in each board.
         """
 
-    /// The `boards` argument of `Mutation.repairLinks`.
+    /// The `RepairLinksInput` type (divergence.md M9).
+    static let repairLinksInput = """
+        The fields of repairLinks. No field is required: input: {} rewrites the links of the current board.
+        """
+
+    /// The `boards` field of `RepairLinksInput`.
     static let boardsToRepair = """
         The boards whose links to rewrite. Each item is a board ref. \(boardForms) No value, or an empty list, names \
         the current board. The call writes to no other board, unless reach is true.
         """
 
-    /// The `reach` argument of `Mutation.repairLinks`.
+    /// The `reach` field of `RepairLinksInput`.
     static let repairReach = """
         True also rewrites the links of each board that the scan reaches: the boards of Query.boards.
         """
 
-    /// The `dryRun` argument of `Mutation.repairLinks`.
+    /// The `dryRun` field of `RepairLinksInput`.
     static let repairDryRun = "True lists the same links and writes nothing."
 
     /// The `LinkRepair.newTarget` field.
@@ -334,29 +340,34 @@ enum SchemaDescription {
         and comments keep their ids. A column, a tag, or an actor with the same slug becomes one node, and the event \
         order decides a field that two boards set. Each name of a source becomes an old name of the target, and the \
         call removes each source .kanban folder. The call rewrites each \(LinkStatus.oldName.rawValue) link of the \
-        target to the current name. Undo does not reverse the call. A board of the old Rust kanban gives \
+        target to the current name. undoChange does not reverse the call. A board of the old Rust kanban gives \
         INCOMPATIBLE_BOARD and the call writes nothing.
         """
 
-    /// The `sources` argument of `Mutation.collectBoards`.
+    /// The `CollectBoardsInput` type (divergence.md M9).
+    static let collectBoardsInput = """
+        The fields of collectBoards. No field is required: no sources collects no board.
+        """
+
+    /// The `sources` field of `CollectBoardsInput`.
     static let collectSources = """
         The boards to combine into the target. Each item is a folder that holds a .kanban folder (also a subfolder of \
         a git repo), or a board ref. \(boardForms) A source that is the target is left out.
         """
 
-    /// The `target` argument of `Mutation.collectBoards`.
+    /// The `target` field of `CollectBoardsInput`.
     static let collectTarget = """
         The board that gets the sources: a board ref. \(boardForms) No value names the current board. A target with \
         no board gets a new board with a new board ID. In a git repo, the target is the top folder of the repo.
         """
 
-    /// The `reach` argument of `Mutation.collectBoards`.
+    /// The `reach` field of `CollectBoardsInput`.
     static let collectReach = """
         True also rewrites each link of otherLinks: the link then names the target by its current key. Otherwise the \
         call only lists these links.
         """
 
-    /// The `dryRun` argument of `Mutation.collectBoards`.
+    /// The `dryRun` field of `CollectBoardsInput`.
     static let collectDryRun = "True lists the slug merges, the conflicts, and the link repairs, and writes nothing."
 
     /// The `CollectBoardsResult.target` field.

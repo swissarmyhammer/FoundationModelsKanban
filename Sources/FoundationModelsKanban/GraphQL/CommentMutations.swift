@@ -59,14 +59,27 @@ private struct UpdateCommentInput: CommentReferringInput, ChangedBodyInput {
     let body: FieldUpdate<String>
 }
 
-/// The `input` object of `deleteComment` and `undeleteComment` (plan.md §4.2): the comment, and the task of the
-/// comment as a check (divergence.md E5, K16).
-private struct CommentReferenceInput: CommentReferringInput {
+/// The `input` object of `deleteComment` or `undeleteComment` (plan.md §4.2): the comment, and the task of the
+/// comment as a check (divergence.md E5, K16). Each mutation has its own `input` type, `DeleteCommentInput` or
+/// `UndeleteCommentInput` (``SharedInputMutation``), that ``SchemaBuilder/makeCommentReferenceInput(of:)`` gives.
+private struct CommentReferenceInput<Mutation: SharedInputMutation>: CommentReferringInput {
     /// The comment: a full URI or a short form (plan.md §3.2). The task of the comment is not necessary.
     let id: NodeID
 
     /// The task of the comment, or `nil` for no check.
     let task: NodeID?
+}
+
+/// The `deleteComment` mutation, for its `input` type `DeleteCommentInput`.
+private enum DeleteCommentMutation: SharedInputMutation {
+    /// The name of the mutation.
+    static let name = MutationName.deleteComment
+}
+
+/// The `undeleteComment` mutation, for its `input` type `UndeleteCommentInput`.
+private enum UndeleteCommentMutation: SharedInputMutation {
+    /// The name of the mutation.
+    static let name = MutationName.undeleteComment
 }
 
 // MARK: - Resolvers
@@ -139,9 +152,9 @@ extension KanbanResolver {
     ///   that is not the task of the comment.
     fileprivate func deleteComment(
         context: KanbanContext,
-        arguments: InputArguments<CommentReferenceInput>
+        arguments: InputArguments<CommentReferenceInput<DeleteCommentMutation>>
     ) async throws -> CommentObject? {
-        try await changeDeleted(ofComment: arguments.input, to: true, as: MutationName.deleteComment, context: context)
+        try await changeDeleted(ofComment: arguments.input, to: true, context: context)
     }
 
     /// Resolves `Mutation.undeleteComment`: makes a tombstoned comment live again. A live comment does not change. A
@@ -155,30 +168,28 @@ extension KanbanResolver {
     ///   is not the task of the comment.
     fileprivate func undeleteComment(
         context: KanbanContext,
-        arguments: InputArguments<CommentReferenceInput>
+        arguments: InputArguments<CommentReferenceInput<UndeleteCommentMutation>>
     ) async throws -> CommentObject? {
-        let operation = MutationName.undeleteComment
-        return try await changeDeleted(ofComment: arguments.input, to: false, as: operation, context: context)
+        try await changeDeleted(ofComment: arguments.input, to: false, context: context)
     }
 
     /// Writes a `delete` patch on a comment with ``changeDeleted(to:as:context:holding:resolving:)``, after the check
     /// of the task in the input.
     ///
     /// - Parameters:
-    ///   - input: The comment, and the task of the comment or `nil`.
+    ///   - input: The comment, and the task of the comment or `nil`. The mutation of the `input` type is the public
+    ///     mutation of the call.
     ///   - isDeleted: `true` for a delete, `false` for an undelete.
-    ///   - operation: The name of the public mutation.
     ///   - context: The context of the call.
     /// - Returns: The comment after the change.
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no comment that the change accepts has the id, or the
     ///   input names a task that is not the task of the comment.
-    private func changeDeleted(
-        ofComment input: CommentReferenceInput,
+    private func changeDeleted<Mutation: SharedInputMutation>(
+        ofComment input: CommentReferenceInput<Mutation>,
         to isDeleted: Bool,
-        as operation: String,
         context: KanbanContext
     ) async throws -> CommentObject? {
-        try await changeDeleted(to: isDeleted, as: operation, context: context, holding: input.id) { resolver in
+        try await changeDeleted(to: isDeleted, as: Mutation.name, context: context, holding: input.id) { resolver in
             try resolver.commentRef(for: input.id, onTask: input.task, includingTombstones: !isDeleted)
         }
     }
@@ -276,8 +287,23 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
         InputField("task", at: \Holder.task).description(SchemaDescription.commentTask)
     }
 
+    /// Gives the `input` type of `deleteComment` or `undeleteComment` (``CommentReferenceInput``), with the name of
+    /// the mutation (EXTRAS-9 rule 7), so that the fields have one definition.
+    ///
+    /// - Parameter mutation: The mutation of the `input` type.
+    /// - Returns: The `input` type `<Mutation>Input`, with its fields `id` and `task`.
+    fileprivate static func makeCommentReferenceInput<Mutation: SharedInputMutation>(
+        of mutation: Mutation.Type
+    ) -> Input<KanbanResolver, KanbanContext, CommentReferenceInput<Mutation>> {
+        Input(CommentReferenceInput<Mutation>.self, as: mutation.inputTypeName) {
+            Self.makeCommentReferenceField()
+            Self.makeCommentTaskField()
+        }
+        .description(SchemaDescription.commentReferenceInput(of: mutation.name))
+    }
+
     /// Adds the comment mutations and their `input` types (plan.md §4.2). The delete and the undelete mutations use
-    /// the `input` type of ``CommentReferenceInput``, so that the Rust form of the call, with the task of the
+    /// the `input` types of ``CommentReferenceInput``, so that the Rust form of the call, with the task of the
     /// comment, runs (divergence.md E5).
     ///
     /// - Returns: This builder, for method chaining.
@@ -295,11 +321,8 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Self.makeCommentTaskField()
             }
             .description(SchemaDescription.updateCommentInput)
-            Input(CommentReferenceInput.self) {
-                Self.makeCommentReferenceField()
-                Self.makeCommentTaskField()
-            }
-            .description(SchemaDescription.commentReferenceInput)
+            Self.makeCommentReferenceInput(of: DeleteCommentMutation.self)
+            Self.makeCommentReferenceInput(of: UndeleteCommentMutation.self)
         }
         .addMutation {
             Self.mutationField(

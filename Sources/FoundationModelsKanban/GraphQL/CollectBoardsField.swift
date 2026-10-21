@@ -12,8 +12,8 @@ extension MutationName {
 
 // MARK: - Arguments
 
-/// The arguments of `Mutation.collectBoards` (divergence.md M9).
-struct CollectBoardsArguments: Codable, Sendable {
+/// The `input` object of `collectBoards` (divergence.md M9, EXTRAS-9 rule 7). No field is required.
+struct CollectBoardsInput: Codable, Sendable {
     /// The source boards: each a folder that holds a `.kanban/`, or a board ref. `nil` or an empty list collects no
     /// board.
     let sources: [String]?
@@ -110,9 +110,9 @@ extension KanbanResolver {
     /// - Throws: The errors of ``BoardStore/collectBoards(_:at:)``.
     fileprivate func collectBoards(
         context: KanbanContext,
-        arguments: CollectBoardsArguments
+        arguments: InputArguments<CollectBoardsInput>
     ) async throws -> CollectReport? {
-        try await context.store.collectBoards(arguments, at: context.clock())
+        try await context.store.collectBoards(arguments.input, at: context.clock())
     }
 }
 
@@ -132,11 +132,11 @@ extension BoardStore {
     /// (``CollectReport/otherLinks``), and rewrites it only with `reach`.
     ///
     /// The commit locks the target and each source, checks that no source changed after the read, writes all the
-    /// events, and then removes each source `.kanban/`. The call is final: `undo` does not reverse it. With `dryRun`,
-    /// the call lists the same changes and writes nothing.
+    /// events, and then removes each source `.kanban/`. The call is final: `undoChange` does not reverse it. With
+    /// `dryRun`, the call lists the same changes and writes nothing.
     ///
     /// - Parameters:
-    ///   - arguments: The sources, the target, the reach option, and the dry run option.
+    ///   - input: The sources, the target, the reach option, and the dry run option.
     ///   - time: The time of the change.
     /// - Returns: The result, or `nil` when the engine did not load a board yet. The store then records the requests,
     ///   and the call runs again after the load.
@@ -146,17 +146,17 @@ extension BoardStore {
     ///   source cannot be read, or an ``EventError`` when a patch breaks a rule of the log. Then nothing is written.
     ///   ``KanbanError/unreachableBoards(field:)`` when the call reaches only the board of its folder: the call reads
     ///   other `.kanban` folders, so it is refused before it reads a source.
-    func collectBoards(_ arguments: CollectBoardsArguments, at time: DateTime) throws -> CollectReport? {
+    func collectBoards(_ input: CollectBoardsInput, at time: DateTime) throws -> CollectReport? {
         try reach.checkReachesOtherBoards(for: MutationName.collectBoards)
-        guard let target = try target(of: .named(arguments.target)) else {
+        guard let target = try target(of: .named(input.target)) else {
             return nil
         }
         let targetView = view(of: target)
         guard let root = targetView.source?.directory else {
-            throw KanbanError.notFound(type: .board, reference: arguments.target ?? targetView.boardKey)
+            throw KanbanError.notFound(type: .board, reference: input.target ?? targetView.boardKey)
         }
         guard
-            let sources = try collectedSources(named: arguments.sources ?? [], besides: root),
+            let sources = try collectedSources(named: input.sources ?? [], besides: root),
             let others = try otherTargets(besides: [root] + sources.map(\.root))
         else {
             return nil
@@ -173,8 +173,8 @@ extension BoardStore {
         let otherRepairs = others.map { other in
             BoardRepairs(target: other, repairs: sourceLinks(of: view(of: other), naming: names, in: snapshot))
         }
-        let reached = arguments.reach == true ? otherRepairs : []
-        if arguments.dryRun != true {
+        let reached = input.reach == true ? otherRepairs : []
+        if input.dryRun != true {
             try write(sources, into: target, repairing: repairs, alongside: reached, at: time)
         }
         return CollectReport(
@@ -183,7 +183,7 @@ extension BoardStore {
             besides: workingCopy(of: target),
             repairs: repairs + reached.flatMap(\.repairs),
             otherLinks: otherRepairs.flatMap(\.repairs).map(\.check),
-            dryRun: arguments.dryRun == true
+            dryRun: input.dryRun == true
         )
     }
 
@@ -394,8 +394,8 @@ extension WorkingCopy {
 // MARK: - Schema
 
 extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanContext {
-    /// Adds the `collectBoards` mutation and its `CollectBoardsResult`, `CollectedBoard`, `SlugMerge`, and
-    /// `FieldConflict` types (divergence.md M9).
+    /// Adds the `collectBoards` mutation, its `input` type `CollectBoardsInput`, and its `CollectBoardsResult`,
+    /// `CollectedBoard`, `SlugMerge`, and `FieldConflict` types (divergence.md M9, EXTRAS-9 rule 7).
     ///
     /// - Returns: This builder, for method chaining.
     func addCollectBoardsMutation() -> Self {
@@ -427,15 +427,20 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Field("dryRun", at: \.dryRun).description(SchemaDescription.collectResultDryRun)
             }
             .description(SchemaDescription.collectResult)
+            Input(CollectBoardsInput.self) {
+                InputField("sources", at: \.sources).description(SchemaDescription.collectSources)
+                InputField("target", at: \.target).description(SchemaDescription.collectTarget)
+                InputField("reach", at: \.reach).description(SchemaDescription.collectReach)
+                InputField("dryRun", at: \.dryRun).description(SchemaDescription.collectDryRun)
+            }
+            .description(SchemaDescription.collectBoardsInput)
         }
         .addMutation {
-            Field(MutationName.collectBoards, at: KanbanResolver.collectBoards) {
-                Argument("sources", at: \.sources).description(SchemaDescription.collectSources)
-                Argument("target", at: \.target).description(SchemaDescription.collectTarget)
-                Argument("reach", at: \.reach).description(SchemaDescription.collectReach)
-                Argument("dryRun", at: \.dryRun).description(SchemaDescription.collectDryRun)
-            }
-            .description(SchemaDescription.collectBoards)
+            Self.mutationField(
+                MutationName.collectBoards,
+                at: KanbanResolver.collectBoards,
+                description: SchemaDescription.collectBoards
+            )
         }
     }
 }

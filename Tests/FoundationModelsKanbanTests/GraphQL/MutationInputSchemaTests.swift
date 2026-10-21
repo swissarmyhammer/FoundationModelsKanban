@@ -3,19 +3,20 @@ import Testing
 
 @testable import FoundationModelsKanban
 
-/// Tests the `input` argument of each public mutation against the rule of plan.md §4.2: `input` is optional when its
-/// type has no required field.
+/// Tests the `input` argument of each public mutation against EXTRAS-9 rule 7: `input` is required also when its type
+/// has no required field, so a call that sets no field gives `input: {}`.
 ///
-/// The tests read the public schema that ``KanbanGraph/schemaSDL`` prints.
-@Suite("Optional input of the mutations")
+/// The schema tests read the public schema that ``KanbanGraph/schemaSDL`` prints. The call tests run a document on the
+/// fixture board in a temporary directory.
+@Suite("Required input of the mutations", .watcherBudget)
 struct MutationInputSchemaTests {
     /// The name of the one argument of each public mutation.
     private static let inputArgument = "input"
 
-    /// The mutations whose `input` type has no required field (plan.md §4.2).
-    private static let mutationsWithOptionalInput = [
-        MutationName.addActor, MutationName.addTag, MutationName.initBoard, MutationName.redo, MutationName.undo,
-        MutationName.updateBoard,
+    /// The mutations whose `input` type has no required field, sorted by name.
+    static let mutationsWithNoRequiredField = [
+        MutationName.addActor, MutationName.addTag, MutationName.collectBoards, MutationName.initBoard,
+        MutationName.redoChange, MutationName.repairLinks, MutationName.undoChange, MutationName.updateBoard,
     ]
 
     // MARK: - Helpers
@@ -34,7 +35,7 @@ struct MutationInputSchemaTests {
     ///
     /// - Returns: The name of each of these mutations, with its `input` argument.
     /// - Throws: An error when the schema cannot be made, or a type gives no fields.
-    private static func optionalInputArguments() throws -> [(mutation: String, input: GraphQLArgument)] {
+    private static func inputArgumentsWithNoRequiredField() throws -> [(mutation: String, input: GraphQLArgument)] {
         let mutation = try #require(PublicSchema().schema.schema.mutationType)
         return try mutation.fields()
             .compactMap { name, field in field.args[inputArgument].map { input in (name, input) } }
@@ -53,16 +54,27 @@ struct MutationInputSchemaTests {
 
     // MARK: - Tests
 
-    @Test("Each mutation whose input has no required field takes an optional input")
-    func inputWithNoRequiredFieldIsOptional() throws {
-        let arguments = try Self.optionalInputArguments()
-        #expect(arguments.map(\.mutation).sorted() == Self.mutationsWithOptionalInput)
-        let requiredInputs = arguments.filter { _, input in Self.isRequired(input.type, defaultValue: input.defaultValue) }
-        #expect(requiredInputs.map(\.mutation) == [])
+    @Test("Each mutation whose input has no required field still takes a required input")
+    func inputWithNoRequiredFieldIsRequired() throws {
+        let arguments = try Self.inputArgumentsWithNoRequiredField()
+        #expect(arguments.map(\.mutation).sorted() == Self.mutationsWithNoRequiredField)
+        let optionalInputs = arguments.filter { _, input in !Self.isRequired(input.type, defaultValue: input.defaultValue) }
+        #expect(optionalInputs.map(\.mutation) == [])
     }
 
-    @Test("The schema SDL shows the input of addTag as optional")
-    func addTagInputIsOptionalInSDL() throws {
-        #expect(try SDLSignatures.ofPublicSchema().contains("addTag(input: AddTagInput): Tag"))
+    @Test("The schema SDL shows the input of addTag as required")
+    func addTagInputIsRequiredInSDL() throws {
+        #expect(try SDLSignatures.ofPublicSchema().contains("addTag(input: AddTagInput!): Tag"))
+    }
+
+    @Test(
+        "A call with no input argument fails validation, also when the input type has no required field",
+        arguments: mutationsWithNoRequiredField
+    )
+    func callWithNoInputFailsValidation(mutation: String) async throws {
+        try await ErrorCoverageTests.expectRequestFailure(
+            of: "mutation { \(mutation) { __typename } }",
+            coded: "GRAPHQL_VALIDATION_FAILED"
+        )
     }
 }

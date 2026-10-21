@@ -98,9 +98,9 @@ struct ViewerReachTests {
         RefusedCase(testDescription: "copyTask") { board, task in
             Self.transfer(MutationName.copyTask, task, to: board)
         },
-        RefusedCase(testDescription: "undo with a board field") { board, _ in
+        RefusedCase(testDescription: "undoChange with a board field") { board, _ in
             AddUpdateTaskTests.mutation(
-                of: UndoTests.reverseField(MutationName.undo, with: CrossRepoWriteTests.boardField(board))
+                of: UndoTests.reverseField(MutationName.undoChange, with: CrossRepoWriteTests.boardField(board))
             )
         },
         RefusedCase(testDescription: "collectBoards") { board, _ in
@@ -186,7 +186,7 @@ struct ViewerReachTests {
         "An external viewer is refused on a field that reaches the boards of the scan or names a sibling board",
         arguments: [
             "{ boards { key } }",
-            "mutation { repairLinks(reach: true) { node } }",
+            "mutation { repairLinks(input: { reach: true }) { node } }",
             #"{ checkLinks(boards: ["\#(BoardLocatorTests.libName)"]) { node } }"#,
         ]
     )
@@ -276,7 +276,7 @@ struct ViewerReachTests {
         )
         let libEvents = try CrossRepoWriteTests.events(inRepoAt: repos.lib)
         let txn = try #require(libEvents.last).txn
-        let undo = UndoTests.reverseField(MutationName.undo, with: UndoTests.txnInput(txn))
+        let undo = UndoTests.reverseField(MutationName.undoChange, with: UndoTests.txnInput(txn))
         let response = try await Self.execute(
             AddUpdateTaskTests.mutation(of: undo),
             as: KanbanViewerFixture.external,

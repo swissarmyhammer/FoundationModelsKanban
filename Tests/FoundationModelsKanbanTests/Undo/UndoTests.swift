@@ -5,15 +5,16 @@ import ULID
 
 @testable import FoundationModelsKanban
 
-/// Tests `undo` and `redo` in one board (plan.md §6.5, §11): an undo appends the inverse patches of a transaction, a
-/// redo reverses an undo, a later change to the same property is a conflict, and `force` writes the inverse anyway.
+/// Tests `undoChange` and `redoChange` in one board (plan.md §6.5, §11): an undo appends the inverse patches of a
+/// transaction, a redo reverses an undo, a later change to the same property is a conflict, and `force` writes the
+/// inverse anyway.
 ///
 /// Most tests write the fixture logs of ``KanbanGraphTests`` and run ``ChangeBuilderTests/baseSetup`` in a commit
 /// session of the board (``ChangeBuilderTests/baseSession(inRepoAt:writing:)``). Then a test runs some calls, each in
 /// its own transaction, and an undo or a redo.
 @Suite("Undo and redo in one board", .watcherBudget)
 struct UndoTests {
-    /// The selection of the `Change` that `undo` and `redo` give.
+    /// The selection of the `Change` that `undoChange` and `redoChange` give.
     static let changeSelection = "txn undoes ops"
 
     /// The tracked field that the projection compare leaves out. `started` is the time of the first move out of the
@@ -41,14 +42,14 @@ struct UndoTests {
 
     // MARK: - Helpers
 
-    /// Makes an `undo` or a `redo` field.
+    /// Makes an `undoChange` or a `redoChange` field.
     ///
     /// - Parameters:
     ///   - name: The name of the mutation.
-    ///   - input: The fields of the `input` object, or `""` for no `input` argument.
+    ///   - input: The fields of the `input` object, or `""` for an empty `input` object.
     /// - Returns: The field, with ``changeSelection``.
     static func reverseField(_ name: String, with input: String) -> String {
-        let argument = input.isEmpty ? "" : "(input: { \(input) })"
+        let argument = input.isEmpty ? "(input: {})" : "(input: { \(input) })"
         return "\(name)\(argument) { \(changeSelection) }"
     }
 
@@ -62,16 +63,16 @@ struct UndoTests {
         #"txn: "\#(txn.ulidString)""# + (isForced ? ", force: true" : "")
     }
 
-    /// Runs an `undo` or a `redo` call in a session, and expects that it gives no error.
+    /// Runs an `undoChange` or a `redoChange` call in a session, and expects that it gives no error.
     ///
     /// - Parameters:
-    ///   - name: The name of the mutation. The default is `undo`.
-    ///   - input: The fields of the `input` object, or `""` for no `input` argument.
+    ///   - name: The name of the mutation. The default is `undoChange`.
+    ///   - input: The fields of the `input` object, or `""` for an empty `input` object.
     ///   - session: The commit session.
     /// - Returns: The `Change` that the call gives.
     @discardableResult
     static func reverse(
-        _ name: String = MutationName.undo,
+        _ name: String = MutationName.undoChange,
         with input: String = "",
         in session: inout CommitSession
     ) async throws -> Map {
@@ -80,15 +81,15 @@ struct UndoTests {
         return result.data?[name] ?? .null
     }
 
-    /// Runs an `undo` or a `redo` call that fails in a session, and gives its error.
+    /// Runs an `undoChange` or a `redoChange` call that fails in a session, and gives its error.
     ///
     /// - Parameters:
-    ///   - name: The name of the mutation. The default is `undo`.
-    ///   - input: The fields of the `input` object, or `""` for no `input` argument.
+    ///   - name: The name of the mutation. The default is `undoChange`.
+    ///   - input: The fields of the `input` object, or `""` for an empty `input` object.
     ///   - session: The commit session.
     /// - Returns: The error of the first GraphQL error of the response.
     static func failure(
-        of name: String = MutationName.undo,
+        of name: String = MutationName.undoChange,
         with input: String = "",
         in session: inout CommitSession
     ) async throws -> KanbanError {
@@ -301,7 +302,7 @@ struct UndoTests {
         let recorded = try await ChangeBuilderTests.record(mutationCase)
         var session = recorded.after
         try await Self.reverse(in: &session)
-        try await Self.reverse(MutationName.redo, in: &session)
+        try await Self.reverse(MutationName.redoChange, in: &session)
         #expect(Self.projection(of: session) == Self.projection(of: recorded.after))
     }
 
@@ -333,7 +334,7 @@ struct UndoTests {
         let undo = try Self.newestTransaction(of: session)
         #expect(change["txn"] == .string(undo.ulidString))
         #expect(change["undoes"] == .string(calls.second.ulidString))
-        #expect(change["ops"] == .array([.string(MutationName.undo)]))
+        #expect(change["ops"] == .array([.string(MutationName.undoChange)]))
         let written = session.live.events.filter { event in event.txn == undo }
         #expect(!written.isEmpty)
         #expect(written.allSatisfy { event in event.undoes == calls.second })
@@ -364,7 +365,7 @@ struct UndoTests {
         try await Self.reverse(in: &session)
         let restored = try #require(Self.projection(of: session)[.task(base.task)])
         #expect(!Self.isTombstone(restored))
-        try await Self.reverse(MutationName.redo, in: &session)
+        try await Self.reverse(MutationName.redoChange, in: &session)
         #expect(Self.projection(of: session) == deleted)
     }
 
@@ -399,7 +400,7 @@ struct UndoTests {
             laterTransactions: [mainUndo.txn.ulidString]
         )
         #expect(error == expected)
-        let redo = try await Self.reverse(MutationName.redo, in: &session)
+        let redo = try await Self.reverse(MutationName.redoChange, in: &session)
         #expect(redo["undoes"] == .string(mainUndo.txn.ulidString))
     }
 
@@ -636,11 +637,11 @@ struct UndoTests {
     func redoWithNoUndoGivesNothingToUndo() async throws {
         let directory = try TemporaryDirectory()
         var session = try await ChangeBuilderTests.baseSession(inRepoAt: directory).session
-        #expect(try await Self.failure(of: MutationName.redo, in: &session) == .nothingToUndo)
+        #expect(try await Self.failure(of: MutationName.redoChange, in: &session) == .nothingToUndo)
     }
 
     @Test(
-        "undo(txn:) of a transaction that is already undone gives NOTHING_TO_UNDO and writes nothing, also with force",
+        "undoChange(input: { txn }) of an undone transaction gives NOTHING_TO_UNDO and writes nothing, also with force",
         arguments: [false, true]
     )
     func undoOfUndoneTransactionGivesNothingToUndo(isForced: Bool) async throws {
@@ -657,7 +658,7 @@ struct UndoTests {
     }
 
     @Test(
-        "redo(txn:) of a transaction that is not undone gives NOTHING_TO_UNDO and writes nothing, also with force",
+        "redoChange(input: { txn }) of a not-undone transaction gives NOTHING_TO_UNDO, writes nothing, also with force",
         arguments: [false, true]
     )
     func redoOfTransactionNotUndoneGivesNothingToUndo(isForced: Bool) async throws {
@@ -666,34 +667,37 @@ struct UndoTests {
         var session = calls.session
         let events = session.live.events
         let input = Self.txnInput(calls.second, forcing: isForced)
-        let error = try await Self.failure(of: MutationName.redo, with: input, in: &session)
+        let error = try await Self.failure(of: MutationName.redoChange, with: input, in: &session)
         #expect(error == .nothingToUndo)
         #expect(session.live.events == events)
     }
 
-    @Test("redo(txn:) takes the original transaction, and reverses the undo of that transaction")
+    @Test("redoChange(input: { txn }) takes the original transaction, and reverses the undo of that transaction")
     func redoOfUndoneTransactionReversesItsUndo() async throws {
         let directory = try TemporaryDirectory()
         let calls = try await Self.twoTitleCalls(inRepoAt: directory)
         var session = calls.session
         let undo = try await Self.reverse(with: Self.txnInput(calls.second), in: &session)
-        let redo = try await Self.reverse(MutationName.redo, with: Self.txnInput(calls.second), in: &session)
+        let redo = try await Self.reverse(MutationName.redoChange, with: Self.txnInput(calls.second), in: &session)
         #expect(redo["undoes"] == undo["txn"])
         #expect(try CommitTests.title(of: .task(calls.task), in: session) == Self.secondTitle)
     }
 
     // MARK: - Schema
 
-    @Test("The Mutation type has undo and redo, with the UndoInput input and the Change result")
+    @Test("Mutation has undoChange and redoChange, with UndoChangeInput and RedoChangeInput, and the Change result")
     func schemaHasUndoAndRedo() throws {
         let signatures = try SDLSignatures.ofPublicSchema()
-        #expect(signatures.contains("undo(input: UndoInput): Change"))
-        #expect(signatures.contains("redo(input: UndoInput): Change"))
+        #expect(signatures.contains("undoChange(input: UndoChangeInput!): Change"))
+        #expect(signatures.contains("redoChange(input: RedoChangeInput!): Change"))
         let sdl = KanbanGraph.schemaSDL
         let lines = [
-            "input UndoInput {",
+            "input UndoChangeInput {",
+            "input RedoChangeInput {",
             "  txn: ID",
             "  force: Boolean",
+            "  board: String",
+            "  boards: [String!]",
         ]
         for line in lines {
             #expect(sdl.contains(line), "\(line)")

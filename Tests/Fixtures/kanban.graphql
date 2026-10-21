@@ -630,16 +630,16 @@ enum UpdateKind {
 }
 
 """
-One transaction: its txn, time, actor, mutations, and boards, and its node updates. Board.history and Subscription.changes give the updates of the nodes of one board; undo and redo give the updates of each board that they changed, those of the first board first. An update tells which node changed and which tracked fields changed; read the nodes again for their new values. Transactions read together, for example after a git pull, give one Change each. The updates need not match the nodes that the transaction wrote: they can hold a node that it did not write, for example a task that becomes ready when its dependency is done, or the board summary, and leave out a node that it wrote, for example when a later transaction read with it wrote that node too.
+One transaction: its txn, time, actor, mutations, and boards, and its node updates. Board.history and Subscription.changes give the updates of the nodes of one board; undoChange and redoChange give the updates of each board that they changed, those of the first board first. An update tells which node changed and which tracked fields changed; read the nodes again for their new values. Transactions read together, for example after a git pull, give one Change each. The updates need not match the nodes that the transaction wrote: they can hold a node that it did not write, for example a task that becomes ready when its dependency is done, or the board summary, and leave out a node that it wrote, for example when a later transaction read with it wrote that node too.
 """
 type Change {
   """
-  Give it as after to changes to get the changes after this one. A Change of Board.history, undo, or redo gives the cursor of the first board of boards as the call reads it.
+  Give it as after to changes to get the changes after this one. A Change of Board.history, undoChange, or redoChange gives the cursor of the first board of boards as the call reads it.
   """
   cursor: String!
 
   """
-  The ULID of the transaction. Give it as txn to undo to reverse this change, or to redo to reverse its undo. A collectBoards change cannot be reversed.
+  The ULID of the transaction. Give it as txn to undoChange to reverse this change, or to redoChange to reverse its undo. A collectBoards change cannot be reversed.
   """
   txn: ID!
 
@@ -810,9 +810,32 @@ type LinkCheck {
 }
 
 """
-The fields of initBoard and updateBoard. A name, model, or body that is not set does not change, and null clears it.
+The fields of initBoard. A name, model, or body that is not set does not change, and null clears it.
 """
-input BoardInput {
+input InitBoardInput {
+  """The name of the board."""
+  name: String
+
+  """
+  The model of the board as text, for example the chat model haiku, or null. The board does not check the text.
+  """
+  model: String
+
+  """
+  The new Markdown body: the full text. The call writes the diff from the current body.
+  """
+  body: String
+
+  """
+  The board to change. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. No value changes the current board. The short refs of the input name nodes of this board.
+  """
+  board: String
+}
+
+"""
+The fields of updateBoard. A name, model, or body that is not set does not change, and null clears it.
+"""
+input UpdateBoardInput {
   """The name of the board."""
   name: String
 
@@ -935,10 +958,26 @@ input UpdateActorInput {
   body: String
 }
 
-"""
-The node of a call that names one node: completeTask, and the delete and undelete calls of columns, actors, tasks, and tags.
-"""
-input NodeReferenceInput {
+"""The node of deleteColumn."""
+input DeleteColumnInput {
+  """The node: a full URI or a short form."""
+  id: ID!
+}
+
+"""The node of undeleteColumn."""
+input UndeleteColumnInput {
+  """The node: a full URI or a short form."""
+  id: ID!
+}
+
+"""The node of deleteActor."""
+input DeleteActorInput {
+  """The node: a full URI or a short form."""
+  id: ID!
+}
+
+"""The node of undeleteActor."""
+input UndeleteActorInput {
   """The node: a full URI or a short form."""
   id: ID!
 }
@@ -1061,7 +1100,13 @@ input MoveTaskInput {
   board: String
 }
 
-"""The fields of assignTask and unassignTask."""
+"""The node of completeTask."""
+input CompleteTaskInput {
+  """The node: a full URI or a short form."""
+  id: ID!
+}
+
+"""The fields of assignTask."""
 input AssignTaskInput {
   """The task: a full URI or a short form."""
   id: ID!
@@ -1072,7 +1117,18 @@ input AssignTaskInput {
   actor: ID!
 }
 
-"""The fields of tagTask and untagTask."""
+"""The fields of unassignTask."""
+input UnassignTaskInput {
+  """The task: a full URI or a short form."""
+  id: ID!
+
+  """
+  The actor: a full URI, the stored form actor/<slug>, the slug, or a name that gives the slug.
+  """
+  actor: ID!
+}
+
+"""The fields of tagTask."""
 input TagTaskInput {
   """The task: a full URI or a short form."""
   id: ID!
@@ -1081,6 +1137,29 @@ input TagTaskInput {
   The tags to add or to remove. Each tag is a tag name, a slug, the stored form tag/<slug>, or a tag URI.
   """
   tags: [String!]!
+}
+
+"""The fields of untagTask."""
+input UntagTaskInput {
+  """The task: a full URI or a short form."""
+  id: ID!
+
+  """
+  The tags to add or to remove. Each tag is a tag name, a slug, the stored form tag/<slug>, or a tag URI.
+  """
+  tags: [String!]!
+}
+
+"""The node of deleteTask."""
+input DeleteTaskInput {
+  """The node: a full URI or a short form."""
+  id: ID!
+}
+
+"""The node of undeleteTask."""
+input UndeleteTaskInput {
+  """The node: a full URI or a short form."""
+  id: ID!
 }
 
 """
@@ -1148,8 +1227,19 @@ input UpdateCommentInput {
   task: ID
 }
 
-"""The comment of deleteComment and undeleteComment."""
-input CommentReferenceInput {
+"""The comment of deleteComment."""
+input DeleteCommentInput {
+  """The comment: a full URI or a short form."""
+  id: ID!
+
+  """
+  The task of the comment. The comment id alone names the comment. When this task is not the task of the comment, the call gives NOT_FOUND and changes nothing.
+  """
+  task: ID
+}
+
+"""The comment of undeleteComment."""
+input UndeleteCommentInput {
   """The comment: a full URI or a short form."""
   id: ID!
 
@@ -1222,10 +1312,43 @@ input RenameTagInput {
   board: String
 }
 
-"""The fields of undo and redo."""
-input UndoInput {
+"""The node of deleteTag."""
+input DeleteTagInput {
+  """The node: a full URI or a short form."""
+  id: ID!
+}
+
+"""The node of undeleteTag."""
+input UndeleteTagInput {
+  """The node: a full URI or a short form."""
+  id: ID!
+}
+
+"""The fields of undoChange."""
+input UndoChangeInput {
   """
-  For undo, the transaction to reverse. For redo, the original transaction whose undo to reverse. No txn gives the newest target of the session actor after the newest collectBoards transaction: for undo, a transaction that is not undone and is not an undo or a redo; for redo, an undo that is not undone and is not a redo.
+  For undoChange, the transaction to reverse. For redoChange, the original transaction whose undo to reverse. No txn gives the newest target of the session actor after the newest collectBoards transaction: for undoChange, a transaction that is not undone and is not an undo or a redo; for redoChange, an undo that is not undone and is not a redo.
+  """
+  txn: ID
+
+  """True writes the inverse also when a later change conflicts with it."""
+  force: Boolean
+
+  """
+  The board that holds the transaction. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. No value searches the current board and the loaded related boards.
+  """
+  board: String
+
+  """
+  More copies of the other boards of the transaction to reverse, for example the path of a second worktree of a repo.
+  """
+  boards: [String!]
+}
+
+"""The fields of redoChange."""
+input RedoChangeInput {
+  """
+  For undoChange, the transaction to reverse. For redoChange, the original transaction whose undo to reverse. No txn gives the newest target of the session actor after the newest collectBoards transaction: for undoChange, a transaction that is not undone and is not an undo or a redo; for redoChange, an undo that is not undone and is not a redo.
   """
   txn: ID
 
@@ -1277,6 +1400,24 @@ type LinkRepair {
   The link after the rewrite: the full kanban:// URI with the current name of its board. Null for a DANGLING link, which does not change.
   """
   newTarget: String
+}
+
+"""
+The fields of repairLinks. No field is required: input: {} rewrites the links of the current board.
+"""
+input RepairLinksInput {
+  """
+  The boards whose links to rewrite. Each item is a board ref. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. No value, or an empty list, names the current board. The call writes to no other board, unless reach is true.
+  """
+  boards: [String!]
+
+  """
+  True also rewrites the links of each board that the scan reaches: the boards of Query.boards.
+  """
+  reach: Boolean
+
+  """True lists the same links and writes nothing."""
+  dryRun: Boolean
 }
 
 """One source board of collectBoards."""
@@ -1356,6 +1497,31 @@ type CollectBoardsResult {
   dryRun: Boolean!
 }
 
+"""
+The fields of collectBoards. No field is required: no sources collects no board.
+"""
+input CollectBoardsInput {
+  """
+  The boards to combine into the target. Each item is a folder that holds a .kanban folder (also a subfolder of a git repo), or a board ref. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. A source that is the target is left out.
+  """
+  sources: [String!]
+
+  """
+  The board that gets the sources: a board ref. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. No value names the current board. A target with no board gets a new board with a new board ID. In a git repo, the target is the top folder of the repo.
+  """
+  target: String
+
+  """
+  True also rewrites each link of otherLinks: the link then names the target by its current key. Otherwise the call only lists these links.
+  """
+  reach: Boolean
+
+  """
+  True lists the slug merges, the conflicts, and the link repairs, and writes nothing.
+  """
+  dryRun: Boolean
+}
+
 type Query {
   """
   One board: the current board, or the board that id names. The board of a different repo is read from its .kanban folder.
@@ -1422,28 +1588,32 @@ type Mutation {
   """
   initBoard(
     """
-    The input object of the call. Its type tells what each field does. No field is required, so the call can leave out the input.
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
     """
-    input: BoardInput
+    input: InitBoardInput!
   ): Board
 
   """Changes the name, the model, or the body of the board."""
   updateBoard(
     """
-    The input object of the call. Its type tells what each field does. No field is required, so the call can leave out the input.
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
     """
-    input: BoardInput
+    input: UpdateBoardInput!
   ): Board
 
   """Makes a column."""
   addColumn(
-    """The input object of the call. Its type tells what each field does."""
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
     input: AddColumnInput!
   ): Column
 
   """Changes the name, the order, or the body of a column."""
   updateColumn(
-    """The input object of the call. Its type tells what each field does."""
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
     input: UpdateColumnInput!
   ): Column
 
@@ -1451,47 +1621,59 @@ type Mutation {
   Makes the column a tombstone. A column with live tasks gives COLUMN_NOT_EMPTY.
   """
   deleteColumn(
-    """The input object of the call. Its type tells what each field does."""
-    input: NodeReferenceInput!
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
+    input: DeleteColumnInput!
   ): Column
 
   """Makes a tombstoned column live again. A live column does not change."""
   undeleteColumn(
-    """The input object of the call. Its type tells what each field does."""
-    input: NodeReferenceInput!
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
+    input: UndeleteColumnInput!
   ): Column
 
   """Makes an actor. The input gives an id, a name, or both."""
   addActor(
     """
-    The input object of the call. Its type tells what each field does. No field is required, so the call can leave out the input.
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
     """
-    input: AddActorInput
+    input: AddActorInput!
   ): Actor
 
   """Changes the name, the color, the avatar, or the body of an actor."""
   updateActor(
-    """The input object of the call. Its type tells what each field does."""
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
     input: UpdateActorInput!
   ): Actor
 
   """Makes the actor a tombstone."""
   deleteActor(
-    """The input object of the call. Its type tells what each field does."""
-    input: NodeReferenceInput!
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
+    input: DeleteActorInput!
   ): Actor
 
   """Makes a tombstoned actor live again. A live actor does not change."""
   undeleteActor(
-    """The input object of the call. Its type tells what each field does."""
-    input: NodeReferenceInput!
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
+    input: UndeleteActorInput!
   ): Actor
 
   """
   Makes a task. The task goes to the end of its column, unless a priority moves it to the top. An ordinal gives the place when the priority makes no move. A priority that moves the task wins over the ordinal.
   """
   addTask(
-    """The input object of the call. Its type tells what each field does."""
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
     input: AddTaskInput!
   ): Task
 
@@ -1499,7 +1681,9 @@ type Mutation {
   Changes the given fields of a task. A list replaces the old list. A column moves the task to the end of that column, or to the top when the priority moves it there.
   """
   updateTask(
-    """The input object of the call. Its type tells what each field does."""
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
     input: UpdateTaskInput!
   ): Task
 
@@ -1507,82 +1691,108 @@ type Mutation {
   Moves a task to a column and to a place in that column. No place puts the task at the end of the column. A board field that names a different board moves the task to that board.
   """
   moveTask(
-    """The input object of the call. Its type tells what each field does."""
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
     input: MoveTaskInput!
   ): Task
 
   """Moves a task to the end of the terminal column."""
   completeTask(
-    """The input object of the call. Its type tells what each field does."""
-    input: NodeReferenceInput!
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
+    input: CompleteTaskInput!
   ): Task
 
   """Adds an actor to the assignees of a task."""
   assignTask(
-    """The input object of the call. Its type tells what each field does."""
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
     input: AssignTaskInput!
   ): Task
 
   """Removes an actor from the assignees of a task."""
   unassignTask(
-    """The input object of the call. Its type tells what each field does."""
-    input: AssignTaskInput!
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
+    input: UnassignTaskInput!
   ): Task
 
   """Adds tags to a task. A tag that the board does not have is made."""
   tagTask(
-    """The input object of the call. Its type tells what each field does."""
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
     input: TagTaskInput!
   ): Task
 
   """Removes tags from a task: the tag edges, and the #markers of the body."""
   untagTask(
-    """The input object of the call. Its type tells what each field does."""
-    input: TagTaskInput!
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
+    input: UntagTaskInput!
   ): Task
 
   """Makes the task a tombstone."""
   deleteTask(
-    """The input object of the call. Its type tells what each field does."""
-    input: NodeReferenceInput!
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
+    input: DeleteTaskInput!
   ): Task
 
   """Makes a tombstoned task live again. A live task does not change."""
   undeleteTask(
-    """The input object of the call. Its type tells what each field does."""
-    input: NodeReferenceInput!
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
+    input: UndeleteTaskInput!
   ): Task
 
   """
   Copies a task to a column and to a place in that column, in the same board or in a different board. No board field copies the task in its board.
   """
   copyTask(
-    """The input object of the call. Its type tells what each field does."""
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
     input: CopyTaskInput!
   ): Task
 
   """Adds a comment to a task."""
   addComment(
-    """The input object of the call. Its type tells what each field does."""
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
     input: AddCommentInput!
   ): Comment
 
   """Changes the body of a comment."""
   updateComment(
-    """The input object of the call. Its type tells what each field does."""
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
     input: UpdateCommentInput!
   ): Comment
 
   """Makes the comment a tombstone."""
   deleteComment(
-    """The input object of the call. Its type tells what each field does."""
-    input: CommentReferenceInput!
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
+    input: DeleteCommentInput!
   ): Comment
 
   """Makes a tombstoned comment live again. A live comment does not change."""
   undeleteComment(
-    """The input object of the call. Its type tells what each field does."""
-    input: CommentReferenceInput!
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
+    input: UndeleteCommentInput!
   ): Comment
 
   """
@@ -1590,100 +1800,85 @@ type Mutation {
   """
   addTag(
     """
-    The input object of the call. Its type tells what each field does. No field is required, so the call can leave out the input.
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
     """
-    input: AddTagInput
+    input: AddTagInput!
   ): Tag
 
   """
   Changes the name, the color, or the body of a tag. A name with a new slug renames the tag, the same as renameTag.
   """
   updateTag(
-    """The input object of the call. Its type tells what each field does."""
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
     input: UpdateTagInput!
   ): Tag
 
   """Makes the tag a tombstone."""
   deleteTag(
-    """The input object of the call. Its type tells what each field does."""
-    input: NodeReferenceInput!
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
+    input: DeleteTagInput!
   ): Tag
 
   """Makes a tombstoned tag live again. A live tag does not change."""
   undeleteTag(
-    """The input object of the call. Its type tells what each field does."""
-    input: NodeReferenceInput!
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
+    input: UndeleteTagInput!
   ): Tag
 
   """
   Renames a tag. The old slug redirects to the new slug, so each task with the old tag shows the new tag. A new slug that a tag has already merges the two tags.
   """
   renameTag(
-    """The input object of the call. Its type tells what each field does."""
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
     input: RenameTagInput!
   ): Tag
 
   """
   Reverses a transaction: it writes the inverse of each change of the transaction. No txn reverses the newest transaction of the session actor that is not undone, is not an undo or a redo, and comes after the newest collectBoards transaction. A collectBoards transaction cannot be reversed. A later change that conflicts with the inverse gives UNDO_CONFLICT, unless force is true.
   """
-  undo(
+  undoChange(
     """
-    The input object of the call. Its type tells what each field does. No field is required, so the call can leave out the input.
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
     """
-    input: UndoInput
+    input: UndoChangeInput!
   ): Change
 
   """
   Reverses the undo of a transaction. No txn reverses the newest undo of the session actor that is not undone, is not a redo, and comes after the newest collectBoards transaction.
   """
-  redo(
+  redoChange(
     """
-    The input object of the call. Its type tells what each field does. No field is required, so the call can leave out the input.
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
     """
-    input: UndoInput
+    input: RedoChangeInput!
   ): Change
 
   """
-  Rewrites each OLD_NAME link of the boards to the current name of its board, and lists each OLD_NAME and DANGLING link. A DANGLING link does not change. One undo reverses the rewrite in each board.
+  Rewrites each OLD_NAME link of the boards to the current name of its board, and lists each OLD_NAME and DANGLING link. A DANGLING link does not change. One undoChange reverses the rewrite in each board.
   """
   repairLinks(
     """
-    The boards whose links to rewrite. Each item is a board ref. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. No value, or an empty list, names the current board. The call writes to no other board, unless reach is true.
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
     """
-    boards: [String!]
-
-    """
-    True also rewrites the links of each board that the scan reaches: the boards of Query.boards.
-    """
-    reach: Boolean
-
-    """True lists the same links and writes nothing."""
-    dryRun: Boolean
+    input: RepairLinksInput!
   ): [LinkRepair!]
 
   """
-  Combines the .kanban folders of the source boards into the target board, the same as a git union merge. Tasks and comments keep their ids. A column, a tag, or an actor with the same slug becomes one node, and the event order decides a field that two boards set. Each name of a source becomes an old name of the target, and the call removes each source .kanban folder. The call rewrites each OLD_NAME link of the target to the current name. Undo does not reverse the call. A board of the old Rust kanban gives INCOMPATIBLE_BOARD and the call writes nothing.
+  Combines the .kanban folders of the source boards into the target board, the same as a git union merge. Tasks and comments keep their ids. A column, a tag, or an actor with the same slug becomes one node, and the event order decides a field that two boards set. Each name of a source becomes an old name of the target, and the call removes each source .kanban folder. The call rewrites each OLD_NAME link of the target to the current name. undoChange does not reverse the call. A board of the old Rust kanban gives INCOMPATIBLE_BOARD and the call writes nothing.
   """
   collectBoards(
     """
-    The boards to combine into the target. Each item is a folder that holds a .kanban folder (also a subfolder of a git repo), or a board ref. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. A source that is the target is left out.
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
     """
-    sources: [String!]
-
-    """
-    The board that gets the sources: a board ref. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. No value names the current board. A target with no board gets a new board with a new board ID. In a git repo, the target is the top folder of the repo.
-    """
-    target: String
-
-    """
-    True also rewrites each link of otherLinks: the link then names the target by its current key. Otherwise the call only lists these links.
-    """
-    reach: Boolean
-
-    """
-    True lists the slug merges, the conflicts, and the link repairs, and writes nothing.
-    """
-    dryRun: Boolean
+    input: CollectBoardsInput!
   ): CollectBoardsResult
 }
 

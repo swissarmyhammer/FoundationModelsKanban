@@ -273,11 +273,12 @@ When two or more names match at the same step, the matcher gives `AMBIGUOUS_NAME
 | `tag`, `old`, `oldName` / `name`, `new`, `newName` | `renameTag` | `from` / `to` |
 | `top_k`, `topK`, `limit`, `page_size`, `count`, `size` | `tasks`, `searchTasks`, `history` | `first` |
 | `cursor` | `tasks` | `after` |
-| `transaction`, `txnId`, `txn_id`, `id` | `undo`, `redo` | `txn` |
+| `transaction`, `txnId`, `txn_id`, `id` | `undoChange`, `redoChange` | `txn` |
 | `path`, `board`, `key`, `repo` | `board(id:)` | `id` |
 | `getX`, `showX`, `readX`, `fetchX` / `listX`, `findX`, `queryX` / `search` / `next` | root query | singular field / plural field / `searchTasks` / `nextTask` |
 | `createBoard`, `newBoard` | mutation | `initBoard` |
 | `removeAssignee` | mutation | `unassignTask` |
+| `undo` / `redo` | mutation | `undoChange` / `redoChange` |
 | `created_at`, `updated_at`, `count`, `total` | selection | `created`, `updated`, `totalCount` |
 | `priority`, `prio`, `urgent` | inputs | a move in the column, with a warning (P2) |
 
@@ -1052,6 +1053,7 @@ This section lists the work in sections 10–14 that we can drop. The reasons: t
     - `Query.boards` and the related-board scan also find sibling folders that have a `.kanban/` and no `.git`.
     - When a scan finds two folders with the same board ULID (for example, a copied bare folder), calls work, and the response gives a warning that names both paths.
   - **DECIDED: `collectBoards(sources:, target:, dryRun:)`.** It combines each source `.kanban` into the target `.kanban`. A source is any folder or board ref.
+    - **Changed (endpoint version `2`):** the call takes one required `input` object of the type `CollectBoardsInput`: `collectBoards(input: { sources: [...], target: "...", reach: true, dryRun: true })`. `repairLinks` takes `RepairLinksInput` in the same way: `repairLinks(input: { boards: [...], reach: true, dryRun: true })`.
     - Collect adds the event lines of each source node log to the target node log with the same name, the same as a git union merge. Tasks and comments keep their ULIDs. Columns, tags, and actors with the same slug become one node. Replay decides a field that both boards changed by the event order, and the result lists each such conflict and the value that won.
     - The target board log gets one `collected` event for each source. It holds each board ID, each git key, and each old name of the source, and the source path, the time, and the actor. These become old names of the target.
     - **Changed (2026-10-19):** collect also adds to the target board log each line of the source board log whose `txn` is the `txn` of a merged line. Then each merged transaction has a line in each file that its list names (Q23), and a fresh load of the target applies it. Without this, a load holds each source transaction that also wrote the source board log (for example the first `addTask`, which makes the board). The target keeps its own board ID, git key, and name. A merged board line does not change them. The source values are only in the `collected` event. After the merged board lines, the collect transaction writes one board patch that sets back the name and the git key of the target, and removes each board ID that the target did not have. Its event id is larger than each merged event id, so it wins in the event order. `dryRun` makes the same merge and writes nothing.

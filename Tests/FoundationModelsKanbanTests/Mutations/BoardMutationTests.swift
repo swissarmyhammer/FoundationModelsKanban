@@ -142,7 +142,7 @@ struct BoardMutationTests {
         let directory = try TemporaryDirectory()
         let selection = "name columns { name order } actors { id name }"
         let (root, response) = try await Self.execute(
-            "mutation { initBoard { \(selection) } }",
+            "mutation { initBoard(input: {}) { \(selection) } }",
             onEmptyRepoIn: directory
         )
         let fresh = try KanbanGraphTests.makeGraph(at: root)
@@ -150,11 +150,11 @@ struct BoardMutationTests {
         #expect(query == response.replacingOccurrences(of: "initBoard", with: "board"))
     }
 
-    @Test("initBoard with no input on an empty repo makes the board with the name of the repo directory")
-    func initBoardWithNoInput() async throws {
+    @Test("initBoard with an empty input on an empty repo makes the board with the name of the repo directory")
+    func initBoardWithEmptyInput() async throws {
         let directory = try TemporaryDirectory()
         let (root, response) = try await Self.execute(
-            "mutation { initBoard { name columns { name order } } }",
+            "mutation { initBoard(input: {}) { name columns { name order } } }",
             onEmptyRepoIn: directory
         )
         let board = #"{"columns":\#(Self.defaultColumnsJSON),"name":"\#(KanbanGraphTests.emptyRepoName)"}"#
@@ -209,7 +209,7 @@ struct BoardMutationTests {
         _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
         let log = EventLog(repositoryAt: directory.url)
         let before = try log.nodeFileSignatures()
-        let mutation = "mutation { initBoard { name } "
+        let mutation = "mutation { initBoard(input: {}) { name } "
             + #"updateBoard(input: { name: "\#(KanbanGraphTests.boardName)" }) { name } }"#
         let response = try await KanbanGraphTests.execute(mutation, on: KanbanGraphTests.makeGraph(at: directory.url))
         let name = #"{"name":"\#(KanbanGraphTests.boardName)"}"#
@@ -267,7 +267,7 @@ struct BoardMutationTests {
         let directory = try TemporaryDirectory()
         let actor = try KanbanGraph.sessionActor(named: Self.namedActor)
         let (root, response) = try await Self.execute(
-            "mutation { initBoard { actors { id name } } }",
+            "mutation { initBoard(input: {}) { actors { id name } } }",
             actingAs: actor,
             onEmptyRepoIn: directory
         )
@@ -282,7 +282,7 @@ struct BoardMutationTests {
         let directory = try TemporaryDirectory()
         let actor = try KanbanGraph.sessionActor(named: nil)
         let (_, response) = try await Self.execute(
-            "mutation { initBoard { actors { id name } } }",
+            "mutation { initBoard(input: {}) { actors { id name } } }",
             actingAs: actor,
             onEmptyRepoIn: directory
         )

@@ -41,7 +41,7 @@ struct BoardIDTests {
     func newBoardHasOneIDEvent() async throws {
         let (sandbox, repo) = try await Self.makeRepo()
         let graph = try GitGraphFixture.makeGraph(at: repo)
-        try await CrossRepoUndoTests.runWithNoErrors("initBoard { name }", on: graph)
+        try await CrossRepoUndoTests.runWithNoErrors("initBoard(input: {}) { name }", on: graph)
         #expect(try Self.idEvents(inRepoAt: repo).count == 1)
         await graph.close()
         withExtendedLifetime(sandbox) {}
@@ -113,7 +113,7 @@ struct BoardIDTests {
     /// - Throws: An error when the call fails.
     static func initBoard(inRepoAt repo: URL) async throws -> String {
         let graph = try GitGraphFixture.makeGraph(at: repo)
-        try await CrossRepoUndoTests.runWithNoErrors("initBoard { name }", on: graph)
+        try await CrossRepoUndoTests.runWithNoErrors("initBoard(input: {}) { name }", on: graph)
         await graph.close()
         return try boardID(inRepoAt: repo)
     }

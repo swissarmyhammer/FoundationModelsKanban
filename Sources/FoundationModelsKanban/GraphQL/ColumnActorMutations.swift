@@ -32,39 +32,11 @@ extension MutationName {
 
 // MARK: - Arguments
 
-/// The arguments of a mutation: the one argument `input` (plan.md §4.2).
-protocol MutationArguments: Decodable, Sendable {
-    /// The type of the `input` argument: the `input` object, or an optional `input` object.
-    associatedtype InputValue
-
-    /// The description of the `input` argument in the schema.
-    static var inputDescription: String { get }
-
-    /// The `input` argument of the mutation.
-    var input: InputValue { get }
-}
-
-/// The arguments of a mutation whose `input` argument is required (plan.md §4.2).
-struct InputArguments<Input: Decodable & Sendable>: MutationArguments {
-    /// The description of the required `input` argument.
-    static var inputDescription: String {
-        SchemaDescription.mutationInput
-    }
-
+/// The arguments of a mutation: the one required argument `input` (plan.md §4.2, EXTRAS-9 rule 7). The argument is
+/// required also when its type has no required field, so a call that sets no field gives `input: {}`.
+struct InputArguments<Input: Decodable & Sendable>: Decodable, Sendable {
     /// The `input` object of the mutation.
     let input: Input
-}
-
-/// The arguments of a mutation whose `input` argument is optional, because the `input` type has no required field
-/// (plan.md §4.2). For example, `mutation { addTag { id } }` is valid, and the resolver gets no `input`.
-struct OptionalInputArguments<Input: Decodable & Sendable>: MutationArguments {
-    /// The description of the optional `input` argument.
-    static var inputDescription: String {
-        SchemaDescription.optionalMutationInput
-    }
-
-    /// The `input` object of the mutation, or `nil` when the call gives no `input`.
-    let input: Input?
 }
 
 /// The `input` object of `addColumn` (plan.md §4.2).
@@ -153,12 +125,37 @@ private struct UpdateActorInput: ChangedNameInput, ChangedColorInput, ChangedBod
     let body: FieldUpdate<String>
 }
 
-/// The `input` object of a mutation that names one node and has no other field: the delete and the undelete
-/// mutations of columns, actors, tasks, and tags (plan.md §4.2). ``SchemaBuilder/addColumnActorMutations()`` adds its
-/// `input` type. The comment mutations use `CommentReferenceInput`, which can also name the task of the comment.
-struct NodeReferenceInput: Codable, Sendable {
+/// The `input` object of a mutation that names one node and has no other field: `completeTask`, and the delete and the
+/// undelete mutations of columns, actors, tasks, and tags (plan.md §4.2). Each of these mutations has its own `input`
+/// type, `<Mutation>Input` (``SharedInputMutation``), that ``SchemaBuilder/makeNodeReferenceInput(of:)`` gives. The
+/// comment mutations use `CommentReferenceInput`, which can also name the task of the comment.
+struct NodeReferenceInput<Mutation: SharedInputMutation>: Codable, Sendable {
     /// The node: a full URI or a short form (plan.md §3.2).
     let id: NodeID
+}
+
+/// The `deleteColumn` mutation, for its `input` type `DeleteColumnInput`.
+private enum DeleteColumnMutation: SharedInputMutation {
+    /// The name of the mutation.
+    static let name = MutationName.deleteColumn
+}
+
+/// The `undeleteColumn` mutation, for its `input` type `UndeleteColumnInput`.
+private enum UndeleteColumnMutation: SharedInputMutation {
+    /// The name of the mutation.
+    static let name = MutationName.undeleteColumn
+}
+
+/// The `deleteActor` mutation, for its `input` type `DeleteActorInput`.
+private enum DeleteActorMutation: SharedInputMutation {
+    /// The name of the mutation.
+    static let name = MutationName.deleteActor
+}
+
+/// The `undeleteActor` mutation, for its `input` type `UndeleteActorInput`.
+private enum UndeleteActorMutation: SharedInputMutation {
+    /// The name of the mutation.
+    static let name = MutationName.undeleteActor
 }
 
 // MARK: - Column resolvers
@@ -232,9 +229,9 @@ extension KanbanResolver {
     ///   ``KanbanError/columnNotEmpty(column:liveTaskCount:)`` when the column shows live tasks.
     fileprivate func deleteColumn(
         context: KanbanContext,
-        arguments: InputArguments<NodeReferenceInput>
+        arguments: InputArguments<NodeReferenceInput<DeleteColumnMutation>>
     ) async throws -> ColumnObject? {
-        try await changeDeleted(to: true, ofType: .column, as: MutationName.deleteColumn, context: context, arguments)
+        try await changeDeleted(to: true, ofType: .column, context: context, arguments)
     }
 
     /// Resolves `Mutation.undeleteColumn`: makes a tombstoned column live again. A live column does not change.
@@ -246,10 +243,9 @@ extension KanbanResolver {
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no column has the id.
     fileprivate func undeleteColumn(
         context: KanbanContext,
-        arguments: InputArguments<NodeReferenceInput>
+        arguments: InputArguments<NodeReferenceInput<UndeleteColumnMutation>>
     ) async throws -> ColumnObject? {
-        let operation = MutationName.undeleteColumn
-        return try await changeDeleted(to: false, ofType: .column, as: operation, context: context, arguments)
+        try await changeDeleted(to: false, ofType: .column, context: context, arguments)
     }
 }
 
@@ -261,8 +257,7 @@ extension KanbanResolver {
     ///
     /// - Parameters:
     ///   - context: The context of the call.
-    ///   - arguments: The new actor. The `input` argument is optional, because ``AddActorInput`` has no required field
-    ///     (plan.md §4.2). A call with no `input` gives no id and no name.
+    ///   - arguments: The new actor. ``AddActorInput`` has no required field, so `input: {}` gives no id and no name.
     /// - Returns: The actor. With `ensure`, the actor that the board has, live, with each given name, color, and avatar
     ///   (``WorkingCopy/ensureActor(_:matching:at:)``).
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when the id is a URI that does not name an actor of the
@@ -272,25 +267,25 @@ extension KanbanResolver {
     ///   ``KanbanError/duplicateID(type:id:)`` when the board has an actor with the slug and `ensure` is not `true`.
     fileprivate func addActor(
         context: KanbanContext,
-        arguments: OptionalInputArguments<AddActorInput>
+        arguments: InputArguments<AddActorInput>
     ) async throws -> ActorObject? {
         let input = arguments.input
-        let board = MutationBoard.named(input?.board)
+        let board = MutationBoard.named(input.board)
         return try await context.changeNode(named: MutationName.addActor, on: board) { work, resolver, time in
-            let slug = try resolver.slug(ofNewNode: input?.id, named: input?.name ?? "", ofType: .actor)
+            let slug = try resolver.slug(ofNewNode: input.id, named: input.name ?? "", ofType: .actor)
             let ref = LocalRef.actor(slug: slug.value)
-            if input?.ensure == true, work.graph.hasNode(ref) {
+            if input.ensure == true, work.graph.hasNode(ref) {
                 try work.ensureActor(ref, matching: input, at: time)
                 return ref
             }
             let values = [String: PatchValue](
                 givenValues: [
-                    PropertyName.name: .string(input?.name ?? slug.value),
-                    PropertyName.color: input?.color.map(PatchValue.string),
-                    PropertyName.avatar: input?.avatar.map(PatchValue.string),
+                    PropertyName.name: .string(input.name ?? slug.value),
+                    PropertyName.color: input.color.map(PatchValue.string),
+                    PropertyName.avatar: input.avatar.map(PatchValue.string),
                 ]
             )
-            try work.addNode(ref, setting: values, body: input?.body, at: time)
+            try work.addNode(ref, setting: values, body: input.body, at: time)
             return ref
         }
     }
@@ -334,9 +329,9 @@ extension KanbanResolver {
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live actor has the id.
     fileprivate func deleteActor(
         context: KanbanContext,
-        arguments: InputArguments<NodeReferenceInput>
+        arguments: InputArguments<NodeReferenceInput<DeleteActorMutation>>
     ) async throws -> ActorObject? {
-        try await changeDeleted(to: true, ofType: .actor, as: MutationName.deleteActor, context: context, arguments)
+        try await changeDeleted(to: true, ofType: .actor, context: context, arguments)
     }
 
     /// Resolves `Mutation.undeleteActor`: makes a tombstoned actor live again. A live actor does not change.
@@ -348,9 +343,9 @@ extension KanbanResolver {
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no actor has the id.
     fileprivate func undeleteActor(
         context: KanbanContext,
-        arguments: InputArguments<NodeReferenceInput>
+        arguments: InputArguments<NodeReferenceInput<UndeleteActorMutation>>
     ) async throws -> ActorObject? {
-        try await changeDeleted(to: false, ofType: .actor, as: MutationName.undeleteActor, context: context, arguments)
+        try await changeDeleted(to: false, ofType: .actor, context: context, arguments)
     }
 
     /// Writes a `delete` patch on one node: `true` makes a tombstone, `false` makes a tombstone live again (plan.md
@@ -360,28 +355,27 @@ extension KanbanResolver {
     /// - Parameters:
     ///   - isDeleted: `true` for a delete, `false` for an undelete.
     ///   - type: The node type.
-    ///   - operation: The name of the public mutation.
     ///   - context: The context of the call.
-    ///   - arguments: The node. A delete names a live node. An undelete can also name a tombstone.
+    ///   - arguments: The node. A delete names a live node. An undelete can also name a tombstone. The mutation of
+    ///     the `input` type is the public mutation of the call.
     /// - Returns: The node after the change.
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no node of the type has the id.
     ///   ``KanbanError/columnNotEmpty(column:liveTaskCount:)`` when a deleted column shows live tasks.
     ///   ``KanbanError/dependencyCycle(path:)`` when an undeleted task closes a `dependsOn` cycle.
-    func changeDeleted<Object: SlotNodeObject>(
+    func changeDeleted<Object: SlotNodeObject, Mutation: SharedInputMutation>(
         to isDeleted: Bool,
         ofType type: PatchNodeType,
-        as operation: String,
         context: KanbanContext,
-        _ arguments: InputArguments<NodeReferenceInput>
+        _ arguments: InputArguments<NodeReferenceInput<Mutation>>
     ) async throws -> Object? {
         let id = arguments.input.id
-        return try await changeDeleted(to: isDeleted, as: operation, context: context, holding: id) { resolver in
+        return try await changeDeleted(to: isDeleted, as: Mutation.name, context: context, holding: id) { resolver in
             try resolver.nodeRef(for: id, ofType: type, includingTombstones: !isDeleted)
         }
     }
 
     /// Writes a `delete` patch on the node that a resolve gives: `true` makes a tombstone, `false` makes a tombstone
-    /// live again. The rules are the rules of ``changeDeleted(to:ofType:as:context:_:)``.
+    /// live again. The rules are the rules of ``changeDeleted(to:ofType:context:_:)``.
     ///
     /// - Parameters:
     ///   - isDeleted: `true` for a delete, `false` for an undelete.
@@ -549,19 +543,19 @@ extension WorkingCopy {
     ///
     /// - Parameters:
     ///   - ref: The local ref of the actor.
-    ///   - input: The input of `addActor`, or `nil` when the call gives no `input`.
+    ///   - input: The input of `addActor`.
     ///   - time: The time of the change.
     /// - Throws: An ``EventError`` when a patch breaks a rule of the log.
     fileprivate mutating func ensureActor(
         _ ref: LocalRef,
-        matching input: AddActorInput?,
+        matching input: AddActorInput,
         at time: DateTime
     ) throws(EventError) {
         try apply(PatchInput(node: ref, delete: false), at: time)
         let given = [
-            PropertyName.name: input?.name,
-            PropertyName.color: input?.color,
-            PropertyName.avatar: input?.avatar,
+            PropertyName.name: input.name,
+            PropertyName.color: input.color,
+            PropertyName.avatar: input.avatar,
         ]
         let values: [String: FieldUpdate<PatchValue>] = given.mapValues { value in
             value.map(PatchValue.string).map(FieldUpdate.changed) ?? .unchanged
@@ -724,10 +718,10 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Self.makeChangedBodyField()
             }
             .description(SchemaDescription.updateActorInput)
-            Input(NodeReferenceInput.self) {
-                InputField("id", at: \.id).description(SchemaDescription.nodeReference)
-            }
-            .description(SchemaDescription.nodeReferenceInput)
+            Self.makeNodeReferenceInput(of: DeleteColumnMutation.self)
+            Self.makeNodeReferenceInput(of: UndeleteColumnMutation.self)
+            Self.makeNodeReferenceInput(of: DeleteActorMutation.self)
+            Self.makeNodeReferenceInput(of: UndeleteActorMutation.self)
         }
         .addMutation {
             Self.mutationField(

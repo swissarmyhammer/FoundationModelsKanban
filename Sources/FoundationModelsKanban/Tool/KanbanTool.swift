@@ -47,8 +47,10 @@ public struct KanbanTool: GraphQLEndpointTool {
     public let description = """
         Reads and changes the kanban task graph of this repo with GraphQL. Send one GraphQL document in query. \
         The root query fields are board, boards, node, nodes, and checkLinks. Mutations, for example addTask and \
-        moveTask, change the board. To learn the schema, query __schema or __type. Send the variables as a JSON \
-        object, or as a string that holds a JSON object. Example: \(KanbanTool.exampleQuery) \
+        moveTask, change the board. Each mutation takes one required input object: verbNoun(input: { ... }), for \
+        example initBoard(input: {}) or undoChange(input: { txn: <id> }). To learn the schema, query __schema or \
+        __type. Send the variables as a JSON object, or as a string that holds a JSON object. Example: \
+        \(KanbanTool.exampleQuery) \
         To see the changes, query board history. Its filter keeps the updates whose node matches: ~task for a node \
         type, ^id for one node. Example: \(KanbanTool.historyExample) \
         A task can depend on a task in a different repo: put the full \(SchemaDescription.taskURIForm) URI in \
@@ -62,12 +64,13 @@ public struct KanbanTool: GraphQLEndpointTool {
         checkLinks gives the class of each stored link: \
         \(LinkStatus.allCases.map(\.rawValue).joined(separator: ", ")). A link with an old board name still works, \
         and the response gives the warning \(OldBoardName.warningCode). The repairLinks mutation rewrites each \
-        \(LinkStatus.oldName.rawValue) link to the current name; dryRun: true only lists the changes. \
-        Read the warnings in extensions.warnings. The board is in .kanban at the top of a git worktree. Outside git, \
-        the board is in the nearest folder up that has a .kanban folder, else in the working directory, and its key \
-        is its board ID. The collectBoards mutation combines other .kanban folders, for example a board in a \
-        subfolder (warning \(SubfolderBoard.warningCode)), into one target board; undo does not reverse it. A .kanban \
-        folder of the old Rust kanban gives INCOMPATIBLE_BOARD. \
+        \(LinkStatus.oldName.rawValue) link to the current name; repairLinks(input: { dryRun: true }) only lists the \
+        changes. Read the warnings in extensions.warnings. The board is in .kanban at the top of a git worktree. \
+        Outside git, the board is in the nearest folder up that has a .kanban folder, else in the working directory, \
+        and its key is its board ID. The collectBoards mutation combines other .kanban folders, for example a board \
+        in a subfolder (warning \(SubfolderBoard.warningCode)), into one target board: \
+        collectBoards(input: { sources: [...] }); undoChange does not reverse it. A .kanban folder of the old Rust \
+        kanban gives INCOMPATIBLE_BOARD. \
         boards leaves out a related repo with a Rust .kanban folder and gives the warning INCOMPATIBLE_BOARD.
         """
 

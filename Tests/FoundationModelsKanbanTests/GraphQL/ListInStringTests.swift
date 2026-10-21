@@ -186,7 +186,9 @@ struct ListInStringTests {
             let document = "mutation { \(mutation)(input: { \(input) }) \(selection) }"
             return try await KanbanGraphTests.execute(document, on: graph)
         case .inputVariable:
-            let document = "mutation ($input: TagTaskInput!) { \(mutation)(input: $input) \(selection) }"
+            // Each mutation has its own input type: `TagTaskInput` or `UntagTaskInput`.
+            let inputType = mutation.prefix(1).uppercased() + mutation.dropFirst() + "Input"
+            let document = "mutation ($input: \(inputType)!) { \(mutation)(input: $input) \(selection) }"
             let input: Map = ["id": .string(id), "tags": .string(text)]
             return try await KanbanGraphTests.execute(document, variables: ["input": input], on: graph)
         case .listVariable:

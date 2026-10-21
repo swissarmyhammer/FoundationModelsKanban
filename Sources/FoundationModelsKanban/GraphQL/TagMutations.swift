@@ -78,6 +78,18 @@ private struct RenameTagInput: TargetBoardInput {
     let board: String?
 }
 
+/// The `deleteTag` mutation, for its `input` type `DeleteTagInput`.
+private enum DeleteTagMutation: SharedInputMutation {
+    /// The name of the mutation.
+    static let name = MutationName.deleteTag
+}
+
+/// The `undeleteTag` mutation, for its `input` type `UndeleteTagInput`.
+private enum UndeleteTagMutation: SharedInputMutation {
+    /// The name of the mutation.
+    static let name = MutationName.undeleteTag
+}
+
 // MARK: - Resolvers
 
 extension KanbanResolver {
@@ -90,8 +102,8 @@ extension KanbanResolver {
     ///
     /// - Parameters:
     ///   - context: The context of the call.
-    ///   - arguments: The new tag. The `input` argument is optional, because ``AddTagInput`` has no required field
-    ///     (plan.md §4.2). No `input` is the same as an `input` with no field.
+    ///   - arguments: The new tag. ``AddTagInput`` has no required field (plan.md §4.2), so `input: {}` gives no id
+    ///     and no name.
     /// - Returns: The tag. The GraphQL field is nullable, so that an error gives `null` for this field only.
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when the id is a URI that does not name a tag of the
     ///   board. ``KanbanError/invalidTagName(name:)`` when the id or the name gives an empty slug, or when the input
@@ -100,19 +112,19 @@ extension KanbanResolver {
     ///   virtual tag as its slug.
     fileprivate func addTag(
         context: KanbanContext,
-        arguments: OptionalInputArguments<AddTagInput>
+        arguments: InputArguments<AddTagInput>
     ) async throws -> TagObject? {
         let input = arguments.input
-        let board = MutationBoard.named(input?.board)
+        let board = MutationBoard.named(input.board)
         return try await context.changeNode(named: MutationName.addTag, on: board) { work, resolver, time in
-            let key = try resolver.newNodeKey(for: input?.id, named: input?.name ?? "", ofType: .tag)
-            let name = try TagName(normalizing: input?.name ?? key)
+            let key = try resolver.newNodeKey(for: input.id, named: input.name ?? "", ofType: .tag)
+            let name = try TagName(normalizing: input.name ?? key)
             let slug = try TagName(normalizing: key).slug
             let values = [
                 PropertyName.name: PatchValue.string(name.name),
-                PropertyName.color: .string(input?.color ?? slug.autoColor),
+                PropertyName.color: .string(input.color ?? slug.autoColor),
             ]
-            return try work.ensureLiveTag(.tag(slug: slug.value), setting: values, body: input?.body, at: time)
+            return try work.ensureLiveTag(.tag(slug: slug.value), setting: values, body: input.body, at: time)
         }
     }
 
@@ -160,9 +172,9 @@ extension KanbanResolver {
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live tag has the id.
     fileprivate func deleteTag(
         context: KanbanContext,
-        arguments: InputArguments<NodeReferenceInput>
+        arguments: InputArguments<NodeReferenceInput<DeleteTagMutation>>
     ) async throws -> TagObject? {
-        try await changeDeleted(to: true, ofType: .tag, as: MutationName.deleteTag, context: context, arguments)
+        try await changeDeleted(to: true, ofType: .tag, context: context, arguments)
     }
 
     /// Resolves `Mutation.undeleteTag`: makes a tombstoned tag live again. A live tag does not change.
@@ -174,9 +186,9 @@ extension KanbanResolver {
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no tag has the id.
     fileprivate func undeleteTag(
         context: KanbanContext,
-        arguments: InputArguments<NodeReferenceInput>
+        arguments: InputArguments<NodeReferenceInput<UndeleteTagMutation>>
     ) async throws -> TagObject? {
-        try await changeDeleted(to: false, ofType: .tag, as: MutationName.undeleteTag, context: context, arguments)
+        try await changeDeleted(to: false, ofType: .tag, context: context, arguments)
     }
 
     /// Resolves `Mutation.renameTag`: renames a tag with a redirect (plan.md §6.2). No task changes.
@@ -371,7 +383,7 @@ extension Graph {
 
 extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanContext {
     /// Adds the tag mutations and their `input` types (plan.md §4.2). The delete and the undelete mutations use the
-    /// `input` type of ``NodeReferenceInput``, which ``addColumnActorMutations()`` adds.
+    /// `input` types of ``NodeReferenceInput``, `DeleteTagInput` and `UndeleteTagInput` (EXTRAS-9 rule 7).
     ///
     /// - Returns: This builder, for method chaining.
     func addTagMutations() -> Self {
@@ -397,6 +409,8 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Self.makeTargetBoardField()
             }
             .description(SchemaDescription.renameTagInput)
+            Self.makeNodeReferenceInput(of: DeleteTagMutation.self)
+            Self.makeNodeReferenceInput(of: UndeleteTagMutation.self)
         }
         .addMutation {
             Self.mutationField(MutationName.addTag, at: KanbanResolver.addTag, description: SchemaDescription.addTag)

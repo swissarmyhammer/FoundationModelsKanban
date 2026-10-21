@@ -4,9 +4,9 @@ import ULID
 
 @testable import FoundationModelsKanban
 
-/// Tests `undo` and `redo` across boards (plan.md §6.5 "Scope" and "Many boards", §6.6): one `undo` reverses a call
-/// in each board that the call changed, a missing board gives `NOT_FOUND` and nothing is written, and a call with no
-/// `txn` searches only the current board and the loaded boards.
+/// Tests `undoChange` and `redoChange` across boards (plan.md §6.5 "Scope" and "Many boards", §6.6): one
+/// `undoChange` reverses a call in each board that the call changed, a missing board gives `NOT_FOUND` and nothing is
+/// written, and a call with no `txn` searches only the current board and the loaded boards.
 ///
 /// Each test makes two real git repos side by side in a ``GitSandbox``. The engines read the board keys from git.
 @Suite("Cross-repo: undo and redo across boards", .watcherBudget)
@@ -17,8 +17,8 @@ struct CrossRepoUndoTests {
     /// The response key of the field that adds a task to the related board.
     static let libField = "lib"
 
-    /// The `undo` field with no `input`.
-    static let undoField = UndoTests.reverseField(MutationName.undo, with: "")
+    /// The `undoChange` field with an empty `input` object.
+    static let undoField = UndoTests.reverseField(MutationName.undoChange, with: "")
 
     // MARK: - Helpers
 
@@ -90,12 +90,12 @@ struct CrossRepoUndoTests {
         return task
     }
 
-    /// Runs `undo` or `redo` with a `txn` and a `board` field that names the related board, on a new engine of the
-    /// current repo. The new engine has not loaded the related board before the field, and the helper closes it
-    /// after the field.
+    /// Runs `undoChange` or `redoChange` with a `txn` and a `board` field that names the related board, on a new
+    /// engine of the current repo. The new engine has not loaded the related board before the field, and the helper
+    /// closes it after the field.
     ///
     /// - Parameters:
-    ///   - name: `undo` or `redo`.
+    ///   - name: `undoChange` or `redoChange`.
     ///   - txn: The transaction to reverse.
     ///   - repos: The repos of the test.
     ///   - ids: The ULID source of the new engine. Its ids must sort after the ids of each earlier engine.
@@ -112,8 +112,8 @@ struct CrossRepoUndoTests {
         await app.close()
     }
 
-    /// Adds one task to the related board with a first engine, and then reverses that call with `undo`, a `txn`, and
-    /// a `board` field on a second engine that has not loaded the related board.
+    /// Adds one task to the related board with a first engine, and then reverses that call with `undoChange`, a
+    /// `txn`, and a `board` field on a second engine that has not loaded the related board.
     ///
     /// - Parameter repos: The repos of the test.
     /// - Returns: The full URI of the task.
@@ -121,7 +121,7 @@ struct CrossRepoUndoTests {
     private static func addAndUndoLibTask(in repos: CrossRepoFixture.SideBySide) async throws -> String {
         let task = try await addLibTask(withEngineClosedIn: repos)
         try await reverse(
-            MutationName.undo,
+            MutationName.undoChange,
             transaction: try lastEvent(ofTask: task, inRepoAt: repos.lib).txn,
             onNewEngineIn: repos,
             mintingFrom: GitGraphFixture.secondEngineIDs
@@ -153,7 +153,7 @@ struct CrossRepoUndoTests {
         let app = try GitGraphFixture.makeGraph(at: repos.app)
         let tasks = try await Self.addTaskToEachBoard(on: app)
         try await Self.runWithNoErrors(Self.undoField, on: app)
-        try await Self.runWithNoErrors(UndoTests.reverseField(MutationName.redo, with: ""), on: app)
+        try await Self.runWithNoErrors(UndoTests.reverseField(MutationName.redoChange, with: ""), on: app)
         let redoEvents = [
             try Self.lastEvent(ofTask: tasks.app, inRepoAt: repos.app),
             try Self.lastEvent(ofTask: tasks.lib, inRepoAt: repos.lib),
@@ -176,7 +176,12 @@ struct CrossRepoUndoTests {
             reference: try CrossRepoWriteTests.libKey(),
             searchRoots: [repos.sandbox.root.path]
         )
-        try ErrorCoverageTests.expectFailure(of: MutationName.undo, in: response, giving: expected, coded: "NOT_FOUND")
+        try ErrorCoverageTests.expectFailure(
+            of: MutationName.undoChange,
+            in: response,
+            giving: expected,
+            coded: "NOT_FOUND"
+        )
         #expect(try Design.PortabilityTests.logTexts(inRepoAt: repos.app) == before)
         await second.close()
     }
@@ -190,7 +195,7 @@ struct CrossRepoUndoTests {
         let app = try GitGraphFixture.makeGraph(at: repos.app, mintingFrom: GitGraphFixture.secondEngineIDs)
         let beforeLoad = try await CommentTests.run(Self.undoField, on: app)
         try ErrorCoverageTests.expectFailure(
-            of: MutationName.undo,
+            of: MutationName.undoChange,
             in: beforeLoad,
             giving: .nothingToUndo,
             coded: "NOTHING_TO_UNDO"
@@ -214,9 +219,9 @@ struct CrossRepoUndoTests {
         let task = try await Self.addAndUndoLibTask(in: repos)
         let undoEvent = try Self.lastEvent(ofTask: task, inRepoAt: repos.lib)
         let undo = undoEvent.txn
-        // The `txn` of `redo` names the original transaction. The redo reverses the undo of that transaction.
+        // The `txn` of `redoChange` names the original transaction. The redo reverses the undo of that transaction.
         try await Self.reverse(
-            MutationName.redo,
+            MutationName.redoChange,
             transaction: try #require(undoEvent.undoes),
             onNewEngineIn: repos,
             mintingFrom: GitGraphFixture.thirdEngineIDs

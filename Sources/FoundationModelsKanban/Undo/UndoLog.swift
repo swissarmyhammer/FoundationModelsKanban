@@ -78,8 +78,8 @@ struct UndoLog: Sendable {
 
     /// Finds the transaction that a reverse call reverses.
     ///
-    /// `undo(txn: T)` reverses T. `redo(txn: T)` takes the original transaction T, and reverses the undo of T
-    /// (plan.md §6.5).
+    /// `undoChange(input: { txn: T })` reverses T. `redoChange(input: { txn: T })` takes the original transaction T,
+    /// and reverses the undo of T (plan.md §6.5).
     ///
     /// - Parameters:
     ///   - direction: `undo` or `redo`.

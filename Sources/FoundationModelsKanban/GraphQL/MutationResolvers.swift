@@ -152,9 +152,11 @@ protocol ChangedColorInput: Decodable, Sendable {
 
 // MARK: - Arguments
 
-/// The `input` object of `initBoard` and `updateBoard` (plan.md §4.2). A name, a model, or a body that is not set does
-/// not change, and `null` clears it. No `board`, or `null`, gives the current board.
-private struct BoardInput: TargetBoardInput, ChangedBodyInput {
+/// The `input` object of `initBoard` or `updateBoard` (plan.md §4.2). A name, a model, or a body that is not set does
+/// not change, and `null` clears it. No `board`, or `null`, gives the current board. Each mutation has its own `input`
+/// type, `InitBoardInput` or `UpdateBoardInput` (``SharedInputMutation``), that
+/// ``SchemaBuilder/makeBoardInput(of:)`` gives.
+private struct BoardInput<Mutation: SharedInputMutation>: TargetBoardInput, ChangedBodyInput {
     /// The new name of the board.
     let name: FieldUpdate<String>
 
@@ -168,6 +170,18 @@ private struct BoardInput: TargetBoardInput, ChangedBodyInput {
     /// The board to change: a board key, a repo directory name, or a path, or `nil` for the current board (plan.md
     /// §6.6). A related repo with no board gets its board.
     let board: String?
+}
+
+/// The `initBoard` mutation, for its `input` type `InitBoardInput`.
+private enum InitBoardMutation: SharedInputMutation {
+    /// The name of the mutation.
+    static let name = MutationName.initBoard
+}
+
+/// The `updateBoard` mutation, for its `input` type `UpdateBoardInput`.
+private enum UpdateBoardMutation: SharedInputMutation {
+    /// The name of the mutation.
+    static let name = MutationName.updateBoard
 }
 
 // MARK: - Board of a field
@@ -223,16 +237,16 @@ extension KanbanResolver {
     ///
     /// - Parameters:
     ///   - context: The context of the call.
-    ///   - arguments: The changes to the board. The `input` argument is optional, because ``BoardInput`` has no
-    ///     required field (plan.md §4.2). No `input` gives no change.
+    ///   - arguments: The changes to the board. ``BoardInput`` has no required field, so `input: {}` changes no
+    ///     field (plan.md §4.2): it makes a new board, and changes nothing on a board that exists.
     /// - Returns: The board after the change. The GraphQL field is nullable, so that an error gives `null` for this
     ///   field only, and the other fields of the call keep their data.
     /// - Throws: An ``EventError`` when a patch breaks a rule of the log.
     fileprivate func initBoard(
         context: KanbanContext,
-        arguments: OptionalInputArguments<BoardInput>
+        arguments: InputArguments<BoardInput<InitBoardMutation>>
     ) async throws -> BoardObject? {
-        try await changeBoard(as: MutationName.initBoard, context: context, arguments: arguments)
+        try await changeBoard(context: context, arguments: arguments)
     }
 
     /// Resolves `Mutation.updateBoard`: changes the name, the model, and the body of the board.
@@ -245,26 +259,25 @@ extension KanbanResolver {
     /// - Throws: An ``EventError`` when a patch breaks a rule of the log.
     fileprivate func updateBoard(
         context: KanbanContext,
-        arguments: OptionalInputArguments<BoardInput>
+        arguments: InputArguments<BoardInput<UpdateBoardMutation>>
     ) async throws -> BoardObject? {
-        try await changeBoard(as: MutationName.updateBoard, context: context, arguments: arguments)
+        try await changeBoard(context: context, arguments: arguments)
     }
 
-    /// Changes the board with the input of a board mutation.
+    /// Changes the board with the input of a board mutation. The mutation of the `input` type is the public mutation
+    /// of the call.
     ///
     /// - Parameters:
-    ///   - operation: The name of the mutation.
     ///   - context: The context of the call.
     ///   - arguments: The changes to the board.
     /// - Returns: The board after the change, or `nil` in a run that the engine runs again after it loads the board.
     /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the `board`
     ///   field. An ``EventError`` when a patch breaks a rule of the log.
-    private func changeBoard(
-        as operation: String,
+    private func changeBoard<Mutation: SharedInputMutation>(
         context: KanbanContext,
-        arguments: OptionalInputArguments<BoardInput>
+        arguments: InputArguments<BoardInput<Mutation>>
     ) async throws -> BoardObject? {
-        let view = try await context.store.changeBoard(with: arguments.input, as: operation, at: context.clock())
+        let view = try await context.store.changeBoard(with: arguments.input, at: context.clock())
         return try view.map(BoardObject.init(in:))
     }
 }
@@ -310,25 +323,24 @@ extension BoardStore {
     ///
     /// - Parameters:
     ///   - input: The changes and the board. A name, a model, or a body that is not set does not change, and `null`
-    ///     clears it. No `board` gives the current board.
-    ///   - operation: The name of the public mutation.
+    ///     clears it. No `board` gives the current board. The mutation of the `input` type is the public mutation of
+    ///     the field.
     ///   - time: The time of the change.
     /// - Returns: The read view of the board after the change, or `nil` when the engine did not load the board yet.
     /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the `board`
     ///   field. An ``EventError`` when a patch breaks a rule of the log.
-    fileprivate func changeBoard(
-        with input: BoardInput?,
-        as operation: String,
+    fileprivate func changeBoard<Mutation: SharedInputMutation>(
+        with input: BoardInput<Mutation>,
         at time: DateTime
     ) throws -> BoardView? {
-        let changed = try runMutation(named: operation, on: .named(input?.board), at: time) { work, _ in
+        let changed = try runMutation(named: Mutation.name, on: .named(input.board), at: time) { work, _ in
             let patch = try PatchInput(
                 changing: .board,
                 updating: [
-                    PropertyName.name: (input?.name ?? .unchanged).map(PatchValue.string),
-                    PropertyName.model: (input?.model ?? .unchanged).map(PatchValue.string),
+                    PropertyName.name: input.name.map(PatchValue.string),
+                    PropertyName.model: input.model.map(PatchValue.string),
                 ],
-                body: input?.body ?? .unchanged,
+                body: input.body,
                 from: work.graph.body(of: .board)
             )
             try work.apply(patch, at: time)
@@ -580,21 +592,22 @@ extension Graph {
 // MARK: - Schema
 
 extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanContext {
-    /// Gives a public mutation field with its one argument `input` (plan.md §4.2). The field and the argument have a
-    /// description, because the agent learns the schema with introspection (EXTRAS-9 rule 11).
+    /// Gives a public mutation field with the form `verbNoun(input: VerbNounInput!)`: its one argument `input` is
+    /// required (plan.md §4.2, EXTRAS-9 rule 7). The field and the argument have a description, because the agent
+    /// learns the schema with introspection (EXTRAS-9 rule 11).
     ///
     /// - Parameters:
     ///   - name: The name of the mutation, from ``MutationName``.
     ///   - resolver: The resolver of the mutation.
     ///   - description: The description of the mutation.
     /// - Returns: The field.
-    static func mutationField<Arguments: MutationArguments, Value: Sendable>(
+    static func mutationField<Input: Decodable & Sendable, Value: Sendable>(
         _ name: String,
-        at resolver: @escaping AsyncResolve<KanbanResolver, KanbanContext, Arguments, Value>,
+        at resolver: @escaping AsyncResolve<KanbanResolver, KanbanContext, InputArguments<Input>, Value>,
         description: String
     ) -> FieldComponent<KanbanResolver, KanbanContext> {
         Field(name, at: resolver) {
-            Argument("input", at: \Arguments.input).description(Arguments.inputDescription)
+            Argument("input", at: \InputArguments<Input>.input).description(SchemaDescription.mutationInput)
         }
         .description(description)
     }
@@ -637,18 +650,30 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
         InputField("color", at: \Holder.color.value).description(SchemaDescription.changedColor)
     }
 
-    /// Adds the board mutations, `initBoard` and `updateBoard`, and their `input` type.
+    /// Gives the `input` type of a board mutation (``BoardInput``), with the name of the mutation (EXTRAS-9 rule 7),
+    /// so that the fields have one definition.
+    ///
+    /// - Parameter mutation: The mutation of the `input` type: `initBoard` or `updateBoard`.
+    /// - Returns: The `input` type `<Mutation>Input`, with its fields `name`, `model`, `body`, and `board`.
+    fileprivate static func makeBoardInput<Mutation: SharedInputMutation>(
+        of mutation: Mutation.Type
+    ) -> Input<KanbanResolver, KanbanContext, BoardInput<Mutation>> {
+        Input(BoardInput<Mutation>.self, as: mutation.inputTypeName) {
+            InputField("name", at: \.name.value).description(SchemaDescription.boardName)
+            InputField("model", at: \.model.value).description(SchemaDescription.boardModel)
+            Self.makeChangedBodyField()
+            Self.makeTargetBoardField()
+        }
+        .description(SchemaDescription.boardInput(of: mutation.name))
+    }
+
+    /// Adds the board mutations, `initBoard` and `updateBoard`, and their `input` types.
     ///
     /// - Returns: This builder, for method chaining.
     func addBoardMutations() -> Self {
         add {
-            Input(BoardInput.self) {
-                InputField("name", at: \.name.value).description(SchemaDescription.boardName)
-                InputField("model", at: \.model.value).description(SchemaDescription.boardModel)
-                Self.makeChangedBodyField()
-                Self.makeTargetBoardField()
-            }
-            .description(SchemaDescription.boardInput)
+            Self.makeBoardInput(of: InitBoardMutation.self)
+            Self.makeBoardInput(of: UpdateBoardMutation.self)
         }
         .addMutation {
             Self.mutationField(

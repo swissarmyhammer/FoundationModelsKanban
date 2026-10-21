@@ -107,7 +107,7 @@ struct ReadmeExamplesTests {
         /// first commit has a new UUID. Thus the board of each value has its own key: the key is the hash of the first
         /// commit, and an empty commit with the same message, the same author, and the same second gives the same hash.
         /// When two boards have one key, the engine of each test sees the other board as a copy of its own board, and an
-        /// `undo` or a `redo` of one test can reverse the transaction of the other test.
+        /// `undoChange` or a `redoChange` of one test can reverse the transaction of the other test.
         ///
         /// - Throws: An error when the folder cannot be made, when `git init`, `git config`, or `git commit` fails, or
         ///   when the engine cannot be made.
