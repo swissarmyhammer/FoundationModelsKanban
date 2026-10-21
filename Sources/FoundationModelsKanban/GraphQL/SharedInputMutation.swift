@@ -30,7 +30,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     static func makeNodeReferenceInput<Mutation: SharedInputMutation>(
         of mutation: Mutation.Type
     ) -> Input<KanbanResolver, KanbanContext, NodeReferenceInput<Mutation>> {
-        Input(NodeReferenceInput<Mutation>.self, as: mutation.inputTypeName) {
+        Input(NodeReferenceInput<Mutation>.self, as: NodeReferenceInput<Mutation>.inputTypeName) {
             InputField("id", at: \.id).description(SchemaDescription.nodeReference)
         }
         .description(SchemaDescription.nodeReferenceInput(of: mutation.name))

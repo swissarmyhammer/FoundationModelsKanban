@@ -19,6 +19,9 @@ extension MutationName {
 /// `UndoChangeInput` or `RedoChangeInput` (``SharedInputMutation``), that ``SchemaBuilder/makeReverseInput(of:)``
 /// gives.
 private struct ReverseInput<Mutation: SharedInputMutation>: Decodable, Sendable {
+    /// The GraphQL name of this `input` type: the `input` type name of its mutation (EXTRAS-9 rule 7).
+    static var inputTypeName: String { Mutation.inputTypeName }
+
     /// The transaction to reverse for `undoChange`, or the original transaction whose undo `redoChange` reverses, or
     /// `nil` for the newest target of the session actor.
     let txn: NodeID?
@@ -445,7 +448,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     fileprivate static func makeReverseInput<Mutation: SharedInputMutation>(
         of mutation: Mutation.Type
     ) -> Input<KanbanResolver, KanbanContext, ReverseInput<Mutation>> {
-        Input(ReverseInput<Mutation>.self, as: mutation.inputTypeName) {
+        Input(ReverseInput<Mutation>.self, as: ReverseInput<Mutation>.inputTypeName) {
             InputField("txn", at: \.txn).description(SchemaDescription.undoTransaction)
             InputField("force", at: \.force).description(SchemaDescription.undoForce)
             InputField("board", at: \.board).description(SchemaDescription.boardOfTransaction)

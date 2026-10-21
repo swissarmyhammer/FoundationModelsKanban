@@ -130,6 +130,9 @@ private struct UpdateActorInput: ChangedNameInput, ChangedColorInput, ChangedBod
 /// type, `<Mutation>Input` (``SharedInputMutation``), that ``SchemaBuilder/makeNodeReferenceInput(of:)`` gives. The
 /// comment mutations use `CommentReferenceInput`, which can also name the task of the comment.
 struct NodeReferenceInput<Mutation: SharedInputMutation>: Codable, Sendable {
+    /// The GraphQL name of this `input` type: the `input` type name of its mutation (EXTRAS-9 rule 7).
+    static var inputTypeName: String { Mutation.inputTypeName }
+
     /// The node: a full URI or a short form (plan.md §3.2).
     let id: NodeID
 }

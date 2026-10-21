@@ -54,6 +54,9 @@ private struct MoveTaskInput: TaskPlacementInput {
 /// `AssignTaskInput` or `UnassignTaskInput` (``SharedInputMutation``), that
 /// ``SchemaBuilder/makeAssignTaskInput(of:)`` gives.
 private struct AssignTaskInput<Mutation: SharedInputMutation>: TaskReferenceInput {
+    /// The GraphQL name of this `input` type: the `input` type name of its mutation (EXTRAS-9 rule 7).
+    static var inputTypeName: String { Mutation.inputTypeName }
+
     /// The task: a full URI or a short form (plan.md §3.2).
     let id: NodeID
 
@@ -64,6 +67,9 @@ private struct AssignTaskInput<Mutation: SharedInputMutation>: TaskReferenceInpu
 /// The `input` object of `tagTask` or `untagTask` (plan.md §4.2). Each mutation has its own `input` type,
 /// `TagTaskInput` or `UntagTaskInput` (``SharedInputMutation``), that ``SchemaBuilder/makeTagTaskInput(of:)`` gives.
 private struct TagTaskInput<Mutation: SharedInputMutation>: TaskReferenceInput {
+    /// The GraphQL name of this `input` type: the `input` type name of its mutation (EXTRAS-9 rule 7).
+    static var inputTypeName: String { Mutation.inputTypeName }
+
     /// The task: a full URI or a short form (plan.md §3.2).
     let id: NodeID
 
@@ -665,7 +671,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     fileprivate static func makeAssignTaskInput<Mutation: SharedInputMutation>(
         of mutation: Mutation.Type
     ) -> Input<KanbanResolver, KanbanContext, AssignTaskInput<Mutation>> {
-        Input(AssignTaskInput<Mutation>.self, as: mutation.inputTypeName) {
+        Input(AssignTaskInput<Mutation>.self, as: AssignTaskInput<Mutation>.inputTypeName) {
             Self.makeTaskReferenceField()
             InputField("actor", at: \.actor).description(SchemaDescription.actorReference)
         }
@@ -680,7 +686,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     fileprivate static func makeTagTaskInput<Mutation: SharedInputMutation>(
         of mutation: Mutation.Type
     ) -> Input<KanbanResolver, KanbanContext, TagTaskInput<Mutation>> {
-        Input(TagTaskInput<Mutation>.self, as: mutation.inputTypeName) {
+        Input(TagTaskInput<Mutation>.self, as: TagTaskInput<Mutation>.inputTypeName) {
             Self.makeTaskReferenceField()
             InputField("tags", at: \.tags).description(SchemaDescription.tagTaskTags)
         }

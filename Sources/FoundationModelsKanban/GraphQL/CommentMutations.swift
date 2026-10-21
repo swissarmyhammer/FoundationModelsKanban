@@ -63,6 +63,9 @@ private struct UpdateCommentInput: CommentReferringInput, ChangedBodyInput {
 /// comment as a check (divergence.md E5, K16). Each mutation has its own `input` type, `DeleteCommentInput` or
 /// `UndeleteCommentInput` (``SharedInputMutation``), that ``SchemaBuilder/makeCommentReferenceInput(of:)`` gives.
 private struct CommentReferenceInput<Mutation: SharedInputMutation>: CommentReferringInput {
+    /// The GraphQL name of this `input` type: the `input` type name of its mutation (EXTRAS-9 rule 7).
+    static var inputTypeName: String { Mutation.inputTypeName }
+
     /// The comment: a full URI or a short form (plan.md §3.2). The task of the comment is not necessary.
     let id: NodeID
 
@@ -295,7 +298,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     fileprivate static func makeCommentReferenceInput<Mutation: SharedInputMutation>(
         of mutation: Mutation.Type
     ) -> Input<KanbanResolver, KanbanContext, CommentReferenceInput<Mutation>> {
-        Input(CommentReferenceInput<Mutation>.self, as: mutation.inputTypeName) {
+        Input(CommentReferenceInput<Mutation>.self, as: CommentReferenceInput<Mutation>.inputTypeName) {
             Self.makeCommentReferenceField()
             Self.makeCommentTaskField()
         }

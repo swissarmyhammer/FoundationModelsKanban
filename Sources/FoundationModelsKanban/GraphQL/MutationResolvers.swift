@@ -157,6 +157,9 @@ protocol ChangedColorInput: Decodable, Sendable {
 /// type, `InitBoardInput` or `UpdateBoardInput` (``SharedInputMutation``), that
 /// ``SchemaBuilder/makeBoardInput(of:)`` gives.
 private struct BoardInput<Mutation: SharedInputMutation>: TargetBoardInput, ChangedBodyInput {
+    /// The GraphQL name of this `input` type: the `input` type name of its mutation (EXTRAS-9 rule 7).
+    static var inputTypeName: String { Mutation.inputTypeName }
+
     /// The new name of the board.
     let name: FieldUpdate<String>
 
@@ -658,7 +661,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     fileprivate static func makeBoardInput<Mutation: SharedInputMutation>(
         of mutation: Mutation.Type
     ) -> Input<KanbanResolver, KanbanContext, BoardInput<Mutation>> {
-        Input(BoardInput<Mutation>.self, as: mutation.inputTypeName) {
+        Input(BoardInput<Mutation>.self, as: BoardInput<Mutation>.inputTypeName) {
             InputField("name", at: \.name.value).description(SchemaDescription.boardName)
             InputField("model", at: \.model.value).description(SchemaDescription.boardModel)
             Self.makeChangedBodyField()

@@ -40,6 +40,44 @@ comments:
     - evidence: `swift test` 1751 tests in 146 suites passed, no package warnings; `swift build --build-tests` in IntegrationTests: Build complete; 48 files changed (18 Sources incl. new GraphQL/SharedInputMutation.swift, ~25 Tests, Tests/Fixtures/kanban.graphql, Documentation/kanban/SKILL.md, README.md, plan.md, divergence.md)
     - next: /review
   timestamp: 2026-10-21T22:46:02.283786+00:00
+- actor: claude-code
+  id: 01m5gbbn4aw806z4z2jn0hdk83
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (bd01871) — 6 findings (6 confirmed, 0 refuted): ColumnActorMutations.swift:132, CommentMutations.swift:65, MutationResolvers.swift:159, TaskOperationMutations.swift:56, TaskOperationMutations.swift:66, UndoMutations.swift:21 — code-hygiene/dead-code-swift: generic_type_param `Mutation` is unused.
+    - next: implement — remove the unused generic `Mutation` parameter from each listed declaration and from every other declaration in those files with the same cause, then re-review.
+  timestamp: 2026-10-21T23:04:51.594502+00:00
+- actor: claude-code
+  id: 01m5gbc7rfw32wb3dqw8sq0mqf
+  text: |-
+    ### finish iteration 2 — findings
+    - user chose: bump endpoint version to "2", no alias for old forms
+    - implement: changed — 48 files, all 34 mutations name(input: NameInput!), undoChange/redoChange
+    - test: green — swift test 1751 tests / 146 suites; IntegrationTests build-tests
+    - commit: bd01871
+    - review: findings — ColumnActorMutations.swift:132, CommentMutations.swift:65, MutationResolvers.swift:159, TaskOperationMutations.swift:56, TaskOperationMutations.swift:66, UndoMutations.swift:21 (generic_type_param `Mutation` is unused)
+  timestamp: 2026-10-21T23:05:10.671338+00:00
+- actor: claude-code
+  id: 01m5gbmh9bh19594t99yqtfbd0
+  text: |-
+    Fix for the 6 `code-hygiene/dead-code-swift — generic_type_param Mutation is unused` findings.
+
+    Discoveries:
+    - The findings come from periphery and point at the generic STRUCT declarations (NodeReferenceInput, CommentReferenceInput, BoardInput, AssignTaskInput, TagTaskInput, ReverseInput), not at resolver functions. The resolver helpers (changeDeleted, changeBoard, changeAssignee, reverse) already use their `Mutation` param (`Mutation.name`), so periphery never flagged them. The structs used `Mutation` only as a phantom type.
+    - You can run periphery locally to get the same result: `swift build --build-tests`, then `periphery scan --skip-build --index-store-path .build/out --retain-public --retain-objc-accessible --retain-codable-properties --relative-results --report-exclude 'Tests/**'` (SwiftPM 6.4 writes the index store to .build/out). Before the fix this command printed exactly the 6 findings.
+
+    Fix (option "use the marker so it carries meaning"):
+    - Each of the 6 shared input structs now declares `static var inputTypeName: String { Mutation.inputTypeName }`, which is the GraphQL name of that specialization (EXTRAS-9 rule 7). Each make*Input builder registers `Input(X<Mutation>.self, as: X<Mutation>.inputTypeName)` instead of `mutation.inputTypeName`, so the GraphQL type name now comes from the input type itself. This is a real use of the marker, and there is no suppression marker.
+    - Not chosen: one concrete struct per mutation. That would copy the 4-field BoardInput/ReverseInput bodies (with their docs) twice each and would break the duplication rule.
+    - Schema output is unchanged: the golden SDL test passes.
+  timestamp: 2026-10-21T23:09:42.571261+00:00
+- actor: claude-code
+  id: 01m5gbmn37ay05a8s3h19f85t9
+  text: |-
+    ### implement — changed
+    - evidence: 6 files — Sources/FoundationModelsKanban/GraphQL/{ColumnActorMutations,CommentMutations,MutationResolvers,TaskOperationMutations,UndoMutations,SharedInputMutation}.swift. periphery scan: 0 generic_type_param findings (6 before). `swift test`: 1751 tests in 146 suites passed, no package warnings. IntegrationTests `swift build --build-tests`: Build complete. Findings 6/6 ticked; task left in doing, not committed.
+    - next: /review
+  timestamp: 2026-10-21T23:09:46.471445+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'EXTRAS-9 rule 7: give each mutation the form verbNoun(input: VerbNounInput!)'
@@ -66,3 +104,24 @@ Decision (user): bump the endpoint version to "2" and change the schema with no 
 ## Acceptance Criteria
 - [x] Each mutation is `verbNoun(input: VerbNounInput!)`, or the old form still works as an alias
 - [x] The rule-7 exception is gone from EndpointConventionTests, and the golden SDL is recorded again
+
+## Review Findings (2026-10-21 17:46)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 45 file(s) reviewed, 9 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 5 file(s) not reviewed — no validator matched:
+> - `Documentation/kanban/SKILL.md` — no validator matches this file
+> - `README.md` — no validator matches this file
+> - `Tests/Fixtures/kanban.graphql` — no validator matches this file
+> - `divergence.md` — no validator matches this file
+> - `plan.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsKanban/GraphQL/ColumnActorMutations.swift:132` `code-hygiene/dead-code-swift` — generic_type_param `Mutation` is unused.
+- [x] `Sources/FoundationModelsKanban/GraphQL/CommentMutations.swift:65` `code-hygiene/dead-code-swift` — generic_type_param `Mutation` is unused.
+- [x] `Sources/FoundationModelsKanban/GraphQL/MutationResolvers.swift:159` `code-hygiene/dead-code-swift` — generic_type_param `Mutation` is unused.
+- [x] `Sources/FoundationModelsKanban/GraphQL/TaskOperationMutations.swift:56` `code-hygiene/dead-code-swift` — generic_type_param `Mutation` is unused.
+- [x] `Sources/FoundationModelsKanban/GraphQL/TaskOperationMutations.swift:66` `code-hygiene/dead-code-swift` — generic_type_param `Mutation` is unused.
+- [x] `Sources/FoundationModelsKanban/GraphQL/UndoMutations.swift:21` `code-hygiene/dead-code-swift` — generic_type_param `Mutation` is unused.
