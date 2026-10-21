@@ -42,7 +42,7 @@ struct ChangeEvent: Sendable {
     /// Gives a stream of events that has ended: the stream of a subscriber that gets no event.
     ///
     /// - Returns: The stream.
-    static func endedStream() -> AsyncThrowingStream<ChangeEvent, Error> {
+    static func makeEndedStream() -> AsyncThrowingStream<ChangeEvent, Error> {
         AsyncThrowingStream { continuation in continuation.finish() }
     }
 }
@@ -663,7 +663,7 @@ private final class SubscriberRelay: Sendable {
         inRun run: Int
     ) -> AsyncThrowingStream<ChangeEvent, Error>.Continuation.YieldResult? {
         state.withLock { state in
-            guard case .running(_, run) = state.relay else {
+            guard case .running(_, let matchedRun) = state.relay, matchedRun == run else {
                 return nil
             }
             return continuation.yield(next)
@@ -676,7 +676,7 @@ private final class SubscriberRelay: Sendable {
     /// - Returns: `true` when the task of the run is the task of the relay.
     private func isCurrent(run: Int) -> Bool {
         state.withLock { state in
-            guard case .running(_, run) = state.relay else {
+            guard case .running(_, let matchedRun) = state.relay, matchedRun == run else {
                 return false
             }
             return true

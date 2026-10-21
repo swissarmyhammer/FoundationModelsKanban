@@ -856,7 +856,6 @@ struct ActorObject: SlotNodeObject, LabelObject {
     ///
     /// - Parameters:
     ///   - view: The read view of the graph.
-    ///   - slot: The slot of the actor. The object does not keep it.
     ///   - state: The state of the actor node.
     init(view: BoardView, slot _: Int, state: ActorNode) {
         self.view = view
@@ -877,7 +876,6 @@ struct TagObject: SlotNodeObject, LabelObject {
     ///
     /// - Parameters:
     ///   - view: The read view of the graph.
-    ///   - slot: The slot of the tag. The object does not keep it.
     ///   - state: The state of the tag node.
     init(view: BoardView, slot _: Int, state: TagNode) {
         self.view = view

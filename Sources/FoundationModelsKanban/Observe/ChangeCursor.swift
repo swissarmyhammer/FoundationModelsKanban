@@ -47,11 +47,9 @@ extension KanbanResolver {
 }
 
 extension BoardObject {
-    /// Resolves `Board.cursor`: the cursor of the change log of the board, as the call reads the board (KANBAN-7).
+    /// Resolves `Board.cursor`: the cursor of the change log of the board, as the call reads the board (KANBAN-7). The
+    /// field reads no context and has no arguments.
     ///
-    /// - Parameters:
-    ///   - context: The field reads no context.
-    ///   - arguments: The field has no arguments.
     /// - Returns: The cursor.
     /// - Throws: An error of ``BoardView/changeCursor()``.
     func cursor(context _: KanbanContext, arguments _: NoArguments) throws(KanbanError) -> String {

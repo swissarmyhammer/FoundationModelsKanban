@@ -77,7 +77,7 @@ final class SessionFeeds: Sendable {
         guard let feed = feeds[path] else {
             assertionFailure("A subscriber observes the board at \(path), and the view did not load it")
             Log.kanban.error("A subscriber observes a board that the view did not load", metadata: ["path": "\(path)"])
-            return ChangeEvent.endedStream()
+            return ChangeEvent.makeEndedStream()
         }
         return await feed.subscribe(after: cursor, filteredBy: filter, ownedBy: owner)
     }

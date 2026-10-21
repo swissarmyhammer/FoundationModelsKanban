@@ -721,7 +721,7 @@ public actor KanbanGraph: GraphQLEndpoint {
         }
         await observer?.callDidStart()
         defer { observer?.callDidFinish() }
-        var session = await engine.readSession()
+        var session = await engine.readSessionHoldingGate()
         let copy = session.copy(at: engine.root)
         let (clock, search, feeds) = (host.configuration.clock, session.source.search, feeds)
         let subfolderBoard = subfolderBoard
@@ -733,10 +733,15 @@ public actor KanbanGraph: GraphQLEndpoint {
                     guard reach.readsRelatedBoards else {
                         return .unavailable
                     }
-                    return try await self.relatedBoards(updating: related, toAnswer: requests, current: copy)
+                    return try await self.relatedBoards(
+                        updating: related,
+                        toAnswer: requests,
+                        current: copy,
+                        holding: held
+                    )
                 },
                 storingRelatedBoardsWith: { sessions, related in
-                    await self.storeRelatedBoards(sessions, in: related, around: copy.directory)
+                    await self.storeRelatedBoards(sessions, in: related, around: copy.directory, holding: held)
                 },
                 admittingCommitsWith: { paths in
                     try await self.admit(paths, holding: held, current: engine)
@@ -874,25 +879,32 @@ public actor KanbanGraph: GraphQLEndpoint {
         do {
             result = try await operation()
         } catch {
-            await host.publish(await Self.takeLiveChanges(of: held))
+            await logLiveChanges(of: held)
             throw error
         }
-        let changed = await Self.takeLiveChanges(of: held)
-        await host.publish(changed)
+        let changed = await logLiveChanges(of: held)
         if case .completed = result {
             await context?.postAgentPlans(of: changed)
         }
         return result.value
     }
 
-    /// Takes the changes of the live graph of each board whose gate an operation holds.
+    /// Takes the changes of the live graph of each board whose gate an operation holds, sends them to each session
+    /// view of the process, which puts them into the change log of each board, and then records for each of these
+    /// boards that its log holds them (``BoardEngine/finishLogging()``). Until then, a read of one of these boards that
+    /// does not hold its gate gives the board from before the operation.
     ///
     /// - Parameter held: The gates that the operation holds.
     /// - Returns: The changes of each board that changed, by the canonical path of its repo directory.
-    private static func takeLiveChanges(of held: HeldGates) async -> [String: BoardChanges] {
+    @discardableResult
+    private func logLiveChanges(of held: HeldGates) async -> [String: BoardChanges] {
         var changed: [String: BoardChanges] = [:]
         for engine in held.engines {
             changed[engine.root.canonicalPath] = await engine.takeLiveChanges()
+        }
+        await host.publish(changed)
+        for engine in held.engines {
+            await engine.finishLogging()
         }
         return changed
     }
@@ -929,7 +941,12 @@ public actor KanbanGraph: GraphQLEndpoint {
                 of: currentSession.live.graph,
                 inBoard: copy.key.description
             )
-            related = try await relatedBoards(updating: .loadable, toAnswer: requests, current: copy)
+            related = try await relatedBoards(
+                updating: .loadable,
+                toAnswer: requests,
+                current: copy,
+                holding: gatesOfRelatedBoards(changedIn: changed)
+            )
         } catch {
             Log.kanban.error(
                 "The change feed stopped while it read the boards of the dependencies; the changes are not logged",
@@ -951,7 +968,7 @@ public actor KanbanGraph: GraphQLEndpoint {
                 Log.kanban.error("The view holds a board with no session", metadata: ["path": "\(path)"])
                 continue
             }
-            await engine.feed.append(
+            await engine.log(
                 round.changes(of: session, atPath: path),
                 readingNodesOf: round.view(of: session),
                 resolvingIn: eventBoard(
@@ -961,6 +978,17 @@ public actor KanbanGraph: GraphQLEndpoint {
             )
         }
         return Set(engines.values.map(\.identity))
+    }
+
+    /// The gates of the related boards of the view that changed in a round. The caller of
+    /// ``publish(_:skipping:)`` holds them, so the round reads the newest session of these boards.
+    ///
+    /// - Parameter changed: The changes of each board that changed, by the canonical path of its repo directory.
+    /// - Returns: The gates.
+    private func gatesOfRelatedBoards(changedIn changed: [String: BoardChanges]) -> HeldGates {
+        HeldGates(of: relatedBoards.compactMap { path, engine in
+            changed[path]?.identity == engine.identity ? engine : nil
+        })
     }
 
     /// The engine of each board that the view loaded: the board of the working directory and each related board, by
@@ -994,27 +1022,33 @@ public actor KanbanGraph: GraphQLEndpoint {
         }
     }
 
-    /// The session of each board that the view loaded: the board of the working directory and each related board, by
-    /// the canonical path of its repo directory.
+    /// The newest session of each board that the view loaded: the board of the working directory and each related
+    /// board, by the canonical path of its repo directory. The changes of a round read the sessions after the round,
+    /// also of the boards whose changes are not in their change logs yet.
     ///
     /// - Parameter current: The engine of the board of the working directory.
     /// - Returns: The sessions.
     private func loadedSessions(current: BoardEngine) async -> [String: CommitSession] {
-        var sessions = await relatedSessions
-        sessions[current.root.canonicalPath] = await current.session
+        var sessions: [String: CommitSession] = [:]
+        for (path, engine) in loadedEngines(current: current) {
+            sessions[path] = await engine.session
+        }
         return sessions
     }
 
-    /// The session of each related board that the view loaded, by the canonical path of its repo directory, each with
-    /// the cursor of the change log of its board at the read (``BoardEngine/readSession()``).
-    private var relatedSessions: [String: CommitSession] {
-        get async {
-            var sessions: [String: CommitSession] = [:]
-            for (path, engine) in relatedBoards {
-                sessions[path] = await engine.readSession()
-            }
-            return sessions
+    /// Gives the session of each related board that the view loaded for the read of a run, by the canonical path of
+    /// its repo directory, each with the cursor of the change log of its board at the same point (KANBAN-7). A board
+    /// whose gate the run holds gives its newest session (``BoardEngine/readSessionHoldingGate()``). Each other board
+    /// gives the session that its change log holds (``BoardEngine/readSession()``).
+    ///
+    /// - Parameter held: The gates that the run holds.
+    /// - Returns: The sessions.
+    private func relatedSessions(holding held: HeldGates) async -> [String: CommitSession] {
+        var sessions: [String: CommitSession] = [:]
+        for (path, engine) in relatedBoards {
+            sessions[path] = held.holds(engine) ? await engine.readSessionHoldingGate() : await engine.readSession()
         }
+        return sessions
     }
 
     /// Gives the other boards that the resolvers of the events of a board read: the boards after the operation, as
@@ -1073,15 +1107,18 @@ public actor KanbanGraph: GraphQLEndpoint {
     ///   - related: The related boards of the run.
     ///   - requests: The requests of the run.
     ///   - current: The copy of the current board: the top folder of its worktree and its current key.
+    ///   - held: The gates that the run holds. Each loaded related board is read as
+    ///     ``relatedSessions(holding:)`` tells.
     /// - Returns: The related boards with an answer for each request, and with each loaded related board. A board that
     ///   cannot load is ``BoardResolution/unreadable(_:)`` (divergence.md Q7).
     /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during a scan or a load.
     private func relatedBoards(
         updating related: RelatedBoards,
         toAnswer requests: Set<BoardRequest>,
-        current: BoardCopy
+        current: BoardCopy,
+        holding held: HeldGates
     ) async throws -> RelatedBoards {
-        var updated = await withLoadedBoards(related, around: current.directory)
+        var updated = await withLoadedBoards(related, around: current.directory, holding: held)
         var pending = requests.union(updated.loadedCrossBoardRequests)
         while !pending.isEmpty {
             let open = pending.filter { request in !updated.satisfies([request]) }
@@ -1091,7 +1128,7 @@ public actor KanbanGraph: GraphQLEndpoint {
             for answer in answers {
                 answer.record(in: &updated)
             }
-            updated = await withLoadedBoards(updated, around: current.directory)
+            updated = await withLoadedBoards(updated, around: current.directory, holding: held)
             pending = updated.loadedCrossBoardRequests.filter { request in !updated.satisfies([request]) }
         }
         if requests.contains(where: \.readsScanIndex), let index = await host.scanIndex(around: current.directory) {
@@ -1112,11 +1149,14 @@ public actor KanbanGraph: GraphQLEndpoint {
     ///     directory.
     ///   - related: The related boards of the run.
     ///   - root: The top folder of the worktree of the current board.
+    ///   - held: The gates that the call holds. Each loaded related board is read as
+    ///     ``relatedSessions(holding:)`` tells.
     /// - Returns: The related boards with the stored sessions.
     private func storeRelatedBoards(
         _ sessions: [String: CommitSession],
         in related: RelatedBoards,
-        around root: URL
+        around root: URL,
+        holding held: HeldGates
     ) async -> RelatedBoards {
         for (path, session) in sessions {
             guard let engine = relatedBoards[path] else {
@@ -1130,7 +1170,7 @@ public actor KanbanGraph: GraphQLEndpoint {
             await engine.replaceSession(with: session)
             await session.updateSearch()
         }
-        return await withLoadedBoards(related, around: root)
+        return await withLoadedBoards(related, around: root, holding: held)
     }
 
     /// Gives the related boards of a run with the session of each loaded related board and the places of the scan.
@@ -1138,10 +1178,16 @@ public actor KanbanGraph: GraphQLEndpoint {
     /// - Parameters:
     ///   - related: The related boards of the run.
     ///   - root: The top folder of the worktree of the current board.
+    ///   - held: The gates that the run holds. Each loaded related board is read as ``relatedSessions(holding:)``
+    ///     tells.
     /// - Returns: The related boards with the loaded boards.
-    private func withLoadedBoards(_ related: RelatedBoards, around root: URL) async -> RelatedBoards {
+    private func withLoadedBoards(
+        _ related: RelatedBoards,
+        around root: URL,
+        holding held: HeldGates
+    ) async -> RelatedBoards {
         var updated = related
-        updated.install(boards: await relatedSessions, searchRoots: locator.places(around: root))
+        updated.install(boards: await relatedSessions(holding: held), searchRoots: locator.places(around: root))
         return updated
     }
 

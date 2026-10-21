@@ -378,8 +378,8 @@ struct CommitSession: Sendable {
     private(set) var formerKeys: [BoardKey] = []
 
     /// The cursor of the change log of the board when the engine gave this session to a read
-    /// (``BoardEngine/readSession()``), or `nil` for a session that no read took (KANBAN-7). ``source`` gives it to the
-    /// read views.
+    /// (``BoardEngine/readSession()``, ``BoardEngine/readSessionHoldingGate()``), or `nil` for a session that no read
+    /// took (KANBAN-7). ``source`` gives it to the read views.
     private(set) var changeCursor: String?
 
     /// The source of the transaction ULIDs and the event ids.

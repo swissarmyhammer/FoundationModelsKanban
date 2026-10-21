@@ -153,9 +153,7 @@ struct NodeUpdate: Sendable {
     /// Resolves `NodeUpdate.node`: the node now, in the graph now of the board of the node: the current board or a
     /// related board (plan.md §6.6). For a `DELETED` update, the node is the tombstone with `deleted` set.
     ///
-    /// - Parameters:
-    ///   - context: The context of the call. Its store finds the board of the node.
-    ///   - arguments: The field has no arguments.
+    /// - Parameter context: The context of the call. Its store finds the board of the node.
     /// - Returns: The node, or `nil` when the graph does not have the node now.
     /// - Throws: An error of ``KanbanContext/view(ofBoardOfChange:)``.
     func node(context: KanbanContext, arguments _: NoArguments) async throws(KanbanError) -> (any NodeObject)? {
@@ -265,9 +263,7 @@ struct Change: Sendable {
     /// is not in the change log: it gives the cursor of the board of the transaction as the call read it, so that
     /// `changes(after:)` with it gives the changes after that read.
     ///
-    /// - Parameters:
-    ///   - context: The context of the call. Its store finds the board of the transaction.
-    ///   - arguments: The field has no arguments.
+    /// - Parameter context: The context of the call. Its store finds the board of the transaction.
     /// - Returns: The cursor.
     /// - Throws: An error of ``KanbanContext/view(ofBoardOfChange:)``, or of ``BoardView/changeCursor()`` for a board
     ///   with no change log.
@@ -284,9 +280,7 @@ struct Change: Sendable {
     /// on (plan.md §6.7). A tombstoned actor resolves to the tombstone, with `deleted` set (plan.md
     /// §5.3, step 5).
     ///
-    /// - Parameters:
-    ///   - context: The context of the call. Its store finds the board of the transaction.
-    ///   - arguments: The field has no arguments.
+    /// - Parameter context: The context of the call. Its store finds the board of the transaction.
     /// - Returns: The actor.
     /// - Throws: An error of ``KanbanContext/view(ofBoardOfChange:)``. ``KanbanError/notFound(type:reference:)`` for
     ///   the actor when the board does not have the actor.

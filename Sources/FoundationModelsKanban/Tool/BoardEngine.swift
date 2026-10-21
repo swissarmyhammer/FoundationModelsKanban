@@ -89,6 +89,22 @@ actor BoardEngine {
     /// The live graph of the board and its commit path.
     private(set) var session: CommitSession
 
+    /// The gate that lets one write of the change log run at a time: an append of the changes of a round, or a new
+    /// log. Thus ``newestCursor`` follows the writes of the log in their order.
+    private let logGate = SerialGate()
+
+    /// The cursor of the newest change of the change log, as the last write of the log left it (KANBAN-7).
+    private var newestCursor: String
+
+    /// The session of the board as the change log holds it, with its cursor (KANBAN-7): each change of the board in
+    /// this session is in the log at or before the cursor, and each change of the board after the cursor is not in
+    /// this session. ``readSession()`` gives it.
+    private var loggedSession: CommitSession
+
+    /// `true` from the take of the changes of an operation (``takeLiveChanges()``) until the operation has put them
+    /// into the change log (``finishLogging()``). ``loggedSession`` then stays the session before the operation.
+    private var isLogging = false
+
     /// The state of the file watcher of the board.
     private var watchState: EngineWatchState
 
@@ -119,11 +135,15 @@ actor BoardEngine {
         observingBatchesWith batchObserver: (any LiveGraphObserver)?,
         publishingTo publish: @escaping ChangePublisher,
         reportingRetirementTo reportRetirement: @escaping EngineRetirement
-    ) {
+    ) async {
+        let feed = ChangeFeed(capacity: capacity)
+        let cursor = await feed.cursor
         self.identity = identity
         self.root = root
         self.session = session
-        feed = ChangeFeed(capacity: capacity)
+        self.feed = feed
+        newestCursor = cursor
+        loggedSession = session.read(atCursor: cursor)
         self.batchObserver = batchObserver
         self.publish = publish
         self.reportRetirement = reportRetirement
@@ -181,7 +201,7 @@ actor BoardEngine {
             throw error
         }
         let started = try await starting
-        let engine = BoardEngine(
+        let engine = await BoardEngine(
             identity: request.identity,
             root: request.root,
             session: session,
@@ -232,6 +252,7 @@ actor BoardEngine {
     /// - Parameter key: The key that git gives now.
     func changeKey(to key: BoardKey) {
         session.changeKey(to: key)
+        loggedSession.changeKey(to: key)
     }
 
     /// The current key of the board: the git key, or the board ID of a board outside git (divergence.md M9).
@@ -239,22 +260,85 @@ actor BoardEngine {
         session.key
     }
 
-    /// Gives the session of the board for a read, with the cursor of the change log of the board (KANBAN-7).
+    /// Gives the session of the board for a read that does not hold ``gate``, with the cursor of the change log at the
+    /// same point (KANBAN-7): the session that the log holds, and the cursor of the newest change of the log.
     ///
-    /// The cursor is read before the session. A change that comes between the two reads is in the session, and its
-    /// cursor is after the cursor of the read, so a client that resumes after the cursor gets that change again, and
-    /// never misses a change. A caller that holds ``gate`` reads the two at one point: each change of the board goes
-    /// into the log inside the gate.
+    /// The engine keeps the two as one value, and the read takes it with no wait, so no change goes into the log
+    /// between the read of the session and the read of the cursor. While an operation of the board puts its changes
+    /// into the log, the read gives the session and the cursor from before the operation. Thus `changes(after:)` with
+    /// the cursor gives each change of the board after the read, with none lost and none repeated.
     ///
     /// - Returns: The session, with the cursor of the read.
-    func readSession() async -> CommitSession {
-        let cursor = await feed.cursor
-        return session.read(atCursor: cursor)
+    func readSession() -> CommitSession {
+        loggedSession
+    }
+
+    /// Gives the session of the board for a read that holds ``gate``, with the cursor of the newest change of the
+    /// change log (KANBAN-7). Each change of the board goes into the log inside the gate, so the log holds each change
+    /// of the session when the holder starts. A change that the holder makes later is after the cursor.
+    ///
+    /// - Returns: The newest session, with the cursor of the read.
+    func readSessionHoldingGate() -> CommitSession {
+        session.read(atCursor: newestCursor)
+    }
+
+    /// Puts the changes of one round into the change log of the board
+    /// (``ChangeFeed/append(_:readingNodesOf:resolvingIn:)``). The writes of the log run one at a time.
+    ///
+    /// - Parameters:
+    ///   - changes: The changes, each of one transaction, in the order of their transactions.
+    ///   - view: The read view of the board after the round. The filter of each subscriber tests its nodes.
+    ///   - board: The board that the resolvers of the changes read.
+    func log(_ changes: [Change], readingNodesOf view: BoardView, resolvingIn board: EventBoard) async {
+        await writeLog { feed in
+            await feed.append(changes, readingNodesOf: view, resolvingIn: board)
+        }
+    }
+
+    /// Puts a new, empty change log in the place of the log of the board, when no session view could log the changes
+    /// of a round (``ChangeFeed/restart()``). A cursor of the old log then gives `RESYNC_REQUIRED`.
+    func restartLog() async {
+        await writeLog { feed in
+            feed.restart()
+        }
+    }
+
+    /// Records that an operation of the board put the changes that it took into the change log, or that no session
+    /// view could log them and the log restarted. A read that does not hold ``gate`` then gets the session of the
+    /// operation, with the cursor of the newest change of the log. The caller must hold ``gate``.
+    func finishLogging() {
+        isLogging = false
+        loggedSession = session.read(atCursor: newestCursor)
+    }
+
+    /// Runs one write of the change log while it holds ``logGate``, and then records the cursor of the newest change
+    /// of the log.
+    ///
+    /// - Parameter write: The write: it gets the feed of the board.
+    private func writeLog(_ write: @Sendable (ChangeFeed) async -> Void) async {
+        let feed = feed
+        await logGate.run {
+            await write(feed)
+            await self.recordNewest(await feed.cursor)
+        }
+    }
+
+    /// Records the cursor of the newest change of the change log after a write. While no operation of the board puts
+    /// its changes into the log, the session that the log holds stays, and a read gets the new cursor: only an
+    /// operation of the board changes the session, and it takes its changes before it puts them into the log.
+    ///
+    /// - Parameter cursor: The cursor of the newest change of the log.
+    private func recordNewest(_ cursor: String) {
+        newestCursor = cursor
+        guard !isLogging else {
+            return
+        }
+        loggedSession = loggedSession.read(atCursor: cursor)
     }
 
     /// Stores a new session of the board with the key and the former keys of the current session, so that a key
     /// change during the call or the batch that made the new session stays. The stored session holds no cursor:
-    /// ``readSession()`` gives the cursor of each read.
+    /// ``readSession()`` and ``readSessionHoldingGate()`` give the cursor of each read.
     ///
     /// - Parameter newSession: The new session.
     private func storeKeepingKey(_ newSession: CommitSession) {
@@ -264,12 +348,21 @@ actor BoardEngine {
     }
 
     /// Takes the changes of the live graph that added events since the last take, and forgets them. The caller must
-    /// hold ``gate``.
+    /// hold ``gate``. When the board changed, the caller puts the changes into the change log and then calls
+    /// ``finishLogging()``; until then ``readSession()`` gives the session from before the changes. When the board did
+    /// not change, the log holds each change of the session, and ``readSession()`` gives the session now.
     ///
     /// - Returns: The changes, or `nil` when the board did not change.
     func takeLiveChanges() -> BoardChanges? {
         let changes = session.takeLiveChanges()
-        return BoardChanges(of: session, changes: changes, madeBy: identity)
+        guard let taken = BoardChanges(of: session, changes: changes, madeBy: identity) else {
+            if !isLogging {
+                finishLogging()
+            }
+            return nil
+        }
+        isLogging = true
+        return taken
     }
 
     /// Stops the file watcher, ends each subscription of the board, and cancels the embeddings of the search in the
@@ -342,25 +435,35 @@ actor BoardEngine {
     /// Applies one batch inside the serial gate, and then sends the changes of the board to the session views. The
     /// changes go out also when the apply throws, because the apply can change the live graph before it fails.
     ///
+    /// The batch observer gets its call after the change log holds the changes, so a read of the board that does not
+    /// hold the gate (``readSession()``) then sees the batch.
+    ///
     /// - Parameter paths: The changed paths of the batch.
     /// - Throws: A ``BoardWatcherError`` when the watcher cannot move, or an ``EventLogError`` when a file cannot be
     ///   read.
     private func applyPublishing(_ paths: [URL]) async throws {
+        let applied: [URL]
         do {
-            try await apply(paths)
+            applied = try await apply(paths)
         } catch {
             await publishChanges()
             throw error
         }
         await publishChanges()
+        guard !applied.isEmpty else {
+            return
+        }
+        batchObserver?.didApply(changedPaths: applied)
     }
 
-    /// Sends the changes of the live graph since the last take to the session views.
+    /// Sends the changes of the live graph since the last take to the session views, which put them into the change
+    /// log of the board, and then records that the log holds them (``finishLogging()``).
     private func publishChanges() async {
         guard let changes = takeLiveChanges() else {
             return
         }
         await publish([root.canonicalPath: changes])
+        finishLogging()
     }
 
     /// Moves the watcher to `.kanban/` when `.kanban/` appeared, and then applies one batch to the session of the
@@ -377,27 +480,26 @@ actor BoardEngine {
     /// after it (divergence.md §16, Gap 6). When a new repo is at the path, the engine retires and stores nothing.
     ///
     /// - Parameter paths: The changed paths of the batch.
+    /// - Returns: The node files that the apply read again, in the sort order of their refs. The list is empty when the
+    ///   engine stored nothing.
     /// - Throws: A ``BoardWatcherError`` when the watcher cannot move, or an ``EventLogError`` when a file cannot be
     ///   read.
-    private func apply(_ paths: [URL]) async throws {
+    private func apply(_ paths: [URL]) async throws -> [URL] {
         guard let watch = activeWatch, await readsRoot() else {
-            return
+            return []
         }
         let moved = try await movedWatch(watch)
         if let moved, await !adopt(moved) {
-            return
+            return []
         }
         var updated = session
         let boardDirectory = updated.live.log.directory
         let applied = try await updated.apply(watchedPaths: moved == nil ? paths : paths + [boardDirectory])
         guard await readsRoot() else {
-            return
+            return []
         }
         storeKeepingKey(updated)
-        guard !applied.isEmpty else {
-            return
-        }
-        batchObserver?.didApply(changedPaths: applied)
+        return applied
     }
 
     /// Tells whether the engine still reads the files at its root path: the engine is not stopped, and its folder is

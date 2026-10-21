@@ -1011,7 +1011,7 @@ public actor KanbanHost {
             logged.formUnion(await view.publish(changed, skipping: logged))
         }
         for engine in loadedEngines where !logged.contains(engine.identity) {
-            engine.feed.restart()
+            await engine.restartLog()
         }
     }
 

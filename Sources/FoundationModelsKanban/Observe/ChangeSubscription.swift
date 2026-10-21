@@ -55,7 +55,7 @@ extension KanbanResolver {
             if let reference = arguments.board, await store.isUnreadable(board: reference) {
                 throw .notFound(type: .board, reference: reference)
             }
-            return ChangeEvent.endedStream()
+            return ChangeEvent.makeEndedStream()
         }
         let filter = try ChangeFilter(parsing: arguments.filter)
         guard let directory = view.source?.directory else {

@@ -448,4 +448,62 @@ struct ChangeCursorTests {
         #expect(try Self.ids("added", of: events[0]).contains(libTask))
         await app.close()
     }
+
+    @Test("A read that does not hold the gate, while a change is not in the log yet, gives the board before the change")
+    func readBeforeChangeIsLoggedGivesBoardBeforeChange() async throws {
+        let directory = try TemporaryDirectory()
+        let ulid = try KanbanGraphTests.writeFixture(inRepoAt: directory.url).task
+        let task = LocalRef.task(ulid)
+        let host = HostFixture.makeHost()
+        let graph = try await host.session(workingDirectory: directory.url, actor: Self.firstActor)
+        let start = try await Self.cursor(on: graph)
+        let engine = try await host.engine(ofBoardAt: directory.url)
+        let window = try await Self.commitReadingInWindow(retitling: task, on: engine, publishingTo: host)
+        for read in window {
+            #expect(read.source.cursor == start)
+            #expect(try CommitTests.title(of: task, in: read) == KanbanGraphTests.taskTitle)
+        }
+        let settled = await engine.readSession()
+        #expect(try CommitTests.title(of: task, in: settled) == CommitTests.callTitle)
+        let fromStart = try await Self.subscribe(after: start, on: graph)
+        let committed = try await SubscriptionTests.events(1, of: fromStart, afterChangeAt: directory.url)
+        #expect(try Self.text("cursor", of: committed[0]) == settled.source.cursor)
+        let fromSettled = try await Self.subscribe(after: settled.source.cursor, on: graph)
+        let later = try await Self.retitle(ulid, to: KanbanGraphTests.laterTitle, on: graph)
+        let next = try await SubscriptionTests.events(1, of: fromSettled, afterChangeAt: directory.url)
+        #expect(try Self.text("txn", of: next[0]) == later)
+        await host.close()
+    }
+
+    /// Commits a new title of a task inside the gate of an engine, as a call does, and reads the session of the
+    /// engine as a session view that does not hold the gate reads a related board: after the commit, after the take
+    /// of the changes, and after the log of the changes, each before the engine finishes the log of the operation.
+    ///
+    /// - Parameters:
+    ///   - task: The local ref of the task.
+    ///   - engine: The engine of the board.
+    ///   - host: The host whose session views log the changes.
+    /// - Returns: The three reads, in order.
+    /// - Throws: An error of the commit, or when the commit made no change.
+    static func commitReadingInWindow(
+        retitling task: LocalRef,
+        on engine: BoardEngine,
+        publishingTo host: KanbanHost
+    ) async throws -> [CommitSession] {
+        try await engine.gate.run {
+            var session = await engine.readSessionHoldingGate()
+            try await session.run { store in
+                let operation = CommitTests.firstOperation
+                try await CommitTests.setTitle(CommitTests.callTitle, of: task, as: operation, in: store)
+            }
+            await engine.replaceSession(with: session)
+            let committed = await engine.readSession()
+            let changes = try #require(await engine.takeLiveChanges())
+            let taken = await engine.readSession()
+            await host.publish([engine.root.canonicalPath: changes])
+            let logged = await engine.readSession()
+            await engine.finishLogging()
+            return [committed, taken, logged]
+        }
+    }
 }
