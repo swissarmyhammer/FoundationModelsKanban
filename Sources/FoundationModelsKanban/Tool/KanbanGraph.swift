@@ -1232,7 +1232,7 @@ public actor KanbanGraph: GraphQLEndpoint {
     /// Gives one copy of the list of `Query.boards`, and loads the copy when it is not the current repo.
     ///
     /// A copy of the old Rust kanban does not stop the call (divergence.md Q6): the load stops at the check of its
-    /// `.kanban/` directory before it reads a file, and the list leaves out the copy with a `BOARD_INCOMPATIBLE`
+    /// `.kanban/` directory before it reads a file, and the list leaves out the copy with an `INCOMPATIBLE_BOARD`
     /// warning. A call that also names the board still stops with `INCOMPATIBLE_BOARD`.
     ///
     /// - Parameters:

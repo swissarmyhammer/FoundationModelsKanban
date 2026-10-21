@@ -254,27 +254,44 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     func addCommentMutations() -> Self {
         add {
             Input(AddCommentInput.self) {
-                InputField("task", at: \.task)
-                InputField("body", at: \.body)
-                InputField("actor", at: \.actor)
+                InputField("task", at: \.task).description(SchemaDescription.newCommentTask)
+                InputField("body", at: \.body).description(SchemaDescription.newCommentBody)
+                InputField("actor", at: \.actor).description(SchemaDescription.commentAuthor)
             }
+            .description(SchemaDescription.addCommentInput)
             Input(UpdateCommentInput.self) {
-                InputField("id", at: \.id)
-                InputField("body", at: \.body.value)
+                InputField("id", at: \.id).description(SchemaDescription.commentReference)
+                InputField("body", at: \.body.value).description(SchemaDescription.changedBody)
                 InputField("task", at: \.task).description(SchemaDescription.commentTask)
             }
+            .description(SchemaDescription.updateCommentInput)
             Input(CommentReferenceInput.self) {
-                InputField("id", at: \.id)
+                InputField("id", at: \.id).description(SchemaDescription.commentReference)
                 InputField("task", at: \.task).description(SchemaDescription.commentTask)
             }
+            .description(SchemaDescription.commentReferenceInput)
         }
         .addMutation {
-            Field(MutationName.addComment, at: KanbanResolver.addComment) { Argument("input", at: \.input) }
-            Field(MutationName.updateComment, at: KanbanResolver.updateComment) { Argument("input", at: \.input) }
-            Field(MutationName.deleteComment, at: KanbanResolver.deleteComment) { Argument("input", at: \.input) }
-            Field(MutationName.undeleteComment, at: KanbanResolver.undeleteComment) {
-                Argument("input", at: \.input)
-            }
+            Self.mutationField(
+                MutationName.addComment,
+                at: KanbanResolver.addComment,
+                description: SchemaDescription.addComment
+            )
+            Self.mutationField(
+                MutationName.updateComment,
+                at: KanbanResolver.updateComment,
+                description: SchemaDescription.updateComment
+            )
+            Self.mutationField(
+                MutationName.deleteComment,
+                at: KanbanResolver.deleteComment,
+                description: SchemaDescription.deleteComment
+            )
+            Self.mutationField(
+                MutationName.undeleteComment,
+                at: KanbanResolver.undeleteComment,
+                description: SchemaDescription.undeleteComment
+            )
         }
     }
 }

@@ -539,25 +539,49 @@ extension Graph {
 // MARK: - Schema
 
 extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanContext {
+    /// Gives a public mutation field with its one argument `input` (plan.md §4.2). The field and the argument have a
+    /// description, because the agent learns the schema with introspection (EXTRAS-9 rule 11).
+    ///
+    /// - Parameters:
+    ///   - name: The name of the mutation, from ``MutationName``.
+    ///   - resolver: The resolver of the mutation.
+    ///   - description: The description of the mutation.
+    /// - Returns: The field.
+    static func mutationField<Arguments: MutationArguments, Value: Sendable>(
+        _ name: String,
+        at resolver: @escaping AsyncResolve<KanbanResolver, KanbanContext, Arguments, Value>,
+        description: String
+    ) -> FieldComponent<KanbanResolver, KanbanContext> {
+        Field(name, at: resolver) {
+            Argument("input", at: \Arguments.input).description(Arguments.inputDescription)
+        }
+        .description(description)
+    }
+
     /// Adds the board mutations, `initBoard` and `updateBoard`, and their `input` type.
     ///
     /// - Returns: This builder, for method chaining.
     func addBoardMutations() -> Self {
         add {
             Input(BoardInput.self) {
-                InputField("name", at: \.name.value)
+                InputField("name", at: \.name.value).description(SchemaDescription.boardName)
                 InputField("model", at: \.model.value).description(SchemaDescription.boardModel)
-                InputField("body", at: \.body.value)
+                InputField("body", at: \.body.value).description(SchemaDescription.changedBody)
                 InputField("board", at: \.board).description(SchemaDescription.boardToChange)
             }
+            .description(SchemaDescription.boardInput)
         }
         .addMutation {
-            Field(MutationName.initBoard, at: KanbanResolver.initBoard) {
-                Argument("input", at: \.input)
-            }
-            Field(MutationName.updateBoard, at: KanbanResolver.updateBoard) {
-                Argument("input", at: \.input)
-            }
+            Self.mutationField(
+                MutationName.initBoard,
+                at: KanbanResolver.initBoard,
+                description: SchemaDescription.initBoard
+            )
+            Self.mutationField(
+                MutationName.updateBoard,
+                at: KanbanResolver.updateBoard,
+                description: SchemaDescription.updateBoard
+            )
         }
     }
 }

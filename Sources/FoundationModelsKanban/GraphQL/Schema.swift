@@ -726,7 +726,7 @@ struct KanbanResolver: Sendable {
 
     /// Resolves `Query.boards`: each copy of each repo that the scan finds, with its path, in scan order (plan.md
     /// §6.6). A copy whose board cannot be read is not in the list, and the response has a warning that names it. For
-    /// a board of the old Rust kanban, the warning is `BOARD_INCOMPATIBLE`, and the call does not stop
+    /// a board of the old Rust kanban, the warning is `INCOMPATIBLE_BOARD`, and the call does not stop
     /// (divergence.md Q6).
     ///
     /// - Parameters:
@@ -954,15 +954,19 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Field("board", at: KanbanResolver.board) {
                     Argument("id", at: \.id).description(SchemaDescription.boardToRead)
                 }
+                .description(SchemaDescription.queryBoard)
                 Field("node", at: KanbanResolver.node) {
-                    Argument("id", at: \.id)
+                    Argument("id", at: \.id).description(SchemaDescription.nodeID)
                 }
+                .description(SchemaDescription.queryNode)
                 Field("nodes", at: KanbanResolver.nodes) {
-                    Argument("ids", at: \.ids)
+                    Argument("ids", at: \.ids).description(SchemaDescription.nodeIDs)
                 }
+                .description(SchemaDescription.queryNodes)
                 Field(BoardStore.boardsField, at: KanbanResolver.boards) {
-                    Argument("enabled", at: \.enabled)
+                    Argument("enabled", at: \.enabled).description(SchemaDescription.boardsEnabled)
                 }
+                .description(SchemaDescription.queryBoards)
                 Field("checkLinks", at: KanbanResolver.checkLinks) {
                     Argument("boards", at: \.boards).description(SchemaDescription.boardsToCheck)
                 }
@@ -979,6 +983,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 // The explicit `return` turns off the result builder, so the closure gives the array as it is.
                 return Self.nodeFields(of: \.nodeInterface)
             }
+            .description(SchemaDescription.node)
         }
     }
 
@@ -987,15 +992,15 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     /// - Returns: This builder, for method chaining.
     private func addBoardTypes() -> Self {
         add {
-            Self.nodeType(BoardObject.self, as: GraphQLTypeName.board) {
-                Field("key", at: \.key)
+            Self.nodeType(BoardObject.self, as: GraphQLTypeName.board, description: SchemaDescription.board) {
+                Field("key", at: \.key).description(SchemaDescription.boardKey)
                 Field("boardId", at: \.boardId).description(SchemaDescription.boardID)
                 Field("names", at: \.names).description(SchemaDescription.boardNames)
-                Field("name", at: \.name)
+                Field("name", at: \.name).description(SchemaDescription.boardNameField)
                 Field("model", at: \.model).description(SchemaDescription.boardModel)
-                Field("columns", at: \.columns)
-                Field("actors", at: \.actors)
-                Field("tags", at: \.tags)
+                Field("columns", at: \.columns).description(SchemaDescription.boardColumns)
+                Field("actors", at: \.actors).description(SchemaDescription.boardActors)
+                Field("tags", at: \.tags).description(SchemaDescription.boardTags)
                 Self.singleItemField("task", at: BoardObject.task, description: SchemaDescription.boardTask)
                 Self.singleItemField("column", at: BoardObject.column, description: SchemaDescription.boardColumn)
                 Self.singleItemField("actor", at: BoardObject.actor, description: SchemaDescription.boardActor)
@@ -1003,53 +1008,66 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Field("tasks", at: BoardObject.tasks) {
                     Argument("filter", at: \.filter).description(SchemaDescription.taskFilter)
                     Argument("first", at: \.first).defaultValue(TasksArguments.defaultPageSize)
-                    Argument("after", at: \.after)
+                        .description(SchemaDescription.tasksFirst)
+                    Argument("after", at: \.after).description(SchemaDescription.tasksAfter)
                 }
+                .description(SchemaDescription.boardTasks)
                 Field("nextTask", at: BoardObject.nextTask) {
                     Argument("filter", at: \.filter).description(SchemaDescription.nextTaskFilter)
                 }
                 .description(SchemaDescription.nextTask)
                 Field("searchTasks", at: BoardObject.searchTasks) {
-                    Argument("query", at: \.query)
+                    Argument("query", at: \.query).description(SchemaDescription.searchQuery)
                     Argument("filter", at: \.filter).description(SchemaDescription.taskFilter)
                     Argument("first", at: \.first).defaultValue(TasksArguments.defaultPageSize)
+                        .description(SchemaDescription.searchFirst)
                 }
-                Field("summary", at: \.summary)
+                .description(SchemaDescription.boardSearchTasks)
+                Field("summary", at: \.summary).description(SchemaDescription.boardSummary)
                 Field("virtualTags", at: \.virtualTags).description(SchemaDescription.boardVirtualTags)
-                Field("path", at: \.path)
+                Field("path", at: \.path).description(SchemaDescription.boardPath)
                 Field("history", at: BoardObject.history) {
                     Argument("filter", at: \.filter).description(SchemaDescription.updateFilter)
-                    Argument("since", at: \.since)
+                    Argument("since", at: \.since).description(SchemaDescription.historySince)
                     Argument("first", at: \.first).defaultValue(HistoryArguments.defaultPageSize)
+                        .description(SchemaDescription.historyFirst)
                 }
+                .description(SchemaDescription.boardHistory)
             }
-            Self.nodeType(ColumnObject.self, as: GraphQLTypeName.column) {
-                Field("name", at: \.name)
-                Field("order", at: \.order)
+            Self.nodeType(ColumnObject.self, as: GraphQLTypeName.column, description: SchemaDescription.column) {
+                Field("name", at: \.name).description(SchemaDescription.columnNameField)
+                Field("order", at: \.order).description(SchemaDescription.columnOrderField)
                 Field("taskCount", at: \.taskCount).description(SchemaDescription.columnTaskCount)
                 Field("readyCount", at: \.readyCount).description(SchemaDescription.columnReadyCount)
                 Self.taskListField()
             }
-            Self.nodeType(ActorObject.self, as: GraphQLTypeName.actor) {
+            Self.nodeType(ActorObject.self, as: GraphQLTypeName.actor, description: SchemaDescription.actor) {
                 // The explicit `return` turns off the result builder, so the closure gives the array as it is.
                 return Self.labelFields() + [
                     Field("avatar", at: \.avatar).description(SchemaDescription.actorAvatar),
                 ]
             }
-            Self.nodeType(TagObject.self, as: GraphQLTypeName.tag, fields: Self.labelFields)
+            Self.nodeType(
+                TagObject.self,
+                as: GraphQLTypeName.tag,
+                description: SchemaDescription.tag,
+                fields: Self.labelFields
+            )
             Type(BoardSummary.self) {
-                Field("total", at: \.total)
-                Field("ready", at: \.ready)
-                Field("blocked", at: \.blocked)
-                Field("done", at: \.done)
-                Field("percent", at: \.percent)
+                Field("total", at: \.total).description(SchemaDescription.summaryTotal)
+                Field("ready", at: \.ready).description(SchemaDescription.summaryReady)
+                Field("blocked", at: \.blocked).description(SchemaDescription.summaryBlocked)
+                Field("done", at: \.done).description(SchemaDescription.summaryDone)
+                Field("percent", at: \.percent).description(SchemaDescription.summaryPercent)
                 Field("totalActors", at: \.totalActors).description(SchemaDescription.summaryTotalActors)
             }
+            .description(SchemaDescription.boardSummary)
             Type(VirtualTag.self) {
                 Field("name", at: \.rawValue).description(SchemaDescription.virtualTagName)
                 Field("color", at: \.color).description(SchemaDescription.virtualTagColor)
                 Field("description", at: \.explanation).description(SchemaDescription.virtualTagDescription)
             }
+            .description(SchemaDescription.virtualTag)
         }
     }
 
@@ -1059,61 +1077,67 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     /// - Returns: This builder, for method chaining.
     private func addTaskTypes() -> Self {
         add {
-            Self.nodeType(TaskObject.self, as: GraphQLTypeName.task) {
-                Field("shortId", at: \.shortID)
-                Field("title", at: \.title)
-                Field("column", at: TaskObject.column)
-                Field("ordinal", at: \.ordinal)
-                Field("assignees", at: \.assignees)
-                Field("tags", at: \.tags)
+            Self.nodeType(TaskObject.self, as: GraphQLTypeName.task, description: SchemaDescription.task) {
+                Field("shortId", at: \.shortID).description(SchemaDescription.shortID)
+                Field("title", at: \.title).description(SchemaDescription.taskTitleField)
+                Field("column", at: TaskObject.column).description(SchemaDescription.taskColumn)
+                Field("ordinal", at: \.ordinal).description(SchemaDescription.taskOrdinal)
+                Field("assignees", at: \.assignees).description(SchemaDescription.taskAssignees)
+                Field("tags", at: \.tags).description(SchemaDescription.taskTags)
                 Field("dependsOn", at: \.dependsOn).description(SchemaDescription.taskDependsOn)
                 Field("blockedBy", at: \.blockedBy).description(SchemaDescription.taskBlockedBy)
                 Field("unresolvedDependsOn", at: \.unresolvedDependsOn)
                     .description(SchemaDescription.taskUnresolvedDependsOn)
                 Field("ready", at: \.ready).description(SchemaDescription.taskReady)
                 Field("virtualTags", at: \.virtualTags).description(SchemaDescription.taskVirtualTags)
-                Field("progress", at: \.progress)
-                Field("comments", at: \.comments)
-                Field("started", at: \.started)
-                Field("completed", at: \.completed)
+                Field("progress", at: \.progress).description(SchemaDescription.taskProgress)
+                Field("comments", at: \.comments).description(SchemaDescription.taskComments)
+                Field("started", at: \.started).description(SchemaDescription.taskStarted)
+                Field("completed", at: \.completed).description(SchemaDescription.taskCompleted)
             }
-            Self.nodeType(CommentObject.self, as: GraphQLTypeName.comment) {
-                Field("shortId", at: \.shortID)
-                Field("task", at: CommentObject.task)
-                Field("author", at: CommentObject.author)
+            Self.nodeType(CommentObject.self, as: GraphQLTypeName.comment, description: SchemaDescription.comment) {
+                Field("shortId", at: \.shortID).description(SchemaDescription.shortID)
+                Field("task", at: CommentObject.task).description(SchemaDescription.commentTaskField)
+                Field("author", at: CommentObject.author).description(SchemaDescription.commentAuthorField)
             }
             Type(TaskProgress.self, as: GraphQLTypeName.progress) {
-                Field("total", at: \.total)
-                Field("completed", at: \.completed)
-                Field("fraction", at: \.fraction)
+                Field("total", at: \.total).description(SchemaDescription.progressTotal)
+                Field("completed", at: \.completed).description(SchemaDescription.progressCompleted)
+                Field("fraction", at: \.fraction).description(SchemaDescription.progressFraction)
                 Field("percent", at: \.percent).description(SchemaDescription.progressPercent)
             }
+            .description(SchemaDescription.progress)
             Type(TaskConnection.self) {
-                Field("edges", at: \.edges)
+                Field("edges", at: \.edges).description(SchemaDescription.connectionEdges)
                 Field("nodes", at: \.nodes).description(SchemaDescription.connectionNodes)
-                Field("pageInfo", at: \.pageInfo)
-                Field("totalCount", at: \.totalCount)
+                Field("pageInfo", at: \.pageInfo).description(SchemaDescription.pageInfo)
+                Field("totalCount", at: \.totalCount).description(SchemaDescription.connectionTotalCount)
             }
+            .description(SchemaDescription.taskConnection)
             Type(TaskEdge.self) {
-                Field("node", at: \.node)
-                Field("cursor", at: \.cursor)
+                Field("node", at: \.node).description(SchemaDescription.theTask)
+                Field("cursor", at: \.cursor).description(SchemaDescription.edgeCursor)
             }
+            .description(SchemaDescription.taskEdge)
             Type(PageInfo.self) {
-                Field("hasPreviousPage", at: \.hasPreviousPage)
-                Field("hasNextPage", at: \.hasNextPage)
-                Field("startCursor", at: \.startCursor)
-                Field("endCursor", at: \.endCursor)
+                Field("hasPreviousPage", at: \.hasPreviousPage).description(SchemaDescription.hasPreviousPage)
+                Field("hasNextPage", at: \.hasNextPage).description(SchemaDescription.hasNextPage)
+                Field("startCursor", at: \.startCursor).description(SchemaDescription.startCursor)
+                Field("endCursor", at: \.endCursor).description(SchemaDescription.endCursor)
             }
+            .description(SchemaDescription.pageInfo)
             Type(TaskHit.self) {
-                Field("task", at: \.task)
-                Field("score", at: \.score)
-                Field("signals", at: \.signals)
+                Field("task", at: \.task).description(SchemaDescription.theTask)
+                Field("score", at: \.score).description(SchemaDescription.hitScore)
+                Field("signals", at: \.signals).description(SchemaDescription.hitSignals)
             }
+            .description(SchemaDescription.taskHit)
             Type(SearchSignals.self) {
-                Field("bm25", at: \.bm25)
-                Field("trigram", at: \.trigram)
-                Field("cosine", at: \.cosine)
+                Field("bm25", at: \.bm25).description(SchemaDescription.signalBM25)
+                Field("trigram", at: \.trigram).description(SchemaDescription.signalTrigram)
+                Field("cosine", at: \.cosine).description(SchemaDescription.signalCosine)
             }
+            .description(SchemaDescription.searchSignals)
         }
     }
 
@@ -1122,11 +1146,13 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     /// - Parameters:
     ///   - type: The Swift type of the object.
     ///   - name: The GraphQL name of the type.
+    ///   - description: The description of the type.
     ///   - fields: The fields of the type, without the fields of the `Node` interface.
     /// - Returns: The type, with the fields of the `Node` interface first.
     private static func nodeType<Object: NodeObject>(
         _ type: Object.Type,
         as name: String,
+        description: String,
         @FieldComponentBuilder<Object, KanbanContext> fields: () -> [FieldComponent<Object, KanbanContext>]
     ) -> Graphiti.`Type`<KanbanResolver, KanbanContext, Object> {
         Graphiti.`Type`(
@@ -1137,6 +1163,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             interfaces: [NodeObject.self],
             fields: nodeFields(of: \.nodeInterface) + fields()
         )
+        .description(description)
     }
 
     /// Gives the fields of the `Node` interface, for the interface and for each object type that implements it.
@@ -1148,11 +1175,11 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     private static func nodeFields<Object: Sendable>(
         of node: KeyPath<Object, any NodeObject>
     ) -> [FieldComponent<Object, KanbanContext>] {
-        Field("id", at: node.appending(path: \.id))
-        Field("body", at: node.appending(path: \.body))
-        Field("created", at: node.appending(path: \.created))
-        Field("updated", at: node.appending(path: \.updated))
-        Field("deleted", at: node.appending(path: \.deleted))
+        Field("id", at: node.appending(path: \.id)).description(SchemaDescription.nodeIDField)
+        Field("body", at: node.appending(path: \.body)).description(SchemaDescription.nodeBody)
+        Field("created", at: node.appending(path: \.created)).description(SchemaDescription.nodeCreated)
+        Field("updated", at: node.appending(path: \.updated)).description(SchemaDescription.nodeUpdated)
+        Field("deleted", at: node.appending(path: \.deleted)).description(SchemaDescription.nodeDeleted)
     }
 
     /// Gives the fields of an actor or a tag, after the fields of the `Node` interface.
@@ -1160,8 +1187,8 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     /// - Returns: The fields `name`, `color`, and `tasks`.
     @FieldComponentBuilder<Object, KanbanContext>
     private static func labelFields<Object: LabelObject>() -> [FieldComponent<Object, KanbanContext>] {
-        Field("name", at: \.name)
-        Field("color", at: \.color)
+        Field("name", at: \.name).description(SchemaDescription.labelName)
+        Field("color", at: \.color).description(SchemaDescription.labelColor)
         taskListField()
     }
 
@@ -1179,7 +1206,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
         description: String
     ) -> FieldComponent<BoardObject, KanbanContext> {
         Field(name, at: resolver) {
-            Argument("id", at: \.id)
+            Argument("id", at: \.id).description(SchemaDescription.nodeID)
         }
         .description(description)
     }
@@ -1192,6 +1219,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
         Field("tasks", at: Object.tasks) {
             Argument("filter", at: \.filter).description(SchemaDescription.taskFilter)
         }
+        .description(SchemaDescription.nodeTasks)
     }
 }
 

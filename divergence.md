@@ -480,7 +480,7 @@ All 26 questions have a decision. Section 11 lists the changes to the code and t
 - This applies to every `.kanban/` that Swift opens: the current board and each related board. Swift never makes a new board in a `.kanban/` that has Rust files. (This is an exception to Q7: an incompatible related board stops the call, and does not give only a warning.)
 - **DECIDED (user, option B, ^nxrqcgn): `Query.boards` does not stop at an incompatible related board.** The scan of `boards` looks in the parent folder of the repo, and many sibling repos still have a Rust `.kanban/`. Thus a stop would make `boards` fail in normal use.
   - `boards` does not load the incompatible copy: the load stops at the check of `.kanban/`, before it reads a file. The list does not show the copy.
-  - The call continues. The response has one warning with the code `BOARD_INCOMPATIBLE`. The warning names the key and the `.kanban/` directory of the copy, and tells the user to remove the board.
+  - The call continues. The response has one warning with the code `INCOMPATIBLE_BOARD`, the same code as the error (EXTRAS-9 rule 8). The warning names the key and the `.kanban/` directory of the copy, and tells the user to remove the board.
   - Only a call that names that board stops with `INCOMPATIBLE_BOARD`: a board ref, the `board` field of a mutation, or a dependency on a task of that board. When one call lists the board and also names it, the call stops.
 - How Swift finds a Rust board: `.kanban/` contains a Rust-only path, for example `boards/`, `*.yaml` or `*.md` entity files, `perspectives/`, `views/`, `projects/`, `.gitconfig`, `search-cache.sqlite3`, `undo_stack.yaml`, or `mcp*.log`.
 - There is no git check and no check for a running Rust server.

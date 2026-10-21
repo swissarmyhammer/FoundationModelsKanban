@@ -390,16 +390,19 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Field("path", at: \.path).description(SchemaDescription.collectedPath)
                 Field("names", at: \.names).description(SchemaDescription.collectedNames)
             }
+            .description(SchemaDescription.collectedBoard)
             Type(SlugMerge.self) {
                 Field("node", at: \.node).description(SchemaDescription.collectNode)
                 Field("boards", at: \.boards).description(SchemaDescription.slugMergeBoards)
             }
+            .description(SchemaDescription.slugMerge)
             Type(FieldConflict.self) {
                 Field("node", at: \.node).description(SchemaDescription.collectNode)
                 Field("field", at: \.field).description(SchemaDescription.conflictField)
                 Field("values", at: \.values).description(SchemaDescription.conflictValues)
                 Field("winner", at: \.winner).description(SchemaDescription.conflictWinner)
             }
+            .description(SchemaDescription.fieldConflict)
             Type(CollectReport.self, as: "CollectBoardsResult") {
                 Field("target", at: \.target).description(SchemaDescription.collectResultTarget)
                 Field("sources", at: \.sources).description(SchemaDescription.collectResultSources)
@@ -409,6 +412,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Field("otherLinks", at: \.otherLinks).description(SchemaDescription.collectResultOtherLinks)
                 Field("dryRun", at: \.dryRun).description(SchemaDescription.collectResultDryRun)
             }
+            .description(SchemaDescription.collectResult)
         }
         .addMutation {
             Field(MutationName.collectBoards, at: KanbanResolver.collectBoards) {

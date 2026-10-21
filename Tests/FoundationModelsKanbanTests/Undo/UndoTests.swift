@@ -685,11 +685,12 @@ struct UndoTests {
     // MARK: - Schema
 
     @Test("The Mutation type has undo and redo, with the UndoInput input and the Change result")
-    func schemaHasUndoAndRedo() {
+    func schemaHasUndoAndRedo() throws {
+        let signatures = try SDLSignatures.ofPublicSchema()
+        #expect(signatures.contains("undo(input: UndoInput): Change"))
+        #expect(signatures.contains("redo(input: UndoInput): Change"))
         let sdl = KanbanGraph.schemaSDL
         let lines = [
-            "  undo(input: UndoInput): Change",
-            "  redo(input: UndoInput): Change",
             "input UndoInput {",
             "  txn: ID",
             "  force: Boolean",

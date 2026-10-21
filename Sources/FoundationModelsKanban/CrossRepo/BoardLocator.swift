@@ -484,14 +484,15 @@ extension BoardResolution {
 /// A copy of a related repo whose board cannot be read (divergence.md Q7). The response of each call that reaches the
 /// board has a warning that names the board and the reason. A board of the old Rust kanban is the exception: it stops
 /// each call that names it (divergence.md Q6), and only the change feed continues without it. When only the list of
-/// `Query.boards` reaches it, the call continues with a `BOARD_INCOMPATIBLE` warning.
+/// `Query.boards` reaches it, the call continues with an `INCOMPATIBLE_BOARD` warning: the same code as the error.
 struct UnreadableBoard: Hashable, BoardWarning {
     /// The code of the warning of a board that cannot be read, in `extensions.warnings` (plan.md §4.4).
     static let warningCode = "BOARD_UNREADABLE"
 
     /// The code of the warning of a board of the old Rust kanban that the list of `Query.boards` leaves out
-    /// (divergence.md Q6).
-    static let incompatibleWarningCode = "BOARD_INCOMPATIBLE"
+    /// (divergence.md Q6). It is the code of ``KanbanError/incompatibleBoard(directory:)``, so that each reader of
+    /// the endpoint knows the one code for an incompatible board (EXTRAS-9 rule 8).
+    static let incompatibleWarningCode = "INCOMPATIBLE_BOARD"
 
     /// What a call does when it reaches a board that cannot be read.
     enum Effect: Hashable, Sendable {
@@ -499,7 +500,7 @@ struct UnreadableBoard: Hashable, BoardWarning {
         case warning
 
         /// The board is a board of the old Rust kanban, and only the list of `Query.boards` reached it. The call
-        /// continues with a `BOARD_INCOMPATIBLE` warning (divergence.md Q6).
+        /// continues with an `INCOMPATIBLE_BOARD` warning (divergence.md Q6).
         case incompatibleWarning
 
         /// The error stops the call, for example ``KanbanError/incompatibleBoard(directory:)``.

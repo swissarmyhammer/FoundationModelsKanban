@@ -109,6 +109,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 LinkCheck.self,
                 fields: Self.linkCheckFields(of: \.self)
             )
+            .description(SchemaDescription.linkCheck)
         }
     }
 
@@ -127,5 +128,37 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
         Field("target", at: check.appending(path: \.target)).description(SchemaDescription.linkTarget)
         Field("status", at: check.appending(path: \.status)).description(SchemaDescription.linkStatus)
         Field("currentName", at: check.appending(path: \.currentName)).description(SchemaDescription.linkCurrentName)
+    }
+}
+
+// MARK: - Enum descriptions
+
+extension LinkField: DescribedGraphQLEnum {
+    /// The description of the `LinkField` enum.
+    static let typeDescription = "The field of a task that holds a stored link."
+
+    /// The description of the value of this case.
+    var valueDescription: String {
+        switch self {
+        case .dependsOn: "A dependsOn edge of the task."
+        case .assignee: "An assignee that is the full URI of an actor of a different board."
+        case .body: "A task URL in the body of a live task."
+        case .tombstone: "The line of the tombstone of a moved task that points to the task that the move made."
+        }
+    }
+}
+
+extension LinkStatus: DescribedGraphQLEnum {
+    /// The description of the `LinkStatus` enum.
+    static let typeDescription = "The class of a stored link."
+
+    /// The description of the value of this case.
+    var valueDescription: String {
+        switch self {
+        case .ok: "The link names its board by a current name, and the board has the node."
+        case .oldName: "The link names its board by an old name. It still works, and the response gives a warning."
+        case .dangling: "No reachable board has the name of the link."
+        case .missingNode: "The board of the link is found, and the board does not have the node."
+        }
     }
 }

@@ -80,6 +80,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Argument("board", at: \.board).description(SchemaDescription.boardToObserve)
                 Argument("filter", at: \.filter).description(SchemaDescription.updateFilter)
             }
+            .description(SchemaDescription.changesSubscription)
         }
     }
 }

@@ -440,15 +440,16 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     func addUndoMutations() -> Self {
         add {
             Input(UndoInput.self) {
-                InputField("txn", at: \.txn)
-                InputField("force", at: \.force)
+                InputField("txn", at: \.txn).description(SchemaDescription.undoTransaction)
+                InputField("force", at: \.force).description(SchemaDescription.undoForce)
                 InputField("board", at: \.board).description(SchemaDescription.boardOfTransaction)
                 InputField("boards", at: \.boards).description(SchemaDescription.copiesOfTransaction)
             }
+            .description(SchemaDescription.undoInput)
         }
         .addMutation {
-            Field(MutationName.undo, at: KanbanResolver.undo) { Argument("input", at: \.input) }
-            Field(MutationName.redo, at: KanbanResolver.redo) { Argument("input", at: \.input) }
+            Self.mutationField(MutationName.undo, at: KanbanResolver.undo, description: SchemaDescription.undo)
+            Self.mutationField(MutationName.redo, at: KanbanResolver.redo, description: SchemaDescription.redo)
         }
     }
 }

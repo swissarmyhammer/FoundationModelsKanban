@@ -374,30 +374,49 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     func addTagMutations() -> Self {
         add {
             Input(AddTagInput.self) {
-                InputField("id", at: \.id)
-                InputField("name", at: \.name)
-                InputField("color", at: \.color)
-                InputField("body", at: \.body)
+                InputField("id", at: \.id).description(SchemaDescription.newTagID)
+                InputField("name", at: \.name).description(SchemaDescription.newTagName)
+                InputField("color", at: \.color).description(SchemaDescription.newTagColor)
+                InputField("body", at: \.body).description(SchemaDescription.newNodeBody)
                 InputField("board", at: \.board).description(SchemaDescription.boardToChange)
             }
+            .description(SchemaDescription.addTagInput)
             Input(UpdateTagInput.self) {
-                InputField("id", at: \.id)
-                InputField("name", at: \.name.value)
-                InputField("color", at: \.color.value)
-                InputField("body", at: \.body.value)
+                InputField("id", at: \.id).description(SchemaDescription.tagReference)
+                InputField("name", at: \.name.value).description(SchemaDescription.changedTagName)
+                InputField("color", at: \.color.value).description(SchemaDescription.changedColor)
+                InputField("body", at: \.body.value).description(SchemaDescription.changedBody)
             }
+            .description(SchemaDescription.updateTagInput)
             Input(RenameTagInput.self) {
-                InputField("from", at: \.from)
-                InputField("to", at: \.to)
+                InputField("from", at: \.from).description(SchemaDescription.renameFrom)
+                InputField("to", at: \.to).description(SchemaDescription.renameTo)
                 InputField("board", at: \.board).description(SchemaDescription.boardToChange)
             }
+            .description(SchemaDescription.renameTagInput)
         }
         .addMutation {
-            Field(MutationName.addTag, at: KanbanResolver.addTag) { Argument("input", at: \.input) }
-            Field(MutationName.updateTag, at: KanbanResolver.updateTag) { Argument("input", at: \.input) }
-            Field(MutationName.deleteTag, at: KanbanResolver.deleteTag) { Argument("input", at: \.input) }
-            Field(MutationName.undeleteTag, at: KanbanResolver.undeleteTag) { Argument("input", at: \.input) }
-            Field(MutationName.renameTag, at: KanbanResolver.renameTag) { Argument("input", at: \.input) }
+            Self.mutationField(MutationName.addTag, at: KanbanResolver.addTag, description: SchemaDescription.addTag)
+            Self.mutationField(
+                MutationName.updateTag,
+                at: KanbanResolver.updateTag,
+                description: SchemaDescription.updateTag
+            )
+            Self.mutationField(
+                MutationName.deleteTag,
+                at: KanbanResolver.deleteTag,
+                description: SchemaDescription.deleteTag
+            )
+            Self.mutationField(
+                MutationName.undeleteTag,
+                at: KanbanResolver.undeleteTag,
+                description: SchemaDescription.undeleteTag
+            )
+            Self.mutationField(
+                MutationName.renameTag,
+                at: KanbanResolver.renameTag,
+                description: SchemaDescription.renameTag
+            )
         }
     }
 }

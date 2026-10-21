@@ -440,11 +440,11 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     /// - Returns: The fields `id`, `column`, `ordinal`, `before`, `after`, and `board`.
     @InputFieldComponentBuilder<Placed, KanbanContext>
     static func placementFields<Placed: TaskPlacementInput>() -> [InputFieldComponent<Placed, KanbanContext>] {
-        InputField("id", at: \.id)
-        InputField("column", at: \.column)
-        InputField("ordinal", at: \.ordinal)
-        InputField("before", at: \.before)
-        InputField("after", at: \.after)
+        InputField("id", at: \.id).description(SchemaDescription.taskReference)
+        InputField("column", at: \.column).description(SchemaDescription.placementColumn)
+        InputField("ordinal", at: \.ordinal).description(SchemaDescription.placementOrdinal)
+        InputField("before", at: \.before).description(SchemaDescription.placementBefore)
+        InputField("after", at: \.after).description(SchemaDescription.placementAfter)
         InputField("board", at: \.board).description(SchemaDescription.taskTargetBoard)
     }
 
@@ -453,10 +453,14 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     /// - Returns: This builder, for method chaining.
     func addTaskTransferMutations() -> Self {
         add {
-            Input(CopyTaskInput.self, Self.placementFields)
+            Input(CopyTaskInput.self, Self.placementFields).description(SchemaDescription.copyTaskInput)
         }
         .addMutation {
-            Field(MutationName.copyTask, at: KanbanResolver.copyTask) { Argument("input", at: \.input) }
+            Self.mutationField(
+                MutationName.copyTask,
+                at: KanbanResolver.copyTask,
+                description: SchemaDescription.copyTask
+            )
         }
     }
 }

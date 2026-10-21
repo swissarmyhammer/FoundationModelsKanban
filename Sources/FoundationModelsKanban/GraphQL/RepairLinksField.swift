@@ -208,6 +208,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 LinkRepair.self,
                 fields: Self.linkCheckFields(of: \.check) + Self.linkRepairFields()
             )
+            .description(SchemaDescription.linkRepair)
         }
         .addMutation {
             Field(MutationName.repairLinks, at: KanbanResolver.repairLinks) {

@@ -241,7 +241,7 @@ struct NodeQueryTests {
 
     @Test("The schema gives nodes(ids:) a nullable list with no null item")
     func nodesFieldType() throws {
-        #expect(try PublicSchema().sdl.contains("nodes(ids: [ID!]!): [Node!]\n"))
+        #expect(try SDLSignatures.ofPublicSchema().contains("nodes(ids: [ID!]!): [Node!]"))
     }
 
     @Test("nodes(ids:) drops an unknown id from the list")

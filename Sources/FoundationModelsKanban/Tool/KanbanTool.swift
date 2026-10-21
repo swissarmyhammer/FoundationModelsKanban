@@ -68,7 +68,7 @@ public struct KanbanTool: GraphQLEndpointTool {
         is its board ID. The collectBoards mutation combines other .kanban folders, for example a board in a \
         subfolder (warning \(SubfolderBoard.warningCode)), into one target board; undo does not reverse it. A .kanban \
         folder of the old Rust kanban gives INCOMPATIBLE_BOARD. \
-        boards leaves out a related repo with a Rust .kanban folder and gives the warning BOARD_INCOMPATIBLE.
+        boards leaves out a related repo with a Rust .kanban folder and gives the warning INCOMPATIBLE_BOARD.
         """
 
     /// The schema of the arguments: ``KanbanArguments/generationSchema``.

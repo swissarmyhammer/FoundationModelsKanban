@@ -32,15 +32,37 @@ extension MutationName {
 
 // MARK: - Arguments
 
+/// The arguments of a mutation: the one argument `input` (plan.md §4.2).
+protocol MutationArguments: Decodable, Sendable {
+    /// The type of the `input` argument: the `input` object, or an optional `input` object.
+    associatedtype InputValue
+
+    /// The description of the `input` argument in the schema.
+    static var inputDescription: String { get }
+
+    /// The `input` argument of the mutation.
+    var input: InputValue { get }
+}
+
 /// The arguments of a mutation whose `input` argument is required (plan.md §4.2).
-struct InputArguments<Input: Decodable & Sendable>: Decodable, Sendable {
+struct InputArguments<Input: Decodable & Sendable>: MutationArguments {
+    /// The description of the required `input` argument.
+    static var inputDescription: String {
+        SchemaDescription.mutationInput
+    }
+
     /// The `input` object of the mutation.
     let input: Input
 }
 
 /// The arguments of a mutation whose `input` argument is optional, because the `input` type has no required field
 /// (plan.md §4.2). For example, `mutation { addTag { id } }` is valid, and the resolver gets no `input`.
-struct OptionalInputArguments<Input: Decodable & Sendable>: Decodable, Sendable {
+struct OptionalInputArguments<Input: Decodable & Sendable>: MutationArguments {
+    /// The description of the optional `input` argument.
+    static var inputDescription: String {
+        SchemaDescription.optionalMutationInput
+    }
+
     /// The `input` object of the mutation, or `nil` when the call gives no `input`.
     let input: Input?
 }
@@ -667,47 +689,84 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     func addColumnActorMutations() -> Self {
         add {
             Input(AddColumnInput.self) {
-                InputField("id", at: \.id)
-                InputField("name", at: \.name)
-                InputField("order", at: \.order)
-                InputField("body", at: \.body)
+                InputField("id", at: \.id).description(SchemaDescription.newColumnID)
+                InputField("name", at: \.name).description(SchemaDescription.columnName)
+                InputField("order", at: \.order).description(SchemaDescription.columnOrder)
+                InputField("body", at: \.body).description(SchemaDescription.newNodeBody)
                 InputField("board", at: \.board).description(SchemaDescription.boardToChange)
             }
+            .description(SchemaDescription.addColumnInput)
             Input(UpdateColumnInput.self) {
-                InputField("id", at: \.id)
-                InputField("name", at: \.name.value)
-                InputField("order", at: \.order.value)
-                InputField("body", at: \.body.value)
+                InputField("id", at: \.id).description(SchemaDescription.columnReference)
+                InputField("name", at: \.name.value).description(SchemaDescription.changedName)
+                InputField("order", at: \.order.value).description(SchemaDescription.changedColumnOrder)
+                InputField("body", at: \.body.value).description(SchemaDescription.changedBody)
             }
+            .description(SchemaDescription.updateColumnInput)
             Input(AddActorInput.self) {
-                InputField("id", at: \.id)
+                InputField("id", at: \.id).description(SchemaDescription.newActorID)
                 InputField("name", at: \.name).description(SchemaDescription.addActorName)
-                InputField("color", at: \.color)
+                InputField("color", at: \.color).description(SchemaDescription.actorColor)
                 InputField("avatar", at: \.avatar).description(SchemaDescription.actorAvatar)
-                InputField("body", at: \.body)
-                InputField("ensure", at: \.ensure)
+                InputField("body", at: \.body).description(SchemaDescription.newNodeBody)
+                InputField("ensure", at: \.ensure).description(SchemaDescription.actorEnsure)
                 InputField("board", at: \.board).description(SchemaDescription.boardToChange)
             }
+            .description(SchemaDescription.addActorInput)
             Input(UpdateActorInput.self) {
-                InputField("id", at: \.id)
-                InputField("name", at: \.name.value)
-                InputField("color", at: \.color.value)
+                InputField("id", at: \.id).description(SchemaDescription.actorReference)
+                InputField("name", at: \.name.value).description(SchemaDescription.changedName)
+                InputField("color", at: \.color.value).description(SchemaDescription.changedColor)
                 InputField("avatar", at: \.avatar.value).description(SchemaDescription.actorAvatar)
-                InputField("body", at: \.body.value)
+                InputField("body", at: \.body.value).description(SchemaDescription.changedBody)
             }
+            .description(SchemaDescription.updateActorInput)
             Input(NodeReferenceInput.self) {
-                InputField("id", at: \.id)
+                InputField("id", at: \.id).description(SchemaDescription.nodeReference)
             }
+            .description(SchemaDescription.nodeReferenceInput)
         }
         .addMutation {
-            Field(MutationName.addColumn, at: KanbanResolver.addColumn) { Argument("input", at: \.input) }
-            Field(MutationName.updateColumn, at: KanbanResolver.updateColumn) { Argument("input", at: \.input) }
-            Field(MutationName.deleteColumn, at: KanbanResolver.deleteColumn) { Argument("input", at: \.input) }
-            Field(MutationName.undeleteColumn, at: KanbanResolver.undeleteColumn) { Argument("input", at: \.input) }
-            Field(MutationName.addActor, at: KanbanResolver.addActor) { Argument("input", at: \.input) }
-            Field(MutationName.updateActor, at: KanbanResolver.updateActor) { Argument("input", at: \.input) }
-            Field(MutationName.deleteActor, at: KanbanResolver.deleteActor) { Argument("input", at: \.input) }
-            Field(MutationName.undeleteActor, at: KanbanResolver.undeleteActor) { Argument("input", at: \.input) }
+            Self.mutationField(
+                MutationName.addColumn,
+                at: KanbanResolver.addColumn,
+                description: SchemaDescription.addColumn
+            )
+            Self.mutationField(
+                MutationName.updateColumn,
+                at: KanbanResolver.updateColumn,
+                description: SchemaDescription.updateColumn
+            )
+            Self.mutationField(
+                MutationName.deleteColumn,
+                at: KanbanResolver.deleteColumn,
+                description: SchemaDescription.deleteColumn
+            )
+            Self.mutationField(
+                MutationName.undeleteColumn,
+                at: KanbanResolver.undeleteColumn,
+                description: SchemaDescription.undeleteColumn
+            )
+            Self.mutationField(
+                MutationName.addActor,
+                at: KanbanResolver.addActor,
+                description: SchemaDescription.addActor
+            )
+            Self.mutationField(
+                MutationName.updateActor,
+                at: KanbanResolver.updateActor,
+                description: SchemaDescription.updateActor
+            )
+            Self.mutationField(
+                MutationName.deleteActor,
+                at: KanbanResolver.deleteActor,
+                description: SchemaDescription.deleteActor
+            )
+            Self.mutationField(
+                MutationName.undeleteActor,
+                at: KanbanResolver.undeleteActor,
+                description: SchemaDescription.undeleteActor
+            )
         }
     }
 }

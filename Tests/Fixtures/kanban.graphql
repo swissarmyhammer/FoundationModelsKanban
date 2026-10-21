@@ -1,0 +1,1652 @@
+"""
+A point in time: RFC 3339 text in UTC with milliseconds, like 2026-10-06T14:49:10.690Z.
+"""
+scalar DateTime
+
+"""Any JSON value. The keys of each object are in sorted order."""
+scalar JSON
+
+"""
+A priority value of a task input: text, a word, a number, or a Boolean. The board stores no priority: the value moves the task in its column.
+"""
+scalar Priority
+
+"""
+A node of the graph: a board, a column, an actor, a tag, a task, or a comment. Each node has a Markdown body.
+"""
+interface Node {
+  """The full kanban:// URI of the node."""
+  id: ID!
+
+  """The Markdown body of the node. Empty when no change set it."""
+  body: String!
+
+  """The time of the first change of the node."""
+  created: DateTime!
+
+  """The time of the last change of the node."""
+  updated: DateTime!
+
+  """
+  The time of the delete. Null for a live node; a value means that the node is deleted.
+  """
+  deleted: DateTime
+}
+
+"""
+A kanban board: the root of its columns, actors, tags, and tasks. The events of the board are in the .kanban folder of its repo.
+"""
+type Board implements Node {
+  """The full kanban:// URI of the node."""
+  id: ID!
+
+  """The Markdown body of the node. Empty when no change set it."""
+  body: String!
+
+  """The time of the first change of the node."""
+  created: DateTime!
+
+  """The time of the last change of the node."""
+  updated: DateTime!
+
+  """
+  The time of the delete. Null for a live node; a value means that the node is deleted.
+  """
+  deleted: DateTime
+
+  """
+  The current key of the board, for example github.com/owner/repo. The kanban:// URI of each node of the board starts with it.
+  """
+  key: String!
+
+  """
+  The primary board ID of the board: the lowest board ID in its log, as a ULID. A URI with the bare board ID, kanban://<board-id>/<type>/<id>, names this board. Null when the board has no ID yet: the next write of the board gives it one.
+  """
+  boardId: String
+
+  """
+  Each name of the board: the current key first, then each board ID, then each old git key of the board. A board ref or a URI with any of these names names this board.
+  """
+  names: [String!]!
+
+  """The display name of the board."""
+  name: String!
+
+  """
+  The model of the board as text, for example the chat model haiku. Null when no call set it. The board does not check the text.
+  """
+  model: String
+
+  """
+  The live columns, in board order: the first column first, the terminal column last.
+  """
+  columns: [Column!]!
+
+  """The live actors of the board."""
+  actors: [Actor!]!
+
+  """
+  The live tags of the board. A renamed tag is not in the list; the tag of its new name is.
+  """
+  tags: [Tag!]!
+
+  """
+  One live task of the board by its id: its ULID, a ULID prefix, ^<short id>, its title slug, task/<ULID>, or the full kanban:// URI. Null, with no error, when no live task has the id.
+  """
+  task(
+    """The id of the node: its full kanban:// URI, or a short form."""
+    id: ID!
+  ): Task
+
+  """
+  One live column of the board by its id: its slug, its name, column/<slug>, or the full kanban:// URI. Null, with no error, when no live column has the id.
+  """
+  column(
+    """The id of the node: its full kanban:// URI, or a short form."""
+    id: ID!
+  ): Column
+
+  """
+  One live actor of the board by its id: its slug, its name, actor/<slug>, or the full kanban:// URI. Null, with no error, when no live actor has the id.
+  """
+  actor(
+    """The id of the node: its full kanban:// URI, or a short form."""
+    id: ID!
+  ): Actor
+
+  """
+  One live tag of the board by its id: its slug, its name, tag/<slug>, or the full kanban:// URI. Null, with no error, when no live tag has the id.
+  """
+  tag(
+    """The id of the node: its full kanban:// URI, or a short form."""
+    id: ID!
+  ): Tag
+
+  """One page of the tasks that the filter selects, in board order."""
+  tasks(
+    """
+    The filter of the tasks. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter gives each live task, done or not. A deleted task shows only when the filter names #DELETED.
+    """
+    filter: String
+
+    """
+    The largest number of tasks in the list. A negative value gives no tasks.
+    """
+    first: Int = 10
+
+    """
+    The cursor of the task before the page: the cursor of an edge, which is the id of the task. A short form also works. No value starts the page at the first task.
+    """
+    after: String
+  ): TaskConnection
+
+  """
+  The first task in board order that has the READY virtual tag and matches the filter: a live task that is not done, with each dependency done. Null when no task is ready.
+  """
+  nextTask(
+    """
+    The filter that the next task must match. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ).
+    """
+    filter: String
+  ): Task
+
+  """
+  The tasks that best match the query, highest score first. The filter selects the tasks the same as in tasks.
+  """
+  searchTasks(
+    """
+    The search text. The search ranks whole words, parts of words, and the meaning.
+    """
+    query: String!
+
+    """
+    The filter of the tasks. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter gives each live task, done or not. A deleted task shows only when the filter names #DELETED.
+    """
+    filter: String
+
+    """
+    The largest number of hits in the list. A negative value gives no hits.
+    """
+    first: Int = 10
+  ): [TaskHit!]
+
+  """The counts of the live tasks and of the live actors of the board."""
+  summary: BoardSummary!
+
+  """
+  Each virtual tag, with its name, color, and description. A virtual tag is not stored: the board calculates it for each task. See Task.virtualTags.
+  """
+  virtualTags: [VirtualTag!]!
+
+  """
+  The root folder of the repo of the board. Null for a board in memory only.
+  """
+  path: String
+
+  """
+  The transactions that changed the board, newest first, that the filter keeps. A change of this call is not in the list.
+  """
+  history(
+    """
+    The filter of the updates. An update stays when its node matches. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter keeps the updates of the live nodes.
+    """
+    filter: String
+
+    """
+    The id of a transaction. The list holds only the transactions after it. No value lists each transaction.
+    """
+    since: ID
+
+    """
+    The largest number of changes in the list. A negative value gives no changes.
+    """
+    first: Int = 20
+  ): [Change!]
+}
+
+"""A column of the board. Each live task shows in one column."""
+type Column implements Node {
+  """The full kanban:// URI of the node."""
+  id: ID!
+
+  """The Markdown body of the node. Empty when no change set it."""
+  body: String!
+
+  """The time of the first change of the node."""
+  created: DateTime!
+
+  """The time of the last change of the node."""
+  updated: DateTime!
+
+  """
+  The time of the delete. Null for a live node; a value means that the node is deleted.
+  """
+  deleted: DateTime
+
+  """The display name of the column."""
+  name: String!
+
+  """
+  The sort key of the column on the board. The column with the lowest order is the first column, and the column with the highest order is the terminal column: a task there is done.
+  """
+  order: Int!
+
+  """
+  The number of live tasks in the column. A task whose column is not a live column counts in the first column.
+  """
+  taskCount: Int!
+
+  """
+  The number of live tasks in the column that no dependency stops. A done task can be ready, the same as Task.ready.
+  """
+  readyCount: Int!
+
+  """The tasks of this node that match the filter, in board order."""
+  tasks(
+    """
+    The filter of the tasks. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter gives each live task, done or not. A deleted task shows only when the filter names #DELETED.
+    """
+    filter: String
+  ): [Task!]
+}
+
+"""
+A person or an agent: an assignee of tasks, and the author of comments.
+"""
+type Actor implements Node {
+  """The full kanban:// URI of the node."""
+  id: ID!
+
+  """The Markdown body of the node. Empty when no change set it."""
+  body: String!
+
+  """The time of the first change of the node."""
+  created: DateTime!
+
+  """The time of the last change of the node."""
+  updated: DateTime!
+
+  """
+  The time of the delete. Null for a live node; a value means that the node is deleted.
+  """
+  deleted: DateTime
+
+  """The display name."""
+  name: String!
+
+  """
+  The display color: 6 hex digits with no #. A tag with no color gets a fixed color from its slug. An actor with no color gives null.
+  """
+  color: String
+
+  """The tasks of this node that match the filter, in board order."""
+  tasks(
+    """
+    The filter of the tasks. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter gives each live task, done or not. A deleted task shows only when the filter names #DELETED.
+    """
+    filter: String
+  ): [Task!]
+
+  """
+  The avatar of the actor as text, for example a URL or an emoji. Null when the actor has no avatar.
+  """
+  avatar: String
+}
+
+"""
+A label of tasks. A task gets a tag from a tag edge or from a #tag marker in its body.
+"""
+type Tag implements Node {
+  """The full kanban:// URI of the node."""
+  id: ID!
+
+  """The Markdown body of the node. Empty when no change set it."""
+  body: String!
+
+  """The time of the first change of the node."""
+  created: DateTime!
+
+  """The time of the last change of the node."""
+  updated: DateTime!
+
+  """
+  The time of the delete. Null for a live node; a value means that the node is deleted.
+  """
+  deleted: DateTime
+
+  """The display name."""
+  name: String!
+
+  """
+  The display color: 6 hex digits with no #. A tag with no color gets a fixed color from its slug. An actor with no color gives null.
+  """
+  color: String!
+
+  """The tasks of this node that match the filter, in board order."""
+  tasks(
+    """
+    The filter of the tasks. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter gives each live task, done or not. A deleted task shows only when the filter names #DELETED.
+    """
+    filter: String
+  ): [Task!]
+}
+
+"""The counts of the live tasks and of the live actors of the board."""
+type BoardSummary {
+  """The number of live tasks."""
+  total: Int!
+
+  """
+  The number of live tasks that no dependency stops. A done task can be ready.
+  """
+  ready: Int!
+
+  """The number of live tasks that a dependency stops: total minus ready."""
+  blocked: Int!
+
+  """The number of live tasks in the terminal column."""
+  done: Int!
+
+  """
+  The part of the live tasks that is done, from 0 to 100, rounded to a whole number. 0 when the board has no live task.
+  """
+  percent: Int!
+
+  """The number of live actors of the board."""
+  totalActors: Int!
+}
+
+"""
+A tag that the board calculates from the state of each task. The board does not store it.
+"""
+type VirtualTag {
+  """
+  The name of the virtual tag, for example READY. A filter atom #name matches it.
+  """
+  name: String!
+
+  """The display color of the virtual tag: 6 hex digits with no #."""
+  color: String!
+
+  """The meaning of the virtual tag in one sentence."""
+  description: String!
+}
+
+"""
+A task of the board: a title, a Markdown body, a column, and links to actors, tags, and other tasks.
+"""
+type Task implements Node {
+  """The full kanban:// URI of the node."""
+  id: ID!
+
+  """The Markdown body of the node. Empty when no change set it."""
+  body: String!
+
+  """The time of the first change of the node."""
+  created: DateTime!
+
+  """The time of the last change of the node."""
+  updated: DateTime!
+
+  """
+  The time of the delete. Null for a live node; a value means that the node is deleted.
+  """
+  deleted: DateTime
+
+  """
+  The short id: the last 7 characters of the ULID, in lowercase. The ref ^<short id> names the node.
+  """
+  shortId: String!
+
+  """The title of the task."""
+  title: String!
+
+  """
+  The column where the task shows. A task whose column is not a live column shows in the first column.
+  """
+  column: Column!
+
+  """
+  The place of the task in its column, as a fractional index: the column sorts the tasks by this text.
+  """
+  ordinal: String!
+
+  """
+  The live actors of the task. An actor of a different board is in the list when a loaded board has it.
+  """
+  assignees: [Actor!]!
+
+  """
+  The live tags of the task, from the tag edges and the #tag markers of the body, by slug.
+  """
+  tags: [Tag!]!
+
+  """
+  The live tasks that this task depends on: the dependsOn edges and the task URLs in the body. A task on a different board has a full kanban://<board-key>/task/<id> id. A dependency that no loaded board has is not in this list. See unresolvedDependsOn.
+  """
+  dependsOn: [Task!]!
+
+  """
+  The live tasks that stop this task: each dependency that is not done, or that is in a dependency cycle with this task. The tasks of other boards are in the list. A dependency that cannot resolve is not in this list. See unresolvedDependsOn.
+  """
+  blockedBy: [Task!]!
+
+  """
+  The full kanban:// URI of each dependency that no loaded board has as a task. For example, a URI with a typo, or a task of a repo that is not on this computer. Each one stops the task.
+  """
+  unresolvedDependsOn: [ID!]!
+
+  """
+  True when no dependency stops the task. The column of the task has no effect, so a done task can be ready. The #READY virtual tag gives only the open tasks that are ready.
+  """
+  ready: Boolean!
+
+  """
+  The virtual tags of the task, from its state: READY, BLOCKED, CONFLICT, DELETED, DONE, HIGH, MEDIUM, LOW. A filter can name them, for example #READY.
+  """
+  virtualTags: [String!]!
+
+  """The counts of the checklist lines of the body."""
+  progress: Progress!
+
+  """The live comments of the task, oldest first."""
+  comments: [Comment!]!
+
+  """
+  The time when the task left the first column. Null when it never left it.
+  """
+  started: DateTime
+
+  """
+  The time of the last column move of the task, when the task is now done. Null when the task is not done.
+  """
+  completed: DateTime
+}
+
+"""A comment on a task, with its author."""
+type Comment implements Node {
+  """The full kanban:// URI of the node."""
+  id: ID!
+
+  """The Markdown body of the node. Empty when no change set it."""
+  body: String!
+
+  """The time of the first change of the node."""
+  created: DateTime!
+
+  """The time of the last change of the node."""
+  updated: DateTime!
+
+  """
+  The time of the delete. Null for a live node; a value means that the node is deleted.
+  """
+  deleted: DateTime
+
+  """
+  The short id: the last 7 characters of the ULID, in lowercase. The ref ^<short id> names the node.
+  """
+  shortId: String!
+
+  """The task of the comment, live or deleted."""
+  task: Task!
+
+  """The actor that wrote the comment, live or deleted."""
+  author: Actor!
+}
+
+"""
+The counts of the Markdown checklist lines of a task body: an open line is - [ ], a checked line is - [x].
+"""
+type Progress {
+  """The number of checklist lines."""
+  total: Int!
+
+  """The number of checked checklist lines."""
+  completed: Int!
+
+  """
+  The part of the checklist that is checked, from 0 to 1. 0 when the body has no checklist line.
+  """
+  fraction: Float!
+
+  """
+  The part of the checklist that is checked, from 0 to 100: fraction times 100.
+  """
+  percent: Float!
+}
+
+"""One page of tasks, with the cursor of each task."""
+type TaskConnection {
+  """The tasks of the page, each with its cursor."""
+  edges: [TaskEdge!]!
+
+  """
+  The nodes of the page, in the same order as edges. Use it in place of edges { node } when you do not need the cursor of each node.
+  """
+  nodes: [Task!]!
+
+  """The place of a page in the full list."""
+  pageInfo: PageInfo!
+
+  """The number of tasks in the full list, on all pages."""
+  totalCount: Int!
+}
+
+"""One task of a page, with its cursor."""
+type TaskEdge {
+  """The task."""
+  node: Task!
+
+  """
+  The cursor of the task: its id. Give it as after to get the page after this task.
+  """
+  cursor: String!
+}
+
+"""The place of a page in the full list."""
+type PageInfo {
+  """True when the full list has tasks before the page."""
+  hasPreviousPage: Boolean!
+
+  """True when the full list has tasks after the page."""
+  hasNextPage: Boolean!
+
+  """The cursor of the first task of the page. Null for an empty page."""
+  startCursor: String
+
+  """The cursor of the last task of the page. Null for an empty page."""
+  endCursor: String
+}
+
+"""One task that a search found, with its score."""
+type TaskHit {
+  """The task."""
+  task: Task!
+
+  """
+  The score of the hit from all signals, from 0 to 1. A higher score is a better match.
+  """
+  score: Float!
+
+  """The score of each signal. Null when the search gives no signals."""
+  signals: SearchSignals
+}
+
+"""The score of each signal of one search hit."""
+type SearchSignals {
+  """The BM25 score: the match of whole words."""
+  bm25: Float!
+
+  """
+  The trigram score: the match of parts of words, also with typing errors.
+  """
+  trigram: Float!
+
+  """
+  The embedding cosine score: the match of the meaning. Null when the search has no embedder, or the embeddings are not done yet.
+  """
+  cosine: Float
+}
+
+"""The type of a node."""
+enum NodeType {
+  """The board."""
+  BOARD
+
+  """A column of the board."""
+  COLUMN
+
+  """A task."""
+  TASK
+
+  """A tag."""
+  TAG
+
+  """An actor: a person or an agent that works on tasks."""
+  ACTOR
+
+  """A comment on a task."""
+  COMMENT
+}
+
+"""How a transaction changed a node."""
+enum UpdateKind {
+  """The transaction made the node."""
+  CREATED
+
+  """The transaction changed fields of the node, also derived fields."""
+  UPDATED
+
+  """The transaction deleted the node: the node is a tombstone now."""
+  DELETED
+
+  """The transaction undeleted the node: the node is live again."""
+  RESTORED
+}
+
+"""
+One transaction: the changes of one tool call. It has one update for each node that the transaction changed, also each node whose derived fields changed.
+"""
+type Change {
+  """
+  The ULID of the transaction. Give it to undo or redo to reverse this change.
+  """
+  txn: ID!
+
+  """The time of the transaction."""
+  at: DateTime!
+
+  """The actor that made the transaction."""
+  actor: Actor!
+
+  """The names of the mutations of the tool call, for example addTask."""
+  ops: [String!]!
+
+  """
+  The key of each board that the transaction changed, the board of this change first.
+  """
+  boards: [String!]!
+
+  """True when a later undo that is not undone reverses this transaction."""
+  undone: Boolean!
+
+  """
+  The transaction that this undo or redo reverses. Null for each other transaction.
+  """
+  undoes: ID
+
+  """
+  The update of each node that the transaction changed and that the filter keeps.
+  """
+  updates(
+    """
+    The filter of the updates. An update stays when its node matches. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter keeps the updates of the live nodes.
+    """
+    filter: String
+  ): [NodeUpdate!]
+}
+
+"""
+The change of one node in a transaction: how it changed, and each field that changed.
+"""
+type NodeUpdate {
+  """The full kanban:// URI of the node, also for a deleted node."""
+  id: ID!
+
+  """The type of the node."""
+  type: NodeType!
+
+  """How the transaction changed the node."""
+  kind: UpdateKind!
+
+  """
+  The change of each public field of the node, in the order of the fields of its type.
+  """
+  fields: [FieldChange!]!
+
+  """
+  The node now. A deleted node gives its tombstone, with deleted set. Null when the board does not have the node now.
+  """
+  node: Node
+}
+
+"""
+The change of one public field of a node. A single value gives before and after, a list gives added and removed, and body gives diff. The values are the values that a query shows.
+"""
+type FieldChange {
+  """The name of the field, for example column, tags, or ready."""
+  name: String!
+
+  """The value before the transaction. Null for a list field and for body."""
+  before: JSON
+
+  """The value after the transaction. Null for a list field and for body."""
+  after: JSON
+
+  """
+  The items that the transaction added to a list field. Null for a single value.
+  """
+  added: [JSON!]
+
+  """
+  The items that the transaction removed from a list field. Null for a single value.
+  """
+  removed: [JSON!]
+
+  """
+  The unified diff from the body before the transaction to the body after it. Null for each field that is not body. Select node { body } for the full text.
+  """
+  diff: String
+}
+
+"""The field of a task that holds a stored link."""
+enum LinkField {
+  """A dependsOn edge of the task."""
+  DEPENDS_ON
+
+  """An assignee that is the full URI of an actor of a different board."""
+  ASSIGNEE
+
+  """A task URL in the body of a live task."""
+  BODY
+
+  """
+  The line of the tombstone of a moved task that points to the task that the move made.
+  """
+  TOMBSTONE
+}
+
+"""The class of a stored link."""
+enum LinkStatus {
+  """
+  The link names its board by a current name, and the board has the node.
+  """
+  OK
+
+  """
+  The link names its board by an old name. It still works, and the response gives a warning.
+  """
+  OLD_NAME
+
+  """No reachable board has the name of the link."""
+  DANGLING
+
+  """The board of the link is found, and the board does not have the node."""
+  MISSING_NODE
+}
+
+"""One stored link of a task, and its class."""
+type LinkCheck {
+  """The current key of the board that holds the link."""
+  board: String!
+
+  """The full URI of the task that holds the link."""
+  node: ID!
+
+  """
+  Where the task holds the link: DEPENDS_ON, ASSIGNEE, BODY (a task URL in the body), or TOMBSTONE (the line of a moved task).
+  """
+  field: LinkField!
+
+  """The link as the board stores it: a full kanban:// URI."""
+  target: String!
+
+  """
+  OK: the board and the node are found. OLD_NAME: the link names the board by an old name; currentName gives the name now. DANGLING: no reachable board has the name. MISSING_NODE: the board is found, the node is not.
+  """
+  status: LinkStatus!
+
+  """
+  The current key of the board that the link names. Null for a DANGLING link.
+  """
+  currentName: String
+}
+
+"""
+The fields of initBoard and updateBoard. A field that is not set does not change, and null clears it.
+"""
+input BoardInput {
+  """The name of the board."""
+  name: String
+
+  """
+  The model of the board as text, for example the chat model haiku. Null when no call set it. The board does not check the text.
+  """
+  model: String
+
+  """
+  The new Markdown body: the full text. The call writes the diff from the current body.
+  """
+  body: String
+
+  """
+  The board to change. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. No value changes the current board. The short refs of the input name nodes of this board.
+  """
+  board: String
+}
+
+"""The fields of addColumn."""
+input AddColumnInput {
+  """
+  The id of the new column: a slug, or a full column URI. No id gives the slug of the name.
+  """
+  id: ID
+
+  """The name of the column."""
+  name: String!
+
+  """
+  The sort key of the column. No order puts the column after the terminal column.
+  """
+  order: Int
+
+  """The Markdown body: the full text. No body gives an empty body."""
+  body: String
+
+  """
+  The board to change. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. No value changes the current board. The short refs of the input name nodes of this board.
+  """
+  board: String
+}
+
+"""The fields of updateColumn. A field that is not set does not change."""
+input UpdateColumnInput {
+  """The column: a full URI or the slug."""
+  id: ID!
+
+  """The new name. Null gives no change and a warning."""
+  name: String
+
+  """The new sort key of the column."""
+  order: Int
+
+  """
+  The new Markdown body: the full text. The call writes the diff from the current body.
+  """
+  body: String
+}
+
+"""The fields of addActor. The input gives an id, a name, or both."""
+input AddActorInput {
+  """
+  The id of the new actor: a slug, or a full actor URI. No id gives the slug of the name.
+  """
+  id: ID
+
+  """The name of the actor. No name gives the slug of the id as the name."""
+  name: String
+
+  """The color of the actor. No color gives an actor with no color."""
+  color: String
+
+  """
+  The avatar of the actor as text, for example a URL or an emoji. Null when the actor has no avatar.
+  """
+  avatar: String
+
+  """The Markdown body: the full text. No body gives an empty body."""
+  body: String
+
+  """
+  True gives the actor with the id when the board has it: a tombstoned actor is live again, and each given name, color, and avatar that differs is written. Else an actor with the id gives DUPLICATE_ID.
+  """
+  ensure: Boolean
+
+  """
+  The board to change. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. No value changes the current board. The short refs of the input name nodes of this board.
+  """
+  board: String
+}
+
+"""
+The fields of updateActor. A field that is not set does not change, and null clears it.
+"""
+input UpdateActorInput {
+  """The actor: a full URI or the slug."""
+  id: ID!
+
+  """The new name. Null gives no change and a warning."""
+  name: String
+
+  """The new color."""
+  color: String
+
+  """
+  The avatar of the actor as text, for example a URL or an emoji. Null when the actor has no avatar.
+  """
+  avatar: String
+
+  """
+  The new Markdown body: the full text. The call writes the diff from the current body.
+  """
+  body: String
+}
+
+"""
+The node of a call that names one node: completeTask, and the delete and undelete calls of columns, actors, tasks, and tags.
+"""
+input NodeReferenceInput {
+  """The node: a full URI or a short form."""
+  id: ID!
+}
+
+"""The fields of addTask."""
+input AddTaskInput {
+  """The title of the task."""
+  title: String!
+
+  """The Markdown body: the full text. No body gives an empty body."""
+  body: String
+
+  """
+  The column of the task. No column gives the column with the lowest order.
+  """
+  column: ID
+
+  """
+  The place of the task in its column, as a fractional index. No ordinal puts the task at the end of the column.
+  """
+  ordinal: String
+
+  """
+  The actors of the task: full URIs or slugs. No list gives the session actor, when the board had that actor before the call.
+  """
+  assignees: [ID!]
+
+  """
+  The tags of the task. Each tag is a tag name, a slug, the stored form tag/<slug>, or a tag URI. A tag that the board does not have is made.
+  """
+  tags: [String!]
+
+  """
+  The tasks that this task depends on. A short ref names a task of the board of the input. A task ref can also be the title slug of a task, for example fix-login-bug for the title Fix login bug. A ULID or a short id wins over a title slug. When two tasks have the title slug, the call uses the first (a live task, then the lowest id) and gives a SHARED_TITLE_SLUG warning. For a task on a different board, give its full kanban://<board-key>/task/<id> URI. A task URL in the body is also a dependency.
+  """
+  dependsOn: [ID!]
+
+  """
+  The board to change. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. No value changes the current board. The short refs of the input name nodes of this board.
+  """
+  board: String
+
+  """
+  Not stored: a task has no priority field, and the place in the column is the priority. urgent, critical, high, P0, P1, or true moves the task to the top of its column; low, P3, or P4 moves it to the end. Each other value makes no move. The case does not matter, and the response gives a warning.
+  """
+  priority: Priority
+}
+
+"""
+The fields of updateTask. A field that is not set does not change, and null clears it. A list replaces the old list.
+"""
+input UpdateTaskInput {
+  """The task: a full URI or a short form."""
+  id: ID!
+
+  """The new title. Null gives no change and a warning."""
+  title: String
+
+  """
+  The new Markdown body: the full text. The call writes the diff from the current body.
+  """
+  body: String
+
+  """The new actors of the task: full URIs or slugs."""
+  assignees: [ID!]
+
+  """
+  The new tags of the task. Each tag is a tag name, a slug, the stored form tag/<slug>, or a tag URI.
+  """
+  tags: [String!]
+
+  """
+  The new list of the tasks that this task depends on. It replaces the old list, and removes from the body the task URLs that the list drops. A short ref names a task of the board of this task. A task ref can also be the title slug of a task, for example fix-login-bug for the title Fix login bug. A ULID or a short id wins over a title slug. When two tasks have the title slug, the call uses the first (a live task, then the lowest id) and gives a SHARED_TITLE_SLUG warning. For a task on a different board, give its full kanban://<board-key>/task/<id> URI.
+  """
+  dependsOn: [ID!]
+
+  """
+  The column to move the task to, in the same change. The task goes to the end of the column. A slug that no column has makes the column, the same as moveTask.
+  """
+  column: ID
+
+  """
+  Not stored: a task has no priority field, and the place in the column is the priority. urgent, critical, high, P0, P1, or true moves the task to the top of its column; low, P3, or P4 moves it to the end. Each other value makes no move. The case does not matter, and the response gives a warning.
+  """
+  priority: Priority
+}
+
+"""
+The fields of moveTask. Give at most one of ordinal, before, and after.
+"""
+input MoveTaskInput {
+  """The task: a full URI or a short form."""
+  id: ID!
+
+  """
+  The column: a full URI, the slug, or a name. A slug that no column has makes the column. No column keeps the column of the task.
+  """
+  column: ID
+
+  """
+  The place in the column, as a fractional index. No ordinal, before, or after puts the task at the end of the column.
+  """
+  ordinal: String
+
+  """
+  The task to put this task before: a full URI or a short form. A ref that names no live task puts the task at the end of the column, with a warning.
+  """
+  before: ID
+
+  """
+  The task to put this task after: a full URI or a short form. A ref that names no live task puts the task at the end of the column, with a warning.
+  """
+  after: ID
+
+  """
+  The board to move or copy the task to. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. No value, or the board of the task, keeps the task in its board. The new task keeps its tags (a missing tag is made), and each ref to the old board becomes a full URI. A move tombstones the old task and adds a line with the new URI to its body. One undo reverses both boards.
+  """
+  board: String
+}
+
+"""The fields of assignTask and unassignTask."""
+input AssignTaskInput {
+  """The task: a full URI or a short form."""
+  id: ID!
+
+  """The actor: a full URI or the slug."""
+  actor: ID!
+}
+
+"""The fields of tagTask and untagTask."""
+input TagTaskInput {
+  """The task: a full URI or a short form."""
+  id: ID!
+
+  """
+  The tags to add or to remove. Each tag is a tag name, a slug, the stored form tag/<slug>, or a tag URI.
+  """
+  tags: [String!]!
+}
+
+"""
+The fields of copyTask. Give at most one of ordinal, before, and after.
+"""
+input CopyTaskInput {
+  """The task: a full URI or a short form."""
+  id: ID!
+
+  """
+  The column: a full URI, the slug, or a name. A slug that no column has makes the column. No column keeps the column of the task.
+  """
+  column: ID
+
+  """
+  The place in the column, as a fractional index. No ordinal, before, or after puts the task at the end of the column.
+  """
+  ordinal: String
+
+  """
+  The task to put this task before: a full URI or a short form. A ref that names no live task puts the task at the end of the column, with a warning.
+  """
+  before: ID
+
+  """
+  The task to put this task after: a full URI or a short form. A ref that names no live task puts the task at the end of the column, with a warning.
+  """
+  after: ID
+
+  """
+  The board to move or copy the task to. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. No value, or the board of the task, keeps the task in its board. The new task keeps its tags (a missing tag is made), and each ref to the old board becomes a full URI. A move tombstones the old task and adds a line with the new URI to its body. One undo reverses both boards.
+  """
+  board: String
+}
+
+"""The fields of addComment."""
+input AddCommentInput {
+  """The task of the comment: a full URI or a short form."""
+  task: ID!
+
+  """The Markdown body of the comment: the full text."""
+  body: String!
+
+  """
+  The author of the comment: a full URI or the slug of an actor. A slug or a name that no actor has makes the actor. No actor gives the session actor.
+  """
+  actor: ID
+}
+
+"""The fields of updateComment. A body that is not set does not change."""
+input UpdateCommentInput {
+  """The comment: a full URI or a short form."""
+  id: ID!
+
+  """
+  The new Markdown body: the full text. The call writes the diff from the current body.
+  """
+  body: String
+
+  """
+  The task of the comment. The comment id alone names the comment. When this task is not the task of the comment, the call gives NOT_FOUND and changes nothing.
+  """
+  task: ID
+}
+
+"""The comment of deleteComment and undeleteComment."""
+input CommentReferenceInput {
+  """The comment: a full URI or a short form."""
+  id: ID!
+
+  """
+  The task of the comment. The comment id alone names the comment. When this task is not the task of the comment, the call gives NOT_FOUND and changes nothing.
+  """
+  task: ID
+}
+
+"""The fields of addTag. The input gives an id, a name, or both."""
+input AddTagInput {
+  """
+  The id of the new tag: a slug, or a full tag URI. No id gives the slug of the name.
+  """
+  id: ID
+
+  """The tag name. No name gives the text of the id."""
+  name: String
+
+  """The color of the tag. No color gives the auto color of the slug."""
+  color: String
+
+  """The Markdown body: the full text. No body gives an empty body."""
+  body: String
+
+  """
+  The board to change. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. No value changes the current board. The short refs of the input name nodes of this board.
+  """
+  board: String
+}
+
+"""
+The fields of updateTag. A field that is not set does not change, and null clears it.
+"""
+input UpdateTagInput {
+  """
+  The tag: a full URI, the slug, or a tag name. A renamed slug names the tag that it redirects to.
+  """
+  id: ID!
+
+  """
+  The new tag name. A name with the same slug changes only the display name, and a name with a new slug renames the tag. Null gives no change and a warning.
+  """
+  name: String
+
+  """The new color."""
+  color: String
+
+  """
+  The new Markdown body: the full text. The call writes the diff from the current body.
+  """
+  body: String
+}
+
+"""The fields of renameTag."""
+input RenameTagInput {
+  """
+  The tag to rename: a full URI, the slug, or a tag name. A renamed slug names the tag that it redirects to.
+  """
+  from: ID!
+
+  """The new tag name."""
+  to: String!
+
+  """
+  The board to change. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. No value changes the current board. The short refs of the input name nodes of this board.
+  """
+  board: String
+}
+
+"""The fields of undo and redo."""
+input UndoInput {
+  """
+  For undo, the transaction to reverse. For redo, the original transaction whose undo to reverse. No txn gives the newest one of the session actor.
+  """
+  txn: ID
+
+  """
+  True writes the inverse also when a later transaction changed the same properties.
+  """
+  force: Boolean
+
+  """
+  The board that holds the transaction. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. No value searches the current board and the loaded related boards.
+  """
+  board: String
+
+  """
+  More copies of the other boards of the transaction to reverse, for example the path of a second worktree of a repo.
+  """
+  boards: [String!]
+}
+
+"""
+One stored link that repairLinks reports, and its new target. A dangling link has no new target and does not change.
+"""
+type LinkRepair {
+  """The current key of the board that holds the link."""
+  board: String!
+
+  """The full URI of the task that holds the link."""
+  node: ID!
+
+  """
+  Where the task holds the link: DEPENDS_ON, ASSIGNEE, BODY (a task URL in the body), or TOMBSTONE (the line of a moved task).
+  """
+  field: LinkField!
+
+  """The link as the board stores it: a full kanban:// URI."""
+  target: String!
+
+  """
+  OK: the board and the node are found. OLD_NAME: the link names the board by an old name; currentName gives the name now. DANGLING: no reachable board has the name. MISSING_NODE: the board is found, the node is not.
+  """
+  status: LinkStatus!
+
+  """
+  The current key of the board that the link names. Null for a DANGLING link.
+  """
+  currentName: String
+
+  """
+  The link after the rewrite: the full kanban:// URI with the current name of its board. Null for a DANGLING link, which does not change.
+  """
+  newTarget: String
+}
+
+"""One source board of collectBoards."""
+type CollectedBoard {
+  """The folder of the source board."""
+  path: String!
+
+  """
+  The names of the source board: its board IDs, its git key, and its old names.
+  """
+  names: [String!]!
+}
+
+"""
+One column, tag, or actor that more than one board has. It is one node in the target now.
+"""
+type SlugMerge {
+  """The full URI of the node in the target board."""
+  node: ID!
+
+  """The folder of each board that has the node, the target first."""
+  boards: [String!]!
+}
+
+"""
+One field of a node that two or more boards set to different values. The value of the last event wins.
+"""
+type FieldConflict {
+  """The full URI of the node in the target board."""
+  node: ID!
+
+  """The name of the field, for example name, or body."""
+  field: String!
+
+  """The value that each board gives the field, each one time."""
+  values: [String!]!
+
+  """The value after the collect: the value of the last event."""
+  winner: String
+}
+
+"""
+The result of collectBoards: the target, the sources, the merges, and the links.
+"""
+type CollectBoardsResult {
+  """The current key of the target board."""
+  target: String!
+
+  """
+  Each source board: its folder and its names, which are old names of the target.
+  """
+  sources: [CollectedBoard!]!
+
+  """
+  Each column, tag, and actor that more than one board has: one node now.
+  """
+  slugMerges: [SlugMerge!]!
+
+  """
+  Each field that two or more boards set to different values, and the winner.
+  """
+  conflicts: [FieldConflict!]!
+
+  """
+  The OLD_NAME and DANGLING links of the target, and with reach the links of other boards that name a source, each with its new target.
+  """
+  repairs: [LinkRepair!]!
+
+  """
+  Each link of a different board that names a source by a name that is now an old name of the target. Without reach, the call does not change these links.
+  """
+  otherLinks: [LinkCheck!]!
+
+  """True when the call wrote nothing."""
+  dryRun: Boolean!
+}
+
+type Query {
+  """
+  One board: the current board, or the board that id names. The board of a different repo is read from its .kanban folder.
+  """
+  board(
+    """
+    The board to read. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. No value reads the current board.
+    """
+    id: String
+  ): Board
+
+  """
+  One node of any type by its id, live or deleted. Null when no node has the id. A full URI of a different board reads that board.
+  """
+  node(
+    """The id of the node: its full kanban:// URI, or a short form."""
+    id: ID!
+  ): Node
+
+  """
+  The nodes of the ids, in the order of the ids, live or deleted. An id that names no node is not in the list.
+  """
+  nodes(
+    """
+    The ids of the nodes. Each id is a full kanban:// URI, or a short form.
+    """
+    ids: [ID!]!
+  ): [Node!]
+
+  """
+  Each board that the scan finds, with its path, in scan order: the current board and the repos next to it. A board that cannot be read is not in the list, and the response gives a warning that names it.
+  """
+  boards(
+    """
+    True lists only the copies that have a board log (.kanban/board.jsonl), false lists only the copies that do not. No value lists each copy.
+    """
+    enabled: Boolean
+  ): [Board!]!
+
+  """
+  Reads each stored link of the boards and gives its class. The links are the dependsOn edges, the assignee URIs, and the task URLs in the body of each live task, and the moved line of each tombstone. Reads only. A link with an old board name still works, and the response gives the warning OLD_BOARD_NAME.
+  """
+  checkLinks(
+    """
+    The boards whose links to check. Each item is a board ref. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. No value, or an empty list, checks the current board.
+    """
+    boards: [String!]
+  ): [LinkCheck!]
+}
+
+type Mutation {
+  """
+  Makes the board with the default columns todo, doing, review, and done. On a board that exists, it changes only the given fields that differ, and adds no column.
+  """
+  initBoard(
+    """
+    The input object of the call. Its type tells what each field does. No field is required, so the call can leave out the input.
+    """
+    input: BoardInput
+  ): Board
+
+  """Changes the name, the model, or the body of the board."""
+  updateBoard(
+    """
+    The input object of the call. Its type tells what each field does. No field is required, so the call can leave out the input.
+    """
+    input: BoardInput
+  ): Board
+
+  """Makes a column."""
+  addColumn(
+    """The input object of the call. Its type tells what each field does."""
+    input: AddColumnInput!
+  ): Column
+
+  """Changes the name, the order, or the body of a column."""
+  updateColumn(
+    """The input object of the call. Its type tells what each field does."""
+    input: UpdateColumnInput!
+  ): Column
+
+  """
+  Makes the column a tombstone. A column with live tasks gives COLUMN_NOT_EMPTY.
+  """
+  deleteColumn(
+    """The input object of the call. Its type tells what each field does."""
+    input: NodeReferenceInput!
+  ): Column
+
+  """Makes a tombstoned column live again. A live column does not change."""
+  undeleteColumn(
+    """The input object of the call. Its type tells what each field does."""
+    input: NodeReferenceInput!
+  ): Column
+
+  """Makes an actor. The input gives an id, a name, or both."""
+  addActor(
+    """
+    The input object of the call. Its type tells what each field does. No field is required, so the call can leave out the input.
+    """
+    input: AddActorInput
+  ): Actor
+
+  """Changes the name, the color, the avatar, or the body of an actor."""
+  updateActor(
+    """The input object of the call. Its type tells what each field does."""
+    input: UpdateActorInput!
+  ): Actor
+
+  """Makes the actor a tombstone."""
+  deleteActor(
+    """The input object of the call. Its type tells what each field does."""
+    input: NodeReferenceInput!
+  ): Actor
+
+  """Makes a tombstoned actor live again. A live actor does not change."""
+  undeleteActor(
+    """The input object of the call. Its type tells what each field does."""
+    input: NodeReferenceInput!
+  ): Actor
+
+  """
+  Makes a task. The task goes to the end of its column, unless the input gives an ordinal or a priority.
+  """
+  addTask(
+    """The input object of the call. Its type tells what each field does."""
+    input: AddTaskInput!
+  ): Task
+
+  """
+  Changes the given fields of a task. A list replaces the old list. A column moves the task to the end of that column.
+  """
+  updateTask(
+    """The input object of the call. Its type tells what each field does."""
+    input: UpdateTaskInput!
+  ): Task
+
+  """
+  Moves a task to a column and to a place in that column. No place puts the task at the end of the column. A board field that names a different board moves the task to that board.
+  """
+  moveTask(
+    """The input object of the call. Its type tells what each field does."""
+    input: MoveTaskInput!
+  ): Task
+
+  """Moves a task to the end of the terminal column."""
+  completeTask(
+    """The input object of the call. Its type tells what each field does."""
+    input: NodeReferenceInput!
+  ): Task
+
+  """Adds an actor to the assignees of a task."""
+  assignTask(
+    """The input object of the call. Its type tells what each field does."""
+    input: AssignTaskInput!
+  ): Task
+
+  """Removes an actor from the assignees of a task."""
+  unassignTask(
+    """The input object of the call. Its type tells what each field does."""
+    input: AssignTaskInput!
+  ): Task
+
+  """Adds tags to a task. A tag that the board does not have is made."""
+  tagTask(
+    """The input object of the call. Its type tells what each field does."""
+    input: TagTaskInput!
+  ): Task
+
+  """Removes tags from a task: the tag edges, and the #markers of the body."""
+  untagTask(
+    """The input object of the call. Its type tells what each field does."""
+    input: TagTaskInput!
+  ): Task
+
+  """Makes the task a tombstone."""
+  deleteTask(
+    """The input object of the call. Its type tells what each field does."""
+    input: NodeReferenceInput!
+  ): Task
+
+  """Makes a tombstoned task live again. A live task does not change."""
+  undeleteTask(
+    """The input object of the call. Its type tells what each field does."""
+    input: NodeReferenceInput!
+  ): Task
+
+  """
+  Copies a task to a column and to a place in that column, in the same board or in a different board. No board field copies the task in its board.
+  """
+  copyTask(
+    """The input object of the call. Its type tells what each field does."""
+    input: CopyTaskInput!
+  ): Task
+
+  """Adds a comment to a task."""
+  addComment(
+    """The input object of the call. Its type tells what each field does."""
+    input: AddCommentInput!
+  ): Comment
+
+  """Changes the body of a comment."""
+  updateComment(
+    """The input object of the call. Its type tells what each field does."""
+    input: UpdateCommentInput!
+  ): Comment
+
+  """Makes the comment a tombstone."""
+  deleteComment(
+    """The input object of the call. Its type tells what each field does."""
+    input: CommentReferenceInput!
+  ): Comment
+
+  """Makes a tombstoned comment live again. A live comment does not change."""
+  undeleteComment(
+    """The input object of the call. Its type tells what each field does."""
+    input: CommentReferenceInput!
+  ): Comment
+
+  """
+  Makes a tag. When the board has a tag with the slug, the call gives that tag, and makes it live again when it is a tombstone.
+  """
+  addTag(
+    """
+    The input object of the call. Its type tells what each field does. No field is required, so the call can leave out the input.
+    """
+    input: AddTagInput
+  ): Tag
+
+  """
+  Changes the name, the color, or the body of a tag. A name with a new slug renames the tag, the same as renameTag.
+  """
+  updateTag(
+    """The input object of the call. Its type tells what each field does."""
+    input: UpdateTagInput!
+  ): Tag
+
+  """Makes the tag a tombstone."""
+  deleteTag(
+    """The input object of the call. Its type tells what each field does."""
+    input: NodeReferenceInput!
+  ): Tag
+
+  """Makes a tombstoned tag live again. A live tag does not change."""
+  undeleteTag(
+    """The input object of the call. Its type tells what each field does."""
+    input: NodeReferenceInput!
+  ): Tag
+
+  """
+  Renames a tag. The old slug redirects to the new slug, so each task with the old tag shows the new tag. A new slug that a tag has already merges the two tags.
+  """
+  renameTag(
+    """The input object of the call. Its type tells what each field does."""
+    input: RenameTagInput!
+  ): Tag
+
+  """
+  Reverses a transaction: it writes the inverse of each change of the transaction. No txn reverses the newest transaction of the session actor that is not undone. A later change of the same properties gives UNDO_CONFLICT, unless force is true.
+  """
+  undo(
+    """
+    The input object of the call. Its type tells what each field does. No field is required, so the call can leave out the input.
+    """
+    input: UndoInput
+  ): Change
+
+  """
+  Reverses the undo of a transaction. No txn reverses the newest undo of the session actor.
+  """
+  redo(
+    """
+    The input object of the call. Its type tells what each field does. No field is required, so the call can leave out the input.
+    """
+    input: UndoInput
+  ): Change
+
+  """
+  Rewrites each OLD_NAME link of the boards to the current name of its board, and lists each OLD_NAME and DANGLING link. A DANGLING link does not change. One undo reverses the rewrite in each board.
+  """
+  repairLinks(
+    """
+    The boards whose links to rewrite. Each item is a board ref. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. No value, or an empty list, names the current board. The call writes to no other board, unless reach is true.
+    """
+    boards: [String!]
+
+    """
+    True also rewrites the links of each board that the scan reaches: the boards of Query.boards.
+    """
+    reach: Boolean
+
+    """True lists the same links and writes nothing."""
+    dryRun: Boolean
+  ): [LinkRepair!]
+
+  """
+  Combines the .kanban folders of the source boards into the target board, the same as a git union merge. Tasks and comments keep their ids. A column, a tag, or an actor with the same slug becomes one node, and the event order decides a field that two boards set. Each name of a source becomes an old name of the target, and the call removes each source .kanban folder. The call rewrites each OLD_NAME link of the target to the current name. Undo does not reverse the call. A board of the old Rust kanban gives INCOMPATIBLE_BOARD and the call writes nothing.
+  """
+  collectBoards(
+    """
+    The boards to combine into the target. Each item is a folder that holds a .kanban folder (also a subfolder of a git repo), or a board ref. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. A source that is the target is left out.
+    """
+    sources: [String!]
+
+    """
+    The board that gets the sources: a board ref. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. No value names the current board. A target with no board gets a new board with a new board ID. In a git repo, the target is the top folder of the repo.
+    """
+    target: String
+
+    """
+    True also rewrites each link of a different board that the scan reaches and that names a source: the link then names the target. With no value, the call only lists these links in otherLinks.
+    """
+    reach: Boolean
+
+    """
+    True lists the slug merges, the conflicts, and the link repairs, and writes nothing.
+    """
+    dryRun: Boolean
+  ): CollectBoardsResult
+}
+
+type Subscription {
+  """
+  Sends one Change for each transaction that changes the board: a call of this tool, or a change that a different process, git pull, or a merge writes. A Change with no update after the filter is not sent. The same type as Board.history, so a client can read history(since:) and then subscribe with the same filter.
+  """
+  changes(
+    """
+    The board to observe. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. No value observes the current board.
+    """
+    board: String
+
+    """
+    The filter of the updates. An update stays when its node matches. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter keeps the updates of the live nodes.
+    """
+    filter: String
+  ): Change!
+}

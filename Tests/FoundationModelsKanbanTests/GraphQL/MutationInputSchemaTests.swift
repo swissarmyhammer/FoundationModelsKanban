@@ -62,7 +62,7 @@ struct MutationInputSchemaTests {
     }
 
     @Test("The schema SDL shows the input of addTag as optional")
-    func addTagInputIsOptionalInSDL() {
-        #expect(KanbanGraph.schemaSDL.contains("  addTag(input: AddTagInput): Tag\n"))
+    func addTagInputIsOptionalInSDL() throws {
+        #expect(try SDLSignatures.ofPublicSchema().contains("addTag(input: AddTagInput): Tag"))
     }
 }

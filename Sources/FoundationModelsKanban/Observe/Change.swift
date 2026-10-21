@@ -5,6 +5,16 @@ import Graphiti
 
 // MARK: - Enums
 
+/// A Swift enum that the public schema shows as a GraphQL enum type, with the descriptions that introspection gives
+/// (EXTRAS-9 rule 11). The raw value of each case is the GraphQL name of its value.
+protocol DescribedGraphQLEnum: CaseIterable, Encodable, RawRepresentable, Sendable where RawValue == String {
+    /// The description of the enum type.
+    static var typeDescription: String { get }
+
+    /// The description of the GraphQL value of this case.
+    var valueDescription: String { get }
+}
+
 /// The type of a node in a ``NodeUpdate``: the GraphQL `NodeType` enum (plan.md §4.1).
 enum NodeType: String, Codable, Sendable, CaseIterable {
     /// The board.
@@ -53,6 +63,38 @@ enum UpdateKind: String, Codable, Sendable, CaseIterable {
 
     /// The transaction removed the tombstone of the node (`delete: false`).
     case restored = "RESTORED"
+}
+
+extension NodeType: DescribedGraphQLEnum {
+    /// The description of the `NodeType` enum.
+    static let typeDescription = "The type of a node."
+
+    /// The description of the value of this case.
+    var valueDescription: String {
+        switch self {
+        case .board: "The board."
+        case .column: "A column of the board."
+        case .task: "A task."
+        case .tag: "A tag."
+        case .actor: "An actor: a person or an agent that works on tasks."
+        case .comment: "A comment on a task."
+        }
+    }
+}
+
+extension UpdateKind: DescribedGraphQLEnum {
+    /// The description of the `UpdateKind` enum.
+    static let typeDescription = "How a transaction changed a node."
+
+    /// The description of the value of this case.
+    var valueDescription: String {
+        switch self {
+        case .created: "The transaction made the node."
+        case .updated: "The transaction changed fields of the node, also derived fields."
+        case .deleted: "The transaction deleted the node: the node is a tombstone now."
+        case .restored: "The transaction undeleted the node: the node is live again."
+        }
+    }
 }
 
 // MARK: - Field change
@@ -242,45 +284,51 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             Self.enumType(NodeType.self)
             Self.enumType(UpdateKind.self)
             Type(Change.self) {
-                Field("txn", at: \.txn)
-                Field("at", at: \.at)
-                Field("actor", at: Change.actor)
-                Field("ops", at: \.ops)
-                Field("boards", at: \.boards)
-                Field("undone", at: \.undone)
-                Field("undoes", at: \.undoes)
+                Field("txn", at: \.txn).description(SchemaDescription.changeTxn)
+                Field("at", at: \.at).description(SchemaDescription.changeAt)
+                Field("actor", at: Change.actor).description(SchemaDescription.changeActor)
+                Field("ops", at: \.ops).description(SchemaDescription.changeOps)
+                Field("boards", at: \.boards).description(SchemaDescription.changeBoards)
+                Field("undone", at: \.undone).description(SchemaDescription.changeUndone)
+                Field("undoes", at: \.undoes).description(SchemaDescription.changeUndoes)
                 Field("updates", at: Change.updates) {
                     Argument("filter", at: \.filter).description(SchemaDescription.updateFilter)
                 }
+                .description(SchemaDescription.changeUpdates)
             }
+            .description(SchemaDescription.change)
             Type(NodeUpdate.self) {
-                Field("id", at: \.id)
-                Field("type", at: \.type)
-                Field("kind", at: \.kind)
-                Field("fields", at: \.fields)
-                Field("node", at: NodeUpdate.node)
+                Field("id", at: \.id).description(SchemaDescription.nodeUpdateID)
+                Field("type", at: \.type).description(SchemaDescription.nodeUpdateType)
+                Field("kind", at: \.kind).description(SchemaDescription.nodeUpdateKind)
+                Field("fields", at: \.fields).description(SchemaDescription.nodeUpdateFields)
+                Field("node", at: NodeUpdate.node).description(SchemaDescription.nodeUpdateNode)
             }
+            .description(SchemaDescription.nodeUpdate)
             Type(FieldChange.self) {
-                Field("name", at: \.name)
-                Field("before", at: \.before)
-                Field("after", at: \.after)
-                Field("added", at: \.added)
-                Field("removed", at: \.removed)
-                Field("diff", at: \.diff)
+                Field("name", at: \.name).description(SchemaDescription.fieldChangeName)
+                Field("before", at: \.before).description(SchemaDescription.fieldChangeBefore)
+                Field("after", at: \.after).description(SchemaDescription.fieldChangeAfter)
+                Field("added", at: \.added).description(SchemaDescription.fieldChangeAdded)
+                Field("removed", at: \.removed).description(SchemaDescription.fieldChangeRemoved)
+                Field("diff", at: \.diff).description(SchemaDescription.fieldChangeDiff)
             }
+            .description(SchemaDescription.fieldChange)
         }
     }
 
-    /// Makes a GraphQL enum type with one value for each case of a Swift enum.
+    /// Makes a GraphQL enum type with one value for each case of a Swift enum, with the description of the type and
+    /// of each value.
     ///
     /// - Parameter type: The Swift enum. The raw value of each case is the GraphQL name of the value.
     /// - Returns: The enum type.
-    static func enumType<Cases: CaseIterable & Encodable & RawRepresentable>(
+    static func enumType<Cases: DescribedGraphQLEnum>(
         _ type: Cases.Type
-    ) -> Graphiti.Enum<KanbanResolver, KanbanContext, Cases> where Cases.RawValue == String {
+    ) -> Graphiti.Enum<KanbanResolver, KanbanContext, Cases> {
         Graphiti.Enum(type) {
             // The explicit `return` turns off the result builder, so the closure gives the array as it is.
-            return type.allCases.map(Value.init)
+            return type.allCases.map { value in Value(value).description(value.valueDescription) }
         }
+        .description(type.typeDescription)
     }
 }

@@ -55,6 +55,7 @@ extension SchemaBuilder {
                 parseValue: PriorityValue.parseValue,
                 parseLiteral: PriorityValue.parseLiteral
             )
+            .description(SchemaDescription.priority)
         }
     }
 }

@@ -666,30 +666,36 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     func addTaskMutations() -> Self {
         add {
             Input(AddTaskInput.self) {
-                InputField("title", at: \.title)
-                InputField("body", at: \.body)
-                InputField("column", at: \.column)
-                InputField("ordinal", at: \.ordinal)
-                InputField("assignees", at: \.assignees)
-                InputField("tags", at: \.tags)
+                InputField("title", at: \.title).description(SchemaDescription.taskTitle)
+                InputField("body", at: \.body).description(SchemaDescription.newNodeBody)
+                InputField("column", at: \.column).description(SchemaDescription.newTaskColumn)
+                InputField("ordinal", at: \.ordinal).description(SchemaDescription.newTaskOrdinal)
+                InputField("assignees", at: \.assignees).description(SchemaDescription.newTaskAssignees)
+                InputField("tags", at: \.tags).description(SchemaDescription.newTaskTags)
                 InputField("dependsOn", at: \.dependsOn).description(SchemaDescription.addTaskDependsOn)
                 InputField("board", at: \.board).description(SchemaDescription.boardToChange)
                 InputField("priority", at: \.priority).description(SchemaDescription.taskPriority)
             }
+            .description(SchemaDescription.addTaskInput)
             Input(UpdateTaskInput.self) {
-                InputField("id", at: \.id)
-                InputField("title", at: \.title.value)
-                InputField("body", at: \.body.value)
-                InputField("assignees", at: \.assignees.value)
-                InputField("tags", at: \.tags.value)
+                InputField("id", at: \.id).description(SchemaDescription.taskReference)
+                InputField("title", at: \.title.value).description(SchemaDescription.changedTaskTitle)
+                InputField("body", at: \.body.value).description(SchemaDescription.changedBody)
+                InputField("assignees", at: \.assignees.value).description(SchemaDescription.changedTaskAssignees)
+                InputField("tags", at: \.tags.value).description(SchemaDescription.changedTaskTags)
                 InputField("dependsOn", at: \.dependsOn.value).description(SchemaDescription.updateTaskDependsOn)
                 InputField("column", at: \.column).description(SchemaDescription.updateTaskColumn)
                 InputField("priority", at: \.priority).description(SchemaDescription.taskPriority)
             }
+            .description(SchemaDescription.updateTaskInput)
         }
         .addMutation {
-            Field(MutationName.addTask, at: KanbanResolver.addTask) { Argument("input", at: \.input) }
-            Field(MutationName.updateTask, at: KanbanResolver.updateTask) { Argument("input", at: \.input) }
+            Self.mutationField(MutationName.addTask, at: KanbanResolver.addTask, description: SchemaDescription.addTask)
+            Self.mutationField(
+                MutationName.updateTask,
+                at: KanbanResolver.updateTask,
+                description: SchemaDescription.updateTask
+            )
         }
     }
 }

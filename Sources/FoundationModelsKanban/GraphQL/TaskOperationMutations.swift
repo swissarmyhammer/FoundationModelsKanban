@@ -620,25 +620,55 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     /// - Returns: This builder, for method chaining.
     func addTaskOperationMutations() -> Self {
         add {
-            Input(MoveTaskInput.self, Self.placementFields)
+            Input(MoveTaskInput.self, Self.placementFields).description(SchemaDescription.moveTaskInput)
             Input(AssignTaskInput.self) {
-                InputField("id", at: \.id)
-                InputField("actor", at: \.actor)
+                InputField("id", at: \.id).description(SchemaDescription.taskReference)
+                InputField("actor", at: \.actor).description(SchemaDescription.actorReference)
             }
+            .description(SchemaDescription.assignTaskInput)
             Input(TagTaskInput.self) {
-                InputField("id", at: \.id)
-                InputField("tags", at: \.tags)
+                InputField("id", at: \.id).description(SchemaDescription.taskReference)
+                InputField("tags", at: \.tags).description(SchemaDescription.tagTaskTags)
             }
+            .description(SchemaDescription.tagTaskInput)
         }
         .addMutation {
-            Field(MutationName.moveTask, at: KanbanResolver.moveTask) { Argument("input", at: \.input) }
-            Field(MutationName.completeTask, at: KanbanResolver.completeTask) { Argument("input", at: \.input) }
-            Field(MutationName.assignTask, at: KanbanResolver.assignTask) { Argument("input", at: \.input) }
-            Field(MutationName.unassignTask, at: KanbanResolver.unassignTask) { Argument("input", at: \.input) }
-            Field(MutationName.tagTask, at: KanbanResolver.tagTask) { Argument("input", at: \.input) }
-            Field(MutationName.untagTask, at: KanbanResolver.untagTask) { Argument("input", at: \.input) }
-            Field(MutationName.deleteTask, at: KanbanResolver.deleteTask) { Argument("input", at: \.input) }
-            Field(MutationName.undeleteTask, at: KanbanResolver.undeleteTask) { Argument("input", at: \.input) }
+            Self.mutationField(
+                MutationName.moveTask,
+                at: KanbanResolver.moveTask,
+                description: SchemaDescription.moveTask
+            )
+            Self.mutationField(
+                MutationName.completeTask,
+                at: KanbanResolver.completeTask,
+                description: SchemaDescription.completeTask
+            )
+            Self.mutationField(
+                MutationName.assignTask,
+                at: KanbanResolver.assignTask,
+                description: SchemaDescription.assignTask
+            )
+            Self.mutationField(
+                MutationName.unassignTask,
+                at: KanbanResolver.unassignTask,
+                description: SchemaDescription.unassignTask
+            )
+            Self.mutationField(MutationName.tagTask, at: KanbanResolver.tagTask, description: SchemaDescription.tagTask)
+            Self.mutationField(
+                MutationName.untagTask,
+                at: KanbanResolver.untagTask,
+                description: SchemaDescription.untagTask
+            )
+            Self.mutationField(
+                MutationName.deleteTask,
+                at: KanbanResolver.deleteTask,
+                description: SchemaDescription.deleteTask
+            )
+            Self.mutationField(
+                MutationName.undeleteTask,
+                at: KanbanResolver.undeleteTask,
+                description: SchemaDescription.undeleteTask
+            )
         }
     }
 }

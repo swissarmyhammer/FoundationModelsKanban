@@ -8,7 +8,7 @@ import ULID
 /// Rust-only path is incompatible: the engine reads none of its files, writes none, makes no new board in it, and
 /// each call that opens it gives `INCOMPATIBLE_BOARD`. This is true for the current board and for each related board.
 /// The one exception is the list of `Query.boards`: it leaves out a related Rust board, does not load it, and gives a
-/// `BOARD_INCOMPATIBLE` warning. Only a call that names the board stops.
+/// `INCOMPATIBLE_BOARD` warning, the same code as the error. Only a call that names the board stops.
 ///
 /// Each fixture is in a temporary folder. No test reads or changes the `.kanban/` directory of this repo.
 @Suite("Incompatible Rust board", .watcherBudget)
@@ -55,7 +55,7 @@ struct IncompatibleBoardTests {
     static let repoFileName = "README.md"
 
     /// The code of the warning of a related Rust board that the list of `Query.boards` leaves out (divergence.md Q6).
-    static let listedWarningCode = "BOARD_INCOMPATIBLE"
+    static let listedWarningCode = "INCOMPATIBLE_BOARD"
 
     /// The query of the path of each board of `Query.boards`.
     static let boardsQuery = "{ boards { path } }"

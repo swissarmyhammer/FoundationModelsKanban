@@ -84,10 +84,26 @@ comments:
     - note: the first `swift test` was started in parallel with the IntegrationTests build and hung for 1800s at 0% CPU. I killed it and reran the suite alone, which passed in 31s.
     - next: review
   timestamp: 2026-10-21T13:42:55.765561+00:00
+- actor: claude-code
+  id: 01m5fbeayccxde22rs4j364dqc
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (0595b1f): 0 findings, 0 confirmed, 1 refuted; 7 files reviewed, 3 not reviewed (.kanban/ by .reviewignore, plan.md has no validator). All 6 findings of the 2026-10-21 07:48 pass are checked and checked against the code: Schema.swift uses `singleItemField` for task/column/actor/tag (2 duplication findings); KanbanEndpointTests.swift parameterizes subscribeMatchesDirectCall and failingSubscribeMatchesDirectCall over `userViewers` (nil, userDevice); QueryResolvers.swift resolves Board.task/column/actor/tag through `BoardView.matchingObject`, which gives nil for notFound and keeps AMBIGUOUS_ID, and `object(for:ofType:)` stays throwing for mutations; SchemaDescription.swift `singleItem` says "Null, with no error"; SingleItemFieldTests.swift `unknownIDGivesNull` asserts null with no errors for each field, and the file adds a root-field case and an AMBIGUOUS_ID case.
+    - next: none. The task is in done.
+  timestamp: 2026-10-21T13:47:05.036289+00:00
+- actor: claude-code
+  id: 01m5fbes9n74nhpegg76vf0kjr
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 8 files, 6/6 findings fixed (singleItemField helper, null for unknown id, viewer coverage)
+    - test: green — swift test 1724 / 143; IntegrationTests build ok
+    - commit: 0595b1f
+    - review: clean — 0 findings
+  timestamp: 2026-10-21T13:47:19.733352+00:00
 depends_on:
 - 01M5F234JM2BZEQ1TDMJK3FC4G
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffaa80
 title: 'KANBAN-5: KanbanGraph conforms to GraphQLEndpoint and KanbanTool to GraphQLEndpointTool'
 ---
 ## What
