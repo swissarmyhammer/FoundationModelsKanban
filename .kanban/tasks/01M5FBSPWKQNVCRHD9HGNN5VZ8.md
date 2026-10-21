@@ -1,6 +1,14 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m5g4wext826wb5tpw8378gfx
+  text: |-
+    ### finish iteration 1 — stuck
+    - Not started: both options in the task need a human decision. (a) New FoundationModelsExtras features (type-name aliases in variable definitions, argument-to-input move, empty-input default) — work in another repo. (b) Bump the endpoint version (EXTRAS-9 rule 1) and break callers with no alias. /finish will not pick either on its own.
+    - next: a human chooses (a) or (b); then /finish ^gnn5vz8.
+  timestamp: 2026-10-21T21:11:42.266343+00:00
 position_column: todo
 position_ordinal: '8580'
 title: 'EXTRAS-9 rule 7: give each mutation the form verbNoun(input: VerbNounInput!)'

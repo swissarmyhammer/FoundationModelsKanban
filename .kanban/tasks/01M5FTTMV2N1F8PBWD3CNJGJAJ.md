@@ -38,8 +38,24 @@ comments:
     - evidence: `swift package clean && swift build` completed with no warnings from this package (only the ignored mlx-swift "missing creator" warning, plus -Wc++17-extensions warnings from the mlx-swift checkout Metal headers, which are third-party). `swift test` run 3 times in a row, each exit 0, no hang: 1750 tests in 146 suites passed (26.8s, 26.2s, 27.6s), 0 failed, 0 skipped. `swift build --build-tests` in IntegrationTests/ completed (Build complete, no warnings besides the ignored creator one) with the changed PublicSchema API and noExtension removed.
     - next: no code changes were needed; nothing committed. Ready for review.
   timestamp: 2026-10-21T21:08:44.278613+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5g4w00apzwxc8fgqcf1w2qp
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (8b9fc97): 0 findings, 0 confirmed, 0 refuted; 7 files reviewed, 0 failed; 4 .kanban/ files excluded by .reviewignore
+    - next: none, task moved to done
+  timestamp: 2026-10-21T21:11:26.986544+00:00
+- actor: claude-code
+  id: 01m5g4w80yzh34emvz0yf9xdrj
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — SchemaBuildGate, shared PublicSchema/PatchSchema, SchemaBuildConcurrencyTests (7 files)
+    - test: green — clean build, swift test x3 1750 tests / 146 suites, no hang; IntegrationTests build-tests
+    - commit: 8b9fc97
+    - review: clean — 0 findings, task moved to done
+  timestamp: 2026-10-21T21:11:35.198864+00:00
+position_column: done
+position_ordinal: ffad80
 title: 'Fix the intermittent swift test hang: GraphQL schema builds deadlock on Definition.swift dispatch queues'
 ---
 ## What
