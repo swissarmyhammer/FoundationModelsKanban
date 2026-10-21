@@ -32,8 +32,23 @@ comments:
 
     This fix fully resolves the flake: the source engines are empty before the call gives back their gates, so the watcher timing no longer matters.
   timestamp: 2026-10-21T20:00:25.993767+00:00
-position_column: todo
-position_ordinal: '8880'
+- actor: claude-code
+  id: 01m5g1w2n8xzeatwd18pd9ayeg
+  text: |-
+    Verification pass on HEAD 8f19fda. No source or test change was needed; only the checkboxes were ticked.
+
+    - Root cause (item 1): recorded in the earlier comment. Partial watcher batch during the source `.kanban/` removal left a stale source session, so undo picked txn ...0001 and hit X6 UNDO_CONFLICT. The fix (`BoardStore.addToCommit(loadedBoardsAt:)` + `CommitSession.applyRemoval(of:to:)`) holds each source gate during removal and empties each source engine before the gates are released.
+    - Determinism (item 2): `collectEmptiesEngineOfEachSource` forces the watcher timing (QuietFolderEvents, so no watcher batch ever arrives) and asserts that each source engine holds no event after collect. I checked RED myself: with the `addToCommit` and `applyRemoval` calls commented out, the test failed with 2 issues (`first.isEmpty`, `second.isEmpty` at CollectBoardsTests.swift:350/351). After restoring with `git checkout`, it passes.
+    - The test was not weakened: `git diff 91c116c HEAD` on CollectBoardsTests.swift has no removed lines, and `undoDoesNotReverseCollect` is unchanged.
+    - Stress: 25 of 25 fresh-process runs of `swift test --skip-build --filter CollectBoardsTests` passed, each with 17 tests in 1 suite, in 0.83 to 2.52 s.
+    - The only build warning is `missing creator for mutated node ... mlx-swift_Cmlx.bundle`. It comes from the SwiftPM build system for the mlx-swift dependency, not from project code.
+
+    ### implement — changed
+    - evidence: .kanban/tasks/01M5FVECC10NX6X5VCAGSQJXB8.md (checkboxes ticked); `swift test --skip-build --filter CollectBoardsTests` 25/25 passed; regression test RED without fix (2 issues), GREEN with fix
+    - next: /review
+  timestamp: 2026-10-21T20:19:03.976414+00:00
+position_column: doing
+position_ordinal: '80'
 title: 'Flaky: CollectBoardsTests "undo does not reverse collectBoards" gets UNDO_CONFLICT under full-suite load'
 ---
 ## What
@@ -48,5 +63,5 @@ The test took 8.3 s in that run, and about 0.7 s for the whole suite when it run
 Unverified hypothesis: an undo with no `txn` searches the current board and every loaded related board (`UndoMutations.searchedBoards` → `loadedTargets`). The `collectBoards` barrier (`UndoLog.target`, `transactions.last(where: \.isFinal)`) lives only in the target's log. When a source board engine is still loaded with its pre-collect session after the collect, the source's own transaction `...0001` (from `KanbanGraphTests.mutationIDs`, same actor) is a candidate there, and the undo then hits the later transaction of the second source (`GitGraphFixture.secondEngineIDs`). Find out why the source boards are normally not searched after the collect, and what timing lets them be searched.
 
 ## Acceptance Criteria
-- [ ] Root cause found and recorded
-- [ ] The test passes deterministically (a test forces the timing that made it fail)
+- [x] Root cause found and recorded
+- [x] The test passes deterministically (a test forces the timing that made it fail)
