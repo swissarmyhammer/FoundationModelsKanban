@@ -112,12 +112,12 @@ extension FieldUpdate where Value == String {
 
 // MARK: - Shared input fields
 
-/// An `input` object with a `board` field that names the board to change: the input of a mutation that makes a node,
-/// of `renameTag`, and of `initBoard` and `updateBoard`. ``SchemaBuilder/makeTargetBoardField()`` gives the schema of
-/// the field.
+/// An `input` object with a `board` field that names the board to change: the input of `addColumn`, `addActor`,
+/// `addTask`, `addTag`, `renameTag`, `initBoard`, and `updateBoard`. ``SchemaBuilder/makeTargetBoardField()`` gives
+/// the schema of the field.
 protocol TargetBoardInput: Decodable, Sendable {
     /// The board to change: a board key, a repo directory name, or a path, or `nil` for the current board (plan.md
-    /// §6.6).
+    /// §6.6). For `renameTag`, a full URI in `from` names the board, and this field is ignored.
     var board: String? { get }
 }
 
@@ -145,7 +145,8 @@ protocol ChangedNameInput: Decodable, Sendable {
 /// An `input` object with the `color` field of an actor or a tag that the mutation changes.
 /// ``SchemaBuilder/makeChangedColorField()`` gives the schema of the field.
 protocol ChangedColorInput: Decodable, Sendable {
-    /// The new color. `null` clears the color.
+    /// The new color. `null` clears the stored color: an actor then has no color, and a tag shows the auto color of
+    /// its slug.
     var color: FieldUpdate<String> { get }
 }
 

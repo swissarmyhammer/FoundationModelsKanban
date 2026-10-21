@@ -440,7 +440,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     /// - Returns: The fields `id`, `column`, `ordinal`, `before`, `after`, and `board`.
     @InputFieldComponentBuilder<Placed, KanbanContext>
     static func placementFields<Placed: TaskPlacementInput>() -> [InputFieldComponent<Placed, KanbanContext>] {
-        makeTaskReferenceField()
+        Self.makeTaskReferenceField()
         InputField("column", at: \.column).description(SchemaDescription.placementColumn)
         InputField("ordinal", at: \.ordinal).description(SchemaDescription.placementOrdinal)
         InputField("before", at: \.before).description(SchemaDescription.placementBefore)

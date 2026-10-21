@@ -30,9 +30,9 @@ extension SchemaDescription {
 
     /// The `Query.boards` field (``BoardLocator/places(around:)``).
     static let queryBoards = """
-        Each board that the scan finds, with its path, in scan order: each repo one level down in the parent folder \
-        of the current repo, the current repo included, then in each search root of the config. A board that cannot \
-        be read is not in the list, and the response gives a warning that names it.
+        Each board that the scan finds, with its path, in scan order: each repo or board folder one level down in the \
+        parent folder of the current repo, the current repo included, then in each search root of the config. A \
+        board that cannot be read is not in the list, and the response gives a warning that names it.
         """
 
     /// The `enabled` argument of `Query.boards`.
@@ -334,8 +334,8 @@ extension SchemaDescription {
 
     /// The `SearchSignals.cosine` field.
     static let signalCosine = """
-        The embedding cosine score: the match of the meaning. Null when the search gives no cosine score, for example \
-        with no embedder.
+        The embedding cosine score: the match of the meaning. Null when the keyword searcher ranked the hit: the \
+        search has no embedder, or the embeddings of the newest task list are not done yet.
         """
 
     // MARK: - Scalars

@@ -583,7 +583,7 @@ type SearchSignals {
   trigram: Float!
 
   """
-  The embedding cosine score: the match of the meaning. Null when the search gives no cosine score, for example with no embedder.
+  The embedding cosine score: the match of the meaning. Null when the keyword searcher ranked the hit: the search has no embedder, or the embeddings of the newest task list are not done yet.
   """
   cosine: Float
 }
@@ -625,7 +625,7 @@ enum UpdateKind {
 }
 
 """
-One transaction. It has an update for each node that the transaction wrote, and for each other live node whose tracked fields changed (see NodeUpdate.fields). When one batch of Subscription.changes holds several transactions, a node has one update only: in the last transaction of the batch that wrote the node, else in the last transaction of the batch.
+One transaction. A transaction of this board has an update for each node that the transaction wrote, and for each other live node whose tracked fields changed (see NodeUpdate.fields). In Subscription.changes, a transaction of a different board gives a Change with the updates of the live nodes of this board whose tracked fields changed, and of each live task whose assignee is an actor that the transaction wrote, also when no field of the task changed. When one batch of Subscription.changes holds several transactions, a node has one update only: in the last transaction of the batch that wrote the node, else in the last transaction of the batch.
 """
 type Change {
   """
@@ -836,7 +836,7 @@ input AddColumnInput {
 }
 
 """
-The fields of updateColumn. A field that is not set does not change. Null clears the order or the body; null for the name gives no change and a warning.
+The fields of updateColumn. A field that is not set does not change. Null for the order gives the order 0; null clears the body; null for the name gives no change and a warning.
 """
 input UpdateColumnInput {
   """
@@ -1188,7 +1188,7 @@ input UpdateTagInput {
 """The fields of renameTag."""
 input RenameTagInput {
   """
-  The tag to rename: a full URI, the stored form tag/<slug>, the slug, or a tag name. A renamed slug names the tag that it redirects to.
+  The tag to rename: a full URI, the stored form tag/<slug>, the slug, or a tag name. A renamed slug names the tag that it redirects to. A full URI names the board, and the board field is then ignored.
   """
   from: ID!
 
@@ -1363,7 +1363,7 @@ type Query {
   ): [Node!]
 
   """
-  Each board that the scan finds, with its path, in scan order: each repo one level down in the parent folder of the current repo, the current repo included, then in each search root of the config. A board that cannot be read is not in the list, and the response gives a warning that names it.
+  Each board that the scan finds, with its path, in scan order: each repo or board folder one level down in the parent folder of the current repo, the current repo included, then in each search root of the config. A board that cannot be read is not in the list, and the response gives a warning that names it.
   """
   boards(
     """

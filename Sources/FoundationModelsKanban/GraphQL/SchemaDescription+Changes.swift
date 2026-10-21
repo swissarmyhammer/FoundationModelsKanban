@@ -5,10 +5,13 @@ extension SchemaDescription {
 
     /// The `Change` type (``ChangeBuilder``).
     static let change = """
-        One transaction. It has an update for each node that the transaction wrote, and for each other live node \
-        whose tracked fields changed (see NodeUpdate.fields). When one batch of Subscription.changes holds several \
-        transactions, a node has one update only: in the last transaction of the batch that wrote the node, else \
-        in the last transaction of the batch.
+        One transaction. A transaction of this board has an update for each node that the transaction wrote, \
+        and for each other live node whose tracked fields changed (see NodeUpdate.fields). In \
+        Subscription.changes, a transaction of a different board gives a Change with the updates of the live \
+        nodes of this board whose tracked fields changed, and of each live task whose assignee is an actor that \
+        the transaction wrote, also when no field of the task changed. When one batch of Subscription.changes \
+        holds several transactions, a node has one update only: in the last transaction of the batch that wrote \
+        the node, else in the last transaction of the batch.
         """
 
     /// The `Change.txn` field (``UndoLog/target(of:named:by:)``).

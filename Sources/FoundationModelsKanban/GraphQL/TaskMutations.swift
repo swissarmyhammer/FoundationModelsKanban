@@ -249,7 +249,8 @@ extension KanbanContext {
 extension RefResolver {
     /// Changes the forgiving refs of the assignees to the local refs of live actors (plan.md §6, "Assignees").
     ///
-    /// - Parameter ids: The refs as the caller wrote them.
+    /// - Parameter ids: The refs as the caller wrote them, each in a form that
+    ///   ``actorRef(for:includingTombstones:)`` accepts.
     /// - Returns: The stored refs.
     /// - Throws: ``KanbanError/actorNotFound(reference:)`` when a ref names no live actor.
     fileprivate func actorRefs(for ids: [NodeID]) throws -> [StoredRef] {
@@ -259,7 +260,8 @@ extension RefResolver {
     /// Changes the forgiving ref of one actor to the local ref of the actor.
     ///
     /// - Parameters:
-    ///   - id: The ref as the caller wrote it: a full URI or the slug.
+    ///   - id: The ref as the caller wrote it: a full URI, the stored form `actor/<slug>`, the slug, or a name that
+    ///     gives the slug.
     ///   - includesTombstones: `true` when the ref can name a tombstoned actor.
     /// - Returns: The local ref of the actor.
     /// - Throws: ``KanbanError/actorNotFound(reference:)`` when the ref names no actor that the lookup accepts.

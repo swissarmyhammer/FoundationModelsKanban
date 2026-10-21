@@ -161,6 +161,52 @@ comments:
     - evidence: `swift test` — 1728 tests in 144 suites passed, 0 failed, 0 skipped; `swift build --build-tests` in IntegrationTests/ — Build complete, exit 0. No package-code warnings; the only compiler warning is third-party (mlx-swift_Cmlx.bundle "missing creator for mutated node").
     - next: review
   timestamp: 2026-10-21T15:15:04.516046+00:00
+- actor: claude-code
+  id: 01m5fgwe2avpmknawp6qn1j1y7
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` on db30d62: 1 finding (1 confirmed, 0 refuted) — TaskTransferMutations.swift:443. Prior-finding check: 16 of 17 fixed; actorRef doc comment not fixed — TaskMutations.swift:262. Description check of db30d62: 82 checked, 6 wrong — MutationResolvers.swift:115, MutationResolvers.swift:148, SchemaDescription+Changes.swift:8, SchemaDescription+Mutations.swift:275, SchemaDescription+Types.swift:33, SchemaDescription+Types.swift:337. EndpointConventionTests pass (golden SDL matches). Older descriptions left to 01M5FFBDY50R40FT79XDD9G87W.
+    - next: fix the 8 open items in the 10:15 sections, re-record Tests/Fixtures/kanban.graphql, commit, and review again.
+  timestamp: 2026-10-21T15:22:09.866565+00:00
+- actor: claude-code
+  id: 01m5fgx3psjsx2y3fkjh48qwcz
+  text: |-
+    ### finish iteration 3 — findings
+    - implement: changed — 13 files, 17/17 findings worked, field factories, descriptions traced and simplified
+    - test: green — swift test 1728 / 144; IntegrationTests build ok
+    - commit: db30d62
+    - review: findings — TaskTransferMutations.swift:443, TaskMutations.swift:262, MutationResolvers.swift:115, MutationResolvers.swift:148, SchemaDescription+Changes.swift:8, SchemaDescription+Mutations.swift:275, SchemaDescription+Types.swift:33, SchemaDescription+Types.swift:337
+  timestamp: 2026-10-21T15:22:32.025445+00:00
+- actor: claude-code
+  id: 01m5fh86kd998z9r174dn3sp4b
+  text: |-
+    ### research + implement (review round 4)
+    Traced each of the 8 open items before writing:
+    - make…Field call sites: only placementFields (TaskTransferMutations.swift) lacked `Self.`; every other call site already used it. Fixed.
+    - actorRef: `nodeRef(for:ofType: .actor)` -> `storedRef` -> RefText sorts a full URI, the stored form `<type>/<id>`, or a short form; `candidateRef` for .actor uses `Slug.normalizedText(of: key)`, so a name that gives the slug works. Doc comment now lists all four forms; `actorRefs` points at actorRef for the forms. Sibling refs in TaskMutations.swift checked: `UpdateTaskInput.column` ("a full URI, the slug, or a name") is right as is: `columnRef(forMoveTo:)` slugs any non-URI text first (`Slug(columnOrActorName:)`), so `column/x` is not read as the stored form. Task refs ("a full URI or a short form") match the schema taskReference text and were left alone.
+    - TargetBoardInput: conformers are AddColumnInput, AddActorInput, AddTaskInput, AddTagInput, RenameTagInput, BoardInput (initBoard/updateBoard). renameTag uses `MutationBoard.holding(input.from, orNamed: input.board)`; `reference` takes the board key of a parsed URI first. Doc comment fixed; the same rule also added to the schema `renameFrom` description, so the SDL says it too.
+    - ChangedColorInput.color: `TagNode.resolvedColor` = `color ?? AutoColor.color(forText: slug)`; actor color is `state.color` (optional). Doc comment fixed.
+    - Change: `ChangeRound.changes(of:atPath:)` -> `changesOfOtherBoards` -> `ChangeBuilder.changesOfOtherBoards(ofBatch:)` with `tasks(assignedToActorsPatchedBy:)` (live tasks only, kept with keepingNoFieldChange: true); derived updates skip tombstones. Description now scopes the first rule to a transaction of this board and adds the other-board rule; the batch rule is kept.
+    - UpdateColumnInput: `input.order.map(PatchValue.integer)` unsets order; Replay reads `removeInteger(forKey: order) ?? 0`. Schema text and the Swift doc comments (type and `order` property) now say null gives the order 0.
+    - Query.boards: `isCandidate` = `.git` entry or an existing board directory. Text says "repo or board folder".
+    - SearchSignals.cosine: `matchesOfNewestCatalog` returns nil until the loop is idle on the newest catalog; then `hasCosine` is false and cosine is nil. Text says so.
+    - Not touched (task 01M5FFBDY50R40FT79XDD9G87W): linkStatus, linkTarget, collectResultRepairs, collectResultOtherLinks, VirtualTag.explanation.
+    - Golden re-recorded with `GRAPHQL_GOLDEN_RECORD=1 swift test --filter EndpointConventionTests` (4 passed); the SDL diff is description lines only.
+  timestamp: 2026-10-21T15:28:35.437195+00:00
+- actor: claude-code
+  id: 01m5fh894356syvrzkz6wb4a6j
+  text: |-
+    ### implement — changed
+    - evidence: 8 files — Sources/FoundationModelsKanban/GraphQL/TaskTransferMutations.swift, TaskMutations.swift, MutationResolvers.swift, ColumnActorMutations.swift, SchemaDescription+Changes.swift, SchemaDescription+Mutations.swift, SchemaDescription+Types.swift, Tests/Fixtures/kanban.graphql. `swift test`: 1728 tests in 144 suites passed, exit 0; the only build warning is the third-party "missing creator for mutated node … mlx-swift_Cmlx.bundle", no package-code warnings. All 8 items of the two 10:15 sections are checked. Not committed; task in doing.
+    - next: /review
+  timestamp: 2026-10-21T15:28:38.019862+00:00
+- actor: claude-code
+  id: 01m5fhbfc7fk4yda8pxcfdwa6y
+  text: |-
+    ### test — green
+    - evidence: `swift test` — 1728 tests in 144 suites passed, 0 failed, 0 skipped; no package-code compiler warnings (only third-party mlx-swift_Cmlx bundle linker warning, out of scope). `swift build --build-tests` in IntegrationTests/ — Build complete, no package-code warnings.
+    - next: review
+  timestamp: 2026-10-21T15:30:22.727485+00:00
 depends_on:
 - 01M5F23FSEG4MRQ3NWWD7SGPAZ
 position_column: doing
@@ -246,3 +292,27 @@ EXTRAS-9 rules 8 and 11 (TestudoApp/features/packages/foundationmodels-extras.md
 - [x] `Sources/FoundationModelsKanban/GraphQL/SchemaDescription+Mutations.swift:106` `description/accuracy` — `Mutation.updateTask` says "A column moves the task to the end of that column." `WorkingCopy.place(of:movingTo:by:resolvingWith:at:)` (TaskMutations.swift) puts it at the top when the priority moves it there. 078e5e7 corrected `updateTaskColumn` for this. Add "or to the top when the priority moves it there."
 - [x] `Sources/FoundationModelsKanban/GraphQL/SchemaDescription+Mutations.swift:315` `description/accuracy` — `AddTaskInput.ordinal` says "No ordinal puts the task at the end of the column." With no ordinal, urgent, critical, high, p0, p1 or true puts the task at the top. A given ordinal is ignored when the priority moves the task (`PriorityMove.ordinalWarning`). Say: "No ordinal puts the task at the end of the column, unless the priority moves it. A priority that moves the task wins over the ordinal."
 - [x] `Sources/FoundationModelsKanban/GraphQL/CheckLinksField.swift:158` `description/accuracy` — `LinkStatus.OK` says "The link names its board by a current name, and the board has the node." For a related board that cannot be read, `LinkedBoard.check(of:)` (CrossRepo/LinkCheck.swift) gives `.ok` without checking the node. Say: "…and the board has the node, or the board cannot be read."
+
+## Review Findings (2026-10-21 10:15)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 12 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `Tests/Fixtures/kanban.graphql` — no validator matches this file
+
+- [x] `Sources/FoundationModelsKanban/GraphQL/TaskTransferMutations.swift:443` `completeness/invariant-propagation` — Factory method called without `Self.` prefix, inconsistent with the established pattern — all other factory method calls in this change (makeNewBodyField, makeTargetBoardField, makeTaskReferenceField, makeChangedBodyField, makeTaskPriorityField) consistently use the `Self.` prefix to invoke other static methods in the SchemaBuilder extension. Change line 443 from `makeTaskReferenceField()` to `Self.makeTaskReferenceField()` for consistency with the pattern established throughout the change.
+
+### Prior-finding check and description spot-check (2026-10-21 10:15)
+
+> The caller asked for proof that each of the 17 findings of the 09:47 and 09:53 sections is fixed in db30d62, and for a check of every description that db30d62 changed against its resolver. 16 of the 17 are fixed in the code. The `actorRef` part of the `UpdateTaskInput.column` finding is not fixed (item below). `swift test --filter EndpointConventionTests` passes, so Tests/Fixtures/kanban.graphql matches the Swift strings. Descriptions and doc comments that db30d62 added or changed: 82 checked, 6 wrong. Mismatches in descriptions older than this task (linkStatus, linkTarget, collectResultRepairs, collectResultOtherLinks, VirtualTag.explanation) are covered by 01M5FFBDY50R40FT79XDD9G87W and are not listed here. Record Tests/Fixtures/kanban.graphql again after each fix.
+
+- [x] `Sources/FoundationModelsKanban/GraphQL/MutationResolvers.swift:115` `description/accuracy` — The `TargetBoardInput` doc comment says it is "the input of a mutation that makes a node, of `renameTag`, and of `initBoard` and `updateBoard`". `addComment` and `copyTask` make nodes, but `AddCommentInput` (CommentMutations.swift) and `CopyTaskInput` (TaskTransferMutations.swift) do not conform. The `board` property says "`nil` for the current board", but `renameTag` uses `MutationBoard.holding(input.from, orNamed: input.board)` (TagMutations.swift), and `MutationBoard.reference` (MutationResolvers.swift) takes the board key of a full-URI `from` first: then `nil` does not give the current board, and a given `board` is ignored. Say: "the input of `addColumn`, `addActor`, `addTask`, `addTag`, `renameTag`, `initBoard`, and `updateBoard`", and for the property add "For `renameTag`, a full URI in `from` names the board, and this field is ignored."
+- [x] `Sources/FoundationModelsKanban/GraphQL/MutationResolvers.swift:148` `description/accuracy` — The `ChangedColorInput.color` doc comment says "`null` clears the color." For a tag, `updateTag` unsets the stored color, but `TagObject.color` returns `state.resolvedColor` (QueryResolvers.swift), which is `color ?? AutoColor.color(forText: slug)` (Tags/AutoColor.swift). A tag never shows a cleared color. Say: "`null` clears the stored color: an actor then has no color, and a tag shows the auto color of its slug."
+- [x] `Sources/FoundationModelsKanban/GraphQL/SchemaDescription+Changes.swift:8` `description/accuracy` — `Change` says "It has an update for each node that the transaction wrote, and for each other live node whose tracked fields changed." When this board's log did not change, `ChangeRound.changes(of:atPath:)` calls `changesOfOtherBoards(in:)` (Observe/ChangeRound.swift): a transaction of a different board gives a Change that holds none of the nodes it wrote. `ChangeBuilder.changesOfOtherBoards(ofBatch:)` (Observe/ChangeBuilder.swift) also adds an update for each live task whose assignee is an actor that the transaction patched, kept with `update(of:keepingNoFieldChange: true)` even when no field of the task changed. Say: "In Subscription.changes, a transaction of a different board gives a Change with the updates of the nodes of this board whose tracked fields changed, and of each live task whose assignee is an actor that the transaction wrote, also when no field of the task changed."
+- [x] `Sources/FoundationModelsKanban/GraphQL/SchemaDescription+Mutations.swift:275` `description/accuracy` — `UpdateColumnInput` says "Null clears the order or the body". `updateColumn` (ColumnActorMutations.swift) sends `input.order.map(PatchValue.integer)`, so null unsets `order`, and replay reads a missing order as 0 (`properties.removeInteger(forKey: PropertyName.order) ?? 0`, Events/Replay.swift). Null gives the order 0, which sorts the column toward the front. Say: "Null for the order gives the order 0; null clears the body; null for the name gives no change and a warning."
+- [x] `Sources/FoundationModelsKanban/GraphQL/SchemaDescription+Types.swift:33` `description/accuracy` — `Query.boards` says "each repo one level down in the parent folder of the current repo". `BoardLocator.repos(in:)` keeps each folder that `isCandidate(_:)` accepts: a `.git` entry, or a `.kanban/` with no git (a board outside git, CrossRepo/BoardLocator.swift). Say: "each repo or board folder one level down in the parent folder of the current repo, the current repo included, then in each search root of the config."
+- [x] `Sources/FoundationModelsKanban/GraphQL/SchemaDescription+Types.swift:337` `description/accuracy` — db30d62 changed `SearchSignals.cosine` from "Null when the search has no embedder, or the embeddings are not done yet" to "Null when the search gives no cosine score, for example with no embedder." `TaskSearch.rankedMatches(for:limit:)` (Search/TaskSearch.swift) uses the keyword searcher until the embedded catalog holds the newest catalog, also with an embedder, and `signals(of:withCosine:)` then gives `cosine: nil`. Say: "Null when the keyword searcher ranked the hit: the search has no embedder, or the embeddings of the newest catalog are not done yet."
+- [x] `Sources/FoundationModelsKanban/GraphQL/TaskMutations.swift:262` `description/accuracy` — The 09:53 `UpdateTaskInput.column` finding named the `actorRef` doc comment; it still says "`id`: The ref as the caller wrote it: a full URI or the slug." `RefResolver.actorRef(for:includingTombstones:)` calls `nodeRef(for:ofType: .actor)`, which also accepts the stored form `actor/<slug>` and a name that gives the slug. Say: "a full URI, the stored form actor/<slug>, the slug, or a name that gives the slug."

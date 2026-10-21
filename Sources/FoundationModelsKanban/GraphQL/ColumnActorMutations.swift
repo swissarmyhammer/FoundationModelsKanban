@@ -87,8 +87,9 @@ private struct AddColumnInput: Codable, NewNodeBodyInput, TargetBoardInput {
     let board: String?
 }
 
-/// The `input` object of `updateColumn` (plan.md §4.2). A field that is not set does not change, and `null` clears
-/// the field. The `name` is required, so `null` does not change it (``IgnoredNull``).
+/// The `input` object of `updateColumn` (plan.md §4.2). A field that is not set does not change. `null` for the
+/// `order` gives the order 0, and `null` clears the body. The `name` is required, so `null` does not change it
+/// (``IgnoredNull``).
 private struct UpdateColumnInput: ChangedNameInput, ChangedBodyInput {
     /// The column: a full URI, the stored form `column/<slug>`, the slug, or a name that gives the slug (plan.md
     /// §3.2, ``RefResolver``).
@@ -97,7 +98,7 @@ private struct UpdateColumnInput: ChangedNameInput, ChangedBodyInput {
     /// The new name of the column. `null` gives no change and a warning (``IgnoredNull``).
     let name: FieldUpdate<String>
 
-    /// The new sort key of the column.
+    /// The new sort key of the column. `null` gives the order 0.
     let order: FieldUpdate<Int>
 
     /// The new Markdown body of the column: the full text. The mutation writes the diff from the current body.

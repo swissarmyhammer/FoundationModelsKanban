@@ -272,8 +272,8 @@ extension SchemaDescription {
 
     /// The `UpdateColumnInput` type.
     static let updateColumnInput = """
-        The fields of updateColumn. A field that is not set does not change. Null clears the order or the body; null \
-        for the name gives no change and a warning.
+        The fields of updateColumn. A field that is not set does not change. Null for the order gives the order 0; \
+        null clears the body; null for the name gives no change and a warning.
         """
 
     /// The `id` field of `UpdateColumnInput`.
@@ -453,7 +453,10 @@ extension SchemaDescription {
     static let renameTagInput = "The fields of renameTag."
 
     /// The `from` field of `RenameTagInput`.
-    static let renameFrom = "The tag to rename: \(tagReferenceForms). \(renamedSlugRule)"
+    static let renameFrom = """
+        The tag to rename: \(tagReferenceForms). \(renamedSlugRule) A full URI names the board, and the board field is \
+        then ignored.
+        """
 
     /// The `to` field of `RenameTagInput`.
     static let renameTo = "The new tag name."
