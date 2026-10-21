@@ -50,9 +50,18 @@ private struct AddTaskInput: Decodable, Sendable {
     let priority: PriorityValue?
 }
 
-/// The `input` object of `updateTask` (plan.md §4.2). A field that is not set does not change, and `null` clears the
-/// field. A list replaces the list. The `title` is required, so `null` does not change it (``IgnoredNull``).
-private struct UpdateTaskInput: Decodable, Sendable {
+/// An `input` object that names one task in its `id` field: the input of `updateTask`, `moveTask`, `copyTask`,
+/// `assignTask`, `unassignTask`, `tagTask`, and `untagTask`. ``SchemaBuilder/taskReferenceField()`` gives the schema
+/// of the field.
+protocol TaskReferenceInput: Decodable, Sendable {
+    /// The task: a full URI or a short form (plan.md §3.2).
+    var id: NodeID { get }
+}
+
+/// The `input` object of `updateTask` (plan.md §4.2). A field that is not set does not change. `null` clears the body
+/// and the lists. The `title` is required, so `null` does not change it (``IgnoredNull``). `null` for the column or
+/// the priority is the same as no value. A list replaces the list.
+private struct UpdateTaskInput: TaskReferenceInput {
     /// The task: a full URI or a short form (plan.md §3.2).
     let id: NodeID
 
@@ -660,6 +669,14 @@ extension Graph {
 // MARK: - Schema
 
 extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanContext {
+    /// Gives the `id` input field of an `input` type that names one task. Each such `input` type gets the field
+    /// from here, so that the field has one definition.
+    ///
+    /// - Returns: The field `id`, with the description of a task ref.
+    static func taskReferenceField<Named: TaskReferenceInput>() -> InputFieldComponent<Named, KanbanContext> {
+        InputField("id", at: \Named.id).description(SchemaDescription.taskReference)
+    }
+
     /// Adds the task mutations, `addTask` and `updateTask`, and their `input` types (plan.md §4.2).
     ///
     /// - Returns: This builder, for method chaining.
@@ -678,7 +695,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             }
             .description(SchemaDescription.addTaskInput)
             Input(UpdateTaskInput.self) {
-                InputField("id", at: \.id).description(SchemaDescription.taskReference)
+                Self.taskReferenceField()
                 InputField("title", at: \.title.value).description(SchemaDescription.changedTaskTitle)
                 InputField("body", at: \.body.value).description(SchemaDescription.changedBody)
                 InputField("assignees", at: \.assignees.value).description(SchemaDescription.changedTaskAssignees)

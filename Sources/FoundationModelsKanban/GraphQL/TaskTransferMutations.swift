@@ -50,7 +50,7 @@ struct TaskPlacementFields: Decodable, Sendable {
 
 /// An `input` object with the fields of ``TaskPlacementFields``: the input of `moveTask` or `copyTask`. The schema
 /// gets the type of each input field from the properties of this protocol.
-protocol TaskPlacementInput: Decodable, Sendable {
+protocol TaskPlacementInput: TaskReferenceInput {
     /// The fields of the input.
     var fields: TaskPlacementFields { get }
 }
@@ -440,7 +440,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     /// - Returns: The fields `id`, `column`, `ordinal`, `before`, `after`, and `board`.
     @InputFieldComponentBuilder<Placed, KanbanContext>
     static func placementFields<Placed: TaskPlacementInput>() -> [InputFieldComponent<Placed, KanbanContext>] {
-        InputField("id", at: \.id).description(SchemaDescription.taskReference)
+        taskReferenceField()
         InputField("column", at: \.column).description(SchemaDescription.placementColumn)
         InputField("ordinal", at: \.ordinal).description(SchemaDescription.placementOrdinal)
         InputField("before", at: \.before).description(SchemaDescription.placementBefore)

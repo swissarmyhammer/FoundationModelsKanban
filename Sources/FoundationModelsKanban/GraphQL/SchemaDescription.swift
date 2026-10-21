@@ -69,7 +69,7 @@ enum SchemaDescription {
     /// `Actor`, and `Tag`.
     static let taskFilter = """
         The filter of the tasks. \(filterSyntax) No filter gives each live task, done or not. A deleted task shows \
-        only when the filter names #\(VirtualTag.deleted.rawValue).
+        only when the filter names #\(VirtualTag.deleted.rawValue), or has a ^id or a ~task atom.
         """
 
     /// The `filter` argument of `Board.nextTask`.
@@ -77,8 +77,9 @@ enum SchemaDescription {
 
     /// The `filter` argument of the change feed: `Board.history`, `Change.updates`, and `Subscription.changes`.
     static let updateFilter = """
-        The filter of the updates. An update stays when its node matches. \(filterSyntax) No filter keeps the \
-        updates of the live nodes.
+        The filter of the updates. An update stays when its node matches. \(filterSyntax) No filter in history and \
+        changes keeps each update, except the updates of a deleted task: of these, only its delete stays. No filter \
+        in Change.updates keeps each update of the change.
         """
 
     // MARK: - Task fields
@@ -155,7 +156,7 @@ enum SchemaDescription {
     /// The `Board.nextTask` field.
     static let nextTask = """
         The first task in board order that has the \(VirtualTag.ready.rawValue) virtual tag and matches the filter: \
-        a live task that is not done, with each dependency done. Null when no task is ready.
+        a live task that is not done, and that no dependency stops. Null when no task is ready.
         """
 
     /// The `Board.model` field and the `model` field of `BoardInput` (divergence.md Q19).
@@ -235,8 +236,8 @@ enum SchemaDescription {
 
     /// The `column` field of `UpdateTaskInput` (divergence.md E5).
     static let updateTaskColumn = """
-        The column to move the task to, in the same change. The task goes to the end of the column. A slug that no \
-        column has makes the column, the same as moveTask.
+        The column to move the task to, in the same change. The task goes to the end of the column, or to the top \
+        when the priority moves it there. A slug that no column has makes the column, the same as moveTask.
         """
 
     /// The `priority` field of `AddTaskInput` and `UpdateTaskInput` (divergence.md P2 and K15).
@@ -384,7 +385,9 @@ enum SchemaDescription {
     static let collectedPath = "The folder of the source board."
 
     /// The `CollectedBoard.names` field.
-    static let collectedNames = "The names of the source board: its board IDs, its git key, and its old names."
+    static let collectedNames = """
+        The names of the source board: the board ref of the call, its board IDs, its git key, and its old names.
+        """
 
     /// The `SlugMerge.node` field and the `FieldConflict.node` field.
     static let collectNode = "The full URI of the node in the target board."
@@ -399,5 +402,7 @@ enum SchemaDescription {
     static let conflictValues = "The value that each board gives the field, each one time."
 
     /// The `FieldConflict.winner` field.
-    static let conflictWinner = "The value after the collect: the value of the last event."
+    static let conflictWinner = """
+        The value after the collect: the merge of the events of all the boards. Null when the field has no value.
+        """
 }

@@ -30,8 +30,9 @@ extension SchemaDescription {
 
     /// The `Query.boards` field.
     static let queryBoards = """
-        Each board that the scan finds, with its path, in scan order: the current board and the repos next to it. A \
-        board that cannot be read is not in the list, and the response gives a warning that names it.
+        Each board that the scan finds, with its path, in scan order: the repos next to the current repo, and the \
+        repos in each search root of the config. A board that cannot be read is not in the list, and the response \
+        gives a warning that names it.
         """
 
     /// The `enabled` argument of `Query.boards`.
@@ -167,8 +168,8 @@ extension SchemaDescription {
 
     /// The `color` field of `Actor` and `Tag`.
     static let labelColor = """
-        The display color: 6 hex digits with no #. A tag with no color gets a fixed color from its slug. An actor with \
-        no color gives null.
+        The display color: the text that the last write stored, with no check of its form. A tag with no color gets \
+        a fixed color from its slug: 6 hex digits with no #. An actor with no color gives null.
         """
 
     // MARK: - Summary and virtual tags
@@ -234,14 +235,18 @@ extension SchemaDescription {
     static let taskProgress = "The counts of the checklist lines of the body."
 
     /// The `Task.comments` field.
-    static let taskComments = "The live comments of the task, oldest first."
+    static let taskComments = "The live comments of the task, oldest first. Empty for a deleted task."
 
     /// The `Task.started` field.
-    static let taskStarted = "The time when the task left the first column. Null when it never left it."
+    static let taskStarted = """
+        The time of the first change that put the task in a column that is not the first column, the add included. \
+        Null when no change did.
+        """
 
     /// The `Task.completed` field.
     static let taskCompleted = """
-        The time of the last column move of the task, when the task is now done. Null when the task is not done.
+        The time of the last column move of the task, when the task is now done. Null when the task is not done, or \
+        when no change set its column.
         """
 
     /// The `Comment` type.
@@ -257,7 +262,8 @@ extension SchemaDescription {
 
     /// The `Progress` type.
     static let progress = """
-        The counts of the Markdown checklist lines of a task body: an open line is - [ ], a checked line is - [x].
+        The counts of the Markdown checklist lines of a task body: an open line is - [ ], a checked line is - [x] \
+        or - [X].
         """
 
     /// The `Progress.total` field.
@@ -336,7 +342,8 @@ extension SchemaDescription {
 
     /// The `Priority` scalar.
     static let priority = """
-        A priority value of a task input: text, a word, a number, or a Boolean. The board stores no priority: the \
-        value moves the task in its column.
+        A priority value of a task input: text, a word, a number, or a Boolean. The board stores no priority: urgent, \
+        critical, high, p0, p1, or true moves the task to the top of its column; low, p3, or p4 moves it to the end; \
+        each other value keeps its place.
         """
 }

@@ -10,7 +10,10 @@ extension SchemaDescription {
         """
 
     /// The `Change.txn` field.
-    static let changeTxn = "The ULID of the transaction. Give it to undo or redo to reverse this change."
+    static let changeTxn = """
+        The ULID of the transaction. Give it as txn to undo to reverse this change, or to redo to apply it again \
+        after its undo.
+        """
 
     /// The `Change.at` field.
     static let changeAt = "The time of the transaction."
@@ -25,7 +28,7 @@ extension SchemaDescription {
     static let changeBoards = "The key of each board that the transaction changed, the board of this change first."
 
     /// The `Change.undone` field.
-    static let changeUndone = "True when a later undo that is not undone reverses this transaction."
+    static let changeUndone = "True when a later undo or redo that is not undone reverses this transaction."
 
     /// The `Change.undoes` field.
     static let changeUndoes = "The transaction that this undo or redo reverses. Null for each other transaction."
@@ -68,10 +71,14 @@ extension SchemaDescription {
     static let fieldChangeName = "The name of the field, for example column, tags, or ready."
 
     /// The `FieldChange.before` field.
-    static let fieldChangeBefore = "The value before the transaction. Null for a list field and for body."
+    static let fieldChangeBefore = """
+        The value before the transaction, or null when it had no value. Null for a list field and for body.
+        """
 
     /// The `FieldChange.after` field.
-    static let fieldChangeAfter = "The value after the transaction. Null for a list field and for body."
+    static let fieldChangeAfter = """
+        The value after the transaction, or null when it has no value. Null for a list field and for body.
+        """
 
     /// The `FieldChange.added` field.
     static let fieldChangeAdded = "The items that the transaction added to a list field. Null for a single value."
@@ -101,8 +108,8 @@ extension SchemaDescription {
 
     /// The `LinkRepair` type.
     static let linkRepair = """
-        One stored link that repairLinks reports, and its new target. A dangling link has no new target and does not \
-        change.
+        One stored link that repairLinks or collectBoards reports, and its new target. A dangling link has no new \
+        target and does not change.
         """
 
     // MARK: - Collect results
@@ -118,6 +125,7 @@ extension SchemaDescription {
 
     /// The `FieldConflict` type.
     static let fieldConflict = """
-        One field of a node that two or more boards set to different values. The value of the last event wins.
+        One field of a node that two or more boards set to different values. The winner is the value after the \
+        merge of the events of all the boards.
         """
 }

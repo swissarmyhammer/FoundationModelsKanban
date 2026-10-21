@@ -51,16 +51,16 @@ private struct MoveTaskInput: TaskPlacementInput {
 }
 
 /// The `input` object of `assignTask` and `unassignTask` (plan.md §4.2).
-private struct AssignTaskInput: Decodable, Sendable {
+private struct AssignTaskInput: TaskReferenceInput {
     /// The task: a full URI or a short form (plan.md §3.2).
     let id: NodeID
 
-    /// The actor: a full URI or the slug.
+    /// The actor: a full URI, the slug, or a name that gives the slug.
     let actor: NodeID
 }
 
 /// The `input` object of `tagTask` and `untagTask` (plan.md §4.2).
-private struct TagTaskInput: Decodable, Sendable {
+private struct TagTaskInput: TaskReferenceInput {
     /// The task: a full URI or a short form (plan.md §3.2).
     let id: NodeID
 
@@ -622,12 +622,12 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
         add {
             Input(MoveTaskInput.self, Self.placementFields).description(SchemaDescription.moveTaskInput)
             Input(AssignTaskInput.self) {
-                InputField("id", at: \.id).description(SchemaDescription.taskReference)
+                Self.taskReferenceField()
                 InputField("actor", at: \.actor).description(SchemaDescription.actorReference)
             }
             .description(SchemaDescription.assignTaskInput)
             Input(TagTaskInput.self) {
-                InputField("id", at: \.id).description(SchemaDescription.taskReference)
+                Self.taskReferenceField()
                 InputField("tags", at: \.tags).description(SchemaDescription.tagTaskTags)
             }
             .description(SchemaDescription.tagTaskInput)
