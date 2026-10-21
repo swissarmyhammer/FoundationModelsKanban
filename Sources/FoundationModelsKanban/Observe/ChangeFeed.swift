@@ -598,6 +598,17 @@ private final class SubscriberRelay: Sendable {
 
         /// ``stop()`` ended the relay. No task starts again.
         case stopped
+
+        /// Tells if the task of a run is the task that runs.
+        ///
+        /// - Parameter run: The run.
+        /// - Returns: `true` when the state is ``running(_:run:)`` with the run.
+        func isRunning(_ run: Int) -> Bool {
+            guard case .running(_, let matchedRun) = self else {
+                return false
+            }
+            return matchedRun == run
+        }
     }
 
     /// The state of the relay, and the number of the last run, behind a lock.
@@ -663,7 +674,7 @@ private final class SubscriberRelay: Sendable {
         inRun run: Int
     ) -> AsyncThrowingStream<ChangeEvent, Error>.Continuation.YieldResult? {
         state.withLock { state in
-            guard case .running(_, let matchedRun) = state.relay, matchedRun == run else {
+            guard state.relay.isRunning(run) else {
                 return nil
             }
             return continuation.yield(next)
@@ -675,12 +686,7 @@ private final class SubscriberRelay: Sendable {
     /// - Parameter run: The run.
     /// - Returns: `true` when the task of the run is the task of the relay.
     private func isCurrent(run: Int) -> Bool {
-        state.withLock { state in
-            guard case .running(_, let matchedRun) = state.relay, matchedRun == run else {
-                return false
-            }
-            return true
-        }
+        state.withLock { state in state.relay.isRunning(run) }
     }
 
     /// Reads the changes of a log, and yields the event of each one to the stream of the subscriber. A task whose

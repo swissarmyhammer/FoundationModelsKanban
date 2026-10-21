@@ -898,10 +898,10 @@ public actor KanbanGraph: GraphQLEndpoint {
     /// - Returns: The changes of each board that changed, by the canonical path of its repo directory.
     @discardableResult
     private func logLiveChanges(of held: HeldGates) async -> [String: BoardChanges] {
-        var changed: [String: BoardChanges] = [:]
-        for engine in held.engines {
-            changed[engine.root.canonicalPath] = await engine.takeLiveChanges()
+        let taken = await held.engines.concurrentMap { engine in
+            await engine.takeLiveChanges().map { changes in (engine.root.canonicalPath, changes) }
         }
+        let changed = Dictionary(taken.compactMap { entry in entry }, uniquingKeysWith: { _, later in later })
         await host.publish(changed)
         for engine in held.engines {
             await engine.finishLogging()
@@ -1029,11 +1029,7 @@ public actor KanbanGraph: GraphQLEndpoint {
     /// - Parameter current: The engine of the board of the working directory.
     /// - Returns: The sessions.
     private func loadedSessions(current: BoardEngine) async -> [String: CommitSession] {
-        var sessions: [String: CommitSession] = [:]
-        for (path, engine) in loadedEngines(current: current) {
-            sessions[path] = await engine.session
-        }
-        return sessions
+        await loadedEngines(current: current).concurrentMapValues { engine in await engine.session }
     }
 
     /// Gives the session of each related board that the view loaded for the read of a run, by the canonical path of
@@ -1044,11 +1040,9 @@ public actor KanbanGraph: GraphQLEndpoint {
     /// - Parameter held: The gates that the run holds.
     /// - Returns: The sessions.
     private func relatedSessions(holding held: HeldGates) async -> [String: CommitSession] {
-        var sessions: [String: CommitSession] = [:]
-        for (path, engine) in relatedBoards {
-            sessions[path] = held.holds(engine) ? await engine.readSessionHoldingGate() : await engine.readSession()
+        await relatedBoards.concurrentMapValues { engine in
+            held.holds(engine) ? await engine.readSessionHoldingGate() : await engine.readSession()
         }
-        return sessions
     }
 
     /// Gives the other boards that the resolvers of the events of a board read: the boards after the operation, as
@@ -1118,17 +1112,15 @@ public actor KanbanGraph: GraphQLEndpoint {
         current: BoardCopy,
         holding held: HeldGates
     ) async throws -> RelatedBoards {
-        var updated = await withLoadedBoards(related, around: current.directory, holding: held)
+        var updated = await withLoadedBoards(for: related, around: current.directory, holding: held)
         var pending = requests.union(updated.loadedCrossBoardRequests)
         while !pending.isEmpty {
             let open = pending.filter { request in !updated.satisfies([request]) }
             let answers = try await Array(open).concurrentMap { request in
                 try await self.answer(request, current: current)
             }
-            for answer in answers {
-                answer.record(in: &updated)
-            }
-            updated = await withLoadedBoards(updated, around: current.directory, holding: held)
+            let answered = answers.reduce(into: updated) { related, answer in answer.record(in: &related) }
+            updated = await withLoadedBoards(for: answered, around: current.directory, holding: held)
             pending = updated.loadedCrossBoardRequests.filter { request in !updated.satisfies([request]) }
         }
         if requests.contains(where: \.readsScanIndex), let index = await host.scanIndex(around: current.directory) {
@@ -1170,7 +1162,7 @@ public actor KanbanGraph: GraphQLEndpoint {
             await engine.replaceSession(with: session)
             await session.updateSearch()
         }
-        return await withLoadedBoards(related, around: root, holding: held)
+        return await withLoadedBoards(for: related, around: root, holding: held)
     }
 
     /// Gives the related boards of a run with the session of each loaded related board and the places of the scan.
@@ -1182,7 +1174,7 @@ public actor KanbanGraph: GraphQLEndpoint {
     ///     tells.
     /// - Returns: The related boards with the loaded boards.
     private func withLoadedBoards(
-        _ related: RelatedBoards,
+        for related: RelatedBoards,
         around root: URL,
         holding held: HeldGates
     ) async -> RelatedBoards {
@@ -1417,14 +1409,15 @@ extension Array where Element: Sendable {
     ///
     /// - Parameter transform: The operation.
     /// - Returns: The result of the operation for each element, in the order of the elements.
-    /// - Throws: The error of the first element, in the order of the elements, whose operation throws.
-    fileprivate func concurrentMap<Value: Sendable>(
-        _ transform: @escaping @Sendable (Element) async throws -> Value
-    ) async throws -> [Value] {
-        let results = await withTaskGroup(of: (position: Int, result: Result<Value, any Error>).self) { group in
+    /// - Throws: The error of the first element, in the order of the elements, whose operation throws. An operation
+    ///   that cannot throw makes this call one that cannot throw.
+    fileprivate func concurrentMap<Value: Sendable, Failure: Error>(
+        _ transform: @escaping @Sendable (Element) async throws(Failure) -> Value
+    ) async throws(Failure) -> [Value] {
+        let results = await withTaskGroup(of: (position: Int, result: Result<Value, Failure>).self) { group in
             for (position, element) in enumerated() {
                 group.addTask {
-                    do {
+                    do throws(Failure) {
                         return (position, .success(try await transform(element)))
                     } catch {
                         return (position, .failure(error))
@@ -1433,7 +1426,21 @@ extension Array where Element: Sendable {
             }
             return await group.reduce(into: []) { results, entry in results.append(entry) }
         }
-        return try results.sorted { lhs, rhs in lhs.position < rhs.position }.map { entry in try entry.result.get() }
+        return try results.sorted { lhs, rhs in lhs.position < rhs.position }
+            .map { entry throws(Failure) in try entry.result.get() }
+    }
+}
+
+extension Dictionary where Key: Sendable, Value: Sendable {
+    /// Runs an operation on each value at the same time, and gives the results under the keys of their values.
+    ///
+    /// - Parameter transform: The operation.
+    /// - Returns: The result of the operation for each value, under the key of the value.
+    fileprivate func concurrentMapValues<NewValue: Sendable>(
+        _ transform: @escaping @Sendable (Value) async -> NewValue
+    ) async -> [Key: NewValue] {
+        let results = await Array(self).concurrentMap { key, value in (key, await transform(value)) }
+        return Dictionary<Key, NewValue>(uniqueKeysWithValues: results)
     }
 }
 
