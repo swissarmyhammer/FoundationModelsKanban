@@ -101,7 +101,9 @@ struct AgentPlanPostTests {
         ///   - batchObserver: Gets a call when the file watcher applies a batch, or `nil` for no calls.
         /// - Throws: An error when the directory or the engine cannot be made.
         init(
-            timedBy makeClock: (EventLog) -> @Sendable () -> DateTime = { _ in { KanbanGraphTests.time } },
+            timedBy makeClock: (EventLog) -> @Sendable () -> FoundationModelsKanban.DateTime = { _ in
+                { KanbanGraphTests.time }
+            },
             observingBatchesWith batchObserver: (any LiveGraphObserver)? = nil
         ) throws {
             let directory = try TemporaryDirectory()
@@ -343,7 +345,7 @@ final class OtherProcessClock: Sendable {
     ///
     /// - Returns: The time.
     @Sendable
-    func now() -> DateTime {
+    func now() -> FoundationModelsKanban.DateTime {
         state.withLock { state in
             switch state.mode {
             case .idle:
