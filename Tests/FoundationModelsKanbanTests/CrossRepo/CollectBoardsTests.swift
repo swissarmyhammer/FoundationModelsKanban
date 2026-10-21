@@ -338,6 +338,50 @@ struct CollectBoardsTests {
         withExtendedLifetime(fixture.sandbox) {}
     }
 
+    @Test("collectBoards leaves no event of a source in the engine of the source, also when no file watcher sees it")
+    func collectEmptiesEngineOfEachSource() async throws {
+        let fixture = try await Self.makeFixture()
+        let host = Self.makeQuietHost()
+        let graph = try await Self.makeTargetGraph(of: fixture, on: host)
+        _ = try await Self.collect(fixture.sourcePaths, on: graph)
+        let first = try await host.engine(ofBoardAt: fixture.first.folder).readSession().live.events
+        let second = try await host.engine(ofBoardAt: fixture.second.folder).readSession().live.events
+        await graph.close()
+        #expect(first.isEmpty, "\(first.count) events of \(fixture.first.folder.path)")
+        #expect(second.isEmpty, "\(second.count) events of \(fixture.second.folder.path)")
+        withExtendedLifetime(fixture.sandbox) {}
+    }
+
+    /// Makes a host whose file watchers give no batch, with the key reader of git and the ULID source of the target.
+    /// Thus no engine of the host sees a change of a file that a different engine makes.
+    ///
+    /// - Returns: The host. The view of the target owns it.
+    static func makeQuietHost() -> KanbanHost {
+        HostFixture.makeHost(
+            readingKeyWith: BoardKey.read(fromRepoAt:),
+            findingTopWith: BoardKey.worktreeTop(of:),
+            mintingFrom: GitGraphFixture.thirdEngineIDs,
+            watchingWith: QuietFolderEvents()
+        )
+    }
+
+    /// Makes the view of the target folder on a host. The view owns the host.
+    ///
+    /// - Parameters:
+    ///   - fixture: The fixture of the test.
+    ///   - host: The host.
+    /// - Returns: The view. The caller closes it, which closes the host too.
+    /// - Throws: An error when the view cannot start.
+    static func makeTargetGraph(of fixture: Fixture, on host: KanbanHost) async throws -> KanbanGraph {
+        try KanbanGraph(
+            host: host,
+            owningHost: true,
+            workingDirectory: fixture.target,
+            actingAs: KanbanGraphTests.sessionActor,
+            locatedBy: await host.locator
+        )
+    }
+
     // MARK: - Other boards
 
     /// Makes a board that is not a source and not the target, whose task depends on the task of the first source.

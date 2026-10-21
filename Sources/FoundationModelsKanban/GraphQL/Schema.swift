@@ -390,6 +390,21 @@ actor BoardStore {
         [.current] + related.loadedSessions.map { board in relatedTarget(of: board.session, atPath: board.path) }
     }
 
+    /// Adds the loaded related board at each of some paths to the boards of the commit of the run, with no patch
+    /// (divergence.md M9, `collectBoards`). The commit then holds the serial gate of each of these boards, and gives
+    /// each one its live graph after the commit, also when the commit changes only its files. A board that a field of
+    /// the run changed stays as the field left it. A path of a board that the engine did not load adds nothing.
+    ///
+    /// - Parameter paths: The canonical paths of the repo directories of the boards.
+    func addToCommit(loadedBoardsAt paths: [String]) {
+        let boards = paths.compactMap { path in
+            related.session(atPath: path).map { session in relatedTarget(of: session, atPath: path) }
+        }
+        for case .related(let board) in boards {
+            relatedWork[board.path] = board
+        }
+    }
+
     /// Gives each copy with a key that the table of the host has loaded, as the targets of a mutation field: the
     /// copies that `undo` and `redo` look in for a board of a transaction (plan.md §6.5, many boards; divergence.md
     /// X5).

@@ -1440,7 +1440,7 @@ extension Dictionary where Key: Sendable, Value: Sendable {
         _ transform: @escaping @Sendable (Value) async -> NewValue
     ) async -> [Key: NewValue] {
         let results = await Array(self).concurrentMap { key, value in (key, await transform(value)) }
-        return Dictionary<Key, NewValue>(uniqueKeysWithValues: results)
+        return [Key: NewValue](uniqueKeysWithValues: results)
     }
 }
 

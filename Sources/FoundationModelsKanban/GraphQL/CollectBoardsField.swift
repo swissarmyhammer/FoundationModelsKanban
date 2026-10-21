@@ -291,6 +291,10 @@ extension BoardStore {
     /// target, and the repairs of the links of the other boards. The target obeys the rules of
     /// ``runMutation(named:on:at:_:)``: a target with no board gets its board, with a new board ID.
     ///
+    /// Each source that the engine loaded is a board of the commit too, with no patch. The commit removes its
+    /// `.kanban/`, and its engine then holds no event of it: `undo` searches the loaded boards, and must not find a
+    /// transaction of a removed source (divergence.md M9).
+    ///
     /// - Parameters:
     ///   - sources: The source boards.
     ///   - target: The target board.
@@ -317,6 +321,7 @@ extension BoardStore {
             }
             try write(others, as: MutationName.collectBoards, at: time)
         }
+        addToCommit(loadedBoardsAt: sources.map(\.root.canonicalPath))
     }
 }
 

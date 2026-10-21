@@ -739,6 +739,7 @@ struct CommitSession: Sendable {
             for source in sources {
                 source.removeBoardDirectory()
             }
+            await Self.applyRemoval(of: sources, to: &writes)
         }
         lock.unlock()
         live = writes[0].live
@@ -748,6 +749,29 @@ struct CommitSession: Sendable {
             }
         )
         return isLogChanged ? .logChanged(sessions) : .committed(sessions)
+    }
+
+    /// Applies the removal of the `.kanban/` of each source of a `collectBoards` field to the live graph of each board
+    /// of the commit at the folder of the source (divergence.md M9). The engine of that board then holds no event of
+    /// the removed board after the commit, and its file watcher finds no change for the removal. A board whose folder
+    /// cannot be read keeps its live graph: the removal records the fault with swift-log, and the watcher applies the
+    /// removal later.
+    ///
+    /// - Parameters:
+    ///   - sources: The source boards. The commit removed the `.kanban/` of each of them.
+    ///   - writes: The boards of the commit. Each board at the folder of a source gets its new live graph.
+    private static func applyRemoval(of sources: [CollectedSource], to writes: inout [BoardWrite]) async {
+        let roots = Set(sources.map(\.root.canonicalPath))
+        for index in writes.indices where roots.contains(writes[index].path) {
+            do {
+                _ = try await writes[index].applyChangedFiles()
+            } catch {
+                Log.kanban.error(
+                    "collectBoards removed the .kanban folder of a source and cannot read the folder again",
+                    metadata: ["path": "\(writes[index].path)", "error": "\(error)"]
+                )
+            }
+        }
     }
 
     /// Appends the kept patches of each changed board, and then makes each working copy the live graph of its board
