@@ -37,13 +37,18 @@ struct BoardChanges: Sendable {
 /// The changes of the loaded boards in one operation of the serial gate: the commits of a call, or the batch of a
 /// file watcher (plan.md §6.7). The round makes the `Change` values for the subscribers of a board.
 ///
-/// A board that changed gets one `Change` for each new transaction, in `txn` order. The values before and after come
-/// from the live graph before and after each change of the board, so a watcher batch with many transactions gives
-/// each of them the values before and after the batch. Each update goes to one `Change` of the batch only: the update
-/// of a patched node goes to the last transaction that patched it, and each other update goes to the last transaction
-/// of the batch. A board that did not change, but whose tasks depend on a task of a board that changed, gets one
-/// `Change` for each transaction of the boards that changed. The last of them, in `txn` order, has the updates of its
-/// nodes whose fields changed (plan.md §6.7, updates across boards).
+/// A board that changed gets one `Change` for each new transaction of its own: the changes of its live graph in the
+/// order that they happened, and the transactions of each one in `txn` order. Each change of the live graph is one
+/// batch of ``ChangeBuilder/changes(ofBatch:)``: the values before and after come from the live graph before and after
+/// that change, so a watcher batch with many transactions gives each of them the values before and after the batch,
+/// and each node has at most one update in the batch, as ``ChangeBuilder`` tells. A board that changed gets no
+/// `Change` for the transactions of the other boards, also when the same call changed them.
+///
+/// A board that did not change gets one `Change` for each transaction of all the boards that changed, in `txn` order,
+/// all of them one batch of ``ChangeBuilder/changesOfOtherBoards(ofBatch:)`` (plan.md §6.7, updates across boards):
+/// the update of a live task whose assignee is an actor that a transaction patched goes to the last transaction of the
+/// batch that patched one of its assignee actors, and each other update of its live nodes whose fields changed goes
+/// to the last transaction of the batch.
 ///
 /// The cross-board dependencies of each view read the other boards: before the operation for the view before, and
 /// after the operation for the view after.
@@ -89,8 +94,9 @@ struct ChangeRound {
     /// - Parameters:
     ///   - session: The session of the board after the operation.
     ///   - path: The canonical path of the repo directory of the board.
-    /// - Returns: The changes, in `txn` order. A change can have no update: the filters of each subscriber then
-    ///   leave it out.
+    /// - Returns: The changes of the board's own transactions when it changed, else the changes of the transactions of
+    ///   the boards that changed (``changesOfOtherBoards(in:)``). A change can have no update: the filters of each
+    ///   subscriber then leave it out.
     func changes(of session: CommitSession, atPath path: String) -> [Change] {
         guard let own = changed[path] else {
             return changesOfOtherBoards(in: session)
@@ -115,9 +121,11 @@ struct ChangeRound {
         view(of: session, reading: after)
     }
 
-    /// Makes the changes of a board that did not change: one for each transaction of each board that changed. The
-    /// change of the last transaction, in `txn` order, has the updates of the nodes of this board whose fields
-    /// changed. The other changes have no update.
+    /// Makes the changes of a board that did not change: one for each transaction of each board that changed, in `txn`
+    /// order, as one batch of ``ChangeBuilder/changesOfOtherBoards(ofBatch:)``. The update of a live task of this board
+    /// whose assignee is an actor that a transaction patched is in the change of the last transaction that patched one
+    /// of its assignee actors. Each other update of the nodes of this board whose fields changed is in the change of
+    /// the last transaction. A change can have no update.
     ///
     /// - Parameter session: The session of the board.
     /// - Returns: The changes, in `txn` order.

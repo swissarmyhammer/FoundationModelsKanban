@@ -609,23 +609,23 @@ enum NodeType {
   COMMENT
 }
 
-"""How a transaction changed a node."""
+"""How a node changed."""
 enum UpdateKind {
-  """The transaction made the node."""
+  """The node is new."""
   CREATED
 
-  """The transaction changed fields of the node, also derived fields."""
+  """Each other update: the node is not new, deleted, or restored."""
   UPDATED
 
-  """The transaction deleted the node: the node is a tombstone now."""
+  """The node was deleted: it is a tombstone now."""
   DELETED
 
-  """The transaction undeleted the node: the node is live again."""
+  """The node was undeleted: it is live again."""
   RESTORED
 }
 
 """
-One transaction. A transaction of this board has an update for each node that the transaction wrote, and for each other live node whose tracked fields changed (see NodeUpdate.fields). In Subscription.changes, a transaction of a different board gives a Change with the updates of the live nodes of this board whose tracked fields changed, and of each live task whose assignee is an actor that the transaction wrote, also when no field of the task changed. When one batch of Subscription.changes holds several transactions, a node has one update only: in the last transaction of the batch that wrote the node, else in the last transaction of the batch.
+One transaction in the history or the change feed of a board: its txn, time, actor, mutations, and boards, and its updates of the nodes of that board. An update tells which node changed and which tracked fields changed; read the nodes again for their new values. Transactions read together, for example after a git pull, can give one Change with an update for each node, so a Change can also have updates of nodes that its transaction did not write.
 """
 type Change {
   """
@@ -657,9 +657,7 @@ type Change {
   """
   undoes: ID
 
-  """
-  The update of each node that the transaction changed and that the filter keeps.
-  """
+  """The updates of the change that the filter keeps."""
   updates(
     """
     The filter of the updates. An update stays when its node matches. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks of the board that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter in history and changes keeps each update, except the updates of a deleted task: of these, only its delete stays. No filter in Change.updates keeps each update of the change.
@@ -669,7 +667,7 @@ type Change {
 }
 
 """
-The change of one node in a transaction: how it changed, and each field that changed.
+The change of one node: how it changed, and each tracked field that changed.
 """
 type NodeUpdate {
   """The full kanban:// URI of the node, also for a deleted node."""
@@ -678,7 +676,7 @@ type NodeUpdate {
   """The type of the node."""
   type: NodeType!
 
-  """How the transaction changed the node."""
+  """How the node changed."""
   kind: UpdateKind!
 
   """
@@ -700,27 +698,27 @@ type FieldChange {
   name: String!
 
   """
-  The value before the transaction, or null when it had no value. Null for a list field and for body.
+  The value before the update, or null when it had no value. Null for a list field and for body.
   """
   before: JSON
 
   """
-  The value after the transaction, or null when it has no value. Null for a list field and for body.
+  The value after the update, or null when it has no value. Null for a list field and for body.
   """
   after: JSON
 
   """
-  The items that the transaction added to a list field. Null for a single value.
+  The items that the update added to a list field. Null for a single value.
   """
   added: [JSON!]
 
   """
-  The items that the transaction removed from a list field. Null for a single value.
+  The items that the update removed from a list field. Null for a single value.
   """
   removed: [JSON!]
 
   """
-  The unified diff from the body before the transaction to the body after it. Null for each field that is not body. Select node { body } for the full text.
+  The unified diff from the body before the update to the body after it. Null for each field that is not body. Select node { body } for the full text.
   """
   diff: String
 }

@@ -3,15 +3,13 @@
 extension SchemaDescription {
     // MARK: - Change
 
-    /// The `Change` type (``ChangeBuilder``).
+    /// The `Change` type. ``ChangeBuilder`` and ``ChangeRound`` hold the exact rules that put each update in a change.
     static let change = """
-        One transaction. A transaction of this board has an update for each node that the transaction wrote, \
-        and for each other live node whose tracked fields changed (see NodeUpdate.fields). In \
-        Subscription.changes, a transaction of a different board gives a Change with the updates of the live \
-        nodes of this board whose tracked fields changed, and of each live task whose assignee is an actor that \
-        the transaction wrote, also when no field of the task changed. When one batch of Subscription.changes \
-        holds several transactions, a node has one update only: in the last transaction of the batch that wrote \
-        the node, else in the last transaction of the batch.
+        One transaction in the history or the change feed of a board: its txn, time, actor, mutations, and boards, \
+        and its updates of the nodes of that board. An update tells which node changed and which tracked fields \
+        changed; read the nodes again for their new values. Transactions read together, for example after a git \
+        pull, can give one Change with an update for each node, so a Change can also have updates of nodes that \
+        its transaction did not write.
         """
 
     /// The `Change.txn` field (``UndoLog/target(of:named:by:)``).
@@ -39,12 +37,12 @@ extension SchemaDescription {
     static let changeUndoes = "The transaction that this undo or redo reverses. Null for each other transaction."
 
     /// The `Change.updates` field.
-    static let changeUpdates = "The update of each node that the transaction changed and that the filter keeps."
+    static let changeUpdates = "The updates of the change that the filter keeps."
 
     // MARK: - Node update
 
     /// The `NodeUpdate` type.
-    static let nodeUpdate = "The change of one node in a transaction: how it changed, and each field that changed."
+    static let nodeUpdate = "The change of one node: how it changed, and each tracked field that changed."
 
     /// The `NodeUpdate.id` field.
     static let nodeUpdateID = "The full kanban:// URI of the node, also for a deleted node."
@@ -53,7 +51,7 @@ extension SchemaDescription {
     static let nodeUpdateType = "The type of the node."
 
     /// The `NodeUpdate.kind` field.
-    static let nodeUpdateKind = "How the transaction changed the node."
+    static let nodeUpdateKind = "How the node changed."
 
     /// The `NodeUpdate.fields` field (``NodeObject/trackedFields``).
     static let nodeUpdateFields = """
@@ -83,23 +81,23 @@ extension SchemaDescription {
 
     /// The `FieldChange.before` field.
     static let fieldChangeBefore = """
-        The value before the transaction, or null when it had no value. Null for a list field and for body.
+        The value before the update, or null when it had no value. Null for a list field and for body.
         """
 
     /// The `FieldChange.after` field.
     static let fieldChangeAfter = """
-        The value after the transaction, or null when it has no value. Null for a list field and for body.
+        The value after the update, or null when it has no value. Null for a list field and for body.
         """
 
     /// The `FieldChange.added` field.
-    static let fieldChangeAdded = "The items that the transaction added to a list field. Null for a single value."
+    static let fieldChangeAdded = "The items that the update added to a list field. Null for a single value."
 
     /// The `FieldChange.removed` field.
-    static let fieldChangeRemoved = "The items that the transaction removed from a list field. Null for a single value."
+    static let fieldChangeRemoved = "The items that the update removed from a list field. Null for a single value."
 
     /// The `FieldChange.diff` field.
     static let fieldChangeDiff = """
-        The unified diff from the body before the transaction to the body after it. Null for each field that is not \
+        The unified diff from the body before the update to the body after it. Null for each field that is not \
         body. Select node { body } for the full text.
         """
 

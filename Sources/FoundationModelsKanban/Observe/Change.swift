@@ -50,18 +50,19 @@ enum NodeType: String, Codable, Sendable, CaseIterable {
     }
 }
 
-/// How a transaction changed a node: the GraphQL `UpdateKind` enum (plan.md §6.7, Kind).
+/// How a node changed from before to after the batch of a change: the GraphQL `UpdateKind` enum (plan.md §6.7, Kind).
+/// ``ChangeBuilder`` sets it.
 enum UpdateKind: String, Codable, Sendable, CaseIterable {
-    /// The transaction wrote the first patch of the node.
+    /// The graph before the batch does not have the node.
     case created = "CREATED"
 
-    /// The transaction changed the node in a different way.
+    /// The node is in the graph before the batch, and the batch did not delete it or restore it.
     case updated = "UPDATED"
 
-    /// The transaction made the node a tombstone (`delete: true`).
+    /// The node was live before the batch and is a tombstone after it.
     case deleted = "DELETED"
 
-    /// The transaction removed the tombstone of the node (`delete: false`).
+    /// The node was a tombstone before the batch and is live after it.
     case restored = "RESTORED"
 }
 
@@ -84,40 +85,41 @@ extension NodeType: DescribedGraphQLEnum {
 
 extension UpdateKind: DescribedGraphQLEnum {
     /// The description of the `UpdateKind` enum.
-    static let typeDescription = "How a transaction changed a node."
+    static let typeDescription = "How a node changed."
 
     /// The description of the value of this case.
     var valueDescription: String {
         switch self {
-        case .created: "The transaction made the node."
-        case .updated: "The transaction changed fields of the node, also derived fields."
-        case .deleted: "The transaction deleted the node: the node is a tombstone now."
-        case .restored: "The transaction undeleted the node: the node is live again."
+        case .created: "The node is new."
+        case .updated: "Each other update: the node is not new, deleted, or restored."
+        case .deleted: "The node was deleted: it is a tombstone now."
+        case .restored: "The node was undeleted: it is live again."
         }
     }
 }
 
 // MARK: - Field change
 
-/// The change of one public field of a node in a transaction: the GraphQL `FieldChange` type (plan.md §4.1, §6.7).
+/// The change of one public field of a node from before to after the batch of a change (``ChangeBuilder``): the
+/// GraphQL `FieldChange` type (plan.md §4.1, §6.7).
 ///
 /// A single value gives ``before`` and ``after``. A list gives ``added`` and ``removed``. The `body` field gives only
-/// ``diff``, a unified diff from the body before the transaction to the body after it. The values are the values that
-/// a query shows, not the raw patch.
+/// ``diff``, a unified diff from the body before the batch to the body after it. The values are the values that a
+/// query shows, not the raw patch.
 struct FieldChange: Equatable, Sendable {
     /// The public field name, for example `column`, `tags`, or `ready`.
     let name: String
 
-    /// The value before the transaction, for a single value. `nil` is the JSON `null`.
+    /// The value before the batch, for a single value. `nil` is the JSON `null`.
     let before: Map?
 
-    /// The value after the transaction, for a single value. `nil` is the JSON `null`.
+    /// The value after the batch, for a single value. `nil` is the JSON `null`.
     let after: Map?
 
-    /// The items that the transaction added to a list value, or `nil` for a field that is not a list.
+    /// The items that the batch added to a list value, or `nil` for a field that is not a list.
     let added: [Map]?
 
-    /// The items that the transaction removed from a list value, or `nil` for a field that is not a list.
+    /// The items that the batch removed from a list value, or `nil` for a field that is not a list.
     let removed: [Map]?
 
     /// The unified diff of the body, or `nil` for a field that is not `body`.
@@ -126,7 +128,8 @@ struct FieldChange: Equatable, Sendable {
 
 // MARK: - Node update
 
-/// The change of one node in a transaction: the GraphQL `NodeUpdate` type (plan.md §4.1, §6.7).
+/// The change of one node from before to after the batch of a change (``ChangeBuilder``): the GraphQL `NodeUpdate`
+/// type (plan.md §4.1, §6.7).
 struct NodeUpdate: Sendable {
     /// The local ref of the node.
     let ref: LocalRef
@@ -137,7 +140,7 @@ struct NodeUpdate: Sendable {
     /// The type of the node.
     let type: NodeType
 
-    /// How the transaction changed the node.
+    /// How the node changed.
     let kind: UpdateKind
 
     /// The changes of the public fields of the node, in the order of the fields of the node type.
@@ -163,11 +166,11 @@ struct NodeUpdate: Sendable {
 
 // MARK: - Change
 
-/// One transaction (one tool call): the GraphQL `Change` type (plan.md §4.1, §6.5, §6.7).
+/// One transaction: the GraphQL `Change` type (plan.md §4.1, §6.5, §6.7).
 ///
-/// A change has one ``NodeUpdate`` for each node that the transaction changed: each node that a patch of the
-/// transaction wrote, and each other node whose fields changed because of the transaction. One node has at most one
-/// update. ``ChangeBuilder`` makes it from the projection before and after the transaction.
+/// ``ChangeBuilder`` makes it from the projection before and after the batch of the transaction. ``ChangeBuilder``
+/// and ``ChangeRound`` tell which ``NodeUpdate`` values each change of a batch has: an update can be in the change
+/// of a transaction that did not write its node.
 struct Change: Sendable {
     /// The transaction ULID.
     let txn: NodeID

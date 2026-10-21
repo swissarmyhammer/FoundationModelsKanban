@@ -6,14 +6,22 @@ import ULID
 // MARK: - Builder
 
 /// Makes the ``Change`` of each transaction of a batch from the projection before and after the batch (plan.md §5.3
-/// step 5, §6.7). A batch is one transaction of a call, or the transactions of one batch of a file watcher.
+/// step 5, §6.7). A batch is the transactions of one ``LiveGraphChange`` of this board, for example one batch of a
+/// file watcher after a git pull, or, for ``changesOfOtherBoards(ofBatch:)``, the transactions of all the boards that
+/// changed in one ``ChangeRound``. ``change(of:markingUndone:)`` makes one transaction a batch of its own: each
+/// transaction of `Board.history` is such a batch.
 ///
-/// Each node that changed has one update in one change of the batch only. A node that a patch changed has its update
-/// in the change of the last transaction of the batch that patched it, in the order of the first patch of each node.
-/// Each other live node whose field values changed has its update in the change of the last transaction of the batch,
-/// after the updates of the patched nodes, in slot order: for example a task that becomes ready when the task that it
-/// depends on is done, a task whose tags change with a tag rename, and the board, whose summary changes. The values
-/// are the values that a query shows before and after the batch (``NodeObject/trackedFields``), not the raw patches.
+/// Each node has at most one update in the changes of a batch. A node that a transaction patched has its update in the
+/// change of the last transaction of the batch that patched it, also when none of its field values changed, and those
+/// updates come in the order of the first patch of each node in that transaction. For
+/// ``changesOfOtherBoards(ofBatch:)`` the nodes that a transaction patched are instead the tasks of this board that
+/// ``BoardView/tasks(assignedToActorsPatchedBy:)`` gives, in slot order. A patched node that the graph after the batch
+/// does not have gets no update. Each other live node whose field values changed has its update in the change of the
+/// last transaction of the batch, after the updates of the patched nodes, in slot order: for example a task that
+/// becomes ready when the task that it depends on is done, a task whose tags change with a tag rename, and the board,
+/// whose summary changes. The values are the values that a query shows before and after the batch
+/// (``NodeObject/trackedFields``), not the raw patches, so each update of a batch compares the values before the first
+/// transaction of the batch with the values after the last one.
 struct ChangeBuilder: Sendable {
     /// The read view of the graph before the batch.
     private let before: BoardView
@@ -58,14 +66,16 @@ struct ChangeBuilder: Sendable {
         changes(ofBatch: batch) { transaction in OrderedSet(transaction.events.map(\.patch.node)) }
     }
 
-    /// Makes the changes that the transactions of a batch of different boards make in this board: only the updates of
-    /// the nodes of this board whose fields changed, all in the change of the last transaction (plan.md §6.7, updates
-    /// across boards). For example, a task of a related board becomes done, and a task of this board that depends on
-    /// it becomes ready.
+    /// Makes the changes that the transactions of a batch of different boards make in this board (plan.md §6.7, updates
+    /// across boards). None of the nodes that the transactions wrote is in a change, because they are not nodes of this
+    /// board.
     ///
-    /// A task of this board whose assignee is an actor of a different board (divergence.md Q21) has its update in the
-    /// change of the last transaction that patched that actor, also when no field value of the task changed: for
-    /// example a rename of the actor, which `NodeUpdate.node` then shows.
+    /// A live task of this board with an assignee that is an actor of a different board (divergence.md Q21), which a
+    /// transaction of the batch of that board patched, has its update in the change of the last transaction of the
+    /// batch that patched one of its assignee actors, also when no field value of the task changed: for example a
+    /// rename of the actor, which `NodeUpdate.node` then shows. Each other live node of this board whose field values
+    /// changed has its update in the change of the last transaction of the batch: for example a task of a related
+    /// board becomes done, and a task of this board that depends on it becomes ready.
     ///
     /// - Parameter batch: The transactions of the batch in the other boards, in `txn` order.
     /// - Returns: One change for each transaction that has events, in the order of `batch`.
@@ -221,7 +231,7 @@ struct BatchTransaction: Sendable {
     ///   - events: The events, in the order of their ids.
     ///   - key: The current key of the board of the events.
     ///   - undone: The undone state of the transactions of the board.
-    /// - Returns: One transaction for each `txn`, in the order of the first event of each transaction.
+    /// - Returns: One transaction for each `txn`, in `txn` order.
     static func grouping(
         _ events: [Event],
         inBoard key: String,

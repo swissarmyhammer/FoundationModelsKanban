@@ -207,6 +207,50 @@ comments:
     - evidence: `swift test` — 1728 tests in 144 suites passed, 0 failed, 0 skipped; no package-code compiler warnings (only third-party mlx-swift_Cmlx bundle linker warning, out of scope). `swift build --build-tests` in IntegrationTests/ — Build complete, no package-code warnings.
     - next: review
   timestamp: 2026-10-21T15:30:22.727485+00:00
+- actor: claude-code
+  id: 01m5fhqmcaqdxveqwxa06vntqr
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (d02d62d): engine counts 0 findings, 0 confirmed, 0 refuted, 7 files attempted. All 8 findings of the 10:15 sections are fixed in the code. `swift test --filter EndpointConventionTests`: 4 tests passed (the golden SDL matches). Description check of d02d62d: 11 checked, 1 wrong — Sources/FoundationModelsKanban/GraphQL/SchemaDescription+Changes.swift:10 (`Change`: the other-board Change comes only when this board did not change, and the batch rule for an assigned task follows the last transaction that wrote the actor).
+    - next: implement the 10:34 item, record Tests/Fixtures/kanban.graphql again, commit, then /review 01M5F23SEC4X5S9D80NESC56VK HEAD~1..HEAD.
+  timestamp: 2026-10-21T15:37:01.066937+00:00
+- actor: claude-code
+  id: 01m5fhr7yjvr85008a05c2szqx
+  text: |-
+    ### finish iteration 4 — findings
+    - implement: changed — 8 files, 8/8 findings worked
+    - test: green — swift test 1728 / 144; IntegrationTests build ok
+    - commit: d02d62d
+    - review: findings — SchemaDescription+Changes.swift:10 (Change description cross-board/batch rule; same description flagged in iteration 3 at :8)
+  timestamp: 2026-10-21T15:37:21.106225+00:00
+- actor: claude-code
+  id: 01m5fj3xh4x5ts2hzq264xea5x
+  text: |-
+    ### research + implement (review round 5)
+    - As directed, no third detailed rule set in the SDL. `Change` now says only: one transaction in the history or change feed of a board (txn, time, actor, mutations, boards, its updates of that board's nodes); an update tells which node and which tracked fields changed, so read the nodes again; transactions read together (for example after a git pull) can give one Change with an update for each node, so a Change can hold updates of nodes its transaction did not write.
+    - Same cause removed from the rest of the change descriptions: `Change.updates` ("The updates of the change that the filter keeps"), `NodeUpdate`, `NodeUpdate.kind`, `FieldChange.before/after/added/removed/diff` ("the update", not "the transaction": in a batch the values span the whole batch), and the public `UpdateKind` type and value descriptions in Observe/Change.swift ("The transaction made the node" etc. were wrong for batched and cross-board updates).
+    - The exact rules now live in Swift doc comments, traced against the code:
+      - `ChangeBuilder` type doc: what a batch is (one `LiveGraphChange`, or every transaction of all changed boards in one `ChangeRound` for `changesOfOtherBoards(ofBatch:)`; `change(of:markingUndone:)` = batch of one, as in Board.history); each node has at most one update per batch; a patched node goes to the last transaction that patched it, kept with no field change, in first-patch order within that transaction; a patched node missing from the graph after gets none; other live nodes with changed fields go to the last transaction, slot order; values compare before the first and after the last transaction of the batch.
+      - `ChangeBuilder.changesOfOtherBoards(ofBatch:)`: the written nodes belong to other boards; a live task whose assignee actor a transaction patched goes to the last transaction that patched one of its assignee actors (`lastPatchers`), kept with no field change; every other changed live node goes to the last transaction.
+      - `ChangeRound` type doc, `changes(of:atPath:)`, and `changesOfOtherBoards(in:)`: a board that changed gets only its own transactions (live-graph changes in the order they happened, `txn` order within each) and nothing from other boards, even when the same call changed them (`guard let own = changed[path]`); a board that did not change gets one batch over all changed boards' transactions in `txn` order.
+      - Discovered: the old `ChangeRound` doc said only boards "whose tasks depend on a task of a board that changed" get cross-board changes. The code gives them to every subscribed board that did not change. `BatchTransaction.grouping` said "order of the first event", but `groupedByTransaction()` sorts by `txn`. Both are corrected.
+      - `Change`, `NodeUpdate`, `FieldChange`, and `UpdateKind` struct/enum doc comments now say "batch", not "transaction", and point to ChangeBuilder/ChangeRound.
+    - Golden Tests/Fixtures/kanban.graphql re-recorded with `GRAPHQL_GOLDEN_RECORD=1 swift test --filter EndpointConventionTests` (4 passed). The SDL diff has description lines only.
+  timestamp: 2026-10-21T15:43:43.652736+00:00
+- actor: claude-code
+  id: 01m5fj401mxkg0mwatat3xk0rx
+  text: |-
+    ### implement — changed
+    - evidence: 5 files — Sources/FoundationModelsKanban/GraphQL/SchemaDescription+Changes.swift, Sources/FoundationModelsKanban/Observe/Change.swift, Sources/FoundationModelsKanban/Observe/ChangeBuilder.swift, Sources/FoundationModelsKanban/Observe/ChangeRound.swift, Tests/Fixtures/kanban.graphql. `swift test`: 1728 tests in 144 suites passed, exit 0. The only build warning is the third-party "missing creator for mutated node … mlx-swift_Cmlx.bundle". There are no package-code warnings. The 10:34 finding is checked; 0 open findings. Not committed; task in doing.
+    - next: /review
+  timestamp: 2026-10-21T15:43:46.228192+00:00
+- actor: claude-code
+  id: 01m5fj7a7j9y50ngjb59yq0fct
+  text: |-
+    ### test — green
+    - evidence: swift test — 1728 tests in 144 suites passed, 0 failed, 0 skipped; swift build --build-tests in IntegrationTests/ — Build complete, exit 0. Only warning: third-party mlx-swift_Cmlx.bundle "missing creator for mutated node" (out of scope). Replay "warning" log lines are expected output of passing tests.
+    - next: review
+  timestamp: 2026-10-21T15:45:34.962352+00:00
 depends_on:
 - 01M5F23FSEG4MRQ3NWWD7SGPAZ
 position_column: doing
@@ -316,3 +360,19 @@ EXTRAS-9 rules 8 and 11 (TestudoApp/features/packages/foundationmodels-extras.md
 - [x] `Sources/FoundationModelsKanban/GraphQL/SchemaDescription+Types.swift:33` `description/accuracy` — `Query.boards` says "each repo one level down in the parent folder of the current repo". `BoardLocator.repos(in:)` keeps each folder that `isCandidate(_:)` accepts: a `.git` entry, or a `.kanban/` with no git (a board outside git, CrossRepo/BoardLocator.swift). Say: "each repo or board folder one level down in the parent folder of the current repo, the current repo included, then in each search root of the config."
 - [x] `Sources/FoundationModelsKanban/GraphQL/SchemaDescription+Types.swift:337` `description/accuracy` — db30d62 changed `SearchSignals.cosine` from "Null when the search has no embedder, or the embeddings are not done yet" to "Null when the search gives no cosine score, for example with no embedder." `TaskSearch.rankedMatches(for:limit:)` (Search/TaskSearch.swift) uses the keyword searcher until the embedded catalog holds the newest catalog, also with an embedder, and `signals(of:withCosine:)` then gives `cosine: nil`. Say: "Null when the keyword searcher ranked the hit: the search has no embedder, or the embeddings of the newest catalog are not done yet."
 - [x] `Sources/FoundationModelsKanban/GraphQL/TaskMutations.swift:262` `description/accuracy` — The 09:53 `UpdateTaskInput.column` finding named the `actorRef` doc comment; it still says "`id`: The ref as the caller wrote it: a full URI or the slug." `RefResolver.actorRef(for:includingTombstones:)` calls `nodeRef(for:ofType: .actor)`, which also accepts the stored form `actor/<slug>` and a name that gives the slug. Say: "a full URI, the stored form actor/<slug>, the slug, or a name that gives the slug."
+
+## Review Findings (2026-10-21 10:30)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 7 file(s) reviewed, 3 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `Tests/Fixtures/kanban.graphql` — no validator matches this file
+
+### Prior-finding check and description spot-check (2026-10-21 10:34)
+
+> The caller asked for proof that each of the 8 findings of the 10:15 sections is fixed in d02d62d, and for a check of every description and doc comment that d02d62d changed against its resolver. All 8 are fixed in the code: `Self.makeTaskReferenceField()` in placementFields; the `TargetBoardInput` conformers are exactly AddColumnInput, AddActorInput, AddTaskInput, AddTagInput, RenameTagInput and BoardInput (initBoard, updateBoard), and `MutationBoard.reference` takes the board key of a full-URI `from`; `ChangedColorInput.color` matches `ActorObject.color` (stored, optional) and `TagObject.color` (`resolvedColor`); `UpdateColumnInput` matches `input.order.map(PatchValue.integer)` and the `?? 0` in Events/Replay.swift; `Query.boards` matches `BoardLocator.isCandidate(_:)`; `SearchSignals.cosine` matches `TaskSearch.rankedMatches(for:limit:)` and `EmbeddedTaskCatalog.matchesOfNewestCatalog(for:limit:)`; the `actorRef` / `actorRefs` doc comments list every form that `nodeRef(for:ofType:)` accepts. `swift test --filter EndpointConventionTests` passes (4 tests), so Tests/Fixtures/kanban.graphql matches the Swift strings. Descriptions and doc comments that d02d62d changed: 11 checked, 1 wrong. Mismatches in descriptions older than this task (linkStatus, linkTarget, collectResultRepairs, collectResultOtherLinks, VirtualTag.explanation) are covered by 01M5FFBDY50R40FT79XDD9G87W and are not listed here. Record Tests/Fixtures/kanban.graphql again after the fix.
+
+- [x] `Sources/FoundationModelsKanban/GraphQL/SchemaDescription+Changes.swift:10` `description/accuracy` — `Change` now says "In Subscription.changes, a transaction of a different board gives a Change with …", and keeps the batch rule "a node has one update only: in the last transaction of the batch that wrote the node, else in the last transaction of the batch." Two parts do not match the code. (1) `ChangeRound.changes(of:atPath:)` (Observe/ChangeRound.swift) calls `changesOfOtherBoards(in:)` only when this board's log did not change (`guard let own = changed[path] else`). When one write changes this board and a different board (for example moveTask to a different board), the transactions of the different board give no Change to this board. (2) In `ChangeBuilder.changesOfOtherBoards(ofBatch:)` (Observe/ChangeBuilder.swift), the patched set of a transaction is `tasks(assignedToActorsPatchedBy:)`, and `lastPatchers(of:)` puts the update of such a task in the last transaction of the batch that wrote the actor, not in the last transaction that wrote the task, and not in the last transaction of the batch. Say: "In Subscription.changes, when this board did not change, a transaction of a different board gives a Change with …", and give the batch rule for the assignee case: "the update of a task whose assignee is an actor of a different board is in the last transaction of the batch that wrote that actor."
