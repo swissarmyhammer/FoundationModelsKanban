@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsExtras
 import GraphQL
 import Testing
 
@@ -56,7 +57,7 @@ struct TaskQueryFixture {
     /// - Returns: The response as JSON text.
     /// - Throws: An error that is not a GraphQL error.
     func respond(to document: String) async throws -> String {
-        try await PublicSchema().respond(to: document, context: context)
+        try await PublicSchema().respond(to: document, rules: .kanban, context: context)
     }
 
     /// Runs one document, and gives the ``KanbanError`` of its first GraphQL error.

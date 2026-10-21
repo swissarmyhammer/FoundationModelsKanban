@@ -1,16 +1,14 @@
-import Foundation
+import FoundationModelsExtras
 
-/// An error that the tool returns to the caller in the `errors` list of a GraphQL response (plan.md §4.4).
+/// An error of the kanban schema that the tool returns to the caller in the `errors` list of a GraphQL response
+/// (plan.md §4.4).
 ///
 /// Each case has one fixed ``code`` and a ``message`` that tells the caller how to correct the call. Each case
-/// holds the data that its message needs, for example the matching ids and titles of an ambiguous ULID prefix.
-///
-/// The type does not use the GraphQL engine. ``responseError(at:)`` makes the GraphQL error JSON with `Codable`.
-enum KanbanError: Error, Hashable, Sendable {
-    /// `INVALID_VARIABLES`: the `variables` of the call are not a JSON object. The value tells what the call sent,
-    /// for example `a number`.
-    case invalidVariables(received: String)
-
+/// holds the data that its message needs, for example the matching ids and titles of an ambiguous ULID prefix. The
+/// errors that each endpoint can give, whatever its schema, are the ``GraphQLToolkitError`` of the toolkit, for
+/// example `GRAPHQL_PARSE_FAILED` and `SUBSCRIPTION_NOT_IN_TOOL`. Both types are a ``CodedError``, so the toolkit
+/// codes them the same way.
+enum KanbanError: CodedError, Hashable {
     /// `NOT_FOUND`: no node of the type has the reference.
     case notFound(type: PatchNodeType, reference: String)
 
@@ -88,25 +86,6 @@ enum KanbanError: Error, Hashable, Sendable {
 
     /// `BOARD_BUSY`: the log of the board changed during each commit attempt (plan.md §5.4).
     case boardBusy(attempts: Int)
-
-    /// `SUBSCRIPTION_NOT_IN_TOOL`: the call sent a `subscription` through the tool.
-    case subscriptionNotInTool
-
-    /// `GRAPHQL_PARSE_FAILED`: the document has a syntax error. The detail is the message of the GraphQL parser.
-    case graphQLParseFailed(detail: String)
-
-    /// `GRAPHQL_VALIDATION_FAILED`: the document is not valid for the schema, for example it has an unknown field
-    /// or an argument of the wrong type. The detail is the message of the GraphQL engine, with its "did you mean"
-    /// suggestion.
-    case graphQLValidationFailed(detail: String)
-
-    /// `AMBIGUOUS_NAME`: the name rewrite matches a name of the document to more than one name of the schema
-    /// (plan.md §4.5). The matches are these names.
-    case ambiguousName(name: String, matches: [String])
-
-    /// `INTERNAL`: a fault that is not a ``KanbanError``, for example an ``EventError`` of a resolver. The detail is
-    /// the message of the GraphQL engine.
-    case internalFailure(detail: String)
 }
 
 // MARK: - Code and message
@@ -127,7 +106,6 @@ extension KanbanError {
     /// The code of the error, as `extensions.code` gives it, for example `NOT_FOUND`.
     var code: String {
         switch self {
-        case .invalidVariables: "INVALID_VARIABLES"
         case .notFound, .boardNotFound, .transactionBoardNotLoaded: "NOT_FOUND"
         case .incompatibleBoard: "INCOMPATIBLE_BOARD"
         case .ambiguousID: "AMBIGUOUS_ID"
@@ -144,20 +122,12 @@ extension KanbanError {
         case .invalidOrdinal: "INVALID_ORDINAL"
         case .conflictingPlacement: "CONFLICTING_PLACEMENT"
         case .boardBusy: "BOARD_BUSY"
-        case .subscriptionNotInTool: "SUBSCRIPTION_NOT_IN_TOOL"
-        case .graphQLParseFailed: "GRAPHQL_PARSE_FAILED"
-        case .graphQLValidationFailed: "GRAPHQL_VALIDATION_FAILED"
-        case .ambiguousName: "AMBIGUOUS_NAME"
-        case .internalFailure: "INTERNAL"
         }
     }
 
     /// The message of the error: what is wrong, and how to correct the call.
     var message: String {
         switch self {
-        case .invalidVariables(let received):
-            "The variables are not a JSON object. The call sent \(received). Send the variables as a JSON object, "
-                + "or as a string that holds a JSON object, for example {\"id\": \"^ajv8v4t\"}."
         case .notFound(let type, let reference):
             "No \(Self.noun(for: type)) has the reference \"\(reference)\". Query the board to get the correct ids, "
                 + "and then send the call again."
@@ -221,14 +191,6 @@ extension KanbanError {
         case .boardBusy(let attempts):
             "The board changed during each of the \(attempts) commit attempts, so the call wrote nothing. "
                 + "Send the call again."
-        case .subscriptionNotInTool:
-            "The tool does not run a subscription. Use board { history(since: <txn>) } "
-                + "to get the changes after a known transaction."
-        case .graphQLParseFailed(let detail), .graphQLValidationFailed(let detail), .internalFailure(let detail):
-            detail
-        case .ambiguousName(let name, let matches):
-            "The name \"\(name)\" matches more than one name: \(matches.joined(separator: Self.listSeparator)). "
-                + "Use one of these names."
         }
     }
 
@@ -293,120 +255,5 @@ extension KanbanError {
             }
             return "\(id) \"\(title)\""
         }
-    }
-}
-
-// MARK: - GraphQL error JSON
-
-extension KanbanError {
-    /// One step of the `path` of a GraphQL error: the response key of a field, or the index of a list item.
-    ///
-    /// The JSON form is a string for a key and a number for an index, as the GraphQL specification tells.
-    enum PathComponent: Codable, Hashable, Sendable {
-        /// The response key of a field, for example `addTask`.
-        case key(String)
-
-        /// The index of an item in a list.
-        case index(Int)
-
-        /// Reads a path step from a JSON number or a JSON string.
-        ///
-        /// - Parameter decoder: The decoder that holds one value.
-        /// - Throws: A `DecodingError` when the value is not a number or a string.
-        init(from decoder: any Decoder) throws {
-            let container = try decoder.singleValueContainer()
-            if let position = try? container.decode(Int.self) {
-                self = .index(position)
-            } else {
-                self = .key(try container.decode(String.self))
-            }
-        }
-
-        /// Writes the path step as a JSON string for a key, or a JSON number for an index.
-        ///
-        /// - Parameter encoder: The encoder that gets one value.
-        /// - Throws: An error from the encoder.
-        func encode(to encoder: any Encoder) throws {
-            var container = encoder.singleValueContainer()
-            switch self {
-            case .key(let name):
-                try container.encode(name)
-            case .index(let position):
-                try container.encode(position)
-            }
-        }
-    }
-
-    /// The GraphQL error JSON of a ``KanbanError``: `{ message, path, extensions: { code } }`.
-    struct ResponseError: Codable, Hashable, Sendable {
-        /// The `extensions` object of a GraphQL error.
-        struct Extensions: Codable, Hashable, Sendable {
-            /// The keys of the `extensions` object.
-            enum CodingKeys: String, CodingKey {
-                /// The key of the code.
-                case code
-            }
-
-            /// The code of the error, for example `NOT_FOUND`.
-            let code: String
-        }
-
-        /// The message of the error.
-        let message: String
-
-        /// The path to the response field of the error. The path is empty when no field caused the error.
-        // The synthesized `Encodable` and `Hashable` conformances read this property; periphery sees no reader.
-        // periphery:ignore
-        let path: [PathComponent]
-
-        /// The `extensions` object, which holds the code.
-        let extensions: Extensions
-    }
-
-    /// Makes the GraphQL error JSON of the error.
-    ///
-    /// - Parameter path: The path to the response field of the error. Leave it empty when no field caused the
-    ///   error, for example for `INVALID_VARIABLES`.
-    /// - Returns: The error with its ``message``, the path, and its ``code`` in `extensions`.
-    func responseError(at path: [PathComponent] = []) -> ResponseError {
-        ResponseError(message: message, path: path, extensions: ResponseError.Extensions(code: code))
-    }
-
-    /// The JSON of a response that holds only errors, no `data`, and the warnings of the call when it has some.
-    private struct ErrorResponse: Encodable {
-        /// The `extensions` object of the response, which holds the warnings (plan.md §4.4).
-        struct Extensions: Encodable {
-            /// The warnings of the call, in the order that the call added them.
-            // The synthesized `Encodable` conformance reads this property; periphery sees no reader.
-            // periphery:ignore
-            let warnings: [ResponseWarning]
-        }
-
-        /// The errors of the response.
-        // The synthesized `Encodable` conformance reads this property; periphery sees no reader.
-        // periphery:ignore
-        let errors: [ResponseError]
-
-        /// The `extensions` object, or `nil` for a call with no warning. The encoder leaves out the key when the
-        /// value is `nil`.
-        // The synthesized `Encodable` conformance reads this property; periphery sees no reader.
-        // periphery:ignore
-        let extensions: Extensions?
-    }
-
-    /// Makes the GraphQL response of a call that fails as a whole with this error, for example `BOARD_BUSY` (plan.md
-    /// §5.4 step 5.2): `{"errors": [...]}`, with no `data`. The warnings that the call collected before it failed go
-    /// in `extensions.warnings` (plan.md §4.4), so that the agent sees them also on this path. The keys are in sorted
-    /// order, and a `/` is not escaped, the same as each other response of the tool.
-    ///
-    /// - Parameter warnings: The warnings of the call. With no warning, the response has no `extensions` key.
-    /// - Returns: The response as JSON text.
-    /// - Throws: An error from the JSON encoder.
-    func responseJSON(warnings: [ResponseWarning] = []) throws -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        let extensions = warnings.isEmpty ? nil : ErrorResponse.Extensions(warnings: warnings)
-        let response = ErrorResponse(errors: [responseError()], extensions: extensions)
-        return String(decoding: try encoder.encode(response), as: UTF8.self)
     }
 }

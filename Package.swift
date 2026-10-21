@@ -13,14 +13,33 @@ let packageName = "FoundationModelsKanban"
 let loggingPackage = "swift-log"
 
 // The GraphQL engine: the parser, the validator, and the executor (plan.md
-// §12, item 9).
+// §12, item 9). FoundationModelsExtras holds the GraphQL toolkit of the family
+// and owns the pin of this package (EXTRAS-9 rev 2, rule 2). Extras does not
+// re-export it, and a target can link only a product of a package that its own
+// manifest declares, so this manifest declares it too. The URL and the version
+// floor follow Extras; they are not a choice of this package. The same URL keeps
+// one package identity, so `Package.resolved` holds one copy.
 let graphQLPackage = "GraphQL"
 
+// The version floor of `graphQLPackage`: the floor that FoundationModelsExtras
+// declares.
+let graphQLVersionFloor: Version = "4.3.0"
+
 // The schema builder. It makes the GraphQL schema from Swift types, so that
-// the Swift types are the one source of truth (plan.md §12, item 9).
+// the Swift types are the one source of truth (plan.md §12, item 9). As for
+// `graphQLPackage`, the URL and the version floor follow FoundationModelsExtras,
+// which owns the pin.
 let graphitiPackage = "Graphiti"
 
-// The ordered dictionary that a GraphQL `Map` object holds. The `JSON` scalar
+// The version floor of `graphitiPackage`: the floor that FoundationModelsExtras
+// declares.
+let graphitiVersionFloor: Version = "3.1.0"
+
+// The GitHub organization of the GraphQL engine and the schema builder, as the
+// manifest of FoundationModelsExtras names it.
+let graphQLSwiftOrg = "https://github.com/GraphQLSwift/"
+
+// The ordered dictionary that a GraphQL `Map` object holds. A patch value
 // sorts the keys of each object, so it names this type directly. The loader
 // also uses its `Heap` for the k-way merge of the event lists (plan.md §5.3).
 let collectionsPackage = "swift-collections"
@@ -77,8 +96,10 @@ let package = Package(
         // that a later step adds is referenced by URL, not by a local path,
         // for the CI reason that FoundationModelsCodeContext states.
         .package(url: "https://github.com/apple/\(loggingPackage).git", from: "1.15.1"),
-        .package(url: "https://github.com/GraphQLSwift/\(graphQLPackage).git", from: "4.3.0"),
-        .package(url: "https://github.com/GraphQLSwift/\(graphitiPackage).git", from: "3.1.0"),
+        // The GraphQL engine and the schema builder follow
+        // FoundationModelsExtras: its URLs and its version floors.
+        .package(url: "\(graphQLSwiftOrg)\(graphQLPackage).git", from: graphQLVersionFloor),
+        .package(url: "\(graphQLSwiftOrg)\(graphitiPackage).git", from: graphitiVersionFloor),
         .package(url: "https://github.com/apple/\(collectionsPackage).git", from: "1.0.0"),
         .package(url: "https://github.com/yaslab/\(ulidPackage).git", from: "1.3.1"),
         .package(url: "https://github.com/pointfreeco/\(parsingPackage).git", from: "0.15.2", traits: []),
@@ -116,7 +137,8 @@ let package = Package(
                 .product(name: graphitiPackage, package: graphitiPackage),
                 // The identity tests make and read `ULID` values.
                 .product(name: "ULID", package: ulidPackage),
-                // The search tests give a fake `PooledEmbedding` to the engine.
+                // The search tests give a fake `PooledEmbedding` to the engine,
+                // and the GraphQL tests read the types of the GraphQL toolkit.
                 .product(name: extrasPackage, package: extrasPackage),
                 // The code mode tests run `KanbanTool` in a `MultiTool`.
                 .product(name: multitoolPackage, package: multitoolPackage),

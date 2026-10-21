@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsExtras
 
 /// Evaluates a parsed filter against the nodes of one board (plan.md §6.3).
 ///

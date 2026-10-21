@@ -525,6 +525,7 @@ public actor KanbanGraph {
                 to: query,
                 variables: variables,
                 operationName: operationName,
+                rules: .kanban,
                 formattedWith: .sortedKeys,
                 context: context
             )
@@ -551,13 +552,18 @@ public actor KanbanGraph {
     ) async throws -> CallResult<AsyncThrowingStream<String, Error>> {
         // The warnings list of plan.md §4.4 is for a call: a response of a subscription has no warnings.
         let answer: (KanbanError, [ResponseWarning]) throws -> AsyncThrowingStream<String, Error> = { failure, _ in
-            .single(try failure.responseJSON())
+            let response = try failure.responseJSON()
+            return AsyncThrowingStream { continuation in
+                continuation.yield(response)
+                continuation.finish()
+            }
         }
         return try await runSchemaCall(on: board, holding: held, answeringFailureWith: answer) { schema, context in
             try await schema.subscribe(
                 to: query,
                 variables: variables,
                 operationName: operationName,
+                rules: .kanban,
                 formattedWith: .sortedKeys,
                 context: context
             )

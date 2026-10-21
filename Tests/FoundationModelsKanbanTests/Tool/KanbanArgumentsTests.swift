@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import FoundationModelsExtras
 import GraphQL
 import Testing
 
@@ -100,30 +101,30 @@ struct KanbanArgumentsTests {
     @Test("An object converts directly, and the JSON types are kept")
     func objectKeepsJSONTypes() throws {
         let arguments = try Self.arguments(withVariables: Self.variablesJSON)
-        #expect(arguments.query == Self.query)
-        #expect(arguments.variables == Self.expectedVariables)
-        #expect(arguments.variablesError == nil)
+        #expect(arguments.request.query == Self.query)
+        #expect(arguments.request.variables == Self.expectedVariables)
+        #expect(arguments.request.variablesError == nil)
     }
 
     @Test("A string that holds a JSON object gives the same variables as the object", arguments: textForms)
     func textGivesSameVariables(text: String) throws {
         let arguments = try Self.arguments(withVariables: Self.jsonLiteral(of: text))
-        #expect(arguments.variables == Self.expectedVariables)
-        #expect(arguments.variablesError == nil)
+        #expect(arguments.request.variables == Self.expectedVariables)
+        #expect(arguments.request.variablesError == nil)
     }
 
     @Test("null, an empty string, and no key give no variables and no error", arguments: noVariableForms)
     func noVariables(variables: String?) throws {
         let arguments = try Self.arguments(withVariables: variables)
-        #expect(arguments.variables.isEmpty)
-        #expect(arguments.variablesError == nil)
+        #expect(arguments.request.variables.isEmpty)
+        #expect(arguments.request.variablesError == nil)
     }
 
     @Test("A value that is not a JSON object sets variablesError, and init does not throw", arguments: invalidForms)
     func invalidVariables(variables: String, received: String) throws {
         let arguments = try Self.arguments(withVariables: variables)
-        #expect(arguments.variables.isEmpty)
-        #expect(arguments.variablesError == received)
+        #expect(arguments.request.variables.isEmpty)
+        #expect(arguments.request.variablesError == received)
     }
 
     // MARK: - Query and operation name
@@ -131,7 +132,7 @@ struct KanbanArgumentsTests {
     @Test("init throws when the query is missing, and the message tells the caller to send the query")
     func missingQueryThrows() throws {
         let content = try GeneratedContent(json: #"{"variables": {}}"#)
-        let error = try #require(throws: KanbanArguments.MissingQueryError.self) {
+        let error = try #require(throws: GraphQLArguments.MissingQueryError.self) {
             try KanbanArguments(content)
         }
         #expect(error.localizedDescription.contains("query"))
@@ -144,7 +145,7 @@ struct KanbanArgumentsTests {
     func operationName(sent: String?, decoded: String?) throws {
         let document = "query \(Self.operationName) \(Self.query)"
         let json = try Self.argumentsJSON(query: document, variables: nil, operationName: sent)
-        #expect(try KanbanArguments(GeneratedContent(json: json)).operationName == decoded)
+        #expect(try KanbanArguments(GeneratedContent(json: json)).request.operationName == decoded)
     }
 
     // MARK: - Schema

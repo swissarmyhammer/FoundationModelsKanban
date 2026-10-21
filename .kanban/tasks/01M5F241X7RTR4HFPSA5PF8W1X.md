@@ -42,8 +42,24 @@ comments:
     - scope: the uncommitted change (FoundationModelsExtras bump to 11ffe56, DateTime qualified in AgentPlanPostTests.swift) built and passed with no edits. IntegrationTests were not run.
     - next: review/commit
   timestamp: 2026-10-21T11:44:14.464066+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5f4gph4n80c0y2v37jfem2a
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (91c116c): 0 findings, 0 confirmed, 0 refuted; 7 validator runs attempted, 0 failed. Reviewed 1 file (Tests/.../Tool/AgentPlanPostTests.swift). Not reviewed: 14 .kanban/ files (.reviewignore), and IntegrationTests/Package.resolved and Package.resolved (no validator matches them). No earlier Review Findings sections. The "Tests: none here; the KANBAN-7 task covers them" box is satisfied by design, as the caller said.
+    - next: task moved to done; KANBAN-7 (^e60e9sx) is unblocked
+  timestamp: 2026-10-21T11:46:02.404644+00:00
+- actor: claude-code
+  id: 01m5f4h1rfke5xvedh7q2ymkkw
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 3 files (both Package.resolved → Extras 11ffe56, DateTime qualified in AgentPlanPostTests)
+    - test: green — swift test, 1703 tests / 140 suites passed
+    - commit: 91c116c
+    - review: clean — none
+  timestamp: 2026-10-21T11:46:13.903603+00:00
+position_column: done
+position_ordinal: ffa880
 title: 'External gate: EXTRAS-10 ChangeLog and NOT_FOUND/RESYNC_REQUIRED land in FoundationModelsExtras main'
 ---
 ## What

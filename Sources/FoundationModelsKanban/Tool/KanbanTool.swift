@@ -1,6 +1,5 @@
 import FoundationModels
 import FoundationModelsExtras
-import GraphQL
 
 /// The `kanban` tool of FoundationModels: one GraphQL document goes in, and one `{data, errors}` response comes out
 /// (plan.md §7.1, §7.2).
@@ -30,6 +29,10 @@ public struct KanbanTool: Tool {
     /// The example of the title slug of a task as a ref in the description (divergence.md Q25, C3): the slug of the
     /// title `Fix login bug`.
     static let titleSlugRefExample = "fix-login-bug"
+
+    /// What the agent does in place of a subscription, for the `SUBSCRIPTION_NOT_IN_TOOL` error: it reads the
+    /// changes again with the history query (EXTRAS-9 rule 10).
+    static let subscriptionHint = "Use board { history(since: <txn>) } to get the changes after a known transaction."
 
     /// The name of the tool.
     public let name = "kanban"
@@ -96,42 +99,15 @@ public struct KanbanTool: Tool {
     /// - Returns: The GraphQL response (`{data, errors}`) as JSON text with sorted keys.
     /// - Throws: An I/O fault of the engine, as ``KanbanGraph/execute(query:variables:operationName:)`` tells.
     public func call(arguments: KanbanArguments) async throws -> String {
-        if let received = arguments.variablesError {
-            return try KanbanError.invalidVariables(received: received).responseJSON()
+        let context = ToolContext.current
+        return try await GraphQLTool.answer(arguments.request, subscriptionHint: Self.subscriptionHint) {
+            query, variables, operationName in
+            try await graph.execute(
+                query: query,
+                variables: variables,
+                operationName: operationName,
+                postingPlansTo: context
+            )
         }
-        if Self.selectsSubscription(arguments.query, named: arguments.operationName) {
-            return try KanbanError.subscriptionNotInTool.responseJSON()
-        }
-        return try await graph.execute(
-            query: arguments.query,
-            variables: arguments.variables,
-            operationName: arguments.operationName,
-            postingPlansTo: ToolContext.current
-        )
-    }
-
-    /// Tells if the operation to run is a subscription.
-    ///
-    /// The tool selects the operation with the same rule as the engine: the operation that has the name, or the one
-    /// operation of the document when the name is `nil`. When the tool cannot select an operation, the engine gives
-    /// the error, for example "Must provide operation name" for a document with two operations and no name.
-    ///
-    /// - Parameters:
-    ///   - query: The GraphQL document.
-    ///   - operationName: The name of the operation to run, or `nil` when the call sent no name.
-    /// - Returns: `true` when the selected operation is a subscription. A document that does not parse, and a
-    ///   document whose operation the tool cannot select, give `false`, so that the engine reports the error.
-    private static func selectsSubscription(_ query: String, named operationName: String?) -> Bool {
-        guard let document = try? parse(source: query) else {
-            return false
-        }
-        let operations = document.definitions.compactMap { definition in definition as? OperationDefinition }
-        let selected: OperationDefinition? =
-            if let operationName {
-                operations.first { operation in operation.name?.value == operationName }
-            } else {
-                operations.count == 1 ? operations.first : nil
-            }
-        return selected?.operation == .subscription
     }
 }

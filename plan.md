@@ -962,7 +962,8 @@ FoundationModelsKanban/
                      Loader.swift (stages, work queue, join, k-way merge of the events)
       Body/          UnifiedDiff.swift (make, reverse), DiffApply.swift (nearest exact match, conflict block)
       GraphQL/       Schema.swift (public, Graphiti), PatchSchema.swift (internal `patch`), QueryResolvers.swift,
-                     MutationResolvers.swift, NameRewrite.swift (§4.5), Errors.swift, Scalars.swift
+                     MutationResolvers.swift, KanbanNameRules.swift and FieldAliases.swift (§4.5, the rules of
+                     the toolkit name rewrite), Errors.swift, Scalars.swift
       Derived/       Readiness.swift, VirtualTags.swift, PriorityTier.swift, Progress.swift, Timeline.swift
       Filter/        FilterParser.swift, FilterEvaluator.swift
       Search/        TaskSearchItem.swift (SearchableMetadata), TaskSearch.swift
@@ -985,7 +986,7 @@ Dependencies. Get siblings by URL, the same as CodeContext:
 - `FoundationModelsMetadataRegistry` (it also brings `FoundationModelsRanker`) for `searchTasks`. See §6.4.
 - `pointfreeco/swift-parsing` (`https://github.com/pointfreeco/swift-parsing`) for the filter DSL (§6.3). See §12, item 24.
 - swift-log. Optional: swift-distributed-tracing and swift-metrics (API only), the same as CodeContext.
-- `FoundationModelsExtras` for `PooledEmbedding` (§6.4), and for `ToolContext` and `PlanSnapshot` of the agent plan (§7.3). The `Operations` product is not necessary.
+- `FoundationModelsExtras` for `PooledEmbedding` (§6.4), for `ToolContext` and `PlanSnapshot` of the agent plan (§7.3), and for the GraphQL toolkit: the run and the response (`GraphQLRunContext`, `respond`, `subscribe`), the name rewrite with the kanban `GraphQLNameRules`, the warnings, `CodedError`, the `DateTime` and `JSON` scalars, and `GraphQLTool.answer`. The `Operations` product is not necessary.
 
 ## 9. Linking into the agent (code mode)
 

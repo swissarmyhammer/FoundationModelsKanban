@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsExtras
 import GraphQL
 import Testing
 import ULID
@@ -22,6 +23,9 @@ struct ErrorCoverageTests {
 
     /// A document with a name that the rewrite matches to two names of `Board`: `task` and `tasks`.
     static let tieDocument = "{ board { taskz } }"
+
+    /// The key of the code in the extensions object of a GraphQL error.
+    static let codeKey = "code"
 
     // MARK: - Helpers
 
@@ -228,7 +232,7 @@ struct ErrorCoverageTests {
         try await Self.expectRequestFailure(of: Self.tieDocument, coded: "AMBIGUOUS_NAME")
     }
 
-    @Test("A resolver error that is not a KanbanError gives INTERNAL, with the message of the engine")
+    @Test("A resolver error that is not a CodedError gives INTERNAL, with the message of the engine")
     func internalFailure() {
         let fault = EventError.malformed(detail: "the line is not JSON")
         let error = GraphQLError(
@@ -237,8 +241,7 @@ struct ErrorCoverageTests {
             originalError: fault
         )
         let coded = error.codedAsResultError()
-        let codeKey = KanbanError.ResponseError.Extensions.CodingKeys.code.stringValue
-        #expect(coded.extensions[codeKey] == .string("INTERNAL"))
+        #expect(coded.extensions[Self.codeKey] == .string("INTERNAL"))
         #expect(coded.message == error.message)
         #expect(coded.path.elements.count == error.path.elements.count)
     }

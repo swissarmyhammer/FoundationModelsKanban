@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsExtras
 
 extension Readiness {
     /// Gives the time when a task started: the `started` field (plan.md §5.3 step 4).

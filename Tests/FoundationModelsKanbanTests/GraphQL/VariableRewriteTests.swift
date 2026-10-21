@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsExtras
 import GraphQL
 import Testing
 
@@ -40,7 +41,7 @@ struct VariableRewriteTests {
         in schema: GraphQLSchema? = nil
     ) throws -> RewrittenDocument {
         let schema = try schema ?? PublicSchema().schema.schema
-        return try DocumentRewriter(for: schema).rewrittenDocument(from: document, variables: variables)
+        return try DocumentRewriter(for: schema, rules: .kanban).rewrittenDocument(from: document, variables: variables)
     }
 
     /// Gives the name of the input type of the `input` argument of a mutation of the public schema.
@@ -96,8 +97,8 @@ struct VariableRewriteTests {
     func ambiguousVariableKeyGivesTie() throws {
         let variables: [String: Map] = [Self.variable: ["comment": Self.value]]
         let rewritten = try Self.rewritten(from: Self.variableDocument(of: "updateComment"), variables: variables)
-        let tie = KanbanError.ambiguousName(name: "comment", matches: ["id", "body"])
-        #expect(rewritten.ties.compactMap { error in error.originalError as? KanbanError } == [tie])
+        let tie = GraphQLToolkitError.ambiguousName(name: "comment", matches: ["id", "body"])
+        #expect(rewritten.ties.compactMap { error in error.originalError as? GraphQLToolkitError } == [tie])
         #expect(rewritten.variables == variables)
     }
 

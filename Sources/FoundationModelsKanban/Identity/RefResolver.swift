@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsExtras
 
 /// Changes a forgiving ref that a caller writes to the stored ref of a node of one board (plan.md §3.2, §4.4).
 ///

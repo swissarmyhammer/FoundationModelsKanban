@@ -1,3 +1,4 @@
+import FoundationModelsExtras
 import OrderedCollections
 
 /// The warnings of the cross-board dependencies that a task field writes (divergence.md Q3 as P3 changed it, X3).

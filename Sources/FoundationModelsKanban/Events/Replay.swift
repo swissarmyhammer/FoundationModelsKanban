@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsExtras
 import Logging
 import OrderedCollections
 import ULID

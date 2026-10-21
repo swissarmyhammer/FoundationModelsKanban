@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsExtras
 import ULID
 
 /// One move of a task to a column: the time of a `set column` patch and the column that it set (plan.md §5.3).

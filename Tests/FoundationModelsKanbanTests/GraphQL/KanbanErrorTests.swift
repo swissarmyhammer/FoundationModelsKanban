@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsExtras
 import Testing
 
 @testable import FoundationModelsKanban
@@ -29,13 +30,8 @@ struct KanbanErrorTests {
         KanbanError.AmbiguousMatch(id: "^rc9rb4g", title: nil),
     ]
 
-    /// A message of the GraphQL engine, with its "did you mean" suggestion. The parse, validation, and internal
-    /// cases keep this message as it is.
-    static let engineMessage = #"Cannot query field "nmae" on type "Board". Did you mean "name"?"#
-
     /// One error of each case, with the code that the case must give.
     static let codes: [(KanbanError, String)] = [
-        (.invalidVariables(received: "a number"), "INVALID_VARIABLES"),
         (.notFound(type: .task, reference: "^zzzzzzz"), "NOT_FOUND"),
         (.ambiguousID(reference: "01KT6SA", matches: ambiguousMatches), "AMBIGUOUS_ID"),
         (.actorNotFound(reference: "alice"), "ACTOR_NOT_FOUND"),
@@ -59,11 +55,6 @@ struct KanbanErrorTests {
         (.invalidOrdinal(ordinal: "zz!"), "INVALID_ORDINAL"),
         (.conflictingPlacement(fields: ["before", "after"]), "CONFLICTING_PLACEMENT"),
         (.boardBusy(attempts: commitAttempts), "BOARD_BUSY"),
-        (.subscriptionNotInTool, "SUBSCRIPTION_NOT_IN_TOOL"),
-        (.graphQLParseFailed(detail: engineMessage), "GRAPHQL_PARSE_FAILED"),
-        (.graphQLValidationFailed(detail: engineMessage), "GRAPHQL_VALIDATION_FAILED"),
-        (.ambiguousName(name: "taskz", matches: ["task", "tasks"]), "AMBIGUOUS_NAME"),
-        (.internalFailure(detail: engineMessage), "INTERNAL"),
         (.incompatibleBoard(directory: rustBoardPath), "INCOMPATIBLE_BOARD"),
     ]
 
@@ -87,7 +78,7 @@ struct KanbanErrorTests {
         #expect(error.code == expectedCode)
     }
 
-    @Test("The cases give twenty-two different codes")
+    @Test("The cases give sixteen different codes")
     func codesAreDistinct() {
         #expect(Set(Self.codes.map { $0.0.code }).count == Self.codes.count)
     }
@@ -117,16 +108,6 @@ struct KanbanErrorTests {
     func callFailureKeepsIOFault() {
         let fault = EventLogError.fileSystem(path: Self.rustBoardPath, detail: "denied")
         #expect(KanbanError(callFailure: fault) == nil)
-    }
-
-    @Test("INVALID_VARIABLES tells the two correct forms of the variables")
-    func invalidVariablesMessage() {
-        let error = KanbanError.invalidVariables(received: "a number")
-        #expect(
-            error.message
-                == "The variables are not a JSON object. The call sent a number. Send the variables as a JSON object, "
-                + "or as a string that holds a JSON object, for example {\"id\": \"^ajv8v4t\"}."
-        )
     }
 
     @Test("NOT_FOUND names the node type and the reference")
@@ -336,33 +317,13 @@ struct KanbanErrorTests {
         )
     }
 
-    @Test("SUBSCRIPTION_NOT_IN_TOOL tells the agent to use the history")
+    @Test("SUBSCRIPTION_NOT_IN_TOOL with the kanban hint tells the agent to use the history")
     func subscriptionNotInToolMessage() {
         #expect(
-            KanbanError.subscriptionNotInTool.message
+            GraphQLToolkitError.subscriptionNotInTool(hint: KanbanTool.subscriptionHint).message
                 == "The tool does not run a subscription. Use board { history(since: <txn>) } "
                 + "to get the changes after a known transaction."
         )
-    }
-
-    @Test("AMBIGUOUS_NAME gives the matching names")
-    func ambiguousNameMessage() {
-        #expect(
-            KanbanError.ambiguousName(name: "taskz", matches: ["task", "tasks"]).message
-                == "The name \"taskz\" matches more than one name: task, tasks. Use one of these names."
-        )
-    }
-
-    @Test(
-        "GRAPHQL_PARSE_FAILED, GRAPHQL_VALIDATION_FAILED, and INTERNAL keep the message of the engine",
-        arguments: [
-            KanbanError.graphQLParseFailed(detail: Self.engineMessage),
-            .graphQLValidationFailed(detail: Self.engineMessage),
-            .internalFailure(detail: Self.engineMessage),
-        ]
-    )
-    func engineMessageStays(error: KanbanError) {
-        #expect(error.message == Self.engineMessage)
     }
 
     // MARK: - GraphQL error JSON
@@ -370,8 +331,8 @@ struct KanbanErrorTests {
     @Test("The JSON form has message, path, and extensions.code")
     func responseErrorJSON() throws {
         let error = KanbanError.notFound(type: .task, reference: "^zzzzzzz")
-        let path: [KanbanError.PathComponent] = [.key("addTask"), .key("tasks"), .index(Self.pathIndex)]
-        let object = try Self.jsonObject(of: error.responseError(at: path))
+        let path: [CodedErrorJSON.PathComponent] = [.key("addTask"), .key("tasks"), .index(Self.pathIndex)]
+        let object = try Self.jsonObject(of: CodedErrorJSON(error, at: path))
         #expect(object["message"] as? String == error.message)
         let decodedPath = try #require(object["path"] as? [Any])
         #expect(decodedPath.count == path.count)
@@ -383,7 +344,7 @@ struct KanbanErrorTests {
 
     @Test("An error with no field has an empty path")
     func responseErrorWithoutPath() throws {
-        let object = try Self.jsonObject(of: KanbanError.subscriptionNotInTool.responseError())
+        let object = try Self.jsonObject(of: CodedErrorJSON(KanbanError.nothingToUndo))
         let decodedPath = try #require(object["path"] as? [Any])
         #expect(decodedPath.isEmpty)
     }
@@ -397,9 +358,9 @@ struct KanbanErrorTests {
 
     @Test("The JSON form decodes to the same value")
     func responseErrorRoundTrip() throws {
-        let original = KanbanError.nothingToUndo.responseError(at: [.key("undo"), .index(0)])
+        let original = CodedErrorJSON(KanbanError.nothingToUndo, at: [.key("undo"), .index(0)])
         let data = try JSONEncoder().encode(original)
-        #expect(try JSONDecoder().decode(KanbanError.ResponseError.self, from: data) == original)
+        #expect(try JSONDecoder().decode(CodedErrorJSON.self, from: data) == original)
     }
 
     /// Encodes a value, for example a response error, and reads the JSON back as an object.

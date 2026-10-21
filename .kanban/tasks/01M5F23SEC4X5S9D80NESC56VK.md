@@ -1,6 +1,24 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m5f4m9seds7c15yvhfzc4h5a
+  text: |-
+    ### EXTRAS-11 heads-up from foundationmodelsmultitool-bc (2026-10-21)
+    EXTRAS-11 is coded in Extras but not pushed yet; that session will send the sha. Once it is pushed, bump Extras and use:
+    - `GraphQLEndpointConformance.problems(of:scope:probe:codes: [String] = [], exceptions: [GraphQLConventionException] = [])`.
+    - Exception example: `GraphQLConventionException(rule: .rule9, removedBy: "e60e9sx")`. It checks rules 3, 7, 8 and 9, and each problem starts with "rule N:".
+    - Rule 8: pass every error and warning code that KanbanGraph can give in `codes`. The SDL does not list them, so collect them from KanbanError and the warning codes, including INCOMPATIBLE_BOARD.
+    - Task ^70231sy (after EXTRAS-11) adds an ID scalar to `addToolkitScalars()`. Keep kanban's NodeID if its forgiving input parsing must stay; the requirement is only that id, added, changed and removed render as ID in the SDL.
+    If EXTRAS-11 is still not on Extras origin/main when this task starts, check with foundationmodelsmultitool-bc before writing the conformance test against the old API.
+  timestamp: 2026-10-21T11:48:00.430691+00:00
+- actor: claude-code
+  id: 01m5f4w7n42ktf89x1xzkcpw1x
+  text: |-
+    ### EXTRAS-11 landed (2026-10-21)
+    EXTRAS-11 is on FoundationModelsExtras origin/main: the code commit is dbf4202 and the tip is 02a207c. Set the Extras pin to 02a207c or later by hand. `swift package update FoundationModelsExtras` fails here on swift-case-paths, so edit the revision in Package.resolved and IntegrationTests/Package.resolved, then run `swift package resolve`, as in 91c116c. The API is `problems(of:scope:probe:codes:exceptions:)` with `GraphQLConventionException(rule:removedBy:)`. The ID scalar will be a separate opt-in, `addToolkitIDScalar()`, and `addToolkitScalars()` does not change. Kanban keeps NodeID: the rule-9 check reads the type name ID, so NodeID fields pass.
+  timestamp: 2026-10-21T11:52:20.388456+00:00
 depends_on:
 - 01M5F23FSEG4MRQ3NWWD7SGPAZ
 position_column: todo

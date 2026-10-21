@@ -1,3 +1,5 @@
+import FoundationModelsExtras
+
 /// The rule for `null` on a required text field of an update input: the task `title`, and the `name` of a column, an
 /// actor, or a tag (divergence.md Q17).
 ///

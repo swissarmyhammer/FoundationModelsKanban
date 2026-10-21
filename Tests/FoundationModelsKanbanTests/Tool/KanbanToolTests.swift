@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import FoundationModelsExtras
 import Testing
 
 @testable import FoundationModelsKanban
@@ -51,6 +52,9 @@ struct KanbanToolTests {
 
     /// The message of the GraphQL engine for a document with two or more operations and no operation name.
     static let operationNameRequired = "Must provide operation name if query contains multiple operations."
+
+    /// The query that the hint of SUBSCRIPTION_NOT_IN_TOOL names, to read the changes again (EXTRAS-9 rule 10).
+    static let historyQuery = "board { history(since: <txn>) }"
 
     /// Each document and `operationName` that selects a subscription. `nil` leaves out the key. No name and a blank
     /// name select the one operation of the document.
@@ -161,18 +165,19 @@ struct KanbanToolTests {
         let response = try await Self.call(query: Self.requiredPageQuery, variables: #""[0]""#)
         let error = try Self.onlyError(of: response)
         #expect(error.code == "INVALID_VARIABLES")
-        #expect(error.message == KanbanError.invalidVariables(received: "text that holds a list").message)
+        #expect(error.message == GraphQLToolkitError.invalidVariables(received: "text that holds a list").message)
     }
 
     @Test(
-        "A selected subscription gives SUBSCRIPTION_NOT_IN_TOOL with its message",
+        "A selected subscription gives SUBSCRIPTION_NOT_IN_TOOL with a hint that names the history query",
         arguments: subscriptionCalls
     )
     func subscriptionNotInTool(document: String, operationName: String?) async throws {
         let response = try await Self.call(query: document, variables: nil, operationName: operationName)
         let error = try Self.onlyError(of: response)
         #expect(error.code == "SUBSCRIPTION_NOT_IN_TOOL")
-        #expect(error.message == KanbanError.subscriptionNotInTool.message)
+        #expect(error.message == GraphQLToolkitError.subscriptionNotInTool(hint: KanbanTool.subscriptionHint).message)
+        #expect(error.message?.contains(Self.historyQuery) == true)
     }
 
     @Test(
@@ -189,7 +194,8 @@ struct KanbanToolTests {
         let response = try await Self.call(query: Self.querySubscriptionDocument, variables: nil)
         let error = try Self.onlyError(of: response)
         #expect(error.code == "GRAPHQL_VALIDATION_FAILED")
-        #expect(error.message == KanbanError.graphQLValidationFailed(detail: Self.operationNameRequired).message)
+        let expected = GraphQLToolkitError.graphQLValidationFailed(detail: Self.operationNameRequired)
+        #expect(error.message == expected.message)
     }
 
     @Test("The example query of the description runs and returns data")

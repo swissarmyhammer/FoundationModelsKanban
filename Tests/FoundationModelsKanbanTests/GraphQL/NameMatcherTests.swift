@@ -1,7 +1,20 @@
 import Foundation
+import FoundationModelsExtras
 import Testing
 
 @testable import FoundationModelsKanban
+
+extension CanonicalName {
+    /// Makes the canonical name of a field, an argument, or an `input` field, with its aliases from the kanban name
+    /// rules at a position.
+    ///
+    /// - Parameters:
+    ///   - name: The GraphQL name, for example `body`.
+    ///   - scope: The position of the name.
+    init(field name: String, in scope: AliasScope) {
+        self.init(name: name, aliases: GraphQLNameRules.kanban.aliases.aliases(of: name, in: scope))
+    }
+}
 
 /// Tests the name matcher of the forgiving names (plan.md §4.5): each match step, ties, the root query verbs, and the
 /// verbs for the noun `board` (divergence.md Q10, Q11).
@@ -49,7 +62,7 @@ struct NameMatcherTests {
     /// - Parameter name: The name that the agent wrote.
     /// - Returns: The match among the mutations of plan.md §4.2.
     static func mutationMatch(for name: String) -> NameMatch {
-        NameMatcher.match(for: name, among: mutations, at: .topLevelMutation)
+        NameMatcher.match(for: name, among: mutations, at: .topLevelMutation, rules: .kanban)
     }
 
     /// Gives the match of a root query field name.
@@ -59,7 +72,7 @@ struct NameMatcherTests {
     ///   - candidates: The valid names. The default is ``boardQueryFields``.
     /// - Returns: The match among the candidates.
     static func queryMatch(for name: String, among candidates: [CanonicalName] = boardQueryFields) -> NameMatch {
-        NameMatcher.match(for: name, among: candidates, at: .topLevelQuery)
+        NameMatcher.match(for: name, among: candidates, at: .topLevelQuery, rules: .kanban)
     }
 
     /// Gives the match of a name at a position that is not a top-level mutation.

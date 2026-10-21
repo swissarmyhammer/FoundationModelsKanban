@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsExtras
 import GraphQL
 import Testing
 
@@ -43,13 +44,13 @@ struct NameRewriteTests {
         #","extensions":{"rewrites":[\#(rewrite)]}}"#
     }
 
-    /// Runs the rewriter of the public schema on a document.
+    /// Runs the rewriter of the public schema with the kanban name rules on a document.
     ///
     /// - Parameter document: The GraphQL document.
     /// - Returns: The rewritten document.
     /// - Throws: A `GraphQLError` when the document does not parse.
     static func rewritten(from document: String) throws -> RewrittenDocument {
-        try DocumentRewriter(for: PublicSchema().schema.schema).rewrittenDocument(from: document)
+        try DocumentRewriter(for: PublicSchema().schema.schema, rules: .kanban).rewrittenDocument(from: document)
     }
 
     /// Gives the text that the rewrite makes for one changed name of a selection field: the name of the caller as
@@ -231,7 +232,7 @@ struct NameRewriteTests {
         arguments: [("task", "TASK"), ("Comment", "COMMENT"), ("Comments", "COMMENT"), ("COMENT", "COMMENT")]
     )
     func enumValueGetsCanonicalValue(written: String, canonical: String) throws {
-        let rewriter = DocumentRewriter(for: try Self.enumArgumentSchema())
+        let rewriter = DocumentRewriter(for: try Self.enumArgumentSchema(), rules: .kanban)
         let rewritten = try rewriter.rewrittenDocument(from: "fragment F on Query { nodes(type: [\(written)]) }")
         #expect(rewritten.text == "fragment F on Query { nodes(type: [\(canonical)]) }")
         let path = ["F", "nodes", "type", written]

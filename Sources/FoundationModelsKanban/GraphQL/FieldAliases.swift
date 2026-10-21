@@ -1,31 +1,18 @@
-/// The place of a name in a document, for the lookup of its aliases (plan.md §4.5, divergence.md N2).
-///
-/// One input type can be the input of more than one field: `NodeReferenceInput` is the input of `deleteTask` and of
-/// `deleteColumn`. So the scope of an input field names its input type and the field whose argument holds it.
-enum AliasScope: Sendable {
-    /// A field of a selection, on the object type or the interface with this name.
-    case selection(type: String)
-
-    /// An argument of a field. The coordinate is `Type.field`, for example `Board.tasks`.
-    case argument(coordinate: String)
-
-    /// A field of an `input` object type. The coordinate is the `Type.field` of the field whose argument holds the
-    /// object, for example `Mutation.deleteTask`.
-    case inputField(type: String, coordinate: String)
-}
+import FoundationModelsExtras
 
 /// The aliases of the fields, the arguments, and the `input` fields of the public schema: the other names that the
 /// agent can write for each name (plan.md §4.5, step 5; divergence.md Q9, Q14, E5, tables 4.2 and 4.3).
 ///
-/// The schema has one name for each field, and introspection shows only that name. The forgiving name rewrite reads
-/// these tables, so that the Swift code stays the one source of the names (plan.md §1). An alias applies only in the
-/// positions of its table: a name that has one meaning in one position can have a different meaning, or none, in a
-/// different position. For example, `assignee` names `assignees` in a task input and `actor` in the input of
-/// `assignTask`. When two names of one position have the same alias, the name of the agent gives `AMBIGUOUS_NAME`.
+/// The schema has one name for each field, and introspection shows only that name. The forgiving name rewrite of the
+/// toolkit reads these tables through ``GraphQLNameRules/kanban``, so that the Swift code stays the one source of the
+/// names (plan.md §1). An alias applies only in the positions of its table: a name that has one meaning in one
+/// position can have a different meaning, or none, in a different position. For example, `assignee` names `assignees`
+/// in a task input and `actor` in the input of `assignTask`. When two names of one position have the same alias, the
+/// name of the agent gives `AMBIGUOUS_NAME`.
 ///
-/// The match folds the case and the style before it reads an alias, so one alias `taskId` also covers `task_id` and
-/// `TASK_ID`.
-enum GraphQLFieldAliases {
+/// One input type can be the input of more than one field: `NodeReferenceInput` is the input of `deleteTask` and of
+/// `deleteColumn`. So the aliases of its fields come from the mutation that holds it.
+enum KanbanFieldAliases {
     /// The aliases that are safe at each position of a document. The old names `description` (Board, Tag, Task) and
     /// `text` (Comment) are aliases of `body` (plan.md §12, item 19). `label` is an alias of `tags`, because no field,
     /// argument, or `input` field has the name `tag`.
@@ -166,33 +153,11 @@ enum GraphQLFieldAliases {
         "Mutation.undeleteTag": ["id": refAliases(ofType: "tag")],
     ]
 
-    /// Gives the aliases of a name at a position of a document.
-    ///
-    /// - Parameters:
-    ///   - name: The GraphQL name, for example `body`.
-    ///   - scope: The position of the name.
-    /// - Returns: The aliases of each table that applies at the position, in the order of the tables.
-    static func aliases(of name: String, in scope: AliasScope) -> [String] {
-        let tables: [[String: [String]]?] = switch scope {
-        case .selection(let type):
-            [everywhere, byType[type]]
-        case .argument(let coordinate):
-            [everywhere, byField[coordinate]]
-        case .inputField(let type, let coordinate):
-            [everywhere, inEachInput, byType[type], byField[coordinate]]
-        }
-        return tables.flatMap { table in table?[name] ?? [] }
-    }
-}
-
-extension CanonicalName {
-    /// Makes the canonical name of a field, an argument, or an `input` field, with its aliases from
-    /// ``GraphQLFieldAliases`` at a position.
-    ///
-    /// - Parameters:
-    ///   - name: The GraphQL name, for example `body`.
-    ///   - scope: The position of the name.
-    init(field name: String, in scope: AliasScope) {
-        self.init(name: name, aliases: GraphQLFieldAliases.aliases(of: name, in: scope))
-    }
+    /// The alias tables of the public schema, for the toolkit name rewrite.
+    static let table = GraphQLAliasTable(
+        everywhere: everywhere,
+        inEachInput: inEachInput,
+        byType: byType,
+        byField: byField
+    )
 }

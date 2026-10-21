@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsExtras
 
 /// The target of one stored edge in the ``Graph`` (plan.md §3.3, §5.3).
 ///

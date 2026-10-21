@@ -100,7 +100,8 @@ struct QueryFixture {
         )
     }
 
-    /// Runs one GraphQL document against the board through the public schema, with no engine and no serial gate.
+    /// Runs one GraphQL document with the kanban name rules against the board through the public schema, with no
+    /// engine and no serial gate.
     ///
     /// - Parameters:
     ///   - document: The GraphQL document.
@@ -115,7 +116,7 @@ struct QueryFixture {
         extendedWith extend: SchemaExtension = PublicSchema.noExtension
     ) async throws -> String {
         try await PublicSchema(extendedWith: extend)
-            .respond(to: document, context: Self.context(reading: graph, searchingWith: search))
+            .respond(to: document, rules: .kanban, context: Self.context(reading: graph, searchingWith: search))
     }
 
     /// Makes a task search that indexes the live tasks of the board, and waits until the embeddings are done.

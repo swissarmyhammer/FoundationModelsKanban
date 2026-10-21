@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsExtras
 import Graphiti
 import ULID
 

@@ -1,3 +1,4 @@
+import FoundationModelsExtras
 import Graphiti
 import GraphQL
 import ULID

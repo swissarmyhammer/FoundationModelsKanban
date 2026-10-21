@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsExtras
 import ULID
 
 /// One line of a node log: one property patch on one node, plus the envelope (plan.md §5.1, §12 item 28).

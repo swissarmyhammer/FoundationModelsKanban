@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsExtras
 import GraphQL
 import Testing
 
@@ -123,7 +124,7 @@ struct AliasTableTests {
     /// - Returns: The rewritten document.
     /// - Throws: A `GraphQLError` when the document does not parse.
     private static func rewritten(from document: String) throws -> RewrittenDocument {
-        try DocumentRewriter(for: PublicSchema().schema.schema).rewrittenDocument(from: document)
+        try DocumentRewriter(for: PublicSchema().schema.schema, rules: .kanban).rewrittenDocument(from: document)
     }
 
     /// Makes a mutation document with one field whose `input` has one field.
@@ -176,8 +177,8 @@ struct AliasTableTests {
     @Test("comment on updateComment can name the comment or the body, and gives AMBIGUOUS_NAME")
     func commentOnUpdateCommentIsAmbiguous() throws {
         let rewritten = try Self.rewritten(from: Self.inputDocument(of: "updateComment", naming: "comment"))
-        let tie = KanbanError.ambiguousName(name: "comment", matches: ["id", "body"])
-        #expect(rewritten.ties.compactMap { error in error.originalError as? KanbanError } == [tie])
+        let tie = GraphQLToolkitError.ambiguousName(name: "comment", matches: ["id", "body"])
+        #expect(rewritten.ties.compactMap { error in error.originalError as? GraphQLToolkitError } == [tie])
     }
 
     // MARK: - Arguments
