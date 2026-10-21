@@ -9,7 +9,7 @@ extension MutationName {
     static let addTask = "addTask"
 
     /// The mutation that changes the title, the body, the assignees, the tags, or the dependencies of a task, and can
-    /// move the task to the end of a column.
+    /// move the task to a column, or to the top or the end of its column for a priority value.
     static let updateTask = "updateTask"
 }
 
@@ -18,7 +18,7 @@ extension MutationName {
 /// The `input` object of `addTask` (plan.md §4.2). The input has no time value: a `created` field is not in the
 /// schema, so the schema validation refuses it (plan.md §12, item 20). The name rewrite takes the removed Rust
 /// parameters `due` and `scheduled` out of the input with a warning (``RemovedParameter``).
-private struct AddTaskInput: Decodable, Sendable {
+private struct AddTaskInput: TaskPriorityInput, TargetBoardInput, NewNodeBodyInput {
     /// The title of the task.
     let title: String
 
@@ -28,7 +28,8 @@ private struct AddTaskInput: Decodable, Sendable {
     /// The column of the task, or `nil` for the column with the minimum order.
     let column: NodeID?
 
-    /// The ordinal of the task in its column, or `nil` for the end of the column.
+    /// The ordinal of the task in its column, or `nil` for the end of the column. A ``priority`` that moves the task
+    /// wins over the ordinal.
     let ordinal: String?
 
     /// The actors of the task, or `nil` for the session actor when the board knew it before the call.
@@ -51,17 +52,25 @@ private struct AddTaskInput: Decodable, Sendable {
 }
 
 /// An `input` object that names one task in its `id` field: the input of `updateTask`, `moveTask`, `copyTask`,
-/// `assignTask`, `unassignTask`, `tagTask`, and `untagTask`. ``SchemaBuilder/taskReferenceField()`` gives the schema
-/// of the field.
+/// `assignTask`, `unassignTask`, `tagTask`, and `untagTask`. ``SchemaBuilder/makeTaskReferenceField()`` gives the
+/// schema of the field.
 protocol TaskReferenceInput: Decodable, Sendable {
     /// The task: a full URI or a short form (plan.md §3.2).
     var id: NodeID { get }
 }
 
+/// An `input` object with a `priority` field: the input of `addTask` and `updateTask` (divergence.md P2 and K15).
+/// ``SchemaBuilder/makeTaskPriorityField()`` gives the schema of the field.
+protocol TaskPriorityInput: Decodable, Sendable {
+    /// The priority value, or `nil` for none. It is not stored: it can move the task to the top or to the end of its
+    /// column.
+    var priority: PriorityValue? { get }
+}
+
 /// The `input` object of `updateTask` (plan.md §4.2). A field that is not set does not change. `null` clears the body
 /// and the lists. The `title` is required, so `null` does not change it (``IgnoredNull``). `null` for the column or
 /// the priority is the same as no value. A list replaces the list.
-private struct UpdateTaskInput: TaskReferenceInput {
+private struct UpdateTaskInput: TaskReferenceInput, TaskPriorityInput, ChangedBodyInput {
     /// The task: a full URI or a short form (plan.md §3.2).
     let id: NodeID
 
@@ -80,8 +89,9 @@ private struct UpdateTaskInput: TaskReferenceInput {
     /// The new dependencies of the task.
     let dependsOn: FieldUpdate<[NodeID]>
 
-    /// The column to move the task to, at the end of the column, or `nil` for no move (divergence.md E5): a full
-    /// URI, the slug, or a name. A slug that no column has makes a new column, the same as `moveTask`.
+    /// The column to move the task to, or `nil` for no move (divergence.md E5): a full URI, the slug, or a name. The
+    /// task goes to the end of the column, or to the top when the ``priority`` moves it there. A slug that no column
+    /// has makes a new column, the same as `moveTask`.
     let column: NodeID?
 
     /// The priority value, or `nil` for none (divergence.md P2 and K15). It is not stored: it moves the task to the
@@ -673,8 +683,15 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     /// from here, so that the field has one definition.
     ///
     /// - Returns: The field `id`, with the description of a task ref.
-    static func taskReferenceField<Named: TaskReferenceInput>() -> InputFieldComponent<Named, KanbanContext> {
+    static func makeTaskReferenceField<Named: TaskReferenceInput>() -> InputFieldComponent<Named, KanbanContext> {
         InputField("id", at: \Named.id).description(SchemaDescription.taskReference)
+    }
+
+    /// Gives the `priority` input field of `AddTaskInput` and `UpdateTaskInput`, so that the field has one definition.
+    ///
+    /// - Returns: The field `priority`, with the description of a priority value.
+    static func makeTaskPriorityField<Holder: TaskPriorityInput>() -> InputFieldComponent<Holder, KanbanContext> {
+        InputField("priority", at: \Holder.priority).description(SchemaDescription.taskPriority)
     }
 
     /// Adds the task mutations, `addTask` and `updateTask`, and their `input` types (plan.md §4.2).
@@ -684,25 +701,25 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
         add {
             Input(AddTaskInput.self) {
                 InputField("title", at: \.title).description(SchemaDescription.taskTitle)
-                InputField("body", at: \.body).description(SchemaDescription.newNodeBody)
+                Self.makeNewBodyField()
                 InputField("column", at: \.column).description(SchemaDescription.newTaskColumn)
                 InputField("ordinal", at: \.ordinal).description(SchemaDescription.newTaskOrdinal)
                 InputField("assignees", at: \.assignees).description(SchemaDescription.newTaskAssignees)
                 InputField("tags", at: \.tags).description(SchemaDescription.newTaskTags)
                 InputField("dependsOn", at: \.dependsOn).description(SchemaDescription.addTaskDependsOn)
-                InputField("board", at: \.board).description(SchemaDescription.boardToChange)
-                InputField("priority", at: \.priority).description(SchemaDescription.taskPriority)
+                Self.makeTargetBoardField()
+                Self.makeTaskPriorityField()
             }
             .description(SchemaDescription.addTaskInput)
             Input(UpdateTaskInput.self) {
-                Self.taskReferenceField()
+                Self.makeTaskReferenceField()
                 InputField("title", at: \.title.value).description(SchemaDescription.changedTaskTitle)
-                InputField("body", at: \.body.value).description(SchemaDescription.changedBody)
+                Self.makeChangedBodyField()
                 InputField("assignees", at: \.assignees.value).description(SchemaDescription.changedTaskAssignees)
                 InputField("tags", at: \.tags.value).description(SchemaDescription.changedTaskTags)
                 InputField("dependsOn", at: \.dependsOn.value).description(SchemaDescription.updateTaskDependsOn)
                 InputField("column", at: \.column).description(SchemaDescription.updateTaskColumn)
-                InputField("priority", at: \.priority).description(SchemaDescription.taskPriority)
+                Self.makeTaskPriorityField()
             }
             .description(SchemaDescription.updateTaskInput)
         }

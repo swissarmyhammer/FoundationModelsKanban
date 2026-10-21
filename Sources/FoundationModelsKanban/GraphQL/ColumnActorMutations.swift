@@ -68,7 +68,7 @@ struct OptionalInputArguments<Input: Decodable & Sendable>: MutationArguments {
 }
 
 /// The `input` object of `addColumn` (plan.md §4.2).
-private struct AddColumnInput: Codable, Sendable {
+private struct AddColumnInput: Codable, NewNodeBodyInput, TargetBoardInput {
     /// The id of the new column, or `nil` for the slug of ``name``. The id is the slug of this text, or the slug of a
     /// full column URI of the board (plan.md §3.2).
     let id: NodeID?
@@ -89,8 +89,9 @@ private struct AddColumnInput: Codable, Sendable {
 
 /// The `input` object of `updateColumn` (plan.md §4.2). A field that is not set does not change, and `null` clears
 /// the field. The `name` is required, so `null` does not change it (``IgnoredNull``).
-private struct UpdateColumnInput: Decodable, Sendable {
-    /// The column: a full URI or the slug (plan.md §3.2).
+private struct UpdateColumnInput: ChangedNameInput, ChangedBodyInput {
+    /// The column: a full URI, the stored form `column/<slug>`, the slug, or a name that gives the slug (plan.md
+    /// §3.2, ``RefResolver``).
     let id: NodeID
 
     /// The new name of the column. `null` gives no change and a warning (``IgnoredNull``).
@@ -104,7 +105,7 @@ private struct UpdateColumnInput: Decodable, Sendable {
 }
 
 /// The `input` object of `addActor` (plan.md §4.2). The input must give an id or a name, or both.
-private struct AddActorInput: Codable, Sendable {
+private struct AddActorInput: Codable, NewNodeBodyInput, TargetBoardInput {
     /// The id of the new actor, or `nil` for the slug of ``name``. The id is the slug of this text, or the slug of a
     /// full actor URI of the board (plan.md §3.2).
     let id: NodeID?
@@ -133,8 +134,9 @@ private struct AddActorInput: Codable, Sendable {
 
 /// The `input` object of `updateActor` (plan.md §4.2). A field that is not set does not change, and `null` clears
 /// the field. The `name` is required, so `null` does not change it (``IgnoredNull``).
-private struct UpdateActorInput: Decodable, Sendable {
-    /// The actor: a full URI or the slug (plan.md §3.2).
+private struct UpdateActorInput: ChangedNameInput, ChangedColorInput, ChangedBodyInput {
+    /// The actor: a full URI, the stored form `actor/<slug>`, the slug, or a name that gives the slug (plan.md §3.2,
+    /// ``RefResolver``).
     let id: NodeID
 
     /// The new name of the actor. `null` gives no change and a warning (``IgnoredNull``).
@@ -692,15 +694,15 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 InputField("id", at: \.id).description(SchemaDescription.newColumnID)
                 InputField("name", at: \.name).description(SchemaDescription.columnName)
                 InputField("order", at: \.order).description(SchemaDescription.columnOrder)
-                InputField("body", at: \.body).description(SchemaDescription.newNodeBody)
-                InputField("board", at: \.board).description(SchemaDescription.boardToChange)
+                Self.makeNewBodyField()
+                Self.makeTargetBoardField()
             }
             .description(SchemaDescription.addColumnInput)
             Input(UpdateColumnInput.self) {
                 InputField("id", at: \.id).description(SchemaDescription.columnReference)
-                InputField("name", at: \.name.value).description(SchemaDescription.changedName)
+                Self.makeChangedNameField()
                 InputField("order", at: \.order.value).description(SchemaDescription.changedColumnOrder)
-                InputField("body", at: \.body.value).description(SchemaDescription.changedBody)
+                Self.makeChangedBodyField()
             }
             .description(SchemaDescription.updateColumnInput)
             Input(AddActorInput.self) {
@@ -708,17 +710,17 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 InputField("name", at: \.name).description(SchemaDescription.addActorName)
                 InputField("color", at: \.color).description(SchemaDescription.actorColor)
                 InputField("avatar", at: \.avatar).description(SchemaDescription.actorAvatar)
-                InputField("body", at: \.body).description(SchemaDescription.newNodeBody)
+                Self.makeNewBodyField()
                 InputField("ensure", at: \.ensure).description(SchemaDescription.actorEnsure)
-                InputField("board", at: \.board).description(SchemaDescription.boardToChange)
+                Self.makeTargetBoardField()
             }
             .description(SchemaDescription.addActorInput)
             Input(UpdateActorInput.self) {
                 InputField("id", at: \.id).description(SchemaDescription.actorReference)
-                InputField("name", at: \.name.value).description(SchemaDescription.changedName)
-                InputField("color", at: \.color.value).description(SchemaDescription.changedColor)
+                Self.makeChangedNameField()
+                Self.makeChangedColorField()
                 InputField("avatar", at: \.avatar.value).description(SchemaDescription.actorAvatar)
-                InputField("body", at: \.body.value).description(SchemaDescription.changedBody)
+                Self.makeChangedBodyField()
             }
             .description(SchemaDescription.updateActorInput)
             Input(NodeReferenceInput.self) {

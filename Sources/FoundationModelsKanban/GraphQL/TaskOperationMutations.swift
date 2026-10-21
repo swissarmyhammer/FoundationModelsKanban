@@ -55,7 +55,7 @@ private struct AssignTaskInput: TaskReferenceInput {
     /// The task: a full URI or a short form (plan.md §3.2).
     let id: NodeID
 
-    /// The actor: a full URI, the slug, or a name that gives the slug.
+    /// The actor: a full URI, the stored form `actor/<slug>`, the slug, or a name that gives the slug.
     let actor: NodeID
 }
 
@@ -622,12 +622,12 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
         add {
             Input(MoveTaskInput.self, Self.placementFields).description(SchemaDescription.moveTaskInput)
             Input(AssignTaskInput.self) {
-                Self.taskReferenceField()
+                Self.makeTaskReferenceField()
                 InputField("actor", at: \.actor).description(SchemaDescription.actorReference)
             }
             .description(SchemaDescription.assignTaskInput)
             Input(TagTaskInput.self) {
-                Self.taskReferenceField()
+                Self.makeTaskReferenceField()
                 InputField("tags", at: \.tags).description(SchemaDescription.tagTaskTags)
             }
             .description(SchemaDescription.tagTaskInput)

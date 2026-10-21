@@ -155,8 +155,9 @@ extension LinkStatus: DescribedGraphQLEnum {
     /// The description of the value of this case.
     var valueDescription: String {
         switch self {
-        case .ok: "The link names its board by a current name, and the board has the node."
-        case .oldName: "The link names its board by an old name. It still works, and the response gives a warning."
+        case .ok:
+            "The link names its board by a current name, and the board has the node, or the board cannot be read."
+        case .oldName: "The link names its board by an old name, and the board has the node or cannot be read."
         case .dangling: "No reachable board has the name of the link."
         case .missingNode: "The board of the link is found, and the board does not have the node."
         }

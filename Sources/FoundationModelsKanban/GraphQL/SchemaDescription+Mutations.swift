@@ -21,23 +21,31 @@ extension SchemaDescription {
         return "Makes a tombstoned \(name) live again. A live \(name) does not change."
     }
 
-    /// Gives the description of the `id` field of an `input` type that makes a node with a slug id (plan.md §3.2).
+    /// Gives the description of the `id` field of an `input` type that makes a node with a slug id (plan.md §3.2,
+    /// ``RefResolver/newNodeKey(for:ofType:)``).
     ///
     /// - Parameter type: The node type.
     /// - Returns: The description.
     private static func newIDText(of type: PatchNodeType) -> String {
         let name = noun(of: type)
-        return "The id of the new \(name): a slug, or a full \(name) URI. No id gives the slug of the name."
+        return """
+            The id of the new \(name): a full URI, the stored form \(name)/<id>, or a name. The slug of the name or of \
+            the <id> part is the id. No id gives the slug of the name field.
+            """
     }
 
-    /// Gives the description of a field that names a column or an actor that the board has (``RefResolver``): its
-    /// slug, or a name that gives the slug.
+    /// Gives the description of a field that names a column or an actor that the board has (``RefResolver``): a full
+    /// URI, the stored form `<type>/<slug>`, the slug, or a name that gives the slug.
     ///
     /// - Parameter type: The node type.
     /// - Returns: The description.
     private static func slugReferenceText(of type: PatchNodeType) -> String {
-        "The \(noun(of: type)): a full URI, the slug, or a name that gives the slug."
+        let name = noun(of: type)
+        return "The \(name): a full URI, the stored form \(name)/<slug>, the slug, or a name that gives the slug."
     }
+
+    /// The forms of a list of refs to actors (``RefResolver``), for the `assignees` field of a task input.
+    private static let actorForms = "full URIs, stored forms actor/<slug>, slugs, or names that give the slug"
 
     /// Gives the noun of a node type in a description.
     ///
@@ -99,13 +107,14 @@ extension SchemaDescription {
 
     /// The `Mutation.addTask` field.
     static let addTask = """
-        Makes a task. The task goes to the end of its column, unless the input gives an ordinal or a priority.
+        Makes a task. The task goes to the end of its column, unless a priority moves it to the top. An ordinal gives \
+        the place when the priority makes no move. A priority that moves the task wins over the ordinal.
         """
 
     /// The `Mutation.updateTask` field.
     static let updateTask = """
         Changes the given fields of a task. A list replaces the old list. A column moves the task to the end of that \
-        column.
+        column, or to the top when the priority moves it there.
         """
 
     /// The `Mutation.moveTask` field.
@@ -188,14 +197,14 @@ extension SchemaDescription {
     static let undo = """
         Reverses a transaction: it writes the inverse of each change of the transaction. No txn reverses the newest \
         transaction of the session actor that is not undone, is not an undo or a redo, and comes after the newest \
-        collectBoards transaction. A collectBoards transaction cannot be reversed. A later change of the same \
-        properties gives UNDO_CONFLICT, unless force is true.
+        collectBoards transaction. A collectBoards transaction cannot be reversed. A later change that conflicts with \
+        the inverse gives UNDO_CONFLICT, unless force is true.
         """
 
     /// The `Mutation.redo` field.
     static let redo = """
-        Reverses the undo of a transaction. No txn reverses the newest undo of the session actor that is not undone \
-        and comes after the newest collectBoards transaction.
+        Reverses the undo of a transaction. No txn reverses the newest undo of the session actor that is not undone, \
+        is not a redo, and comes after the newest collectBoards transaction.
         """
 
     // MARK: - Shared input fields
@@ -262,7 +271,10 @@ extension SchemaDescription {
     static let columnOrder = "The sort key of the column. No order puts the column after the terminal column."
 
     /// The `UpdateColumnInput` type.
-    static let updateColumnInput = "The fields of updateColumn. A field that is not set does not change."
+    static let updateColumnInput = """
+        The fields of updateColumn. A field that is not set does not change. Null clears the order or the body; null \
+        for the name gives no change and a warning.
+        """
 
     /// The `id` field of `UpdateColumnInput`.
     static let columnReference = slugReferenceText(of: .column)
@@ -313,13 +325,14 @@ extension SchemaDescription {
 
     /// The `ordinal` field of `AddTaskInput`.
     static let newTaskOrdinal = """
-        The place of the task in its column, as a fractional index. No ordinal puts the task at the end of the column.
+        The place of the task in its column, as a fractional index. No ordinal puts the task at the end of the \
+        column, unless the priority moves it. A priority that moves the task wins over the ordinal.
         """
 
     /// The `assignees` field of `AddTaskInput`.
     static let newTaskAssignees = """
-        The actors of the task: full URIs, slugs, or names that give the slug. No list gives the session actor, when \
-        the board had that actor before the call.
+        The actors of the task: \(actorForms). No list gives the session actor, when it is a live actor of the board \
+        before the call.
         """
 
     /// The `tags` field of `AddTaskInput`.
@@ -336,7 +349,7 @@ extension SchemaDescription {
     static let changedTaskTitle = "The new title. \(nullIgnored)"
 
     /// The `assignees` field of `UpdateTaskInput`.
-    static let changedTaskAssignees = "The new actors of the task: full URIs, slugs, or names that give the slug."
+    static let changedTaskAssignees = "The new actors of the task: \(actorForms)."
 
     /// The `tags` field of `UpdateTaskInput`.
     static let changedTaskTags = "The new tags of the task. \(tagForms)"
@@ -349,9 +362,9 @@ extension SchemaDescription {
 
     /// The `column` field of `MoveTaskInput` and `CopyTaskInput`.
     static let placementColumn = """
-        The column: a full URI, the slug, or a name. A slug that no column has makes the column. No column in the \
-        board of the task keeps the column where the task shows. No column in a different board gives the live column \
-        of that board with the same slug, else its first column.
+        The column: a full URI, the slug, or a name. A slug that no column has makes the column. No column gives the \
+        column where the task shows. On a different board, no column gives the live column with the same slug, else \
+        the first column.
         """
 
     /// The `ordinal` field of `MoveTaskInput` and `CopyTaskInput`.
@@ -388,12 +401,14 @@ extension SchemaDescription {
 
     /// The `actor` field of `AddCommentInput`.
     static let commentAuthor = """
-        The author of the comment: a full URI or the slug of an actor. A slug or a name that no actor has makes the \
-        actor. No actor gives the session actor.
+        The author of the comment: a full URI, a slug, or a name. A slug or a name that no actor has makes the actor. \
+        No actor gives the session actor.
         """
 
     /// The `UpdateCommentInput` type.
-    static let updateCommentInput = "The fields of updateComment. A body that is not set does not change."
+    static let updateCommentInput = """
+        The fields of updateComment. A body that is not set does not change, and null clears it.
+        """
 
     /// The `CommentReferenceInput` type.
     static let commentReferenceInput = "The comment of deleteComment and undeleteComment."
@@ -406,10 +421,11 @@ extension SchemaDescription {
     /// The `id` field of `AddTagInput`.
     static let newTagID = newIDText(of: .tag)
 
-    /// The `name` field of `AddTagInput`.
+    /// The `name` field of `AddTagInput` (``TagName/init(normalizing:)``).
     static let newTagName = """
-        The tag name. No name gives the id as the name: the text of a short form, or the slug of a full URI or of the \
-        stored form tag/<slug>.
+        The tag name. The tag name rule removes NUL and the white space at the two ends, and changes each run of white \
+        space to _. No name gives the id after this rule: a short form, or the <id> part of a full URI or of the \
+        stored form tag/<id>.
         """
 
     /// The `color` field of `AddTagInput`.
@@ -421,8 +437,11 @@ extension SchemaDescription {
         for the name gives no change and a warning.
         """
 
+    /// The forms of a ref to one tag (``RefResolver``).
+    private static let tagReferenceForms = "a full URI, the stored form tag/<slug>, the slug, or a tag name"
+
     /// The `id` field of `UpdateTagInput`.
-    static let tagReference = "The tag: a full URI, the slug, or a tag name. \(renamedSlugRule)"
+    static let tagReference = "The tag: \(tagReferenceForms). \(renamedSlugRule)"
 
     /// The `name` field of `UpdateTagInput` (divergence.md C4).
     static let changedTagName = """
@@ -434,7 +453,7 @@ extension SchemaDescription {
     static let renameTagInput = "The fields of renameTag."
 
     /// The `from` field of `RenameTagInput`.
-    static let renameFrom = "The tag to rename: a full URI, the slug, or a tag name. \(renamedSlugRule)"
+    static let renameFrom = "The tag to rename: \(tagReferenceForms). \(renamedSlugRule)"
 
     /// The `to` field of `RenameTagInput`.
     static let renameTo = "The new tag name."
@@ -448,9 +467,9 @@ extension SchemaDescription {
     static let undoTransaction = """
         For undo, the transaction to reverse. For redo, the original transaction whose undo to reverse. No txn gives \
         the newest target of the session actor after the newest collectBoards transaction: for undo, a transaction \
-        that is not undone and is not an undo or a redo; for redo, an undo that is not undone.
+        that is not undone and is not an undo or a redo; for redo, an undo that is not undone and is not a redo.
         """
 
     /// The `force` field of `UndoInput`.
-    static let undoForce = "True writes the inverse also when a later transaction changed the same properties."
+    static let undoForce = "True writes the inverse also when a later change conflicts with it."
 }

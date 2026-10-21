@@ -7,7 +7,7 @@ scalar DateTime
 scalar JSON
 
 """
-A priority value of a task input: text, a word, a number, or a Boolean. The board stores no priority: urgent, critical, high, p0, p1, or true moves the task to the top of its column; low, p3, or p4 moves it to the end; each other value keeps its place.
+A priority value of a task input: text, a word, a number, or a Boolean. The board stores no priority: urgent, critical, high, p0, p1, or true moves the task to the top of its column; low, p3, or p4 moves it to the end; each other value keeps its place. The case does not matter.
 """
 scalar Priority
 
@@ -18,7 +18,7 @@ interface Node {
   """The full kanban:// URI of the node."""
   id: ID!
 
-  """The Markdown body of the node. Empty when no change set it."""
+  """The Markdown body of the node. Empty when the node has no body."""
   body: String!
 
   """The time of the first change of the node."""
@@ -40,7 +40,7 @@ type Board implements Node {
   """The full kanban:// URI of the node."""
   id: ID!
 
-  """The Markdown body of the node. Empty when no change set it."""
+  """The Markdown body of the node. Empty when the node has no body."""
   body: String!
 
   """The time of the first change of the node."""
@@ -73,7 +73,7 @@ type Board implements Node {
   name: String!
 
   """
-  The model of the board as text, for example the chat model haiku. Null when no call set it. The board does not check the text.
+  The model of the board as text, for example the chat model haiku, or null. The board does not check the text.
   """
   model: String
 
@@ -125,7 +125,7 @@ type Board implements Node {
   """One page of the tasks that the filter selects, in board order."""
   tasks(
     """
-    The filter of the tasks. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter gives each live task, done or not. A deleted task shows only when the filter names #DELETED, or has a ^id or a ~task atom.
+    The filter of the tasks. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks of the board that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter gives each live task, done or not. A deleted task shows only when the filter names #DELETED, or has a ^id or a ~task atom.
     """
     filter: String
 
@@ -145,7 +145,7 @@ type Board implements Node {
   """
   nextTask(
     """
-    The filter that the next task must match. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ).
+    The filter that the next task must match. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks of the board that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ).
     """
     filter: String
   ): Task
@@ -160,7 +160,7 @@ type Board implements Node {
     query: String!
 
     """
-    The filter of the tasks. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter gives each live task, done or not. A deleted task shows only when the filter names #DELETED, or has a ^id or a ~task atom.
+    The filter of the tasks. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks of the board that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter gives each live task, done or not. A deleted task shows only when the filter names #DELETED, or has a ^id or a ~task atom.
     """
     filter: String
 
@@ -188,7 +188,7 @@ type Board implements Node {
   """
   history(
     """
-    The filter of the updates. An update stays when its node matches. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter in history and changes keeps each update, except the updates of a deleted task: of these, only its delete stays. No filter in Change.updates keeps each update of the change.
+    The filter of the updates. An update stays when its node matches. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks of the board that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter in history and changes keeps each update, except the updates of a deleted task: of these, only its delete stays. No filter in Change.updates keeps each update of the change.
     """
     filter: String
 
@@ -209,7 +209,7 @@ type Column implements Node {
   """The full kanban:// URI of the node."""
   id: ID!
 
-  """The Markdown body of the node. Empty when no change set it."""
+  """The Markdown body of the node. Empty when the node has no body."""
   body: String!
 
   """The time of the first change of the node."""
@@ -244,7 +244,7 @@ type Column implements Node {
   """The tasks of this node that match the filter, in board order."""
   tasks(
     """
-    The filter of the tasks. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter gives each live task, done or not. A deleted task shows only when the filter names #DELETED, or has a ^id or a ~task atom.
+    The filter of the tasks. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks of the board that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter gives each live task, done or not. A deleted task shows only when the filter names #DELETED, or has a ^id or a ~task atom.
     """
     filter: String
   ): [Task!]
@@ -257,7 +257,7 @@ type Actor implements Node {
   """The full kanban:// URI of the node."""
   id: ID!
 
-  """The Markdown body of the node. Empty when no change set it."""
+  """The Markdown body of the node. Empty when the node has no body."""
   body: String!
 
   """The time of the first change of the node."""
@@ -282,7 +282,7 @@ type Actor implements Node {
   """The tasks of this node that match the filter, in board order."""
   tasks(
     """
-    The filter of the tasks. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter gives each live task, done or not. A deleted task shows only when the filter names #DELETED, or has a ^id or a ~task atom.
+    The filter of the tasks. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks of the board that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter gives each live task, done or not. A deleted task shows only when the filter names #DELETED, or has a ^id or a ~task atom.
     """
     filter: String
   ): [Task!]
@@ -300,7 +300,7 @@ type Tag implements Node {
   """The full kanban:// URI of the node."""
   id: ID!
 
-  """The Markdown body of the node. Empty when no change set it."""
+  """The Markdown body of the node. Empty when the node has no body."""
   body: String!
 
   """The time of the first change of the node."""
@@ -325,7 +325,7 @@ type Tag implements Node {
   """The tasks of this node that match the filter, in board order."""
   tasks(
     """
-    The filter of the tasks. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter gives each live task, done or not. A deleted task shows only when the filter names #DELETED, or has a ^id or a ~task atom.
+    The filter of the tasks. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks of the board that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter gives each live task, done or not. A deleted task shows only when the filter names #DELETED, or has a ^id or a ~task atom.
     """
     filter: String
   ): [Task!]
@@ -379,7 +379,7 @@ type Task implements Node {
   """The full kanban:// URI of the node."""
   id: ID!
 
-  """The Markdown body of the node. Empty when no change set it."""
+  """The Markdown body of the node. Empty when the node has no body."""
   body: String!
 
   """The time of the first change of the node."""
@@ -468,7 +468,7 @@ type Comment implements Node {
   """The full kanban:// URI of the node."""
   id: ID!
 
-  """The Markdown body of the node. Empty when no change set it."""
+  """The Markdown body of the node. Empty when the node has no body."""
   body: String!
 
   """The time of the first change of the node."""
@@ -583,7 +583,7 @@ type SearchSignals {
   trigram: Float!
 
   """
-  The embedding cosine score: the match of the meaning. Null when the search has no embedder, or the embeddings are not done yet.
+  The embedding cosine score: the match of the meaning. Null when the search gives no cosine score, for example with no embedder.
   """
   cosine: Float
 }
@@ -625,11 +625,11 @@ enum UpdateKind {
 }
 
 """
-One transaction: the changes of one tool call. It has one update for each node that the transaction changed, also each node whose derived fields changed.
+One transaction. It has an update for each node that the transaction wrote, and for each other live node whose tracked fields changed (see NodeUpdate.fields). When one batch of Subscription.changes holds several transactions, a node has one update only: in the last transaction of the batch that wrote the node, else in the last transaction of the batch.
 """
 type Change {
   """
-  The ULID of the transaction. Give it as txn to undo to reverse this change, or to redo to apply it again after its undo.
+  The ULID of the transaction. Give it as txn to undo to reverse this change, or to redo to reverse its undo. A collectBoards change cannot be reversed.
   """
   txn: ID!
 
@@ -662,7 +662,7 @@ type Change {
   """
   updates(
     """
-    The filter of the updates. An update stays when its node matches. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter in history and changes keeps each update, except the updates of a deleted task: of these, only its delete stays. No filter in Change.updates keeps each update of the change.
+    The filter of the updates. An update stays when its node matches. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks of the board that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter in history and changes keeps each update, except the updates of a deleted task: of these, only its delete stays. No filter in Change.updates keeps each update of the change.
     """
     filter: String
   ): [NodeUpdate!]
@@ -682,7 +682,7 @@ type NodeUpdate {
   kind: UpdateKind!
 
   """
-  The change of each public field of the node, in the order of the fields of its type.
+  The change of each tracked field of the node that changed. The tracked fields are body and deleted, and: the name, model, and summary of a board; the name and order of a column; the name, color, and avatar of an actor; the name and color of a tag; the title, column, ordinal, assignees, tags, dependsOn, blockedBy, unresolvedDependsOn, ready, virtualTags, progress, started, and completed of a task; the task and author of a comment. Each other field is not tracked, for example created, updated, taskCount, and readyCount.
   """
   fields: [FieldChange!]!
 
@@ -693,7 +693,7 @@ type NodeUpdate {
 }
 
 """
-The change of one public field of a node. A single value gives before and after, a list gives added and removed, and body gives diff. The values are the values that a query shows.
+The change of one tracked field of a node. A single value gives before and after, a list gives added and removed, and body gives diff. The values are the values that a query shows.
 """
 type FieldChange {
   """The name of the field, for example column, tags, or ready."""
@@ -745,12 +745,12 @@ enum LinkField {
 """The class of a stored link."""
 enum LinkStatus {
   """
-  The link names its board by a current name, and the board has the node.
+  The link names its board by a current name, and the board has the node, or the board cannot be read.
   """
   OK
 
   """
-  The link names its board by an old name. It still works, and the response gives a warning.
+  The link names its board by an old name, and the board has the node or cannot be read.
   """
   OLD_NAME
 
@@ -796,7 +796,7 @@ input BoardInput {
   name: String
 
   """
-  The model of the board as text, for example the chat model haiku. Null when no call set it. The board does not check the text.
+  The model of the board as text, for example the chat model haiku, or null. The board does not check the text.
   """
   model: String
 
@@ -814,7 +814,7 @@ input BoardInput {
 """The fields of addColumn."""
 input AddColumnInput {
   """
-  The id of the new column: a slug, or a full column URI. No id gives the slug of the name.
+  The id of the new column: a full URI, the stored form column/<id>, or a name. The slug of the name or of the <id> part is the id. No id gives the slug of the name field.
   """
   id: ID
 
@@ -835,9 +835,13 @@ input AddColumnInput {
   board: String
 }
 
-"""The fields of updateColumn. A field that is not set does not change."""
+"""
+The fields of updateColumn. A field that is not set does not change. Null clears the order or the body; null for the name gives no change and a warning.
+"""
 input UpdateColumnInput {
-  """The column: a full URI, the slug, or a name that gives the slug."""
+  """
+  The column: a full URI, the stored form column/<slug>, the slug, or a name that gives the slug.
+  """
   id: ID!
 
   """The new name. Null gives no change and a warning."""
@@ -855,7 +859,7 @@ input UpdateColumnInput {
 """The fields of addActor. The input gives an id, a name, or both."""
 input AddActorInput {
   """
-  The id of the new actor: a slug, or a full actor URI. No id gives the slug of the name.
+  The id of the new actor: a full URI, the stored form actor/<id>, or a name. The slug of the name or of the <id> part is the id. No id gives the slug of the name field.
   """
   id: ID
 
@@ -888,7 +892,9 @@ input AddActorInput {
 The fields of updateActor. A field that is not set does not change. Null clears the color, the avatar, or the body; null for the name gives no change and a warning.
 """
 input UpdateActorInput {
-  """The actor: a full URI, the slug, or a name that gives the slug."""
+  """
+  The actor: a full URI, the stored form actor/<slug>, the slug, or a name that gives the slug.
+  """
   id: ID!
 
   """The new name. Null gives no change and a warning."""
@@ -930,12 +936,12 @@ input AddTaskInput {
   column: ID
 
   """
-  The place of the task in its column, as a fractional index. No ordinal puts the task at the end of the column.
+  The place of the task in its column, as a fractional index. No ordinal puts the task at the end of the column, unless the priority moves it. A priority that moves the task wins over the ordinal.
   """
   ordinal: String
 
   """
-  The actors of the task: full URIs, slugs, or names that give the slug. No list gives the session actor, when the board had that actor before the call.
+  The actors of the task: full URIs, stored forms actor/<slug>, slugs, or names that give the slug. No list gives the session actor, when it is a live actor of the board before the call.
   """
   assignees: [ID!]
 
@@ -976,7 +982,7 @@ input UpdateTaskInput {
   body: String
 
   """
-  The new actors of the task: full URIs, slugs, or names that give the slug.
+  The new actors of the task: full URIs, stored forms actor/<slug>, slugs, or names that give the slug.
   """
   assignees: [ID!]
 
@@ -1009,7 +1015,7 @@ input MoveTaskInput {
   id: ID!
 
   """
-  The column: a full URI, the slug, or a name. A slug that no column has makes the column. No column in the board of the task keeps the column where the task shows. No column in a different board gives the live column of that board with the same slug, else its first column.
+  The column: a full URI, the slug, or a name. A slug that no column has makes the column. No column gives the column where the task shows. On a different board, no column gives the live column with the same slug, else the first column.
   """
   column: ID
 
@@ -1039,7 +1045,9 @@ input AssignTaskInput {
   """The task: a full URI or a short form."""
   id: ID!
 
-  """The actor: a full URI, the slug, or a name that gives the slug."""
+  """
+  The actor: a full URI, the stored form actor/<slug>, the slug, or a name that gives the slug.
+  """
   actor: ID!
 }
 
@@ -1062,7 +1070,7 @@ input CopyTaskInput {
   id: ID!
 
   """
-  The column: a full URI, the slug, or a name. A slug that no column has makes the column. No column in the board of the task keeps the column where the task shows. No column in a different board gives the live column of that board with the same slug, else its first column.
+  The column: a full URI, the slug, or a name. A slug that no column has makes the column. No column gives the column where the task shows. On a different board, no column gives the live column with the same slug, else the first column.
   """
   column: ID
 
@@ -1096,12 +1104,14 @@ input AddCommentInput {
   body: String!
 
   """
-  The author of the comment: a full URI or the slug of an actor. A slug or a name that no actor has makes the actor. No actor gives the session actor.
+  The author of the comment: a full URI, a slug, or a name. A slug or a name that no actor has makes the actor. No actor gives the session actor.
   """
   actor: ID
 }
 
-"""The fields of updateComment. A body that is not set does not change."""
+"""
+The fields of updateComment. A body that is not set does not change, and null clears it.
+"""
 input UpdateCommentInput {
   """The comment: a full URI or a short form."""
   id: ID!
@@ -1131,12 +1141,12 @@ input CommentReferenceInput {
 """The fields of addTag. The input gives an id, a name, or both."""
 input AddTagInput {
   """
-  The id of the new tag: a slug, or a full tag URI. No id gives the slug of the name.
+  The id of the new tag: a full URI, the stored form tag/<id>, or a name. The slug of the name or of the <id> part is the id. No id gives the slug of the name field.
   """
   id: ID
 
   """
-  The tag name. No name gives the id as the name: the text of a short form, or the slug of a full URI or of the stored form tag/<slug>.
+  The tag name. The tag name rule removes NUL and the white space at the two ends, and changes each run of white space to _. No name gives the id after this rule: a short form, or the <id> part of a full URI or of the stored form tag/<id>.
   """
   name: String
 
@@ -1157,7 +1167,7 @@ The fields of updateTag. A field that is not set does not change. Null clears th
 """
 input UpdateTagInput {
   """
-  The tag: a full URI, the slug, or a tag name. A renamed slug names the tag that it redirects to.
+  The tag: a full URI, the stored form tag/<slug>, the slug, or a tag name. A renamed slug names the tag that it redirects to.
   """
   id: ID!
 
@@ -1178,7 +1188,7 @@ input UpdateTagInput {
 """The fields of renameTag."""
 input RenameTagInput {
   """
-  The tag to rename: a full URI, the slug, or a tag name. A renamed slug names the tag that it redirects to.
+  The tag to rename: a full URI, the stored form tag/<slug>, the slug, or a tag name. A renamed slug names the tag that it redirects to.
   """
   from: ID!
 
@@ -1194,13 +1204,11 @@ input RenameTagInput {
 """The fields of undo and redo."""
 input UndoInput {
   """
-  For undo, the transaction to reverse. For redo, the original transaction whose undo to reverse. No txn gives the newest target of the session actor after the newest collectBoards transaction: for undo, a transaction that is not undone and is not an undo or a redo; for redo, an undo that is not undone.
+  For undo, the transaction to reverse. For redo, the original transaction whose undo to reverse. No txn gives the newest target of the session actor after the newest collectBoards transaction: for undo, a transaction that is not undone and is not an undo or a redo; for redo, an undo that is not undone and is not a redo.
   """
   txn: ID
 
-  """
-  True writes the inverse also when a later transaction changed the same properties.
-  """
+  """True writes the inverse also when a later change conflicts with it."""
   force: Boolean
 
   """
@@ -1254,7 +1262,7 @@ type CollectedBoard {
   path: String!
 
   """
-  The names of the source board: the board ref of the call, its board IDs, its git key, and its old names.
+  The names of the source board, each one time: the key that the board ref of the call gave, its board IDs, its git key, and its old names.
   """
   names: [String!]!
 }
@@ -1284,7 +1292,7 @@ type FieldConflict {
   values: [String!]!
 
   """
-  The value after the collect: the merge of the events of all the boards. Null when the field has no value.
+  The value after the collect: the merge of the events of all the boards. Null when a property has no value. An empty body gives the empty text.
   """
   winner: String
 }
@@ -1321,7 +1329,7 @@ type CollectBoardsResult {
   """
   otherLinks: [LinkCheck!]!
 
-  """True when the call wrote nothing."""
+  """True for a dry run: the call wrote nothing."""
   dryRun: Boolean!
 }
 
@@ -1355,7 +1363,7 @@ type Query {
   ): [Node!]
 
   """
-  Each board that the scan finds, with its path, in scan order: the repos next to the current repo, and the repos in each search root of the config. A board that cannot be read is not in the list, and the response gives a warning that names it.
+  Each board that the scan finds, with its path, in scan order: each repo one level down in the parent folder of the current repo, the current repo included, then in each search root of the config. A board that cannot be read is not in the list, and the response gives a warning that names it.
   """
   boards(
     """
@@ -1365,7 +1373,7 @@ type Query {
   ): [Board!]!
 
   """
-  Reads each stored link of the boards and gives its class. The links are the dependsOn edges, the assignee URIs, and the task URLs in the body of each live task, and the moved line of each tombstone. Reads only. A link with an old board name still works, and the response gives the warning OLD_BOARD_NAME.
+  Reads each stored link of the boards and gives its class. The links are the dependsOn edges, the assignee URIs, and the task URLs in the body of each live task, and the moved line of each tombstone. Reads only.
   """
   checkLinks(
     """
@@ -1447,7 +1455,7 @@ type Mutation {
   ): Actor
 
   """
-  Makes a task. The task goes to the end of its column, unless the input gives an ordinal or a priority.
+  Makes a task. The task goes to the end of its column, unless a priority moves it to the top. An ordinal gives the place when the priority makes no move. A priority that moves the task wins over the ordinal.
   """
   addTask(
     """The input object of the call. Its type tells what each field does."""
@@ -1455,7 +1463,7 @@ type Mutation {
   ): Task
 
   """
-  Changes the given fields of a task. A list replaces the old list. A column moves the task to the end of that column.
+  Changes the given fields of a task. A list replaces the old list. A column moves the task to the end of that column, or to the top when the priority moves it there.
   """
   updateTask(
     """The input object of the call. Its type tells what each field does."""
@@ -1583,7 +1591,7 @@ type Mutation {
   ): Tag
 
   """
-  Reverses a transaction: it writes the inverse of each change of the transaction. No txn reverses the newest transaction of the session actor that is not undone, is not an undo or a redo, and comes after the newest collectBoards transaction. A collectBoards transaction cannot be reversed. A later change of the same properties gives UNDO_CONFLICT, unless force is true.
+  Reverses a transaction: it writes the inverse of each change of the transaction. No txn reverses the newest transaction of the session actor that is not undone, is not an undo or a redo, and comes after the newest collectBoards transaction. A collectBoards transaction cannot be reversed. A later change that conflicts with the inverse gives UNDO_CONFLICT, unless force is true.
   """
   undo(
     """
@@ -1593,7 +1601,7 @@ type Mutation {
   ): Change
 
   """
-  Reverses the undo of a transaction. No txn reverses the newest undo of the session actor that is not undone and comes after the newest collectBoards transaction.
+  Reverses the undo of a transaction. No txn reverses the newest undo of the session actor that is not undone, is not a redo, and comes after the newest collectBoards transaction.
   """
   redo(
     """
@@ -1648,7 +1656,7 @@ type Mutation {
 
 type Subscription {
   """
-  Sends one Change for each transaction that changes the board: a call of this tool, or a change that a different process, git pull, or a merge writes. A Change with no update after the filter is not sent. The same type as Board.history, so a client can read history(since:) and then subscribe with the same filter.
+  Sends a Change for the transactions that change the board: a call of this tool, or a change that a different process, git pull, or a merge writes. A Change with no update after the filter is not sent. The same type as Board.history, so a client can read history(since:) and then subscribe with the same filter.
   """
   changes(
     """
@@ -1657,7 +1665,7 @@ type Subscription {
     board: String
 
     """
-    The filter of the updates. An update stays when its node matches. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter in history and changes keeps each update, except the updates of a deleted task: of these, only its delete stays. No filter in Change.updates keeps each update of the change.
+    The filter of the updates. An update stays when its node matches. Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or title slug, and the tasks of the board that depend on one of them. A virtual tag, for example #READY, is also a #tag atom. Join atoms with && (or a space), ||, and !, and group them with ( ). No filter in history and changes keeps each update, except the updates of a deleted task: of these, only its delete stays. No filter in Change.updates keeps each update of the change.
     """
     filter: String
   ): Change!

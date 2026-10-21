@@ -110,11 +110,50 @@ extension FieldUpdate where Value == String {
     }
 }
 
+// MARK: - Shared input fields
+
+/// An `input` object with a `board` field that names the board to change: the input of a mutation that makes a node,
+/// of `renameTag`, and of `initBoard` and `updateBoard`. ``SchemaBuilder/makeTargetBoardField()`` gives the schema of
+/// the field.
+protocol TargetBoardInput: Decodable, Sendable {
+    /// The board to change: a board key, a repo directory name, or a path, or `nil` for the current board (plan.md
+    /// §6.6).
+    var board: String? { get }
+}
+
+/// An `input` object with the `body` field of a node that the mutation makes. ``SchemaBuilder/makeNewBodyField()``
+/// gives the schema of the field.
+protocol NewNodeBodyInput: Decodable, Sendable {
+    /// The Markdown body of the new node: the full text, or `nil` for no body.
+    var body: String? { get }
+}
+
+/// An `input` object with the `body` field of a node that the mutation changes.
+/// ``SchemaBuilder/makeChangedBodyField()`` gives the schema of the field.
+protocol ChangedBodyInput: Decodable, Sendable {
+    /// The new Markdown body: the full text. `null` clears the body.
+    var body: FieldUpdate<String> { get }
+}
+
+/// An `input` object with the `name` field of a column or an actor that the mutation changes.
+/// ``SchemaBuilder/makeChangedNameField()`` gives the schema of the field.
+protocol ChangedNameInput: Decodable, Sendable {
+    /// The new name. `null` gives no change and a warning (``IgnoredNull``).
+    var name: FieldUpdate<String> { get }
+}
+
+/// An `input` object with the `color` field of an actor or a tag that the mutation changes.
+/// ``SchemaBuilder/makeChangedColorField()`` gives the schema of the field.
+protocol ChangedColorInput: Decodable, Sendable {
+    /// The new color. `null` clears the color.
+    var color: FieldUpdate<String> { get }
+}
+
 // MARK: - Arguments
 
-/// The `input` object of `initBoard` and `updateBoard` (plan.md §4.2). A field that is not set does not change, and
-/// `null` clears the field.
-private struct BoardInput: Decodable, Sendable {
+/// The `input` object of `initBoard` and `updateBoard` (plan.md §4.2). A name, a model, or a body that is not set does
+/// not change, and `null` clears it. No `board`, or `null`, gives the current board.
+private struct BoardInput: TargetBoardInput, ChangedBodyInput {
     /// The new name of the board.
     let name: FieldUpdate<String>
 
@@ -269,7 +308,8 @@ extension BoardStore {
     /// writes nothing.
     ///
     /// - Parameters:
-    ///   - input: The changes and the board. A field that is not set does not change, and `null` clears the field.
+    ///   - input: The changes and the board. A name, a model, or a body that is not set does not change, and `null`
+    ///     clears it. No `board` gives the current board.
     ///   - operation: The name of the public mutation.
     ///   - time: The time of the change.
     /// - Returns: The read view of the board after the change, or `nil` when the engine did not load the board yet.
@@ -558,6 +598,44 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
         .description(description)
     }
 
+    /// Gives the `board` input field of an `input` type that names the board to change, so that the field has one
+    /// definition.
+    ///
+    /// - Returns: The field `board`, with the description of a board to change.
+    static func makeTargetBoardField<Holder: TargetBoardInput>() -> InputFieldComponent<Holder, KanbanContext> {
+        InputField("board", at: \Holder.board).description(SchemaDescription.boardToChange)
+    }
+
+    /// Gives the `body` input field of an `input` type that makes a node, so that the field has one definition.
+    ///
+    /// - Returns: The field `body`, with the description of the body of a new node.
+    static func makeNewBodyField<Holder: NewNodeBodyInput>() -> InputFieldComponent<Holder, KanbanContext> {
+        InputField("body", at: \Holder.body).description(SchemaDescription.newNodeBody)
+    }
+
+    /// Gives the `body` input field of an `input` type that changes a node, so that the field has one definition.
+    ///
+    /// - Returns: The field `body`, with the description of a changed body.
+    static func makeChangedBodyField<Holder: ChangedBodyInput>() -> InputFieldComponent<Holder, KanbanContext> {
+        InputField("body", at: \Holder.body.value).description(SchemaDescription.changedBody)
+    }
+
+    /// Gives the `name` input field of an `input` type that changes a column or an actor, so that the field has one
+    /// definition.
+    ///
+    /// - Returns: The field `name`, with the description of a changed name.
+    static func makeChangedNameField<Holder: ChangedNameInput>() -> InputFieldComponent<Holder, KanbanContext> {
+        InputField("name", at: \Holder.name.value).description(SchemaDescription.changedName)
+    }
+
+    /// Gives the `color` input field of an `input` type that changes an actor or a tag, so that the field has one
+    /// definition.
+    ///
+    /// - Returns: The field `color`, with the description of a changed color.
+    static func makeChangedColorField<Holder: ChangedColorInput>() -> InputFieldComponent<Holder, KanbanContext> {
+        InputField("color", at: \Holder.color.value).description(SchemaDescription.changedColor)
+    }
+
     /// Adds the board mutations, `initBoard` and `updateBoard`, and their `input` type.
     ///
     /// - Returns: This builder, for method chaining.
@@ -566,8 +644,8 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             Input(BoardInput.self) {
                 InputField("name", at: \.name.value).description(SchemaDescription.boardName)
                 InputField("model", at: \.model.value).description(SchemaDescription.boardModel)
-                InputField("body", at: \.body.value).description(SchemaDescription.changedBody)
-                InputField("board", at: \.board).description(SchemaDescription.boardToChange)
+                Self.makeChangedBodyField()
+                Self.makeTargetBoardField()
             }
             .description(SchemaDescription.boardInput)
         }

@@ -28,14 +28,26 @@ private struct AddCommentInput: Decodable, Sendable {
     /// The Markdown body of the comment: the full text.
     let body: String
 
-    /// The author of the comment: a full URI or the slug of an actor, or `nil` for the session actor. A slug or a
-    /// name that names no actor makes the actor.
+    /// The author of the comment: a full URI, a slug, or a name of an actor, or `nil` for the session actor. A slug or
+    /// a name that names no actor makes the actor.
     let actor: NodeID?
+}
+
+/// An `input` object that names one comment in its `id` field, and can name the task of the comment in its `task`
+/// field: the input of `updateComment`, `deleteComment`, and `undeleteComment`.
+/// ``SchemaBuilder/makeCommentReferenceField()`` and ``SchemaBuilder/makeCommentTaskField()`` give the schema of the
+/// fields.
+private protocol CommentReferringInput: Decodable, Sendable {
+    /// The comment: a full URI or a short form (plan.md §3.2).
+    var id: NodeID { get }
+
+    /// The task of the comment, or `nil` for no check (divergence.md E5, K16).
+    var task: NodeID? { get }
 }
 
 /// The `input` object of `updateComment` (plan.md §4.2). A body that is not set does not change, and `null` clears
 /// the body.
-private struct UpdateCommentInput: Decodable, Sendable {
+private struct UpdateCommentInput: CommentReferringInput, ChangedBodyInput {
     /// The comment: a full URI or a short form (plan.md §3.2). The task of the comment is not necessary.
     let id: NodeID
 
@@ -49,7 +61,7 @@ private struct UpdateCommentInput: Decodable, Sendable {
 
 /// The `input` object of `deleteComment` and `undeleteComment` (plan.md §4.2): the comment, and the task of the
 /// comment as a check (divergence.md E5, K16).
-private struct CommentReferenceInput: Decodable, Sendable {
+private struct CommentReferenceInput: CommentReferringInput {
     /// The comment: a full URI or a short form (plan.md §3.2). The task of the comment is not necessary.
     let id: NodeID
 
@@ -246,6 +258,24 @@ extension WorkingCopy {
 // MARK: - Schema
 
 extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanContext {
+    /// Gives the `id` input field of an `input` type that names one comment, so that the field has one definition.
+    ///
+    /// - Returns: The field `id`, with the description of a comment ref.
+    fileprivate static func makeCommentReferenceField<Holder: CommentReferringInput>()
+        -> InputFieldComponent<Holder, KanbanContext>
+    {
+        InputField("id", at: \Holder.id).description(SchemaDescription.commentReference)
+    }
+
+    /// Gives the `task` input field of an `input` type that names one comment, so that the field has one definition.
+    ///
+    /// - Returns: The field `task`, with the description of the task of the comment.
+    fileprivate static func makeCommentTaskField<Holder: CommentReferringInput>()
+        -> InputFieldComponent<Holder, KanbanContext>
+    {
+        InputField("task", at: \Holder.task).description(SchemaDescription.commentTask)
+    }
+
     /// Adds the comment mutations and their `input` types (plan.md §4.2). The delete and the undelete mutations use
     /// the `input` type of ``CommentReferenceInput``, so that the Rust form of the call, with the task of the
     /// comment, runs (divergence.md E5).
@@ -260,14 +290,14 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             }
             .description(SchemaDescription.addCommentInput)
             Input(UpdateCommentInput.self) {
-                InputField("id", at: \.id).description(SchemaDescription.commentReference)
-                InputField("body", at: \.body.value).description(SchemaDescription.changedBody)
-                InputField("task", at: \.task).description(SchemaDescription.commentTask)
+                Self.makeCommentReferenceField()
+                Self.makeChangedBodyField()
+                Self.makeCommentTaskField()
             }
             .description(SchemaDescription.updateCommentInput)
             Input(CommentReferenceInput.self) {
-                InputField("id", at: \.id).description(SchemaDescription.commentReference)
-                InputField("task", at: \.task).description(SchemaDescription.commentTask)
+                Self.makeCommentReferenceField()
+                Self.makeCommentTaskField()
             }
             .description(SchemaDescription.commentReferenceInput)
         }

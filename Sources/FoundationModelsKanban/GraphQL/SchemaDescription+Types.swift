@@ -28,11 +28,11 @@ extension SchemaDescription {
     /// The `ids` argument of `Query.nodes`.
     static let nodeIDs = "The ids of the nodes. Each id is a full kanban:// URI, or a short form."
 
-    /// The `Query.boards` field.
+    /// The `Query.boards` field (``BoardLocator/places(around:)``).
     static let queryBoards = """
-        Each board that the scan finds, with its path, in scan order: the repos next to the current repo, and the \
-        repos in each search root of the config. A board that cannot be read is not in the list, and the response \
-        gives a warning that names it.
+        Each board that the scan finds, with its path, in scan order: each repo one level down in the parent folder \
+        of the current repo, the current repo included, then in each search root of the config. A board that cannot \
+        be read is not in the list, and the response gives a warning that names it.
         """
 
     /// The `enabled` argument of `Query.boards`.
@@ -52,7 +52,7 @@ extension SchemaDescription {
     static let nodeIDField = "The full kanban:// URI of the node."
 
     /// The `body` field of `Node`.
-    static let nodeBody = "The Markdown body of the node. Empty when no change set it."
+    static let nodeBody = "The Markdown body of the node. Empty when the node has no body."
 
     /// The `created` field of `Node`.
     static let nodeCreated = "The time of the first change of the node."
@@ -334,16 +334,16 @@ extension SchemaDescription {
 
     /// The `SearchSignals.cosine` field.
     static let signalCosine = """
-        The embedding cosine score: the match of the meaning. Null when the search has no embedder, or the embeddings \
-        are not done yet.
+        The embedding cosine score: the match of the meaning. Null when the search gives no cosine score, for example \
+        with no embedder.
         """
 
     // MARK: - Scalars
 
-    /// The `Priority` scalar.
+    /// The `Priority` scalar (``PriorityMove/init(of:)``).
     static let priority = """
         A priority value of a task input: text, a word, a number, or a Boolean. The board stores no priority: urgent, \
         critical, high, p0, p1, or true moves the task to the top of its column; low, p3, or p4 moves it to the end; \
-        each other value keeps its place.
+        each other value keeps its place. The case does not matter.
         """
 }

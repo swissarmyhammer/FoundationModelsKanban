@@ -3,16 +3,18 @@
 extension SchemaDescription {
     // MARK: - Change
 
-    /// The `Change` type.
+    /// The `Change` type (``ChangeBuilder``).
     static let change = """
-        One transaction: the changes of one tool call. It has one update for each node that the transaction \
-        changed, also each node whose derived fields changed.
+        One transaction. It has an update for each node that the transaction wrote, and for each other live node \
+        whose tracked fields changed (see NodeUpdate.fields). When one batch of Subscription.changes holds several \
+        transactions, a node has one update only: in the last transaction of the batch that wrote the node, else \
+        in the last transaction of the batch.
         """
 
-    /// The `Change.txn` field.
+    /// The `Change.txn` field (``UndoLog/target(of:named:by:)``).
     static let changeTxn = """
-        The ULID of the transaction. Give it as txn to undo to reverse this change, or to redo to apply it again \
-        after its undo.
+        The ULID of the transaction. Give it as txn to undo to reverse this change, or to redo to reverse its undo. A \
+        collectBoards change cannot be reversed.
         """
 
     /// The `Change.at` field.
@@ -50,8 +52,14 @@ extension SchemaDescription {
     /// The `NodeUpdate.kind` field.
     static let nodeUpdateKind = "How the transaction changed the node."
 
-    /// The `NodeUpdate.fields` field.
-    static let nodeUpdateFields = "The change of each public field of the node, in the order of the fields of its type."
+    /// The `NodeUpdate.fields` field (``NodeObject/trackedFields``).
+    static let nodeUpdateFields = """
+        The change of each tracked field of the node that changed. The tracked fields are body and deleted, and: the \
+        name, model, and summary of a board; the name and order of a column; the name, color, and avatar of an actor; \
+        the name and color of a tag; the title, column, ordinal, assignees, tags, dependsOn, blockedBy, \
+        unresolvedDependsOn, ready, virtualTags, progress, started, and completed of a task; the task and author of a \
+        comment. Each other field is not tracked, for example created, updated, taskCount, and readyCount.
+        """
 
     /// The `NodeUpdate.node` field.
     static let nodeUpdateNode = """
@@ -63,7 +71,7 @@ extension SchemaDescription {
 
     /// The `FieldChange` type.
     static let fieldChange = """
-        The change of one public field of a node. A single value gives before and after, a list gives added and \
+        The change of one tracked field of a node. A single value gives before and after, a list gives added and \
         removed, and body gives diff. The values are the values that a query shows.
         """
 
@@ -96,7 +104,7 @@ extension SchemaDescription {
 
     /// The `Subscription.changes` field.
     static let changesSubscription = """
-        Sends one Change for each transaction that changes the board: a call of this tool, or a change that a \
+        Sends a Change for the transactions that change the board: a call of this tool, or a change that a \
         different process, git pull, or a merge writes. A Change with no update after the filter is not sent. The \
         same type as Board.history, so a client can read history(since:) and then subscribe with the same filter.
         """

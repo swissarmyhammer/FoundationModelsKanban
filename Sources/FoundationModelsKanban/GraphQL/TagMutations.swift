@@ -25,13 +25,14 @@ extension MutationName {
 // MARK: - Arguments
 
 /// The `input` object of `addTag` (plan.md §4.2). The input gives the id, the name, or the two.
-private struct AddTagInput: Decodable, Sendable {
+private struct AddTagInput: NewNodeBodyInput, TargetBoardInput {
     /// The id of the tag, or `nil` for the slug of ``name``. The id is the slug of this text, or the slug of a full
     /// tag URI of the board (plan.md §3.2).
     let id: NodeID?
 
-    /// The tag name, or `nil` for the text of ``id``, or the slug of a URI ``id``. The tag name rule applies
-    /// (plan.md §6).
+    /// The tag name, or `nil` for the key of ``id`` (``RefResolver/newNodeKey(for:ofType:)``): a short form as the
+    /// caller wrote it, the local id of a full URI, or the `<id>` part of the stored form `tag/<id>`. The tag name
+    /// rule applies to the name and to the key (``TagName/init(normalizing:)``, plan.md §6).
     let name: String?
 
     /// The color of the tag, or `nil` for the auto color of the slug.
@@ -47,8 +48,9 @@ private struct AddTagInput: Decodable, Sendable {
 
 /// The `input` object of `updateTag` (plan.md §4.2). A field that is not set does not change, and `null` clears the
 /// field. The `name` is required, so `null` does not change it (``IgnoredNull``).
-private struct UpdateTagInput: Decodable, Sendable {
-    /// The tag: a full URI, the slug, or a tag name (plan.md §3.2). A renamed slug names the rename target.
+private struct UpdateTagInput: ChangedColorInput, ChangedBodyInput {
+    /// The tag: a full URI, the stored form `tag/<slug>`, the slug, or a tag name (plan.md §3.2). A renamed slug
+    /// names the rename target.
     let id: NodeID
 
     /// The new name of the tag. The tag name rule applies. A name of the same slug changes only the display name, and
@@ -63,8 +65,9 @@ private struct UpdateTagInput: Decodable, Sendable {
 }
 
 /// The `input` object of `renameTag` (plan.md §4.2, §6.2).
-private struct RenameTagInput: Decodable, Sendable {
-    /// The tag to rename: a full URI, the slug, or a tag name. A renamed slug names the rename target.
+private struct RenameTagInput: TargetBoardInput {
+    /// The tag to rename: a full URI, the stored form `tag/<slug>`, the slug, or a tag name. A renamed slug names the
+    /// rename target.
     let from: NodeID
 
     /// The new tag name. Its slug is the slug of the redirect target, also when a rename redirects that slug.
@@ -377,21 +380,21 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 InputField("id", at: \.id).description(SchemaDescription.newTagID)
                 InputField("name", at: \.name).description(SchemaDescription.newTagName)
                 InputField("color", at: \.color).description(SchemaDescription.newTagColor)
-                InputField("body", at: \.body).description(SchemaDescription.newNodeBody)
-                InputField("board", at: \.board).description(SchemaDescription.boardToChange)
+                Self.makeNewBodyField()
+                Self.makeTargetBoardField()
             }
             .description(SchemaDescription.addTagInput)
             Input(UpdateTagInput.self) {
                 InputField("id", at: \.id).description(SchemaDescription.tagReference)
                 InputField("name", at: \.name.value).description(SchemaDescription.changedTagName)
-                InputField("color", at: \.color.value).description(SchemaDescription.changedColor)
-                InputField("body", at: \.body.value).description(SchemaDescription.changedBody)
+                Self.makeChangedColorField()
+                Self.makeChangedBodyField()
             }
             .description(SchemaDescription.updateTagInput)
             Input(RenameTagInput.self) {
                 InputField("from", at: \.from).description(SchemaDescription.renameFrom)
                 InputField("to", at: \.to).description(SchemaDescription.renameTo)
-                InputField("board", at: \.board).description(SchemaDescription.boardToChange)
+                Self.makeTargetBoardField()
             }
             .description(SchemaDescription.renameTagInput)
         }

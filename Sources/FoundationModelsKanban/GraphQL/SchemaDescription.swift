@@ -26,7 +26,7 @@ enum SchemaDescription {
     private static let filterSyntax = """
         Atoms: #tag, @actor, ^id, %column, ~type, and a kanban:// URI. ^id takes a ULID, a short id (^short or \
         ^^short), or the title slug of a task, for example ^fix-login-bug; it matches each task with that id or \
-        title slug, and the tasks that depend on one of them. A virtual tag, for example \
+        title slug, and the tasks of the board that depend on one of them. A virtual tag, for example \
         #\(VirtualTag.ready.rawValue), is also a #tag atom. Join atoms with && (or a space), ||, and !, and group \
         them with ( ).
         """
@@ -161,8 +161,7 @@ enum SchemaDescription {
 
     /// The `Board.model` field and the `model` field of `BoardInput` (divergence.md Q19).
     static let boardModel = """
-        The model of the board as text, for example the chat model haiku. Null when no call set it. The board does \
-        not check the text.
+        The model of the board as text, for example the chat model haiku, or null. The board does not check the text.
         """
 
     /// The `Board.virtualTags` field (divergence.md Q19).
@@ -260,8 +259,7 @@ enum SchemaDescription {
     /// The `Query.checkLinks` field (divergence.md M9).
     static let checkLinks = """
         Reads each stored link of the boards and gives its class. The links are the dependsOn edges, the assignee \
-        URIs, and the task URLs in the body of each live task, and the moved line of each tombstone. Reads only. \
-        A link with an old board name still works, and the response gives the warning \(OldBoardName.warningCode).
+        URIs, and the task URLs in the body of each live task, and the moved line of each tombstone. Reads only.
         """
 
     /// The `LinkCheck.board` field.
@@ -379,14 +377,15 @@ enum SchemaDescription {
         """
 
     /// The `CollectBoardsResult.dryRun` field.
-    static let collectResultDryRun = "True when the call wrote nothing."
+    static let collectResultDryRun = "True for a dry run: the call wrote nothing."
 
     /// The `CollectedBoard.path` field.
     static let collectedPath = "The folder of the source board."
 
     /// The `CollectedBoard.names` field.
     static let collectedNames = """
-        The names of the source board: the board ref of the call, its board IDs, its git key, and its old names.
+        The names of the source board, each one time: the key that the board ref of the call gave, its board IDs, its \
+        git key, and its old names.
         """
 
     /// The `SlugMerge.node` field and the `FieldConflict.node` field.
@@ -403,6 +402,7 @@ enum SchemaDescription {
 
     /// The `FieldConflict.winner` field.
     static let conflictWinner = """
-        The value after the collect: the merge of the events of all the boards. Null when the field has no value.
+        The value after the collect: the merge of the events of all the boards. Null when a property has no value. An \
+        empty body gives the empty text.
         """
 }
