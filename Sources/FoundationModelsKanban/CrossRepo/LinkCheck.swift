@@ -17,11 +17,12 @@ enum LinkField: String, Codable, Sendable, CaseIterable {
 
 /// The class of one stored link (divergence.md M9): the GraphQL `LinkStatus` enum.
 enum LinkStatus: String, Codable, Sendable, CaseIterable {
-    /// The link names its board by a current name, and the board has the node.
+    /// The link names its board by a name that is not an old name of the board. The board has the node, or the board
+    /// cannot be read, so the node is not checked (``LinkedBoard/check(of:)``).
     case ok = "OK"
 
-    /// The link names its board by an old name. The link works at read time, and the response has an
-    /// ``OldBoardName`` warning for it.
+    /// The link names its board by an old name. The board has the node, or the board cannot be read, so the node is
+    /// not checked (``LinkedBoard/check(of:)``).
     case oldName = "OLD_NAME"
 
     /// No reachable board has the name of the link.
@@ -40,7 +41,8 @@ struct StoredLink: Hashable, Sendable {
     /// The field of the task that holds the link.
     let field: LinkField
 
-    /// The URI of the target, as the board stores it.
+    /// The full URI of the target. A `dependsOn` edge that the board stores with no board key gets the current key of
+    /// the board (``Graph/uri(of:inBoard:)``).
     let target: NodeURI
 }
 
@@ -55,7 +57,7 @@ struct LinkCheck: Encodable, Sendable {
     /// The field of the task that holds the link.
     let field: LinkField
 
-    /// The URI of the target, as the board stores it.
+    /// The text of the full URI of the target, from ``StoredLink/target``.
     let target: String
 
     /// The class of the link.

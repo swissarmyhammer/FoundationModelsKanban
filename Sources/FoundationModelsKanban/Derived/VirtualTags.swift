@@ -8,10 +8,13 @@ import Foundation
 /// (divergence.md Q1), so `#BLOCKING` is an ordinary tag atom. The raw value is the slug of the tag, and the match
 /// ignores case (``init(named:)``).
 enum VirtualTag: String, CaseIterable, Sendable {
-    /// The task is live, it is not done, and all its dependencies are done.
+    /// The task is live, it is not done, and no dependency blocks it (``BlockerWalk``): each dependency that is not a
+    /// tombstone is done, and no chain of dependencies from it comes back to the task.
     case ready = "READY"
 
-    /// The task is live, and at least one dependency of the task is not done.
+    /// The task is live, done or not, and a dependency blocks it (``BlockerWalk``): a dependency that is not a
+    /// tombstone is not done, or a chain of dependencies from it comes back to the task. A dependency that no loaded
+    /// board has is not done.
     case blocked = "BLOCKED"
 
     /// The body of the task has a conflict block from a diff that could not apply.
@@ -75,11 +78,11 @@ extension VirtualTag {
     /// `CustomStringConvertible`.
     var explanation: String {
         switch self {
-        case .ready: "The task is open, and each of its dependencies is done."
-        case .blocked: "At least one dependency of the task is not done."
+        case .ready: "The task is live and not done, and no dependency blocks it."
+        case .blocked: "The task is live, and a dependency that is not deleted is not done or leads back to the task."
         case .conflict: "The body of the task has a conflict block from a diff that did not apply."
-        case .deleted: "The task is deleted, and only a filter that names this tag shows it."
-        case .done: "The task is in the terminal column."
+        case .deleted: "The task is deleted."
+        case .done: "The task is live, and it is in the terminal column."
         case .high: "The task is in the first third of the open tasks, in board order."
         case .medium: "The task is in the second third of the open tasks, in board order."
         case .low: "The task is in the last third of the open tasks, in board order."
@@ -101,7 +104,7 @@ extension Readiness {
 
     /// Tells if one virtual tag applies to a task. A tombstone has the tag `DELETED`, and it can have `CONFLICT`. It
     /// never has `READY`, `BLOCKED`, or `DONE`. A done task never has `READY`. As in Rust,
-    /// it has `BLOCKED` when one of its dependencies is not done. Each open task has one priority tag, `HIGH`,
+    /// it has `BLOCKED` when a dependency blocks it (``BlockerWalk``). Each open task has one priority tag, `HIGH`,
     /// `MEDIUM`, or `LOW` (``priorityTier(ofTaskAt:)``). A done task and a tombstone have no priority tag.
     ///
     /// - Parameters:

@@ -293,10 +293,27 @@ comments:
     - Note: the sah-rules dump for .swift was 754K characters, so only the rule index and the completeness section were read. The edits are string literals and doc comments only.
     - next: /review
   timestamp: 2026-10-21T21:56:01.534935+00:00
+- actor: claude-code
+  id: 01m5g7h1aa99dpp4mwae7839wn
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (b8570fa) — 0 findings (confirmed 0, refuted 0; 7 attempted, 0 failed); 2 files reviewed; not reviewed: .kanban/ (2, .reviewignore), Tests/Fixtures/kanban.graphql (no validator); every prior Review Findings item checked
+    - next: none — task moved to done
+  timestamp: 2026-10-21T21:57:53.610865+00:00
+- actor: claude-code
+  id: 01m5g7hf81ewx49db0hk9x3j1k
+  text: |-
+    ### finish iteration 6 — clean
+    - resumed after the user said "keep going" on the stuck card
+    - implement: changed — Change and related descriptions true for history, subscription, undo/redo; Observe/Change.swift doc comments; golden re-recorded
+    - test: green — EndpointConventionTests 4 passed; swift test 1750 tests / 146 suites
+    - commit: b8570fa
+    - review: clean — 0 findings, all 36 prior checked, task moved to done
+  timestamp: 2026-10-21T21:58:07.873007+00:00
 depends_on:
 - 01M5F23FSEG4MRQ3NWWD7SGPAZ
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffae80
 title: 'EXTRAS-9 alignment: rename the warning BOARD_INCOMPATIBLE to INCOMPATIBLE_BOARD and add the rule-11 endpoint tests'
 ---
 ## What

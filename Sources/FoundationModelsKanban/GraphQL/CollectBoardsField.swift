@@ -21,7 +21,7 @@ struct CollectBoardsArguments: Codable, Sendable {
     /// The target board: a board ref, or `nil` for the current board.
     let target: String?
 
-    /// `true` to also rewrite each link of a board that the scan reaches and that names a source. `nil` is `false`.
+    /// `true` to also rewrite each link of ``CollectReport/otherLinks``. `nil` is `false`.
     let reach: Bool?
 
     /// `true` to list the changes and write nothing. `nil` is `false`.
@@ -44,10 +44,18 @@ struct CollectReport: Sendable {
     /// Each field that two or more boards set to different values.
     let conflicts: [FieldConflict]
 
-    /// The repairs of the links of the target, and with `reach` the repairs of the links of the other boards.
+    /// The repairs of the links of the target, and with `reach` the repairs of ``otherLinks``.
+    ///
+    /// The links of the target are checked in the graph after the merge (``BoardStore/checkedLinks(of:naming:)``),
+    /// where a link with a name of a source reads the merged target. Each `OLD_NAME` link gets the current key of its
+    /// board, and each `DANGLING` link is in the list with no new URI. An `OK` or a `MISSING_NODE` link is not in the
+    /// list (``LinkRepair/init(of:checked:)``).
     let repairs: [LinkRepair]
 
-    /// Each link of a different board that names a source.
+    /// Each link of a board that the scan reaches, other than the target and the sources, whose board key is a name
+    /// of a source, checked against the target after the merge. Only an `OLD_NAME` link is in the list: the name is
+    /// an old name of the merged target, and the target has the node. A link to a node that the target does not have
+    /// is left out. With `reach`, and no dry run, the call rewrites each of them to the current key of the target.
     let otherLinks: [LinkCheck]
 
     /// `true` when the call wrote nothing.
@@ -120,7 +128,8 @@ extension BoardStore {
     /// merged transaction. The target keeps its own board ID, git key, and name. One `collected` patch for
     /// each source makes each name of the source an old name of the target. The call rewrites each old-name link of
     /// the target to the current name (`checkLinks` and `repairLinks`), so a `dependsOn` between two sources becomes a
-    /// local ref. It lists each link of a different board that names a source, and rewrites it only with `reach`.
+    /// local ref. It lists each link of a different board that names a source and whose node the target has
+    /// (``CollectReport/otherLinks``), and rewrites it only with `reach`.
     ///
     /// The commit locks the target and each source, checks that no source changed after the read, writes all the
     /// events, and then removes each source `.kanban/`. The call is final: `undo` does not reverse it. With `dryRun`,
@@ -333,7 +342,7 @@ extension CollectReport {
     ///   - target: The read view of the target before the call.
     ///   - work: The working copy of the target before the call: its events give the nodes of the target.
     ///   - repairs: The repairs of the links.
-    ///   - otherLinks: The links of the other boards that name a source.
+    ///   - otherLinks: The links of the other boards that name a source, with the rule of ``otherLinks``.
     ///   - dryRun: `true` when the call wrote nothing.
     init(
         merging sources: [CollectedSource],

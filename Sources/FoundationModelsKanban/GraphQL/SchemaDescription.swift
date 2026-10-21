@@ -279,13 +279,17 @@ enum SchemaDescription {
         """
 
     /// The `LinkCheck.target` field.
-    static let linkTarget = "The link as the board stores it: a full kanban:// URI."
+    static let linkTarget = """
+        The target of the link as a full kanban:// URI. A dependsOn link that the board stores with no board key gets \
+        the current key of the board.
+        """
 
-    /// The `LinkCheck.status` field.
+    /// The `LinkCheck.status` field. The exact rule is in ``LinkedBoard/check(of:)``.
     static let linkStatus = """
-        \(LinkStatus.ok.rawValue): the board and the node are found. \(LinkStatus.oldName.rawValue): the link names \
-        the board by an old name; currentName gives the name now. \(LinkStatus.dangling.rawValue): no reachable \
-        board has the name. \(LinkStatus.missingNode.rawValue): the board is found, the node is not.
+        \(LinkStatus.ok.rawValue): the link names its board by a name that is not an old name, and the board has \
+        the node or cannot be read. \(LinkStatus.oldName.rawValue): the same, with an old name of the board. \
+        \(LinkStatus.dangling.rawValue): no reachable board has the name. \(LinkStatus.missingNode.rawValue): the \
+        board is found, and it does not have the node.
         """
 
     /// The `LinkCheck.currentName` field.
@@ -348,8 +352,8 @@ enum SchemaDescription {
 
     /// The `reach` argument of `Mutation.collectBoards`.
     static let collectReach = """
-        True also rewrites each link of a different board that the scan reaches and that names a source: the link \
-        then names the target. With no value, the call only lists these links in otherLinks.
+        True also rewrites each link of otherLinks: the link then names the target by its current key. Otherwise the \
+        call only lists these links.
         """
 
     /// The `dryRun` argument of `Mutation.collectBoards`.
@@ -367,16 +371,17 @@ enum SchemaDescription {
     /// The `CollectBoardsResult.conflicts` field.
     static let collectResultConflicts = "Each field that two or more boards set to different values, and the winner."
 
-    /// The `CollectBoardsResult.repairs` field.
+    /// The `CollectBoardsResult.repairs` field. The exact rule is on ``CollectReport/repairs``.
     static let collectResultRepairs = """
-        The \(LinkStatus.oldName.rawValue) and \(LinkStatus.dangling.rawValue) links of the target, and with reach the \
-        links of other boards that name a source, each with its new target.
+        The \(LinkStatus.oldName.rawValue) and \(LinkStatus.dangling.rawValue) links of the target after the merge, \
+        and with reach also the links of otherLinks. A \(LinkStatus.dangling.rawValue) link has no new target and \
+        does not change.
         """
 
-    /// The `CollectBoardsResult.otherLinks` field.
+    /// The `CollectBoardsResult.otherLinks` field. The exact rule is on ``CollectReport/otherLinks``.
     static let collectResultOtherLinks = """
-        Each link of a different board that names a source by a name that is now an old name of the target. Without \
-        reach, the call does not change these links.
+        Each link of a different board that the scan reaches, that names a source by a name that is an old name of \
+        the target after the merge, and whose node the target has. Only reach rewrites these links.
         """
 
     /// The `CollectBoardsResult.dryRun` field.
