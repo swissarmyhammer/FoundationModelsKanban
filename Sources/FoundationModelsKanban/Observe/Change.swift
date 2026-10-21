@@ -168,7 +168,9 @@ struct NodeUpdate: Sendable {
 ///
 /// ``ChangeBuilder`` makes it from the projection before and after the batch of the transaction. ``ChangeBuilder``
 /// and ``ChangeRound`` tell which ``NodeUpdate`` values each change of a batch has: an update can be in the change
-/// of a transaction that did not write its node.
+/// of a transaction that did not write its node. `Board.history` and `Subscription.changes` give changes with the
+/// updates of one board. `undo` and `redo` give one change with the updates of each board that they changed, the
+/// updates of the first board first (``BoardStore/reverse(_:with:at:)``).
 struct Change: Sendable {
     /// The transaction ULID.
     let txn: NodeID
@@ -182,7 +184,9 @@ struct Change: Sendable {
     /// The names of the public mutations of the tool call.
     let ops: [String]
 
-    /// The keys of the boards that the transaction changed: the key of this board first.
+    /// The keys of the boards that the transaction changed: first the key of the board whose events made this change
+    /// (``BatchTransaction/boardKey``). For a change of a transaction of a different board in the change feed of a
+    /// board (``ChangeBuilder/changesOfOtherBoards(ofBatch:)``), that is the different board.
     let boards: [String]
 
     /// `true` when a later transaction that is not undone reverses this transaction (plan.md §6.5).
@@ -259,9 +263,9 @@ struct Change: Sendable {
         nodeUpdates.filter { update in kinds.contains(update.kind) }.map(\.id)
     }
 
-    /// Resolves `Change.cursor`: the cursor of the change in the change log of its board. A change of `Board.history`
-    /// is not in the change log: it gives the cursor of the board of the transaction as the call read it, so that
-    /// `changes(after:)` with it gives the changes after that read.
+    /// Resolves `Change.cursor`: the cursor of the change in the change log of its board. A change of `Board.history`,
+    /// `undo`, or `redo` has no log cursor: it gives the cursor of the first board of ``boards`` as the call reads it,
+    /// so that `changes(after:)` with it gives the changes after that read.
     ///
     /// - Parameter context: The context of the call. Its store finds the board of the transaction.
     /// - Returns: The cursor.
@@ -336,8 +340,8 @@ extension KanbanContext {
 // MARK: - Schema
 
 extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanContext {
-    /// Adds the `Change`, `NodeUpdate`, and `FieldChange` types and their enums (plan.md §4.1). `Board.history` and
-    /// `Subscription.changes` give these types.
+    /// Adds the `Change`, `NodeUpdate`, and `FieldChange` types and their enums (plan.md §4.1). `Board.history`,
+    /// `Subscription.changes`, `Mutation.undo`, and `Mutation.redo` give these types.
     ///
     /// - Returns: This builder, for method chaining.
     func addChangeTypes() -> Self {

@@ -3,19 +3,25 @@
 extension SchemaDescription {
     // MARK: - Change
 
-    /// The `Change` type. ``ChangeBuilder`` and ``ChangeRound`` hold the exact rules that put each update in a change.
+    /// The `Change` type. The text holds only what is true on each path that gives a change: `Board.history`
+    /// (``ChangeBuilder/change(of:markingUndone:)``), `Subscription.changes` (``ChangeRound``), and `undo` and `redo`
+    /// (``BoardStore/reverse(_:with:at:)``). ``ChangeBuilder`` and ``ChangeRound`` hold the exact rules that put each
+    /// update in a change.
     static let change = """
-        One transaction in the history or the change feed of a board: its txn, time, actor, mutations, and boards, \
-        and its updates of the nodes of that board. An update tells which node changed and which tracked fields \
-        changed; read the nodes again for their new values. Transactions read together, for example after a git \
-        pull, can give one Change with an update for each node, so a Change can also have updates of nodes that \
-        its transaction did not write.
+        One transaction: its txn, time, actor, mutations, and boards, and its node updates. Board.history and \
+        Subscription.changes give the updates of the nodes of one board; undo and redo give the updates of each \
+        board that they changed, those of the first board first. An update tells which node changed and which \
+        tracked fields changed; read the nodes again for their new values. Transactions read together, for example \
+        after a git pull, give one Change each. The updates need not match the nodes that the transaction wrote: \
+        they can hold a node that it did not write, for example a task that becomes ready when its dependency is \
+        done, or the board summary, and leave out a node that it wrote, for example when a later transaction read \
+        with it wrote that node too.
         """
 
     /// The `Change.cursor` field (``Change/cursor(context:arguments:)``).
     static let changeCursor = """
-        Give it as after to changes to get the changes after this one. In Board.history, it is the cursor of the \
-        board that the query read.
+        Give it as after to changes to get the changes after this one. A Change of Board.history, undo, or redo \
+        gives the cursor of the first board of boards as the call reads it.
         """
 
     /// The `Change.added` field.
@@ -46,10 +52,16 @@ extension SchemaDescription {
     static let changeOps = "The names of the mutations of the tool call, for example addTask."
 
     /// The `Change.boards` field.
-    static let changeBoards = "The key of each board that the transaction changed, the board of this change first."
+    static let changeBoards = """
+        The key of each board that the transaction changed, first the board whose events made this Change. In \
+        Subscription.changes, a transaction of a different board gives that board first.
+        """
 
     /// The `Change.undone` field.
-    static let changeUndone = "True when a later undo or redo that is not undone reverses this transaction."
+    static let changeUndone = """
+        True when a later undo or redo that is not undone reversed this transaction at the time that the Change was \
+        made.
+        """
 
     /// The `Change.undoes` field.
     static let changeUndoes = "The transaction that this undo or redo reverses. Null for each other transaction."
@@ -82,8 +94,8 @@ extension SchemaDescription {
 
     /// The `NodeUpdate.node` field.
     static let nodeUpdateNode = """
-        The node now. A deleted node gives its tombstone, with deleted set. Null when the board does not have the \
-        node now.
+        The node now. A deleted node gives its tombstone, with deleted set. Null when the board of the node does \
+        not have the node now.
         """
 
     // MARK: - Field change
@@ -123,9 +135,10 @@ extension SchemaDescription {
 
     /// The `Subscription.changes` field.
     static let changesSubscription = """
-        Sends a Change for the transactions that change the board: a call of this tool, or a change that a \
-        different process, git pull, or a merge writes. A Change with no update after the filter is not sent. The \
-        same type as Board.history, so a client can read history(since:) and then subscribe with the same filter.
+        Sends a Change for each new transaction of the board: a call of this tool, or a change that a different \
+        process, git pull, or a merge writes. A transaction of a different board can also give a Change, with the \
+        updates of the nodes of this board. A Change with no update after the filter is not sent. The same type as \
+        Board.history, so a client can read history(since:) and then subscribe with the same filter.
         """
 
     /// The `after` argument of `Subscription.changes` (``ChangeFeed``).
