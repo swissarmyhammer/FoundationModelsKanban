@@ -993,14 +993,25 @@ public actor KanbanHost {
         views[ObjectIdentifier(view)]?.object === view
     }
 
-    /// Sends the changes of some boards to each session view, so that each view sends them to its own subscribers
-    /// (plan.md §6.7).
+    /// Puts the changes of some boards into the change log of each loaded board one time (plan.md §6.7, KANBAN-7). The
+    /// caller holds the serial gate of each board that changed.
+    ///
+    /// Each session view logs the changes of the boards that it loaded and that no view before it logged. An engine
+    /// whose changes no view logged gets a new change log, so a cursor of the old log gives `RESYNC_REQUIRED` and no
+    /// client misses those changes with no word.
     ///
     /// - Parameter changed: The changes of each board that changed, by the canonical path of its repo directory.
     func publish(_ changed: [String: BoardChanges]) async {
+        guard !changed.isEmpty else {
+            return
+        }
         views.removeGoneObjects()
+        var logged: Set<FolderIdentity> = []
         for view in views.values.compactMap(\.object) {
-            await view.publish(changed)
+            logged.formUnion(await view.publish(changed, skipping: logged))
+        }
+        for engine in loadedEngines where !logged.contains(engine.identity) {
+            engine.feed.restart()
         }
     }
 
@@ -1086,6 +1097,14 @@ struct HostConfiguration: Sendable {
     /// start waits.
     let folderEvents: any FolderEventService
 
+    /// The number of the newest changes that the change log of each board keeps, so that a subscription resumes
+    /// after a cursor that is at most this many changes old (KANBAN-7).
+    let changeLogCapacity: Int
+
+    /// The number of the newest changes that the change log of each board of the process keeps: the default of the
+    /// toolkit `ChangeLog`.
+    static let defaultChangeLogCapacity = 1024
+
     /// The board IDs that the host gave to the boards outside git whose log has no board ID yet (divergence.md M9).
     let bareBoardIDs = BareBoardIDs(mintingFrom: SystemULIDSource())
 
@@ -1120,6 +1139,8 @@ struct HostConfiguration: Sendable {
     ///     host forgets what git told about a folder that a path ref named, and when a current board outside git gets
     ///     its git key, or `nil` for no calls.
     ///   - folderEvents: The FSEvents calls of the file watchers of the host.
+    ///   - changeLogCapacity: The number of the newest changes that the change log of each board keeps. It must be at
+    ///     least 1.
     init(
         keyReader: @escaping BoardKeyReader = BoardKey.read(fromRepoAt:),
         topReader: @escaping WorktreeTopReader = BoardKey.worktreeTop(of:),
@@ -1132,7 +1153,8 @@ struct HostConfiguration: Sendable {
         loadObserver: (any BoardLoadObserver)? = nil,
         workerObserver: (any LoaderWorkerObserver)? = nil,
         scanObserver: (any BoardScanObserver)? = nil,
-        folderEvents: any FolderEventService = SystemFolderEvents()
+        folderEvents: any FolderEventService = SystemFolderEvents(),
+        changeLogCapacity: Int = defaultChangeLogCapacity
     ) {
         self.keyReader = keyReader
         self.topReader = topReader
@@ -1146,6 +1168,7 @@ struct HostConfiguration: Sendable {
         self.workerObserver = workerObserver
         self.scanObserver = scanObserver
         self.folderEvents = folderEvents
+        self.changeLogCapacity = changeLogCapacity
     }
 }
 

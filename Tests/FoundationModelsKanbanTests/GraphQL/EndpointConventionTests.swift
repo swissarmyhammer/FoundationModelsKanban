@@ -27,10 +27,6 @@ struct EndpointConventionTests {
         to: probeCanonicalName
     )
 
-    /// The id of the task that adds the opaque change cursor, `changes(after:)` and the root query `cursor`
-    /// (KANBAN-7). It removes the exception of rule 9.
-    static let changeCursorTask = "e60e9sx"
-
     /// The id of the task that gives each mutation the form `verbNoun(input: VerbNounInput!)`. It removes the
     /// exception of rule 7.
     ///
@@ -42,7 +38,6 @@ struct EndpointConventionTests {
 
     /// The rules that the endpoint does not obey yet, each with the task that removes it.
     static let exceptions = [
-        GraphQLConventionException(rule: .changes, removedBy: changeCursorTask),
         GraphQLConventionException(rule: .mutations, removedBy: mutationFormTask),
     ]
 
@@ -91,9 +86,13 @@ struct EndpointConventionTests {
         GraphQLRemovedParameter.warningCode,
     ]
 
+    /// Each code of the toolkit that the endpoint can give: `RESYNC_REQUIRED` ends a `changes` subscription that
+    /// cannot resume after its cursor.
+    static let toolkitCodes = [GraphQLToolkitError.resyncRequired(reason: "").code]
+
     /// Each error code and each warning code that the endpoint can give, for rule 8, with no repeat.
     static var codes: [String] {
-        Array(Set(errors.map(\.code) + warningCodes)).sorted()
+        Array(Set(errors.map(\.code) + warningCodes + toolkitCodes)).sorted()
     }
 
     // MARK: - Helpers
@@ -137,10 +136,10 @@ struct EndpointConventionTests {
         #expect(try await Self.conformanceProblems(excepting: Self.exceptions) == [])
     }
 
-    @Test("Under the rule-9 exception alone, rule 7 reports only the mutations of the rule-7 exception")
+    @Test("With no exception, rule 7 reports only the mutations of the rule-7 exception, and no rule reports more")
     func onlyKnownMutationsBreakRule7() async throws {
         let rule7 = GraphQLConventionRule.mutations.name
-        let problems = try await Self.conformanceProblems(excepting: [Self.exceptions[0]])
+        let problems = try await Self.conformanceProblems(excepting: [])
         let reported = problems.filter { problem in problem.hasPrefix(rule7) }
         let named = Self.mutationsOutsideRule7.filter { mutation in
             reported.contains { problem in problem.contains("mutation \(mutation)(") }

@@ -63,10 +63,10 @@ extension BoardLoadObserver {
 /// the engine closes. A board with no `.kanban/` directory yet has a watcher on its repo directory; the watcher moves
 /// to `.kanban/` when the directory appears (X13).
 ///
-/// The board stays in memory until the host closes. A session view that reads the board reads ``session``; it reads
-/// no file. A call that writes holds ``gate``, runs on a copy of the session, and gives the new session back with
-/// ``replaceSession(with:)`` while it still holds the gate (write through). The watcher brings each change from
-/// outside the process into memory, inside the gate.
+/// The board stays in memory until the host closes. A session view that reads the board reads ``readSession()``: the
+/// session with the cursor of the change log of the board; it reads no file. A call that writes holds ``gate``, runs
+/// on a copy of the session, and gives the new session back with ``replaceSession(with:)`` while it still holds the
+/// gate (write through). The watcher brings each change from outside the process into memory, inside the gate.
 ///
 /// A user can move the repo away and make a new repo at the same path. The folder at ``root`` then is not the folder
 /// of the engine (``isAtRoot``), and the engine reads and writes no file at the path: it retires (``retire()``), and
@@ -82,8 +82,9 @@ actor BoardEngine {
     /// watcher.
     nonisolated let gate = SerialGate()
 
-    /// The subscribers of the changes of the board (plan.md §6.7).
-    nonisolated let feed = ChangeFeed()
+    /// The change log of the board and its subscribers (plan.md §6.7, KANBAN-7): one log for the engine, which each
+    /// session view of the board reads.
+    nonisolated let feed: ChangeFeed
 
     /// The live graph of the board and its commit path.
     private(set) var session: CommitSession
@@ -106,6 +107,7 @@ actor BoardEngine {
     ///   - identity: The identity of the repo directory of the board.
     ///   - root: The root directory of the repo of the board.
     ///   - session: The loaded session of the board.
+    ///   - capacity: The number of the newest changes that the change log of the board keeps.
     ///   - batchObserver: Gets a call when the watcher applies a batch, or `nil` for no calls.
     ///   - publish: Sends the changes of a batch of the watcher to the session views.
     ///   - reportRetirement: Tells the host that the engine retired.
@@ -113,6 +115,7 @@ actor BoardEngine {
         identity: FolderIdentity,
         root: URL,
         session: CommitSession,
+        keepingChanges capacity: Int,
         observingBatchesWith batchObserver: (any LiveGraphObserver)?,
         publishingTo publish: @escaping ChangePublisher,
         reportingRetirementTo reportRetirement: @escaping EngineRetirement
@@ -120,6 +123,7 @@ actor BoardEngine {
         self.identity = identity
         self.root = root
         self.session = session
+        feed = ChangeFeed(capacity: capacity)
         self.batchObserver = batchObserver
         self.publish = publish
         self.reportRetirement = reportRetirement
@@ -181,6 +185,7 @@ actor BoardEngine {
             identity: request.identity,
             root: request.root,
             session: session,
+            keepingChanges: request.configuration.changeLogCapacity,
             observingBatchesWith: request.configuration.batchObserver,
             publishingTo: request.publish,
             reportingRetirementTo: request.reportRetirement
@@ -234,12 +239,26 @@ actor BoardEngine {
         session.key
     }
 
+    /// Gives the session of the board for a read, with the cursor of the change log of the board (KANBAN-7).
+    ///
+    /// The cursor is read before the session. A change that comes between the two reads is in the session, and its
+    /// cursor is after the cursor of the read, so a client that resumes after the cursor gets that change again, and
+    /// never misses a change. A caller that holds ``gate`` reads the two at one point: each change of the board goes
+    /// into the log inside the gate.
+    ///
+    /// - Returns: The session, with the cursor of the read.
+    func readSession() async -> CommitSession {
+        let cursor = await feed.cursor
+        return session.read(atCursor: cursor)
+    }
+
     /// Stores a new session of the board with the key and the former keys of the current session, so that a key
-    /// change during the call or the batch that made the new session stays.
+    /// change during the call or the batch that made the new session stays. The stored session holds no cursor:
+    /// ``readSession()`` gives the cursor of each read.
     ///
     /// - Parameter newSession: The new session.
     private func storeKeepingKey(_ newSession: CommitSession) {
-        var kept = newSession
+        var kept = newSession.read(atCursor: nil)
         kept.takeKey(of: session)
         session = kept
     }

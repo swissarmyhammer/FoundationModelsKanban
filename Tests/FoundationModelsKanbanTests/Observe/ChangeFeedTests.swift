@@ -15,46 +15,56 @@ struct ChangeFeedTests {
     /// The owner of the subscribers that stay in the old feed.
     static let otherOwner = ObjectIdentifier(String.self)
 
-    /// Adds a subscriber with no filter to a feed.
+    /// The number of changes that the change log of each feed of the tests keeps.
+    static let capacity = 8
+
+    /// Makes two feeds: the old feed and the new feed of a move.
+    ///
+    /// - Returns: The old feed and the new feed.
+    static func makeFeeds() -> (old: ChangeFeed, new: ChangeFeed) {
+        (ChangeFeed(capacity: capacity), ChangeFeed(capacity: capacity))
+    }
+
+    /// Adds a subscriber with no filter to a feed, for the new changes only.
     ///
     /// - Parameters:
     ///   - feed: The feed.
     ///   - owner: The owner of the subscriber.
     /// - Returns: The events of the subscriber.
     /// - Throws: An error when the empty filter does not parse.
-    static func subscribe(to feed: ChangeFeed, ownedBy owner: ObjectIdentifier) throws -> AsyncStream<ChangeEvent> {
-        feed.subscribe(filteredBy: try ChangeFilter(parsing: nil), ownedBy: owner)
+    static func subscribe(
+        to feed: ChangeFeed,
+        ownedBy owner: ObjectIdentifier
+    ) async throws -> AsyncThrowingStream<ChangeEvent, Error> {
+        await feed.subscribe(after: nil, filteredBy: try ChangeFilter(parsing: nil), ownedBy: owner)
     }
 
     /// Reads a stream until it ends, and counts its events.
     ///
     /// - Parameter stream: The stream.
     /// - Returns: The number of events.
-    static func eventCount(of stream: AsyncStream<ChangeEvent>) async -> Int {
-        await stream.reduce(0) { count, _ in count + 1 }
+    /// - Throws: The error that ends the stream.
+    static func eventCount(of stream: AsyncThrowingStream<ChangeEvent, Error>) async throws -> Int {
+        try await stream.reduce(0) { count, _ in count + 1 }
     }
 
-    /// Reads a stream until it ends, and gives the transaction of each event.
+    /// Reads the first event of a stream, and gives its transaction.
     ///
     /// - Parameter stream: The stream.
-    /// - Returns: The transactions, in the order of the events.
-    static func transactions(of stream: AsyncStream<ChangeEvent>) async -> [NodeID] {
-        await stream.reduce(into: []) { transactions, event in transactions.append(event.change.txn) }
+    /// - Returns: The transaction of the first event, or `nil` when the stream ends with no event.
+    /// - Throws: The error that ends the stream.
+    static func firstTransaction(of stream: AsyncThrowingStream<ChangeEvent, Error>) async throws -> NodeID? {
+        try await stream.first { _ in true }?.change.txn
     }
 
-    /// Sends one change of the board node to each subscriber of an owner in a feed. The change has no field change,
-    /// and the empty filter keeps it, because the fixture graph has a board node that is not a tombstone.
+    /// Appends one change of the board node to the change log of a feed. The change has no field change, and the
+    /// empty filter keeps it, because the fixture graph has a board node that is not a tombstone.
     ///
     /// - Parameters:
     ///   - txn: The transaction of the change.
     ///   - feed: The feed.
-    ///   - owner: The owner of the subscribers that get the change.
     /// - Throws: An error when a ULID text of the fixture graph is not valid.
-    static func publishBoardChange(
-        inTransaction txn: NodeID,
-        to feed: ChangeFeed,
-        ownedBy owner: ObjectIdentifier
-    ) throws {
+    static func appendBoardChange(inTransaction txn: NodeID, to feed: ChangeFeed) async throws {
         let graph = try QueryFixture().graph
         let key = DependencyMarkersTests.boardKey
         let view = BoardView(of: graph, inBoard: key)
@@ -74,7 +84,8 @@ struct ChangeFeedTests {
             boards: [key],
             undone: false,
             undoes: nil,
-            nodeUpdates: [update]
+            nodeUpdates: [update],
+            logCursor: nil
         )
         let stamp = EventStamp(
             actingAs: ReplayTests.actor,
@@ -88,19 +99,20 @@ struct ChangeFeedTests {
                 directory: FileManager.default.temporaryDirectory,
                 search: TaskSearch(embeddingWith: nil),
                 events: [],
-                readiness: ReadinessCache()
+                readiness: ReadinessCache(),
+                cursor: nil
             ),
             related: .unavailable
         )
-        feed.publish([change], to: owner, readingNodesOf: view, resolvingIn: board)
+        await feed.append([change], readingNodesOf: view, resolvingIn: board)
     }
 
     @Test("The moved subscribers of one owner leave the old feed, and the subscribers of other owners stay")
-    func moveTakesOnlySubscribersOfOwner() throws {
-        let (old, new) = (ChangeFeed(), ChangeFeed())
-        let moved = try Self.subscribe(to: old, ownedBy: Self.movedOwner)
-        let stays = try Self.subscribe(to: old, ownedBy: Self.otherOwner)
-        old.moveSubscribers(ownedBy: Self.movedOwner, to: new)
+    func moveTakesOnlySubscribersOfOwner() async throws {
+        let (old, new) = Self.makeFeeds()
+        let moved = try await Self.subscribe(to: old, ownedBy: Self.movedOwner)
+        let stays = try await Self.subscribe(to: old, ownedBy: Self.otherOwner)
+        await old.moveSubscribers(ownedBy: Self.movedOwner, to: new)
         #expect(!old.hasSubscribers(ownedBy: Self.movedOwner))
         #expect(new.hasSubscribers(ownedBy: Self.movedOwner))
         #expect(old.hasSubscribers(ownedBy: Self.otherOwner))
@@ -108,41 +120,39 @@ struct ChangeFeedTests {
         withExtendedLifetime((moved, stays)) {}
     }
 
-    @Test("A moved subscriber gets only the events of the new feed; other owners keep the old feed")
+    @Test("A moved subscriber gets only the changes of the new feed; other owners keep the old feed")
     func movedSubscriberGetsEventsOfNewFeed() async throws {
-        let (old, new) = (ChangeFeed(), ChangeFeed())
+        let (old, new) = Self.makeFeeds()
         let (oldTxn, newTxn) = (NodeID(text: ReadinessFixture.first), NodeID(text: ReadinessFixture.second))
-        let moved = try Self.subscribe(to: old, ownedBy: Self.movedOwner)
-        let stays = try Self.subscribe(to: old, ownedBy: Self.otherOwner)
-        old.moveSubscribers(ownedBy: Self.movedOwner, to: new)
-        for owner in [Self.movedOwner, Self.otherOwner] {
-            try Self.publishBoardChange(inTransaction: newTxn, to: new, ownedBy: owner)
-            try Self.publishBoardChange(inTransaction: oldTxn, to: old, ownedBy: owner)
-        }
+        let moved = try await Self.subscribe(to: old, ownedBy: Self.movedOwner)
+        let stays = try await Self.subscribe(to: old, ownedBy: Self.otherOwner)
+        await old.moveSubscribers(ownedBy: Self.movedOwner, to: new)
+        try await Self.appendBoardChange(inTransaction: oldTxn, to: old)
+        try await Self.appendBoardChange(inTransaction: newTxn, to: new)
+        #expect(try await Self.firstTransaction(of: moved) == newTxn)
+        #expect(try await Self.firstTransaction(of: stays) == oldTxn)
         old.finish()
         new.finish()
-        #expect(await Self.transactions(of: moved) == [newTxn])
-        #expect(await Self.transactions(of: stays) == [oldTxn])
     }
 
     @Test("A moved subscriber whose stream ends goes away from the new feed")
     func endOfMovedStreamRemovesSubscriberFromNewFeed() async throws {
-        let (old, new) = (ChangeFeed(), ChangeFeed())
-        let stream = try Self.subscribe(to: old, ownedBy: Self.movedOwner)
-        old.moveSubscribers(ownedBy: Self.movedOwner, to: new)
-        let reader = Task { await Self.eventCount(of: stream) }
+        let (old, new) = Self.makeFeeds()
+        let stream = try await Self.subscribe(to: old, ownedBy: Self.movedOwner)
+        await old.moveSubscribers(ownedBy: Self.movedOwner, to: new)
+        let reader = Task { try await Self.eventCount(of: stream) }
         reader.cancel()
-        _ = await reader.value
+        _ = try await reader.value
         #expect(!new.hasSubscribers(ownedBy: Self.movedOwner))
     }
 
     @Test("A move to a finished feed ends the stream of each moved subscriber")
     func moveToFinishedFeedEndsStream() async throws {
-        let (old, new) = (ChangeFeed(), ChangeFeed())
-        let stream = try Self.subscribe(to: old, ownedBy: Self.movedOwner)
+        let (old, new) = Self.makeFeeds()
+        let stream = try await Self.subscribe(to: old, ownedBy: Self.movedOwner)
         new.finish()
-        old.moveSubscribers(ownedBy: Self.movedOwner, to: new)
-        #expect(await Self.eventCount(of: stream) == 0)
+        await old.moveSubscribers(ownedBy: Self.movedOwner, to: new)
+        #expect(try await Self.eventCount(of: stream) == 0)
         #expect(!old.hasSubscribers(ownedBy: Self.movedOwner))
     }
 }

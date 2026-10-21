@@ -251,9 +251,27 @@ comments:
     - evidence: swift test — 1728 tests in 144 suites passed, 0 failed, 0 skipped; swift build --build-tests in IntegrationTests/ — Build complete, exit 0. Only warning: third-party mlx-swift_Cmlx.bundle "missing creator for mutated node" (out of scope). Replay "warning" log lines are expected output of passing tests.
     - next: review
   timestamp: 2026-10-21T15:45:34.962352+00:00
+- actor: claude-code
+  id: 01m5fjgp5wjw4gar7j0829mhz2
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (7d59a5f): engine 0 findings (4 files reviewed). The 10:34 Change finding is fixed. The ChangeBuilder/ChangeRound doc comments match the code. `swift test --filter EndpointConventionTests` passes (4 tests). The description spot-check found 2 open items: Sources/FoundationModelsKanban/GraphQL/SchemaDescription+Changes.swift:8 (the undo/redo Change has updates of several boards), Sources/FoundationModelsKanban/GraphQL/SchemaDescription+Changes.swift:10 (a batch gives one Change per transaction, and a single transaction also has derived updates).
+    - next: correct the `Change` description in SchemaDescription+Changes.swift, record Tests/Fixtures/kanban.graphql again, commit, and run /review again.
+  timestamp: 2026-10-21T15:50:42.108083+00:00
+- actor: claude-code
+  id: 01m5fjheaywvzf73vfj2xdek65
+  text: |-
+    ### finish iteration 5 — stuck
+    - implement: changed — Change description simplified, exact rules moved to ChangeBuilder/ChangeRound doc comments
+    - test: green — swift test 1728 / 144; IntegrationTests build ok
+    - commit: 7d59a5f
+    - review: findings — SchemaDescription+Changes.swift:8, :10 (Change description)
+
+    Guardrail: the Change description in SchemaDescription+Changes.swift has been flagged in 3 ledger entries (iterations 3, 4 and 5). Each rewrite fixed the previous wrong claim but made a new one. The open items are: undo/redo return a Change that can also hold the updates of other boards; and a batch gives one Change for each transaction, not one Change overall. Each item on the task has suggested wording. The task is left in review for a person to settle on the wording. Everything else in this task is reviewed and clean.
+  timestamp: 2026-10-21T15:51:06.846033+00:00
 depends_on:
 - 01M5F23FSEG4MRQ3NWWD7SGPAZ
-position_column: doing
+position_column: review
 position_ordinal: '80'
 title: 'EXTRAS-9 alignment: rename the warning BOARD_INCOMPATIBLE to INCOMPATIBLE_BOARD and add the rule-11 endpoint tests'
 ---
@@ -376,3 +394,20 @@ EXTRAS-9 rules 8 and 11 (TestudoApp/features/packages/foundationmodels-extras.md
 > The caller asked for proof that each of the 8 findings of the 10:15 sections is fixed in d02d62d, and for a check of every description and doc comment that d02d62d changed against its resolver. All 8 are fixed in the code: `Self.makeTaskReferenceField()` in placementFields; the `TargetBoardInput` conformers are exactly AddColumnInput, AddActorInput, AddTaskInput, AddTagInput, RenameTagInput and BoardInput (initBoard, updateBoard), and `MutationBoard.reference` takes the board key of a full-URI `from`; `ChangedColorInput.color` matches `ActorObject.color` (stored, optional) and `TagObject.color` (`resolvedColor`); `UpdateColumnInput` matches `input.order.map(PatchValue.integer)` and the `?? 0` in Events/Replay.swift; `Query.boards` matches `BoardLocator.isCandidate(_:)`; `SearchSignals.cosine` matches `TaskSearch.rankedMatches(for:limit:)` and `EmbeddedTaskCatalog.matchesOfNewestCatalog(for:limit:)`; the `actorRef` / `actorRefs` doc comments list every form that `nodeRef(for:ofType:)` accepts. `swift test --filter EndpointConventionTests` passes (4 tests), so Tests/Fixtures/kanban.graphql matches the Swift strings. Descriptions and doc comments that d02d62d changed: 11 checked, 1 wrong. Mismatches in descriptions older than this task (linkStatus, linkTarget, collectResultRepairs, collectResultOtherLinks, VirtualTag.explanation) are covered by 01M5FFBDY50R40FT79XDD9G87W and are not listed here. Record Tests/Fixtures/kanban.graphql again after the fix.
 
 - [x] `Sources/FoundationModelsKanban/GraphQL/SchemaDescription+Changes.swift:10` `description/accuracy` — `Change` now says "In Subscription.changes, a transaction of a different board gives a Change with …", and keeps the batch rule "a node has one update only: in the last transaction of the batch that wrote the node, else in the last transaction of the batch." Two parts do not match the code. (1) `ChangeRound.changes(of:atPath:)` (Observe/ChangeRound.swift) calls `changesOfOtherBoards(in:)` only when this board's log did not change (`guard let own = changed[path] else`). When one write changes this board and a different board (for example moveTask to a different board), the transactions of the different board give no Change to this board. (2) In `ChangeBuilder.changesOfOtherBoards(ofBatch:)` (Observe/ChangeBuilder.swift), the patched set of a transaction is `tasks(assignedToActorsPatchedBy:)`, and `lastPatchers(of:)` puts the update of such a task in the last transaction of the batch that wrote the actor, not in the last transaction that wrote the task, and not in the last transaction of the batch. Say: "In Subscription.changes, when this board did not change, a transaction of a different board gives a Change with …", and give the batch rule for the assignee case: "the update of a task whose assignee is an actor of a different board is in the last transaction of the batch that wrote that actor."
+
+## Review Findings (2026-10-21 10:45)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 3 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `Tests/Fixtures/kanban.graphql` — no validator matches this file
+
+### Prior-finding check and description spot-check (2026-10-21 10:52)
+
+> The caller asked for proof that the 10:34 `Change` finding is fixed in 7d59a5f, and for a check of every description and doc comment that 7d59a5f changed, including the new `ChangeBuilder` and `ChangeRound` doc comments. The 10:34 finding is fixed: both claims that it named are gone from the `Change` description, and the exact rules are now in the doc comments. The `ChangeBuilder` doc comments (the type, `changesOfOtherBoards(ofBatch:)`, `BatchTransaction.grouping`) and the `ChangeRound` doc comments (the type, `changes(of:atPath:)`, `changesOfOtherBoards(in:)`) match the code: `lastPatchers(of:)`, `derivedUpdates(besides:)`, `update(of:keepingNoFieldChange:)`, `tasks(assignedToActorsPatchedBy:)`, the `guard let own = changed[path] else` in `changes(of:atPath:)`, the `txn` sort in `changesOfOtherBoards(in:)`, the `txn` sort in `groupedByTransaction()`, and the batch of one that `History` makes with `change(of:markingUndone:)`. The `UpdateKind` doc comments and value descriptions match `ChangeBuilder.kind(of:)`. The `FieldChange`, `NodeUpdate`, `Change` doc comments and the `nodeUpdate`, `nodeUpdateKind`, `changeUpdates` and `fieldChange…` descriptions match the code. `swift test --filter EndpointConventionTests` passes (4 tests), so Tests/Fixtures/kanban.graphql matches the Swift strings. Descriptions and doc comments that 7d59a5f changed: 27 checked, 1 wrong (two parts, below). Mismatches in descriptions older than this task (linkStatus, linkTarget, collectResultRepairs, collectResultOtherLinks, VirtualTag.explanation) are covered by 01M5FFBDY50R40FT79XDD9G87W and are not listed here. Record Tests/Fixtures/kanban.graphql again after the fix.
+
+- [ ] `Sources/FoundationModelsKanban/GraphQL/SchemaDescription+Changes.swift:8` `description/accuracy` — `Change` says "One transaction in the history or the change feed of a board: … and its updates of the nodes of that board." `Mutation.undo` and `Mutation.redo` also return a `Change` (Tests/Fixtures/kanban.graphql, `): Change`). For a reverse that changed several boards, `change(of:along:changing:)` in GraphQL/UndoMutations.swift gives the change of the first board with `Change.adding(updatesOf:)`, the updates of each other board that it changed. That Change has updates of nodes of more than one board. Say where a Change comes from: "the history or the change feed of a board, or the result of undo and redo", and say that the Change of undo and redo has the updates of each board that it changed, the updates of its first board first.
+- [ ] `Sources/FoundationModelsKanban/GraphQL/SchemaDescription+Changes.swift:10` `description/accuracy` — `Change` says "Transactions read together, for example after a git pull, can give one Change with an update for each node, so a Change can also have updates of nodes that its transaction did not write." Transactions read together give one Change for each transaction (`ChangeBuilder.changes(ofBatch:)`, Observe/ChangeBuilder.swift: "One change for each transaction that has events"), not one Change. A Change of one transaction read alone also has updates of nodes that it did not write: `derivedUpdates(besides:)` adds each other live node whose tracked fields changed (for example a task that becomes ready, and the board summary) to the last transaction of every batch, also the batch of one of `Board.history` (`History` calls `change(of:markingUndone:)`). And in a batch, a transaction that wrote a node has no update of it when a later transaction of the batch wrote the node too (`lastPatchers(of:)`). Say: "A Change can have updates of nodes that its transaction did not write, for example a task that becomes ready and the board summary. When transactions are read together, for example after a git pull, each node has one update only: in the Change of the last of them that wrote the node, else in the Change of the last of them."

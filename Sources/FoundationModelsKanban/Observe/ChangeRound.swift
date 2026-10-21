@@ -35,7 +35,7 @@ struct BoardChanges: Sendable {
 }
 
 /// The changes of the loaded boards in one operation of the serial gate: the commits of a call, or the batch of a
-/// file watcher (plan.md §6.7). The round makes the `Change` values for the subscribers of a board.
+/// file watcher (plan.md §6.7). The round makes the `Change` values for the change log of a board (``ChangeFeed``).
 ///
 /// A board that changed gets one `Change` for each new transaction of its own: the changes of its live graph in the
 /// order that they happened, and the transactions of each one in `txn` order. Each change of the live graph is one
@@ -89,14 +89,14 @@ struct ChangeRound {
         }
     }
 
-    /// Makes the changes of one board for its subscribers.
+    /// Makes the changes of one board for its change log.
     ///
     /// - Parameters:
     ///   - session: The session of the board after the operation.
     ///   - path: The canonical path of the repo directory of the board.
     /// - Returns: The changes of the board's own transactions when it changed, else the changes of the transactions of
-    ///   the boards that changed (``changesOfOtherBoards(in:)``). A change can have no update: the filters of each
-    ///   subscriber then leave it out.
+    ///   the boards that changed (``changesOfOtherBoards(in:)``). A change can have no update: the change log then
+    ///   leaves it out (``ChangeFeed/append(_:readingNodesOf:resolvingIn:)``).
     func changes(of session: CommitSession, atPath path: String) -> [Change] {
         guard let own = changed[path] else {
             return changesOfOtherBoards(in: session)

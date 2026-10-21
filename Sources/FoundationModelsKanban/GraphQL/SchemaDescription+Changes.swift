@@ -12,6 +12,24 @@ extension SchemaDescription {
         its transaction did not write.
         """
 
+    /// The `Change.cursor` field (``Change/cursor(context:arguments:)``).
+    static let changeCursor = """
+        Give it as after to changes to get the changes after this one. In Board.history, it is the cursor of the \
+        board that the query read.
+        """
+
+    /// The `Change.added` field.
+    static let changeAdded = "The id of each node that the change made or undeleted."
+
+    /// The `Change.changed` field.
+    static let changeChanged = """
+        The id of each node that the change updated and did not make, undelete, or delete. Read it again for its new \
+        values.
+        """
+
+    /// The `Change.removed` field.
+    static let changeRemoved = "The id of each node that the change deleted."
+
     /// The `Change.txn` field (``UndoLog/target(of:named:by:)``).
     static let changeTxn = """
         The ULID of the transaction. Give it as txn to undo to reverse this change, or to redo to reverse its undo. A \
@@ -108,6 +126,28 @@ extension SchemaDescription {
         Sends a Change for the transactions that change the board: a call of this tool, or a change that a \
         different process, git pull, or a merge writes. A Change with no update after the filter is not sent. The \
         same type as Board.history, so a client can read history(since:) and then subscribe with the same filter.
+        """
+
+    /// The `after` argument of `Subscription.changes` (``ChangeFeed``).
+    static let changesAfter = """
+        A cursor of a query or of a Change. The subscription first sends each change after it, then each new change. \
+        A cursor whose changes the board no longer keeps, a cursor from before a restart, and a cursor after the \
+        newest change end the subscription with RESYNC_REQUIRED: query again for a new cursor. No value sends only \
+        the new changes.
+        """
+
+    // MARK: - Cursor
+
+    /// The `Query.cursor` field (``KanbanResolver/cursor(context:arguments:)``).
+    static let queryCursor = """
+        The cursor of the board as this query reads it. Give it as after to changes to get each change after this \
+        read.
+        """
+
+    /// The `Board.cursor` field (``BoardObject/cursor(context:arguments:)``).
+    static let boardCursor = """
+        The cursor of this board as this query reads it. Give it as after to changes, with this board, to get each \
+        change after this read.
         """
 
     // MARK: - Link results

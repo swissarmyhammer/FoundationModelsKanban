@@ -677,9 +677,12 @@ struct HistoryArguments: Codable, Sendable {
     let first: Int?
 }
 
-/// The arguments of `Subscription.changes`: the board to observe and the filter of the change feed (plan.md §4.1,
-/// §6.7). `Board.history` takes the same filter.
+/// The arguments of `Subscription.changes`: the cursor to resume after, the board to observe, and the filter of the
+/// change feed (plan.md §4.1, §6.7, KANBAN-7). `Board.history` takes the same filter.
 struct ChangesArguments: Codable, Sendable {
+    /// The cursor of a read or of a change to resume after, or `nil` for the new changes only.
+    let after: String?
+
     /// The board to observe: a board key, a repo directory name, a path, or the URI of a board (plan.md §6.6). No
     /// value observes the current board.
     let board: String?
@@ -971,6 +974,10 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                     Argument("boards", at: \.boards).description(SchemaDescription.boardsToCheck)
                 }
                 .description(SchemaDescription.checkLinks)
+                Field("cursor", at: KanbanResolver.cursor) {
+                    Argument("board", at: \.board).description(SchemaDescription.cursorBoard)
+                }
+                .description(SchemaDescription.queryCursor)
             }
     }
 
@@ -1033,6 +1040,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                         .description(SchemaDescription.historyFirst)
                 }
                 .description(SchemaDescription.boardHistory)
+                Field("cursor", at: BoardObject.cursor).description(SchemaDescription.boardCursor)
             }
             Self.nodeType(ColumnObject.self, as: GraphQLTypeName.column, description: SchemaDescription.column) {
                 Field("name", at: \.name).description(SchemaDescription.columnNameField)

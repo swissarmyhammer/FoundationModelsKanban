@@ -115,6 +115,7 @@ enum KanbanFieldAliases {
         "Task": ["column": ["status", "state", "lane"]],
         "TaskConnection": ["totalCount": ["count", "total"]],
         "Mutation": ["unassignTask": ["removeAssignee"], "assignTask": ["addAssignee"]],
+        "Subscription": ["changes": ["kanbanChanges"]],
         "AddTaskInput": [
             "title": title, "column": column, "assignees": assignees, "dependsOn": dependsOn, "priority": priority,
         ],

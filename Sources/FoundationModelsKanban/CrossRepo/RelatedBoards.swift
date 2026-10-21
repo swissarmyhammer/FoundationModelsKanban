@@ -71,6 +71,18 @@ struct BoardSource: Sendable {
 
     /// The readiness cache of the board, which its live graph keeps (divergence.md §16 Gap 3).
     let readiness: ReadinessCache
+
+    /// The cursor of the change log of the board at this read (KANBAN-7), or `nil` when the read gave no cursor. The
+    /// root `cursor` and `Board.cursor` give it.
+    let cursor: String?
+
+    /// Gives this source as the source of a read at one cursor of the change log of the board.
+    ///
+    /// - Parameter cursor: The cursor of the change log at the read, or `nil` for no cursor.
+    /// - Returns: The source with the cursor.
+    func reading(atCursor cursor: String?) -> BoardSource {
+        BoardSource(directory: directory, search: search, events: events, readiness: readiness, cursor: cursor)
+    }
 }
 
 /// A loaded board that the read views of one run read: its key, its graph, and its source.

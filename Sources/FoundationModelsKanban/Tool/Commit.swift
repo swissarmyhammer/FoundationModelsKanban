@@ -377,6 +377,11 @@ struct CommitSession: Sendable {
     /// (``WorkingCopy/recordBoardNames(currentKey:at:)``), so that a ref with an old key still names the board.
     private(set) var formerKeys: [BoardKey] = []
 
+    /// The cursor of the change log of the board when the engine gave this session to a read
+    /// (``BoardEngine/readSession()``), or `nil` for a session that no read took (KANBAN-7). ``source`` gives it to the
+    /// read views.
+    private(set) var changeCursor: String?
+
     /// The source of the transaction ULIDs and the event ids.
     private var ids: any ULIDSource
 
@@ -484,9 +489,25 @@ struct CommitSession: Sendable {
         live.log.directory.deletingLastPathComponent()
     }
 
-    /// The directory, the search, and the events of the board, for its read views.
+    /// The directory, the search, the events, and the cursor of the board, for its read views.
     var source: BoardSource {
-        BoardSource(directory: directory, search: search, events: live.events, readiness: live.readiness)
+        BoardSource(
+            directory: directory,
+            search: search,
+            events: live.events,
+            readiness: live.readiness,
+            cursor: changeCursor
+        )
+    }
+
+    /// Gives this session as a read at one cursor of the change log of the board (KANBAN-7).
+    ///
+    /// - Parameter cursor: The cursor of the change log at the read, or `nil` for a session that no read took.
+    /// - Returns: The session with the cursor.
+    func read(atCursor cursor: String?) -> CommitSession {
+        var read = self
+        read.changeCursor = cursor
+        return read
     }
 
     /// The board as a read of a related board sees it: the live graph, with an empty board in memory when the board

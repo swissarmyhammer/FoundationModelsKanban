@@ -197,11 +197,49 @@ struct Change: Sendable {
     /// the updates of the other nodes in slot order.
     let nodeUpdates: [NodeUpdate]
 
-    /// Gives this change with different node updates. This is the one place that copies each field of the envelope.
+    /// The cursor of the change in the change log of its board (KANBAN-7), or `nil` for a change that the change log
+    /// did not give, for example a change of `Board.history`.
+    let logCursor: String?
+
+    /// The ids of the nodes that the change made or restored: `Change.added`, in the order of ``nodeUpdates``.
+    var added: [NodeID] {
+        ids(ofKinds: [.created, .restored])
+    }
+
+    /// The ids of the nodes that the change updated: `Change.changed`, in the order of ``nodeUpdates``.
+    var changed: [NodeID] {
+        ids(ofKinds: [.updated])
+    }
+
+    /// The ids of the nodes that the change deleted: `Change.removed`, in the order of ``nodeUpdates``.
+    var removed: [NodeID] {
+        ids(ofKinds: [.deleted])
+    }
+
+    /// Gives this change with different node updates.
     ///
     /// - Parameter updates: The node updates of the new change.
-    /// - Returns: The change with the same envelope and these updates.
+    /// - Returns: The change with the same envelope, the same cursor, and these updates.
     func replacingNodeUpdates(_ updates: [NodeUpdate]) -> Change {
+        copy(nodeUpdates: updates, logCursor: logCursor)
+    }
+
+    /// Gives this change as the change of one cursor of the change log of its board.
+    ///
+    /// - Parameter cursor: The cursor of the change in the change log.
+    /// - Returns: The change with the same envelope, the same updates, and the cursor.
+    func reading(atCursor cursor: String) -> Change {
+        copy(nodeUpdates: nodeUpdates, logCursor: cursor)
+    }
+
+    /// Gives a copy of this change with different updates and a different cursor. This is the one place that copies
+    /// each field of the envelope.
+    ///
+    /// - Parameters:
+    ///   - updates: The node updates of the copy.
+    ///   - cursor: The cursor of the copy in the change log, or `nil`.
+    /// - Returns: The copy.
+    private func copy(nodeUpdates updates: [NodeUpdate], logCursor cursor: String?) -> Change {
         Change(
             txn: txn,
             at: at,
@@ -210,8 +248,34 @@ struct Change: Sendable {
             boards: boards,
             undone: undone,
             undoes: undoes,
-            nodeUpdates: updates
+            nodeUpdates: updates,
+            logCursor: cursor
         )
+    }
+
+    /// Gives the ids of the nodes of the updates of some kinds.
+    ///
+    /// - Parameter kinds: The kinds of the updates.
+    /// - Returns: The ids, in the order of ``nodeUpdates``.
+    private func ids(ofKinds kinds: Set<UpdateKind>) -> [NodeID] {
+        nodeUpdates.filter { update in kinds.contains(update.kind) }.map(\.id)
+    }
+
+    /// Resolves `Change.cursor`: the cursor of the change in the change log of its board. A change of `Board.history`
+    /// is not in the change log: it gives the cursor of the board of the transaction as the call read it, so that
+    /// `changes(after:)` with it gives the changes after that read.
+    ///
+    /// - Parameters:
+    ///   - context: The context of the call. Its store finds the board of the transaction.
+    ///   - arguments: The field has no arguments.
+    /// - Returns: The cursor.
+    /// - Throws: An error of ``KanbanContext/view(ofBoardOfChange:)``, or of ``BoardView/changeCursor()`` for a board
+    ///   with no change log.
+    func cursor(context: KanbanContext, arguments _: NoArguments) async throws(KanbanError) -> String {
+        if let logCursor {
+            return logCursor
+        }
+        return try await context.view(ofBoardOfChange: boards[boards.startIndex]).changeCursor()
     }
 
     /// Resolves `Change.actor`: the actor of the transaction, in the graph now of the board of the transaction. The
@@ -287,8 +351,12 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             Self.enumType(NodeType.self)
             Self.enumType(UpdateKind.self)
             Type(Change.self) {
+                Field("cursor", at: Change.cursor).description(SchemaDescription.changeCursor)
                 Field("txn", at: \.txn).description(SchemaDescription.changeTxn)
                 Field("at", at: \.at).description(SchemaDescription.changeAt)
+                Field("added", at: \.added).description(SchemaDescription.changeAdded)
+                Field("changed", at: \.changed).description(SchemaDescription.changeChanged)
+                Field("removed", at: \.removed).description(SchemaDescription.changeRemoved)
                 Field("actor", at: Change.actor).description(SchemaDescription.changeActor)
                 Field("ops", at: \.ops).description(SchemaDescription.changeOps)
                 Field("boards", at: \.boards).description(SchemaDescription.changeBoards)

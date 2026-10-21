@@ -3,23 +3,24 @@ import Graphiti
 
 // MARK: - Resolver
 
-/// The events of one `Subscription.changes` field: the changes of the feed, each after the store of the subscription
-/// reads the board of the change.
-typealias ChangeEvents = AsyncMapSequence<AsyncStream<ChangeEvent>, Change>
+/// The events of one `Subscription.changes` field: the changes of the change log of the board, each after the store
+/// of the subscription reads the board of the change.
+typealias ChangeEvents = AsyncMapSequence<AsyncThrowingStream<ChangeEvent, Error>, Change>
 
 extension KanbanResolver {
-    /// Resolves the source of `Subscription.changes`: a new subscriber of the change feed (plan.md §6.7).
+    /// Resolves the source of `Subscription.changes`: a new subscriber of the change log of a board (plan.md §6.7,
+    /// KANBAN-7).
     ///
-    /// The subscriber observes the current board, or the board that `board` names. Its filter tests the nodes of each
-    /// change in the board after the change. GraphQLSwift runs each event with the context of this call, so before an
-    /// event runs, the store of the context gets the board of the event: the board as the engine read it through the
-    /// serial gate.
+    /// The subscriber observes the current board, or the board that `board` names. It gets the changes of the log
+    /// after `after`, then the new changes, in order. Its filter tests the nodes of each change in the board after the
+    /// change. GraphQLSwift runs each event with the context of this call, so before an event runs, the store of the
+    /// context gets the board of the event: the board as the engine read it through the serial gate.
     ///
     /// - Parameters:
     ///   - context: The context of the `subscribe` call. Its store is the store of each event.
-    ///   - arguments: The board and the filter.
-    /// - Returns: The changes. In a run that the engine runs again after it loads the board, the stream has ended
-    ///   and the subscriber is not added.
+    ///   - arguments: The cursor, the board, and the filter.
+    /// - Returns: The changes. The stream ends with `RESYNC_REQUIRED` when the log cannot resume after the cursor. In a
+    ///   run that the engine runs again after it loads the board, the stream has ended and the subscriber is not added.
     /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for `board`. An
     ///   error of ``ChangeFilter/init(parsing:)``.
     ///   ``KanbanError/notFound(type:reference:)`` when the board has no repo directory to watch, or cannot be read.
@@ -32,10 +33,10 @@ extension KanbanResolver {
         }
     }
 
-    /// Adds a subscriber to the change feed for the board and the filter of a `changes` field.
+    /// Adds a subscriber to the change log of the board of a `changes` field, with its cursor and its filter.
     ///
     /// - Parameters:
-    ///   - arguments: The board and the filter.
+    ///   - arguments: The cursor, the board, and the filter.
     ///   - store: The store of the `subscribe` call. It resolves the board.
     ///   - feed: The change feeds of the session view.
     /// - Returns: The events of the subscriber, or a stream that has ended when the engine did not load the board
@@ -49,7 +50,7 @@ extension KanbanResolver {
         of arguments: ChangesArguments,
         readIn store: BoardStore,
         from feed: SessionFeeds
-    ) async throws(KanbanError) -> AsyncStream<ChangeEvent> {
+    ) async throws(KanbanError) -> AsyncThrowingStream<ChangeEvent, Error> {
         guard let view = try await store.view(ofBoard: arguments.board) else {
             if let reference = arguments.board, await store.isUnreadable(board: reference) {
                 throw .notFound(type: .board, reference: reference)
@@ -64,19 +65,20 @@ extension KanbanResolver {
             )
             throw .notFound(type: .board, reference: view.boardKey)
         }
-        return feed.subscribe(toBoardAt: directory.canonicalPath, filteredBy: filter)
+        return await feed.subscribe(toBoardAt: directory.canonicalPath, after: arguments.after, filteredBy: filter)
     }
 }
 
 // MARK: - Schema
 
 extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanContext {
-    /// Adds the `Subscription` type with its one field, `changes` (plan.md §4.1, §6.7).
+    /// Adds the `Subscription` type with its one field, `changes` (plan.md §4.1, §6.7, KANBAN-7).
     ///
     /// - Returns: This builder, for method chaining.
     func addChangesSubscription() -> Self {
         addSubscription {
             SubscriptionField("changes", as: Change.self, atSub: KanbanResolver.changes) {
+                Argument("after", at: \.after).description(SchemaDescription.changesAfter)
                 Argument("board", at: \.board).description(SchemaDescription.boardToObserve)
                 Argument("filter", at: \.filter).description(SchemaDescription.updateFilter)
             }

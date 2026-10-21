@@ -529,6 +529,8 @@ enum HostFixture {
     ///   - scanObserver: Gets a call when each scan starts and when a scan place changes, or `nil` for no calls.
     ///   - batchObserver: Gets a call when a file watcher applies a batch, or `nil` for no calls.
     ///   - folderEvents: The FSEvents calls of the file watchers. The default is the FSEvents service of the system.
+    ///   - changeLogCapacity: The number of the newest changes that the change log of each board keeps. The default is
+    ///     the capacity of the process.
     /// - Returns: The host.
     static func makeHost(
         readingKeyWith keyReader: @escaping BoardKeyReader = KanbanGraphTests.fakeKey,
@@ -539,7 +541,8 @@ enum HostFixture {
         embeddingWith embedder: (any PooledEmbedding)? = nil,
         observingScansWith scanObserver: (any BoardScanObserver)? = nil,
         observingBatchesWith batchObserver: (any LiveGraphObserver)? = nil,
-        watchingWith folderEvents: any FolderEventService = SystemFolderEvents()
+        watchingWith folderEvents: any FolderEventService = SystemFolderEvents(),
+        keepingChanges changeLogCapacity: Int = HostConfiguration.defaultChangeLogCapacity
     ) -> KanbanHost {
         KanbanHost(
             configuration: HostConfiguration(
@@ -552,7 +555,8 @@ enum HostFixture {
                 loadObserver: loadObserver,
                 workerObserver: workerObserver,
                 scanObserver: scanObserver,
-                folderEvents: folderEvents
+                folderEvents: folderEvents,
+                changeLogCapacity: changeLogCapacity
             )
         )
     }

@@ -45,6 +45,9 @@ enum SchemaDescription {
     /// The `board` argument of `Subscription.changes`.
     static let boardToObserve = "The board to observe. \(boardForms) No value observes the current board."
 
+    /// The `board` argument of `Query.cursor`.
+    static let cursorBoard = "The board of the cursor. \(boardForms) No value gives the cursor of the current board."
+
     /// The `board` field of a mutation input.
     static let boardToChange = """
         The board to change. \(boardForms) No value changes the current board. The short refs of the input name \

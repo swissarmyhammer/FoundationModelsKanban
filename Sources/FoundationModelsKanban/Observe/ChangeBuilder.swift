@@ -147,7 +147,8 @@ struct ChangeBuilder: Sendable {
             boards: [transaction.boardKey] + (first.boards ?? []),
             undone: transaction.isUndone,
             undoes: first.undoes.map { txn in NodeID(text: txn.ulidString) },
-            nodeUpdates: patchedUpdates + derived
+            nodeUpdates: patchedUpdates + derived,
+            logCursor: nil
         )
     }
 

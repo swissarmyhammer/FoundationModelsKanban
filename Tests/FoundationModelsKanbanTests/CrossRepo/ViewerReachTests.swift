@@ -215,6 +215,54 @@ struct ViewerReachTests {
         await app.close()
     }
 
+    @Test("An external viewer is refused on cursor(board:) of a sibling board", arguments: RefForm.allCases)
+    func externalViewerIsRefusedOnCursorOfSiblingBoard(form: RefForm) async throws {
+        let repos = try await CrossRepoFixture.SideBySide.make()
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
+        let document = #"{ cursor(board: "\#(try form.libReference(in: repos))") }"#
+        let response = try await Self.execute(document, as: KanbanViewerFixture.external, on: app)
+        #expect(try Self.errorCodes(of: response) == [Self.unreachableCode], "\(response)")
+        await app.close()
+    }
+
+    @Test("An external viewer is refused on changes(after:) of a sibling board, with a cursor of its own board")
+    func externalViewerIsRefusedOnResumeOfSiblingBoard() async throws {
+        let repos = try await CrossRepoFixture.SideBySide.make()
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
+        let own = try await Self.execute("{ cursor }", as: KanbanViewerFixture.external, on: app)
+        let cursor = try #require(KanbanGraphTests.data(of: own)["cursor"] as? String, "\(own)")
+        let arguments = #"(after: "\#(cursor)", board: "\#(try CrossRepoWriteTests.libKey())")"#
+        let stream = try await app.subscribe(
+            query: SubscriptionTests.subscription(arguments),
+            variables: [:],
+            operationName: nil,
+            viewer: KanbanViewerFixture.external
+        )
+        let (eventCount, code) = try await SubscriptionTests.errorCode(of: stream)
+        #expect(eventCount == 1)
+        #expect(code == Self.unreachableCode)
+        await app.close()
+    }
+
+    @Test("An external viewer reads the cursor of its own board and resumes the changes of its own board after it")
+    func externalViewerResumesOwnBoard() async throws {
+        let repos = try await CrossRepoFixture.SideBySide.make()
+        let app = try GitGraphFixture.makeGraph(at: repos.app)
+        let own = try await Self.execute("{ cursor }", as: KanbanViewerFixture.external, on: app)
+        let cursor = try #require(KanbanGraphTests.data(of: own)["cursor"] as? String, "\(own)")
+        let task = try await CrossRepoFixture.addTask(with: "", on: app)
+        let stream = try await app.subscribe(
+            query: SubscriptionTests.subscription(#"(after: "\#(cursor)")"#, selecting: "{ added }"),
+            variables: [:],
+            operationName: nil,
+            viewer: KanbanViewerFixture.external
+        )
+        let events = try await SubscriptionTests.events(1, of: stream, afterChangeAt: repos.app)
+        let change = try KanbanGraphTests.object(named: "changes", in: try #require(events.first))
+        #expect((change["added"] as? [String])?.contains(task) == true, "\(events)")
+        await app.close()
+    }
+
     @Test("An external viewer cannot undo a transaction that also changed a sibling board")
     func externalViewerIsRefusedOnCrossBoardUndo() async throws {
         let repos = try await CrossRepoFixture.SideBySide.make()

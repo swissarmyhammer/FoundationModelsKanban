@@ -295,10 +295,10 @@ public actor KanbanGraph: GraphQLEndpoint {
     /// not parse or validate, and a subscription that cannot start, give a stream with one response with the errors,
     /// and the stream then ends. ``close()`` ends the stream.
     ///
-    /// A subscription that starts after ``close()`` gets the changes again: the view registers with the host again,
-    /// so that the commits of each session and the batches of each file watcher reach the new stream. The view
-    /// registers before it takes the gate, and thus before it adds the subscriber, so the stream gets each change
-    /// that a commit or a file watcher publishes after the start.
+    /// The subscriber reads the change log of its board inside the gate, so the stream gets each change that the log
+    /// takes after the start, and with `after` first each change of the log after that cursor (KANBAN-7). A
+    /// subscription that starts after ``close()`` gets the changes again: the view registers with the host again
+    /// before it takes the gate, so that the view logs the changes of its boards.
     ///
     /// - Parameters:
     ///   - query: The subscription document.
@@ -425,7 +425,7 @@ public actor KanbanGraph: GraphQLEndpoint {
             subfolderBoard = nil
         }
         let engine = try await host.engine(ofSessionBoardAt: root)
-        feeds.replace(engine.feed, forBoardAt: engine.root.canonicalPath)
+        await feeds.replace(engine.feed, forBoardAt: engine.root.canonicalPath)
         await host.register(self)
         boardState = .resolved(engine, subfolderBoard: subfolderBoard)
         return engine
@@ -494,7 +494,7 @@ public actor KanbanGraph: GraphQLEndpoint {
             forgetRelatedBoard(at: path)
             return
         }
-        record(engine)
+        await record(engine)
     }
 
     /// Takes a related board away from the view, and ends the streams of the subscribers of the view on it. The feed
@@ -721,7 +721,7 @@ public actor KanbanGraph: GraphQLEndpoint {
         }
         await observer?.callDidStart()
         defer { observer?.callDidFinish() }
-        var session = await engine.session
+        var session = await engine.readSession()
         let copy = session.copy(at: engine.root)
         let (clock, search, feeds) = (host.configuration.clock, session.source.search, feeds)
         let subfolderBoard = subfolderBoard
@@ -897,25 +897,29 @@ public actor KanbanGraph: GraphQLEndpoint {
         return changed
     }
 
-    /// Sends the changes of some boards to the subscribers of this view (plan.md §6.7). The host calls it after each
-    /// operation of each session and after each batch of a file watcher. A view with no subscriber does nothing.
+    /// Puts the changes of some boards into the change log of each board that the view loaded and that no view before
+    /// it logged in this round (plan.md §6.7, KANBAN-7). The host calls it after each operation of each session and
+    /// after each batch of a file watcher, inside the serial gate of each board that changed.
     ///
     /// Before it makes the changes, the view loads each board that a `dependsOn` edge of its board reaches, and each
     /// board of an assignee that is an actor of a different board (divergence.md Q21), so that the derived fields read
     /// the tasks and the actors of those boards. A related board that cannot load, also a board of the old Rust
     /// kanban, does not stop the changes (divergence.md Q7, X12): the derived fields read no task of that board, and
-    /// the changes of the boards that load go out. Only a cancel of the task is recorded with swift-log, and the
-    /// changes are then not sent.
+    /// the changes of the boards that load go into their logs. Only a cancel of the task is recorded with swift-log,
+    /// and the view then logs no change.
     ///
     /// First the view follows each board whose folder moved away from its path (divergence.md §16, Gap 6), so that a
     /// subscriber from before a new repo replaced its repo gets the changes of the new repo.
     ///
-    /// - Parameter changed: The changes of each board that changed, by the canonical path of its repo directory.
-    func publish(_ changed: [String: BoardChanges]) async {
+    /// - Parameters:
+    ///   - changed: The changes of each board that changed, by the canonical path of its repo directory.
+    ///   - logged: The identities of the engines whose changes a view before this one logged in this round.
+    /// - Returns: The identities of the engines whose changes this view logged: each engine that it loaded and that
+    ///   `logged` does not hold. No identity when the view did not find its board or could not make the changes.
+    func publish(_ changed: [String: BoardChanges], skipping logged: Set<FolderIdentity>) async -> Set<FolderIdentity> {
         await followMovedBoards()
-        let subscribed = feeds.subscribedBoards
-        guard !changed.isEmpty, !subscribed.isEmpty, case .resolved(let current, _) = boardState else {
-            return
+        guard !changed.isEmpty, case .resolved(let current, _) = boardState else {
+            return []
         }
         let currentSession = await current.session
         let copy = currentSession.copy(at: current.root)
@@ -928,11 +932,12 @@ public actor KanbanGraph: GraphQLEndpoint {
             related = try await relatedBoards(updating: .loadable, toAnswer: requests, current: copy)
         } catch {
             Log.kanban.error(
-                "The change feed stopped while it read the boards of the dependencies; the changes are not sent",
+                "The change feed stopped while it read the boards of the dependencies; the changes are not logged",
                 metadata: ["error": "\(error)"]
             )
-            return
+            return []
         }
+        let engines = loadedEngines(current: current).filter { _, engine in !logged.contains(engine.identity) }
         let sessions = await loadedSessions(current: current)
         let round = ChangeRound(
             of: changesOfLoadedEngines(in: changed, amongBoards: sessions, current: current),
@@ -940,15 +945,14 @@ public actor KanbanGraph: GraphQLEndpoint {
             currentPath: copy.directory.canonicalPath,
             reading: related
         )
-        for path in subscribed.sorted() {
+        for (path, engine) in engines.sorted(by: { lhs, rhs in lhs.key < rhs.key }) {
             guard let session = sessions[path] else {
-                assertionFailure("A subscriber observes the board at \(path), and the view did not load it")
-                Log.kanban.error("A subscriber observes a board that the view did not load", metadata: ["path": "\(path)"])
+                assertionFailure("The view holds the engine of the board at \(path), and has no session of it")
+                Log.kanban.error("The view holds a board with no session", metadata: ["path": "\(path)"])
                 continue
             }
-            feeds.publish(
+            await engine.feed.append(
                 round.changes(of: session, atPath: path),
-                toBoardAt: path,
                 readingNodesOf: round.view(of: session),
                 resolvingIn: eventBoard(
                     of: session,
@@ -956,6 +960,18 @@ public actor KanbanGraph: GraphQLEndpoint {
                 )
             )
         }
+        return Set(engines.values.map(\.identity))
+    }
+
+    /// The engine of each board that the view loaded: the board of the working directory and each related board, by
+    /// the canonical path of its repo directory.
+    ///
+    /// - Parameter current: The engine of the board of the working directory.
+    /// - Returns: The engines.
+    private func loadedEngines(current: BoardEngine) -> [String: BoardEngine] {
+        var engines = relatedBoards
+        engines[current.root.canonicalPath] = current
+        return engines
     }
 
     /// Keeps the changes of each board that the view loaded, and only when the engine that the view holds for the path
@@ -972,8 +988,7 @@ public actor KanbanGraph: GraphQLEndpoint {
         amongBoards sessions: [String: CommitSession],
         current: BoardEngine
     ) -> [String: BoardChanges] {
-        var identities = relatedBoards.mapValues(\.identity)
-        identities[current.root.canonicalPath] = current.identity
+        let identities = loadedEngines(current: current).mapValues(\.identity)
         return changed.filter { path, changes in
             sessions[path] != nil && identities[path] == changes.identity
         }
@@ -990,12 +1005,13 @@ public actor KanbanGraph: GraphQLEndpoint {
         return sessions
     }
 
-    /// The session of each related board that the view loaded, by the canonical path of its repo directory.
+    /// The session of each related board that the view loaded, by the canonical path of its repo directory, each with
+    /// the cursor of the change log of its board at the read (``BoardEngine/readSession()``).
     private var relatedSessions: [String: CommitSession] {
         get async {
             var sessions: [String: CommitSession] = [:]
             for (path, engine) in relatedBoards {
-                sessions[path] = await engine.session
+                sessions[path] = await engine.readSession()
             }
             return sessions
         }
@@ -1283,7 +1299,7 @@ public actor KanbanGraph: GraphQLEndpoint {
         if case .resolved(let current, _) = boardState, current.identity == engine.identity {
             return .current
         }
-        record(engine)
+        await record(engine)
         return .copy(BoardCopy(directory: engine.root, key: copy.key, isEnabled: copy.isEnabled, names: copy.names))
     }
 
@@ -1293,7 +1309,7 @@ public actor KanbanGraph: GraphQLEndpoint {
     /// again changes nothing.
     ///
     /// - Parameter engine: The engine of the related board.
-    private func record(_ engine: BoardEngine) {
+    private func record(_ engine: BoardEngine) async {
         let path = engine.root.canonicalPath
         guard let old = relatedBoards[path] else {
             relatedBoards[path] = engine
@@ -1304,7 +1320,7 @@ public actor KanbanGraph: GraphQLEndpoint {
             return
         }
         relatedBoards[path] = engine
-        feeds.replace(engine.feed, forBoardAt: path)
+        await feeds.replace(engine.feed, forBoardAt: path)
     }
 }
 
