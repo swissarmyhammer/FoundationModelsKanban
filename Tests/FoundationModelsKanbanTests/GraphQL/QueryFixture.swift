@@ -113,7 +113,7 @@ struct QueryFixture {
     func respond(
         to document: String,
         searchingWith search: TaskSearch = TaskSearch(embeddingWith: nil),
-        extendedWith extend: SchemaExtension = PublicSchema.noExtension
+        extendedWith extend: SchemaExtension? = nil
     ) async throws -> String {
         try await PublicSchema(extendedWith: extend)
             .respond(to: document, rules: .kanban, context: Self.context(reading: graph, searchingWith: search))

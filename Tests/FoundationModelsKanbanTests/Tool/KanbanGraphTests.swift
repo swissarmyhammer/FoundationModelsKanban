@@ -125,7 +125,7 @@ struct KanbanGraphTests {
         reportingTo observer: (any KanbanCallObserver)? = nil,
         observingBatchesWith batchObserver: (any LiveGraphObserver)? = nil,
         writingLogsWith writer: any EventLogWriter = FileEventLogWriter(),
-        extendingSchemaWith extend: SchemaExtension = PublicSchema.noExtension
+        extendingSchemaWith extend: SchemaExtension? = nil
     ) throws -> KanbanGraph {
         try KanbanGraph(
             root: root,

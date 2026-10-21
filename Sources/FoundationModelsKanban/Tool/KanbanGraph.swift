@@ -95,7 +95,7 @@ public actor KanbanGraph: GraphQLEndpoint {
         actingAs actor: SessionActor,
         locatedBy locator: BoardLocator,
         reportingTo observer: (any KanbanCallObserver)? = nil,
-        extendingSchemaWith extend: SchemaExtension = PublicSchema.noExtension
+        extendingSchemaWith extend: SchemaExtension? = nil
     ) throws {
         self.host = host
         self.ownsHost = ownsHost
@@ -138,7 +138,7 @@ public actor KanbanGraph: GraphQLEndpoint {
         reportingTo observer: (any KanbanCallObserver)? = nil,
         observingBatchesWith batchObserver: (any LiveGraphObserver)? = nil,
         writingLogsWith logWriter: any EventLogWriter = FileEventLogWriter(),
-        extendingSchemaWith extend: SchemaExtension = PublicSchema.noExtension
+        extendingSchemaWith extend: SchemaExtension? = nil
     ) throws {
         let configuration = HostConfiguration(
             keyReader: keyReader,

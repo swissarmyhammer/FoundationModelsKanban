@@ -47,8 +47,24 @@ comments:
     - evidence: .kanban/tasks/01M5FVECC10NX6X5VCAGSQJXB8.md (checkboxes ticked); `swift test --skip-build --filter CollectBoardsTests` 25/25 passed; regression test RED without fix (2 issues), GREEN with fix
     - next: /review
   timestamp: 2026-10-21T20:19:03.976414+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5g213c8dhvrkmp921gw10f7
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~2..HEAD — 0 findings (0 confirmed, 0 refuted; 7 validator runs attempted, 0 failed, 0 skipped); 5 files reviewed, 4 .kanban/ files excluded by .reviewignore
+    - next: none — task moved to done
+  timestamp: 2026-10-21T20:21:48.552588+00:00
+- actor: claude-code
+  id: 01m5g21cqhfp6bepjjn3yc1ekc
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — task file only; acceptance met by 8f19fda; CollectBoardsTests 25/25
+    - test: green — code identical to the green run for ^e60e9sx (swift test 1746 tests / 145 suites; CollectBoardsTests x20)
+    - commit: b60643b
+    - review: clean — HEAD~2..HEAD, 0 findings, task moved to done
+  timestamp: 2026-10-21T20:21:58.129497+00:00
+position_column: done
+position_ordinal: ffac80
 title: 'Flaky: CollectBoardsTests "undo does not reverse collectBoards" gets UNDO_CONFLICT under full-suite load'
 ---
 ## What

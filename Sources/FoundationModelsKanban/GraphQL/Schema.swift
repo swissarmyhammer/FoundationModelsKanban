@@ -1280,6 +1280,9 @@ typealias SchemaExtension =
 ///
 /// The schema does not have the internal `patch` mutation (plan.md §12,
 /// item 9). ``PatchSchema`` has it.
+///
+/// The schema with no extension is built one time and shared by each view and each call of the process. Each build
+/// runs through ``SchemaBuildGate``, so that parallel callers do not build at the same time.
 struct PublicSchema: API {
     /// The root resolver.
     let resolver = KanbanResolver()
@@ -1287,27 +1290,41 @@ struct PublicSchema: API {
     /// The schema that Graphiti makes from the Swift types.
     let schema: Schema<KanbanResolver, KanbanContext>
 
-    /// The extension that adds no field: the schema that the agent sees.
-    static let noExtension: SchemaExtension = { builder in builder }
+    /// The schema with no extension: the schema that the agent sees. The first use builds it, and each later use
+    /// shares it.
+    private static let sharedSchema = Result { try makeSchema(extendedWith: { builder in builder }) }
 
-    /// Makes the schema.
+    /// Gives the schema.
     ///
-    /// - Parameter extend: Adds more fields to the builder after the fields of the public schema. The default adds no
-    ///   field.
+    /// - Parameter extend: Adds more fields to the builder after the fields of the public schema, in a schema of its
+    ///   own. The default, `nil`, adds no field and gives the shared schema.
     /// - Throws: An error from Graphiti when a type of the schema is not valid.
-    init(extendedWith extend: SchemaExtension = noExtension) throws {
-        let builder = SchemaBuilder.makeKanbanBuilder()
-            .addBoardMutations()
-            .addColumnActorMutations()
-            .addTaskMutations()
-            .addTaskOperationMutations()
-            .addTaskTransferMutations()
-            .addCommentMutations()
-            .addTagMutations()
-            .addUndoMutations()
-            .addRepairLinksMutation()
-            .addCollectBoardsMutation()
-            .addChangesSubscription()
-        schema = try extend(builder).build()
+    init(extendedWith extend: SchemaExtension? = nil) throws {
+        schema = try extend.map(Self.makeSchema(extendedWith:)) ?? Self.sharedSchema.get()
+    }
+
+    /// Builds a new schema through ``SchemaBuildGate``.
+    ///
+    /// - Parameter extend: Adds more fields to the builder after the fields of the public schema.
+    /// - Returns: The schema.
+    /// - Throws: An error from Graphiti when a type of the schema is not valid.
+    private static func makeSchema(
+        extendedWith extend: SchemaExtension
+    ) throws -> Schema<KanbanResolver, KanbanContext> {
+        try SchemaBuildGate.build {
+            let builder = SchemaBuilder.makeKanbanBuilder()
+                .addBoardMutations()
+                .addColumnActorMutations()
+                .addTaskMutations()
+                .addTaskOperationMutations()
+                .addTaskTransferMutations()
+                .addCommentMutations()
+                .addTagMutations()
+                .addUndoMutations()
+                .addRepairLinksMutation()
+                .addCollectBoardsMutation()
+                .addChangesSubscription()
+            return try extend(builder).build()
+        }
     }
 }

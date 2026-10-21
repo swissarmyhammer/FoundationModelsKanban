@@ -55,6 +55,8 @@ extension KanbanResolver {
 /// Each log line is a request to the `patch` mutation of this schema
 /// (plan.md §5.1). The schema is separate from ``PublicSchema``, so that the
 /// model cannot write a patch directly (plan.md §12, item 9).
+///
+/// The schema is built one time, through ``SchemaBuildGate``, and shared by each use of the process.
 struct PatchSchema: API {
     /// The root resolver.
     let resolver = KanbanResolver()
@@ -62,11 +64,22 @@ struct PatchSchema: API {
     /// The schema that Graphiti makes from the Swift types.
     let schema: Schema<KanbanResolver, KanbanContext>
 
-    /// Makes the schema.
+    /// The schema of each use. The first use builds it, and each later use shares it.
+    private static let sharedSchema = Result { try SchemaBuildGate.build(makeSchema) }
+
+    /// Gives the shared schema.
     ///
     /// - Throws: An error from Graphiti when a type of the schema is not valid.
     init() throws {
-        schema = try SchemaBuilder.makeKanbanBuilder()
+        schema = try Self.sharedSchema.get()
+    }
+
+    /// Builds the schema.
+    ///
+    /// - Returns: The schema.
+    /// - Throws: An error from Graphiti when a type of the schema is not valid.
+    private static func makeSchema() throws -> Schema<KanbanResolver, KanbanContext> {
+        try SchemaBuilder.makeKanbanBuilder()
             .add {
                 Enum(PatchNodeType.self) {
                     Value(.board)
