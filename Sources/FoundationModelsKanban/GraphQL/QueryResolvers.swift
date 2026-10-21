@@ -191,7 +191,9 @@ extension BoardView {
         try object(for: reference, ofType: .task, includingTombstones: includesTombstones)
     }
 
-    /// Finds the node of one type that a forgiving ref names: the single-item fields of the board (EXTRAS-9 rule 5).
+    /// Finds the node of one type that a forgiving ref names, and gives an error when no node matches: the lookup of
+    /// a mutation. A single-item query field uses ``matchingObject(for:ofType:)``, which gives `nil` in place of the
+    /// error.
     ///
     /// - Parameters:
     ///   - reference: The ref as the caller wrote it: a full URI, the stored local form, or a short form, for example
@@ -215,6 +217,27 @@ extension BoardView {
             throw .notFound(type: type, reference: reference)
         }
         return object
+    }
+
+    /// Finds the live node of one type that a forgiving ref names, for a single-item query field of the board. One
+    /// item that does not exist is `null`, not an error (EXTRAS-9 rule 5). A mutation uses
+    /// ``object(for:ofType:includingTombstones:)``, which gives the error.
+    ///
+    /// - Parameters:
+    ///   - reference: The ref as the caller wrote it: a full URI, the stored local form, or a short form.
+    ///   - type: The node type of the object.
+    /// - Returns: The object of the node, or `nil` when no live node of the type has the ref.
+    /// - Throws: ``KanbanError/ambiguousID(reference:matches:)`` when the ref is a prefix of more than one ULID: the
+    ///   ref names more than one item, so it is an error, not a missing item.
+    func matchingObject<Object: SlotNodeObject>(
+        for reference: String,
+        ofType type: PatchNodeType
+    ) throws(KanbanError) -> Object? {
+        do {
+            return try object(for: reference, ofType: type)
+        } catch .notFound {
+            return nil
+        }
     }
 
     /// Finds the node of any type that a forgiving ref names, live or tombstoned: `node(id:)` (plan.md §3.3, rule 3).
@@ -327,64 +350,55 @@ extension BoardObject {
         view.source?.directory.path
     }
 
-    /// Resolves `Board.task`: one live task by a full URI or a short form.
-    ///
-    /// The GraphQL field is nullable (plan.md §4.1): an error gives `null` for the field and one item in `errors`,
-    /// and the other fields of the board keep their data.
+    /// Resolves `Board.task`: one live task by a full URI or a short form (EXTRAS-9 rule 5).
     ///
     /// - Parameters:
     ///   - context: The context of the call. The field does not read it.
     ///   - arguments: The ref of the task.
-    /// - Returns: The task. The value is never `nil`. The optional type makes the GraphQL field nullable.
-    /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live task has the ref.
-    ///   ``KanbanError/ambiguousID(reference:matches:)`` when the ref is a prefix of more than one ULID.
+    /// - Returns: The task, or `nil` with no error when no live task has the ref.
+    /// - Throws: ``KanbanError/ambiguousID(reference:matches:)`` when the ref is a prefix of more than one ULID. The
+    ///   field is then `null`, with one item in `errors`, and the other fields of the board keep their data.
     func task(context _: KanbanContext, arguments: NodeArguments) throws(KanbanError) -> TaskObject? {
-        try view.task(for: arguments.id.text)
+        try view.matchingObject(for: arguments.id.text, ofType: .task)
     }
 
     /// Resolves `Board.column`: one live column by its slug, its name, the stored local form, or its full URI
     /// (EXTRAS-9 rule 5).
     ///
-    /// The GraphQL field is nullable: an error gives `null` for the field and one item in `errors`, and the other
-    /// fields of the board keep their data.
-    ///
     /// - Parameters:
     ///   - context: The context of the call. The field does not read it.
     ///   - arguments: The ref of the column.
-    /// - Returns: The column. The value is never `nil`. The optional type makes the GraphQL field nullable.
-    /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live column has the ref.
+    /// - Returns: The column, or `nil` with no error when no live column has the ref.
+    /// - Throws: An error of the resolve that is not a missing column. The field is then `null`, with one item in
+    ///   `errors`, and the other fields of the board keep their data.
     func column(context _: KanbanContext, arguments: NodeArguments) throws(KanbanError) -> ColumnObject? {
-        try view.object(for: arguments.id.text, ofType: .column)
+        try view.matchingObject(for: arguments.id.text, ofType: .column)
     }
 
     /// Resolves `Board.actor`: one live actor by its slug, its name, the stored local form, or its full URI
     /// (EXTRAS-9 rule 5).
     ///
-    /// The GraphQL field is nullable: an error gives `null` for the field and one item in `errors`, and the other
-    /// fields of the board keep their data.
-    ///
     /// - Parameters:
     ///   - context: The context of the call. The field does not read it.
     ///   - arguments: The ref of the actor.
-    /// - Returns: The actor. The value is never `nil`. The optional type makes the GraphQL field nullable.
-    /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live actor has the ref.
+    /// - Returns: The actor, or `nil` with no error when no live actor has the ref.
+    /// - Throws: An error of the resolve that is not a missing actor. The field is then `null`, with one item in
+    ///   `errors`, and the other fields of the board keep their data.
     func actor(context _: KanbanContext, arguments: NodeArguments) throws(KanbanError) -> ActorObject? {
-        try view.object(for: arguments.id.text, ofType: .actor)
+        try view.matchingObject(for: arguments.id.text, ofType: .actor)
     }
 
     /// Resolves `Board.tag`: one live tag by its slug, its name, the stored local form, or its full URI (EXTRAS-9
     /// rule 5).
     ///
-    /// The GraphQL field is nullable: an error gives `null` for the field and one item in `errors`, and the other
-    /// fields of the board keep their data.
-    ///
     /// - Parameters:
     ///   - context: The context of the call. The field does not read it.
     ///   - arguments: The ref of the tag.
-    /// - Returns: The tag. The value is never `nil`. The optional type makes the GraphQL field nullable.
-    /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live tag has the ref.
+    /// - Returns: The tag, or `nil` with no error when no live tag has the ref.
+    /// - Throws: An error of the resolve that is not a missing tag. The field is then `null`, with one item in
+    ///   `errors`, and the other fields of the board keep their data.
     func tag(context _: KanbanContext, arguments: NodeArguments) throws(KanbanError) -> TagObject? {
-        try view.object(for: arguments.id.text, ofType: .tag)
+        try view.matchingObject(for: arguments.id.text, ofType: .tag)
     }
 
     /// Resolves `Board.nextTask` (plan.md §6): the first task in board order that has the virtual tag `READY` and

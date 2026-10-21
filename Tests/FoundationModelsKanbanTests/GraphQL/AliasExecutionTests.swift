@@ -178,18 +178,6 @@ struct AliasExecutionTests {
         return try #require(try value(at: "board", "task", "comments", in: response) as? [Any]).count
     }
 
-    /// Expects that a response has exactly one error, and that the error is the given ``KanbanError``.
-    ///
-    /// - Parameters:
-    ///   - expected: The error that the response must give: its message and its `extensions.code`.
-    ///   - response: The response JSON text.
-    /// - Throws: An error when the response has no `errors` list.
-    private static func expectError(_ expected: KanbanError, in response: String) throws {
-        let errors = try NameRewriteTests.errors(of: response)
-        #expect(errors.map { error in error["message"] as? String } == [expected.message], "\(response)")
-        #expect(errors.map(ErrorCoverageTests.code(of:)) == [expected.code], "\(response)")
-    }
-
     /// Gives the full id of a task of the fixture board from its `^` ref.
     ///
     /// - Parameters:
@@ -236,7 +224,7 @@ struct AliasExecutionTests {
         }
     }
 
-    @Test("Board.task with the argument task gives the task, and deleteTask with task deletes it")
+    @Test("Board.task with the argument task gives the task, and after deleteTask with task it gives null")
     func taskNamesTheTask() async throws {
         try await Self.withFixture { fixture in
             let query = #"{ board { task(task: "\#(fixture.task)") { title } } }"#
@@ -246,7 +234,7 @@ struct AliasExecutionTests {
             let deleted = try await Self.run(delete, on: fixture.graph)
             #expect(try Self.text(at: "deleteTask", "deleted", in: deleted) != nil)
             let reread = try await KanbanGraphTests.execute(query, on: fixture.graph)
-            try Self.expectError(.notFound(type: .task, reference: fixture.task), in: reread)
+            try SingleItemFieldTests.expectNullWithoutErrors(at: ["board", "task"], in: reread)
         }
     }
 

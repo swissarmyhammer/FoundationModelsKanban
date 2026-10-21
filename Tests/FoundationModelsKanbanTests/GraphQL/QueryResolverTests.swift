@@ -249,13 +249,12 @@ struct QueryResolverTests {
         #expect(response.contains(#""path":["board"]"#))
     }
 
-    @Test("Board.task with an unknown id returns null and an error")
+    @Test("Board.task with an unknown id returns null and no error")
     func unknownTaskReturnsNull() async throws {
         let response = try await QueryFixture().respond(
             to: #"{ board { task(id: "\#(ReadinessFixture.ghost)") { title } } }"#
         )
-        #expect(response.hasPrefix(#"{"data":{"board":{"task":null}},"errors":["#))
-        #expect(response.contains(#""path":["board","task"]"#))
+        #expect(response == #"{"data":{"board":{"task":null}}}"#)
     }
 
     @Test("Board.tasks with an after cursor that names no task returns null and an error")

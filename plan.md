@@ -189,7 +189,11 @@ type Board implements Node {
   columns: [Column!]!                 # the tree: Board > Column > Task > Comment
   actors: [Actor!]!                   # shared nodes
   tags: [Tag!]!                       # shared nodes
-  task(id: ID!): Task
+  task(id: ID!): Task                 # single item (EXTRAS-9 rule 5): an id that names no live task is null
+                                      # with no error; an ambiguous ULID prefix is null with AMBIGUOUS_ID
+  column(id: ID!): Column             # the same rule: by slug, name, column/<slug>, or the full URI
+  actor(id: ID!): Actor               # the same rule: by slug, name, actor/<slug>, or the full URI
+  tag(id: ID!): Tag                   # the same rule: by slug, name, tag/<slug>, or the full URI
   tasks(filter: String, first: Int = 10, after: String): TaskConnection
                                       # only the filter selects; no filter gives each live task, done or not;
                                       # no tombstone unless the filter names #DELETED (§3.3 rule 3, §6.3)

@@ -126,6 +126,12 @@ enum SchemaDescription {
 
     // MARK: - Board fields
 
+    /// The `Board.task` field (EXTRAS-9 rule 5).
+    static let boardTask = singleItem(
+        of: "task",
+        forms: "its ULID, a ULID prefix, ^<short id>, its title slug, task/<ULID>"
+    )
+
     /// The `Board.column` field (EXTRAS-9 rule 5).
     static let boardColumn = singleItem(of: "column", forms: "its slug, its name, column/<slug>")
 
@@ -142,8 +148,8 @@ enum SchemaDescription {
     ///   - forms: The short forms of the id of the node, for example `its slug, its name, column/<slug>`.
     /// - Returns: The description.
     private static func singleItem(of noun: String, forms: String) -> String {
-        "One live \(noun) of the board by its id: \(forms), or the full kanban:// URI. Null, with the error "
-            + "NOT_FOUND, when no live \(noun) has the id."
+        "One live \(noun) of the board by its id: \(forms), or the full kanban:// URI. Null, with no error, when no "
+            + "live \(noun) has the id."
     }
 
     /// The `Board.nextTask` field.

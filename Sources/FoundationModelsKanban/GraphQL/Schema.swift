@@ -996,21 +996,10 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Field("columns", at: \.columns)
                 Field("actors", at: \.actors)
                 Field("tags", at: \.tags)
-                Field("task", at: BoardObject.task) {
-                    Argument("id", at: \.id)
-                }
-                Field("column", at: BoardObject.column) {
-                    Argument("id", at: \.id)
-                }
-                .description(SchemaDescription.boardColumn)
-                Field("actor", at: BoardObject.actor) {
-                    Argument("id", at: \.id)
-                }
-                .description(SchemaDescription.boardActor)
-                Field("tag", at: BoardObject.tag) {
-                    Argument("id", at: \.id)
-                }
-                .description(SchemaDescription.boardTag)
+                Self.singleItemField("task", at: BoardObject.task, description: SchemaDescription.boardTask)
+                Self.singleItemField("column", at: BoardObject.column, description: SchemaDescription.boardColumn)
+                Self.singleItemField("actor", at: BoardObject.actor, description: SchemaDescription.boardActor)
+                Self.singleItemField("tag", at: BoardObject.tag, description: SchemaDescription.boardTag)
                 Field("tasks", at: BoardObject.tasks) {
                     Argument("filter", at: \.filter).description(SchemaDescription.taskFilter)
                     Argument("first", at: \.first).defaultValue(TasksArguments.defaultPageSize)
@@ -1174,6 +1163,25 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
         Field("name", at: \.name)
         Field("color", at: \.color)
         taskListField()
+    }
+
+    /// Gives a single-item field of the board: one node by `id:` (EXTRAS-9 rule 5). The field is nullable, and the
+    /// resolver gives `null` with no error when no node has the id.
+    ///
+    /// - Parameters:
+    ///   - name: The name of the field, for example `column`.
+    ///   - resolver: The resolver of the field on the board.
+    ///   - description: The description of the field.
+    /// - Returns: The field, with the one argument `id`.
+    private static func singleItemField<Item: Sendable>(
+        _ name: String,
+        at resolver: @escaping SyncResolve<BoardObject, KanbanContext, NodeArguments, Item?>,
+        description: String
+    ) -> FieldComponent<BoardObject, KanbanContext> {
+        Field(name, at: resolver) {
+            Argument("id", at: \.id)
+        }
+        .description(description)
     }
 
     /// Gives the `tasks(filter:)` field of a column, an actor, or a tag.

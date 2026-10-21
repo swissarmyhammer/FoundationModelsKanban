@@ -23,6 +23,10 @@ struct KanbanEndpointTests {
     /// A subscription that cannot start: its filter does not parse, so its stream has one response with the error.
     static let failingSubscription = #"subscription { changes(filter: "&&") { txn } }"#
 
+    /// The viewers of the user: no viewer, and the device of the user. Each one sees and edits all boards, so a call
+    /// through the endpoint with either one gives the same JSON as the direct call.
+    static let userViewers: [GraphQLViewer?] = [nil, KanbanViewerFixture.userDevice]
+
     // MARK: - Tool
 
     @Test("The tool gives one endpoint with the name kanban, the version 1, and the session-folder scope")
@@ -63,7 +67,7 @@ struct KanbanEndpointTests {
 
     @Test(
         "execute through the protocol gives the same JSON as the direct call, for each viewer of the user",
-        arguments: [nil, KanbanViewerFixture.userDevice]
+        arguments: userViewers
     )
     func executeMatchesDirectCall(viewer: GraphQLViewer?) async throws {
         let directory = try TemporaryDirectory()
@@ -81,15 +85,23 @@ struct KanbanEndpointTests {
         await graph.close()
     }
 
-    @Test("subscribe through the protocol gives the same JSON as the direct call for a change")
-    func subscribeMatchesDirectCall() async throws {
+    @Test(
+        "subscribe through the protocol gives the same change as the direct call, for each viewer of the user",
+        arguments: userViewers
+    )
+    func subscribeMatchesDirectCall(viewer: GraphQLViewer?) async throws {
         let directory = try TemporaryDirectory()
         let task = try KanbanGraphTests.writeFixture(inRepoAt: directory.url).task
         let graph = try KanbanGraphTests.makeGraph(at: directory.url)
         let document = SubscriptionTests.subscription(SubscriptionTests.taskArguments)
         let direct = try await SubscriptionTests.subscribe(document, on: graph)
         let endpoint: any GraphQLEndpoint = graph
-        let viaEndpoint = try await endpoint.subscribe(query: document, variables: [:], operationName: nil, viewer: nil)
+        let viaEndpoint = try await endpoint.subscribe(
+            query: document,
+            variables: [:],
+            operationName: nil,
+            viewer: viewer
+        )
         let expected = try await SubscriptionTests.changeTitle(of: task, to: KanbanGraphTests.laterTitle, on: graph)
         let oneEvent = SubscriptionTests.oneEvent
         #expect(try await SubscriptionTests.events(oneEvent, of: direct, afterChangeAt: directory.url) == [expected])
@@ -97,8 +109,11 @@ struct KanbanEndpointTests {
         await graph.close()
     }
 
-    @Test("subscribe through the protocol gives the same error stream as the direct call for a document that fails")
-    func failingSubscribeMatchesDirectCall() async throws {
+    @Test(
+        "subscribe of a document that fails gives the error stream of the direct call, for each viewer of the user",
+        arguments: userViewers
+    )
+    func failingSubscribeMatchesDirectCall(viewer: GraphQLViewer?) async throws {
         let directory = try TemporaryDirectory()
         _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
         let graph = try KanbanGraphTests.makeGraph(at: directory.url)
@@ -108,7 +123,7 @@ struct KanbanEndpointTests {
             query: Self.failingSubscription,
             variables: [:],
             operationName: nil,
-            viewer: nil
+            viewer: viewer
         )
         let directEvents = try await SubscriptionTests.allEvents(of: direct)
         #expect(!directEvents.isEmpty)

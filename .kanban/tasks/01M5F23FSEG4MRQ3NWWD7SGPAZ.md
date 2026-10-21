@@ -39,6 +39,51 @@ comments:
     - evidence: `swift test` — 1722 tests in 143 suites passed, 0 failed, 0 skipped; `swift build --build-tests` in IntegrationTests/ — Build complete, 0 errors. Only warning is third-party (mlx-swift_Cmlx.bundle "missing creator for mutated node"), out of scope; no package-code warnings.
     - next: review
   timestamp: 2026-10-21T12:48:27.596283+00:00
+- actor: claude-code
+  id: 01m5f8tz7pt0fgsdnajraewxcq
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (84aba9f): engine 3 findings (3 confirmed, 0 refuted) — Sources/FoundationModelsKanban/GraphQL/Schema.swift:1006, Sources/FoundationModelsKanban/GraphQL/Schema.swift:1010, Tests/FoundationModelsKanbanTests/Tool/KanbanEndpointTests.swift:85. Spec check against EXTRAS-9 rev 2 rule 5: 3 findings — Sources/FoundationModelsKanban/GraphQL/QueryResolvers.swift:356 (also :371, :386, :341), Sources/FoundationModelsKanban/GraphQL/SchemaDescription.swift:145, Tests/FoundationModelsKanbanTests/GraphQL/SingleItemFieldTests.swift:95.
+    - checked with no finding: viewer reach (an external viewer is refused with UNREACHABLE_BOARD before any board lookup, for path, key, URI, node URI, boards, moveTask(board:), copyTask, collectBoards, repairLinks(reach: true), checkLinks and cross-board undo; related boards are not loaded, so the refusal is the same for an existing and a missing board); graphQLEndpoints returns the stored KanbanGraph actor reference, so the tool and each copy give the same instance (KanbanEndpointTests.endpointIsEngineOfTool checks `===`).
+    - next: implement the 6 open items in the 2026-10-21 07:48 Review Findings section, then /review again.
+  timestamp: 2026-10-21T13:01:33.302983+00:00
+- actor: claude-code
+  id: 01m5f8vj4bj38sn6ft3mxsyxea
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — endpoint conformance, BoardReach, single-item fields, 4 new test files
+    - test: green — swift test 1722 / 143; IntegrationTests build ok
+    - commit: 84aba9f
+    - review: findings — Schema.swift:1006, Schema.swift:1010, KanbanEndpointTests.swift:85, QueryResolvers.swift:356, SchemaDescription.swift:145, SingleItemFieldTests.swift:95
+  timestamp: 2026-10-21T13:01:52.651906+00:00
+- actor: claude-code
+  id: 01m5f9b43csmrer72gsyg0pxmj
+  text: |-
+    Review findings (2026-10-21 07:48) worked, all 6 flipped to [x]:
+    - Schema.swift: new `SchemaBuilder.singleItemField(_:at:description:)` builds every single-item field of the board. task, column, actor and tag all use it, and Board.task gets a description too (SchemaDescription.boardTask).
+    - QueryResolvers.swift: new `BoardView.matchingObject(for:ofType:)` returns nil when the lookup throws `.notFound`, and rethrows every other error (AMBIGUOUS_ID, UNREACHABLE_BOARD). Board.task/column/actor/tag use it, so no match gives null with no error. This also covers the root forms, which are rewritten into `board`. `BoardView.task(for:)` and `object(for:ofType:includingTombstones:)` still throw NOT_FOUND for mutations and the `tasks(after:)` cursor.
+    - SchemaDescription.swift: the description now reads "Null, with no error, when no live <noun> has the id."
+    - SingleItemFieldTests: itemCases now includes task. `unknownIDGivesNotFound` is replaced by `unknownIDGivesNull` (board form, exact `{"data":{"board":{"<f>":null}}}`) and `unknownIDAtRootGivesNull` (root form). New `ambiguousTaskIDGivesAnError` checks that AMBIGUOUS_ID stays an error. New helper `expectNullWithoutErrors(at:in:)`.
+    - KanbanEndpointTests: `subscribeMatchesDirectCall` and `failingSubscribeMatchesDirectCall` now take `userViewers` [nil, .userDevice], the same as `executeMatchesDirectCall`.
+    - Tests that pinned NOT_FOUND from task(id:) as a query were updated: QueryResolverTests.unknownTaskReturnsNull and AliasExecutionTests.taskNamesTheTask. The private `expectError` helper in AliasExecutionTests had no callers left and was removed.
+    - plan.md Board sketch: task(id:) documents null with no error and AMBIGUOUS_ID; column/actor/tag(id:) lines added. README had no matching text.
+    - Discovery: a root single-item field response carries `extensions.rewrites` (root -> board.<field>), and a `task:` alias carries a rewrite entry. So the null tests check `data` and the absence of `errors` rather than the exact text.
+  timestamp: 2026-10-21T13:10:22.572975+00:00
+- actor: claude-code
+  id: 01m5f9b6g5a30ywgmfcaw4bz8f
+  text: |-
+    ### implement — changed
+    - evidence: full `swift test` — 1724 tests in 143 suites passed, 0 failed. The only build warning is the third-party mlx-swift_Cmlx.bundle "missing creator for mutated node", with no package-code warnings. 9 files: Sources/FoundationModelsKanban/GraphQL/{QueryResolvers.swift, Schema.swift, SchemaDescription.swift}; Tests/FoundationModelsKanbanTests/{GraphQL/SingleItemFieldTests.swift, GraphQL/QueryResolverTests.swift, GraphQL/AliasExecutionTests.swift, Tool/KanbanEndpointTests.swift}; plan.md; task card
+    - next: /review
+  timestamp: 2026-10-21T13:10:25.029168+00:00
+- actor: claude-code
+  id: 01m5fb6qgnvm9nhsmcejym2ahf
+  text: |-
+    ### test — green
+    - evidence: `swift test` — 1724 tests in 143 suites passed, 0 failed, 0 skipped; `swift build --build-tests` after touching the changed GraphQL sources and tests — no package-code warnings (only third-party `missing creator for mutated node ... mlx-swift_Cmlx.bundle`); `swift build --build-tests` in IntegrationTests/ — Build complete, exit 0.
+    - note: the first `swift test` was started in parallel with the IntegrationTests build and hung for 1800s at 0% CPU. I killed it and reran the suite alone, which passed in 31s.
+    - next: review
+  timestamp: 2026-10-21T13:42:55.765561+00:00
 depends_on:
 - 01M5F234JM2BZEQ1TDMJK3FC4G
 position_column: doing
@@ -65,3 +110,24 @@ KANBAN-5 (TestudoApp/features/packages/foundationmodels-kanban.md) under EXTRAS-
 - [x] Tool gives endpoint: name, version and scope (EXTRAS-9 rule 11)
 - [x] Viewer: an external viewer works on its own board and is refused on a sibling board by path, key and URI, and through `boards`, `moveTask(board:)`, `copyTask` and `collectBoards`
 - [x] execute and subscribe through the protocol give the same JSON as the direct calls
+
+## Review Findings (2026-10-21 07:48)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 17 file(s) reviewed, 6 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 2 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+> - `plan.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsKanban/GraphQL/Schema.swift:1006` `duplication/duplication` — Near-duplicate field definition. The 'actor' field definition (lines 1006–1009) repeats the identical structure of the 'column' field (lines 1002–1005), differing only by field name and description reference. A third identical copy appears for 'tag' at lines 1010–1013. Extract a parameterized helper function to eliminate the repetition. Create a helper function in SchemaBuilder (e.g., `singleItemField(name:at:description:)`) that takes the field name, function pointer, and description reference, then call it three times instead of repeating the Field/Argument/description block.
+- [x] `Sources/FoundationModelsKanban/GraphQL/Schema.swift:1010` `duplication/duplication` — Near-duplicate field definition. The 'tag' field definition (lines 1010–1013) repeats the identical structure of the 'column' (lines 1002–1005) and 'actor' (lines 1006–1009) fields, differing only by field name and description reference. Extract a parameterized helper function to eliminate the repetition. Create a helper function in SchemaBuilder (e.g., `singleItemField(name:at:description:)`) that takes the field name, function pointer, and description reference, then call it three times instead of repeating the Field/Argument/description block.
+- [x] `Tests/FoundationModelsKanbanTests/Tool/KanbanEndpointTests.swift:85` `completeness/invariant-propagation` — executeMatchesDirectCall tests both nil and userDevice viewers to validate that the endpoint correctly handles different viewer contexts (line 66), but subscribeMatchesDirectCall only tests with nil viewer (line 92). Since the change restricts external viewers to their own board, subscription behavior should be tested with the same viewer variations to ensure the protocol conformance is complete across all viewer contexts. Parameterize subscribeMatchesDirectCall to test both nil and userDevice viewers, matching the pattern of executeMatchesDirectCall, to ensure subscription correctly applies viewer-based access control.
+
+> Spec check against EXTRAS-9 rev 2 (TestudoApp/features/packages/foundationmodels-extras.md), requested with this review:
+
+- [x] `Sources/FoundationModelsKanban/GraphQL/QueryResolvers.swift:356` `spec/EXTRAS-9-rule-5` — The new single-item fields `Board.column(id:)`, `Board.actor(id:)` and `Board.tag(id:)` (QueryResolvers.swift:356, :371, :386) throw `NOT_FOUND` when no live node has the id, so the response holds `null` plus an error. EXTRAS-9 rule 5 says: "One item that does not exist is `null`, not an error." Return `null` with no error for an id that names no node of the type (keep `AMBIGUOUS_ID` for an ambiguous ULID prefix, which is not a missing item). Remove the same cause from `Board.task(id:)` (QueryResolvers.swift:341), which this change moved onto the shared `BoardView.object(for:ofType:)` path: rule 5 says an endpoint that is already done changes to these rules. Keep `BoardView.task(for:)` throwing for the mutation callers that need the error, and give the query fields a non-throwing lookup.
+- [x] `Sources/FoundationModelsKanban/GraphQL/SchemaDescription.swift:145` `spec/EXTRAS-9-rule-5` — The schema description of the single-item fields says "Null, with the error NOT_FOUND, when no live <noun> has the id." This documents the behavior that EXTRAS-9 rule 5 forbids. Change it to state that an id that names no live node gives `null`.
+- [x] `Tests/FoundationModelsKanbanTests/GraphQL/SingleItemFieldTests.swift:95` `spec/EXTRAS-9-rule-5` — `unknownIDGivesNotFound` asserts "null and NOT_FOUND" for an unknown id, which pins the behavior that EXTRAS-9 rule 5 forbids. Change it to assert `null` and no `errors` entry for each single-item field.
