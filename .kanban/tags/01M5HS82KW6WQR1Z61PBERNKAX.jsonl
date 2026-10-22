@@ -1,0 +1,1 @@
+{"id":"01M5HS82KWKMANEDS31AX1MRGQ","timestamp":"2026-10-22T12:26:48.828984Z","op":"create","item_id":"01M5HS82KW6WQR1Z61PBERNKAX","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: e4e669\n+tag_name: recording\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: e4e669\n-tag_name: recording\n","transaction_id":null}

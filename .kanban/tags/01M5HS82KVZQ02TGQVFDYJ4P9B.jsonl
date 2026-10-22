@@ -1,0 +1,1 @@
+{"id":"01M5HS82KVAV1HVW5RNJQM88D3","timestamp":"2026-10-22T12:26:48.827876Z","op":"create","item_id":"01M5HS82KVZQ02TGQVFDYJ4P9B","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: '5319e7'\n+tag_name: cross-repo\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: '5319e7'\n-tag_name: cross-repo\n","transaction_id":null}
