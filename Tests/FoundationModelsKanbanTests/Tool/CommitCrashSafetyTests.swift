@@ -1,6 +1,7 @@
 import Foundation
 import Synchronization
 import Testing
+import ULID
 
 @testable import FoundationModelsKanban
 
@@ -132,5 +133,17 @@ final class RecordingLogWriter: EventLogWriter {
         try FileEventLogWriter().append(contentsOf: events, toLogOf: ref, in: log)
         let file = log.fileURL(for: ref)
         files.withLock { files in files.append(file) }
+    }
+
+    /// Appends the abort record of a transaction through ``FileEventLogWriter``. The record of appended files does
+    /// not change.
+    ///
+    /// - Parameters:
+    ///   - txn: The transaction ULID.
+    ///   - ref: The local ref of the node.
+    ///   - log: The event log of the board.
+    /// - Throws: The error of the file writer.
+    func appendAbort(of txn: ULID, toLogOf ref: LocalRef, in log: EventLog) throws(EventLogError) {
+        try FileEventLogWriter().appendAbort(of: txn, toLogOf: ref, in: log)
     }
 }

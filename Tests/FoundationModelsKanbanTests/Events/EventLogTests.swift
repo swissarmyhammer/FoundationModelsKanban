@@ -340,6 +340,85 @@ struct EventLogTests {
         #expect(try log.signature(of: task)?.lastEventID == events.last?.id)
     }
 
+    // MARK: - Abort records
+
+    @Test("An abort record adds one line with the transaction after the lines of the file, and changes no line")
+    func abortAppendsOneLine() throws {
+        let directory = try TemporaryDirectory()
+        let events = try Self.firstAndLastTitleEvents()
+        let (log, task) = try Self.appendToTaskLog(events, in: directory)
+        let before = try Self.text(of: log.fileURL(for: task))
+        try log.appendAbort(of: events[1].txn, toLogOf: task)
+        let after = try Self.text(of: log.fileURL(for: task))
+        #expect(after == before + "{\"abort\":\"\(events[1].txn.ulidString)\"}\n")
+    }
+
+    @Test("A read skips each event of a transaction that the file aborts, and keeps the other events")
+    func readSkipsAbortedTransaction() throws {
+        let directory = try TemporaryDirectory()
+        let events = try Self.firstAndLastTitleEvents()
+        let (log, task) = try Self.appendToTaskLog(events, in: directory)
+        try log.appendAbort(of: events[1].txn, toLogOf: task)
+        let read = try log.readLog(of: task)
+        #expect(read.events == [events[0]])
+        #expect((read.node?.state as? TaskNode)?.title == "first")
+    }
+
+    @Test("A read of a file whose every event is aborted gives no events and no node")
+    func readOfFullyAbortedFileIsEmpty() throws {
+        let directory = try TemporaryDirectory()
+        let event = try Self.titleEvent(atStep: 1, setting: "aborted")
+        let (log, task) = try Self.appendToTaskLog([event], in: directory)
+        try log.appendAbort(of: event.txn, toLogOf: task)
+        let read = try log.readLog(of: task)
+        #expect(read.events.isEmpty)
+        #expect(read.node == nil)
+    }
+
+    @Test("A read skips each line that an aborted collect transaction copied, and keeps the other lines")
+    func readSkipsCopiesOfAbortedCollect() throws {
+        let directory = try TemporaryDirectory()
+        let events = try Self.firstAndLastTitleEvents()
+        let collect = ULID()
+        let (log, task) = try Self.appendToTaskLog([events[0], events[1].copied(by: collect)], in: directory)
+        try log.appendAbort(of: collect, toLogOf: task)
+        let read = try log.readLog(of: task)
+        #expect(read.events == [events[0]])
+        #expect((read.node?.state as? TaskNode)?.title == "first")
+    }
+
+    @Test("A read applies a copy of a collect transaction that the file does not abort, as the event that it copies")
+    func readAppliesCopyOfOtherCollect() throws {
+        let directory = try TemporaryDirectory()
+        let events = try Self.firstAndLastTitleEvents()
+        let (failed, retried) = (ULID(), ULID())
+        let copies: [Event] = [failed, retried].flatMap { collect in events.map { event in event.copied(by: collect) } }
+        let (log, task) = try Self.appendToTaskLog(copies, in: directory)
+        try log.appendAbort(of: failed, toLogOf: task)
+        let read = try log.readLog(of: task)
+        #expect(read.events == events)
+        #expect((read.node?.state as? TaskNode)?.title == "last")
+    }
+
+    @Test("An abort record for a node with no file writes nothing")
+    func abortOfMissingFileWritesNothing() throws {
+        let directory = try TemporaryDirectory()
+        let log = EventLog(repositoryAt: directory.url)
+        try log.appendAbort(of: ULID(timestamp: ReplayTests.date(atStep: 1)), toLogOf: Self.bugTag)
+        #expect(!FileManager.default.fileExists(atPath: log.fileURL(for: Self.bugTag).path))
+    }
+
+    @Test("The signature of a file that ends with an abort record gives the id of the last event")
+    func signatureSkipsAbortRecord() throws {
+        let directory = try TemporaryDirectory()
+        let events = try Self.firstAndLastTitleEvents()
+        let (log, task) = try Self.appendToTaskLog(events, in: directory)
+        try log.appendAbort(of: events[1].txn, toLogOf: task)
+        let signature = try #require(try log.signature(of: task))
+        #expect(signature.lastEventID == events.last?.id)
+        #expect(signature.size == (try Data(contentsOf: log.fileURL(for: task))).count)
+    }
+
     // MARK: - Signatures
 
     @Test("A node with no file has no signature")

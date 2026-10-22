@@ -131,6 +131,27 @@ extension EventLog {
         }
     }
 
+    /// Appends the abort record of a transaction to the log file of one node, through ``JSONLFile/append(_:)``: one
+    /// line, with an fsync after it (plan.md §5.4 step 5.5). Replay then skips each event of the transaction in the
+    /// file, and each line that the transaction copied (``Event/copiedBy``). The append does not change a byte that is
+    /// in the file. A node with no file has no line of the transaction, so the call writes nothing and makes no file.
+    ///
+    /// - Parameters:
+    ///   - txn: The transaction ULID.
+    ///   - ref: The local ref of the node.
+    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when the file cannot be read or written.
+    func appendAbort(of txn: ULID, toLogOf ref: LocalRef) throws(EventLogError) {
+        let file = fileURL(for: ref)
+        guard FileManager.default.fileExists(atPath: file.path) else {
+            return
+        }
+        do {
+            try JSONLFile(url: file).append(TransactionAbort(txn: txn))
+        } catch {
+            throw Self.failure(of: error, onFileAt: file)
+        }
+    }
+
     /// Checks that each event can be a line before the first line is written, so that an event that cannot be JSON
     /// writes no line of the list.
     ///
@@ -181,12 +202,16 @@ extension EventLog {
     /// of the two is recorded with swift-log. A line ends with a carriage return when a Windows editor wrote it, and
     /// JSON reads the carriage return as white space.
     ///
+    /// A line can also be the abort record of a transaction (``TransactionAbort``). The read then skips each event of
+    /// that transaction in the file, and each line that the transaction copied (``Event/copiedBy``), wherever its line
+    /// is, and records the skip with swift-log (plan.md §5.4 step 5.5).
+    ///
     /// - Parameter ref: The local ref of the node.
     /// - Returns: The folded log. A node with no file gives a log with no events and no node.
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when the file is there and cannot be read.
     func readLog(of ref: LocalRef) throws(EventLogError) -> NodeLog {
-        let lines = try Self.records(of: ReplayedEvent.self, inFileAt: fileURL(for: ref))
-        return NodeLog(replaying: lines.map(\.event), for: ref)
+        let lines = try Self.records(of: ReplayedLine.self, inFileAt: fileURL(for: ref))
+        return NodeLog(replaying: ReplayedLine.events(of: lines, for: ref), for: ref)
     }
 
     /// Reads the records of one log file through ``JSONLFile/records(as:)``.
@@ -224,21 +249,87 @@ extension EventLog {
     }
 }
 
-/// One line of a node log, read for the replay: its event, with each value of the patch that does not decode left out
-/// (``PatchValuePolicy/skip``). Replay never refuses a log (plan.md §3.3, rule 7), so the other values of the line
-/// still apply.
-private struct ReplayedEvent: Decodable {
-    /// The event of the line.
-    let event: Event
+/// One line of a node log, read for the replay: an event, or the abort record of a transaction.
+///
+/// An event leaves out each value of its patch that does not decode (``PatchValuePolicy/skip``). Replay never refuses
+/// a log (plan.md §3.3, rule 7), so the other values of the line still apply.
+private enum ReplayedLine: Decodable {
+    /// A line that holds an event.
+    case event(Event)
 
-    /// Reads the event of one line with the ``PatchValuePolicy/skip`` policy.
+    /// A line that holds the abort record of a transaction (plan.md §5.4 step 5.5).
+    case abort(TransactionAbort)
+
+    /// The keys that tell the two kinds of line apart.
+    private enum CodingKeys: String, CodingKey {
+        case abort
+    }
+
+    /// Reads one line: an abort record when the line has the `abort` key, else an event with the
+    /// ``PatchValuePolicy/skip`` policy.
     ///
     /// - Parameter decoder: The decoder of the line.
-    /// - Throws: The decode error when the envelope, the `node` or the `type` of the patch does not decode.
+    /// - Throws: The decode error when the line is not a JSON object, when an abort record has no valid transaction,
+    ///   or when the envelope, the `node` or the `type` of the patch of an event does not decode.
     init(from decoder: any Decoder) throws {
-        event = try PatchValuePolicy.$current.withValue(.skip) {
-            try Event(from: decoder)
+        guard try decoder.container(keyedBy: CodingKeys.self).contains(.abort) else {
+            self = .event(
+                try PatchValuePolicy.$current.withValue(.skip) {
+                    try Event(from: decoder)
+                }
+            )
+            return
         }
+        self = .abort(try TransactionAbort(from: decoder))
+    }
+
+    /// Gives the events of the lines of one log file, without each line that an abort record of the file drops: an
+    /// event of an aborted transaction, and a line that an aborted `collectBoards` transaction copied
+    /// (``Event/copiedBy``). Each skipped event is recorded with swift-log. Each kept copy loses its `copiedBy` value,
+    /// so that it is the same event as the line that it copies, and the fold applies the two one time.
+    ///
+    /// - Parameters:
+    ///   - lines: The lines of the file, in file order.
+    ///   - ref: The local ref of the node of the file.
+    /// - Returns: The events that replay applies, in file order.
+    static func events(of lines: [ReplayedLine], for ref: LocalRef) -> [Event] {
+        let aborted = Set(lines.compactMap(\.abortedTransaction))
+        let events = lines.compactMap(\.event)
+        let skipped = events.filter { event in event.isDropped(byAborting: aborted) }
+        if !skipped.isEmpty {
+            Log.kanban.debug(
+                "Replay skips the events of aborted transactions",
+                metadata: ["node": "\(ref)", "events": "\(skipped.map(\.id.ulidString))"]
+            )
+        }
+        return events.filter { event in !event.isDropped(byAborting: aborted) }.map { event in event.copied(by: nil) }
+    }
+
+    /// The event of the line, or `nil` for an abort record.
+    private var event: Event? {
+        guard case .event(let event) = self else {
+            return nil
+        }
+        return event
+    }
+
+    /// The transaction that the line aborts, or `nil` for an event.
+    private var abortedTransaction: ULID? {
+        guard case .abort(let record) = self else {
+            return nil
+        }
+        return record.txn
+    }
+}
+
+extension Event {
+    /// Tells if an abort record of the file of this line drops the line: the record aborts the transaction of the
+    /// event, or the `collectBoards` transaction that copied the line (plan.md §5.4 step 5.5).
+    ///
+    /// - Parameter aborted: The transactions that the abort records of the file abort.
+    /// - Returns: `true` when replay skips the line.
+    fileprivate func isDropped(byAborting aborted: Set<ULID>) -> Bool {
+        aborted.contains(txn) || copiedBy.map(aborted.contains) == true
     }
 }
 
@@ -278,7 +369,7 @@ extension EventLog {
         return FileSignature(
             size: attributes[.size] as? Int ?? .zero,
             modified: attributes[.modificationDate] as? Date ?? .distantPast,
-            lastEventID: try Self.records(of: EventIDLine.self, inFileAt: file).last?.id
+            lastEventID: try Self.records(of: EventIDLine.self, inFileAt: file).compactMap(\.id).last
         )
     }
 
@@ -393,8 +484,24 @@ extension EventLog {
 /// The event id of one log line. The signature reads only this field, so a line whose patch breaks a rule still
 /// gives its id.
 private struct EventIDLine: Decodable {
-    /// The event id.
-    let id: ULID
+    /// The keys of the line that the signature reads.
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case abort
+    }
+
+    /// The event id, or `nil` for the abort record of a transaction (``TransactionAbort``), which has no id.
+    let id: ULID?
+
+    /// Reads the event id of one line. An abort record is a whole line with no id, not a line that does not decode.
+    ///
+    /// - Parameter decoder: The decoder of the line.
+    /// - Throws: The decode error when the line is not a JSON object, or when a line that is not an abort record has
+    ///   no valid event id.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = container.contains(.abort) ? nil : try container.decode(ULID.self, forKey: .id)
+    }
 }
 
 // MARK: - File system calls

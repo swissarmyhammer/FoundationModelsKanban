@@ -50,6 +50,12 @@ struct Event: Codable, Hashable, Sendable {
     /// all lines of the transaction (``IncompleteTransactions``). A line with no field is complete.
     private(set) var files: TransactionFiles?
 
+    /// The `collectBoards` transaction that copied this line into the log of a different board, or `nil` for a line
+    /// that no collect copied (divergence.md M9, Q23). A copy keeps its own `txn` and `files`. When the file holds the
+    /// abort record of the collect transaction, the read drops the copy (plan.md §5.4 step 5.5). The read then gives
+    /// each kept copy with no value, so a copy is the same event as the line that it copies.
+    private(set) var copiedBy: ULID?
+
     /// The GraphQL document of the request.
     let query: String
 
@@ -151,6 +157,17 @@ extension Event {
     func recording(files refs: some Sequence<LocalRef>) -> Event {
         var event = self
         event.files = .named(refs)
+        return event
+    }
+
+    /// Gives this event as the line that a `collectBoards` transaction copies into the log of its target (divergence.md
+    /// M9). The line keeps each other value, its transaction too.
+    ///
+    /// - Parameter collect: The transaction ULID of the collect, or `nil` for the event as it was before the copy.
+    /// - Returns: The event with the `copiedBy` value.
+    func copied(by collect: ULID?) -> Event {
+        var event = self
+        event.copiedBy = collect
         return event
     }
 }

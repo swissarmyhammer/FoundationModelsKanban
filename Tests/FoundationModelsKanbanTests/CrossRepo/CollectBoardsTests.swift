@@ -523,6 +523,37 @@ struct CollectBoardsTests {
     func failedWriteKeepsSources() async throws {
         let fixture = try await Self.makeFixture()
         let sources = try fixture.sourcePaths.map { path in try IncompatibleBoardTests.listing(of: URL(filePath: path)) }
+        try await Self.runFailingCollect(of: fixture)
+        let after = try fixture.sourcePaths.map { path in try IncompatibleBoardTests.listing(of: URL(filePath: path)) }
+        #expect(after == sources)
+        #expect(try CrossRepoWriteTests.events(inRepoAt: fixture.target).isEmpty)
+        withExtendedLifetime(fixture.sandbox) {}
+    }
+
+    @Test("A collect after a failed collect of the same sources applies each copied event, and removes each source")
+    func retryAfterFailedWriteKeepsEvents() async throws {
+        let fixture = try await Self.makeFixture()
+        try await Self.runFailingCollect(of: fixture)
+        let graph = try GitGraphFixture.makeGraph(at: fixture.target, mintingFrom: Self.retryIDs)
+        _ = try await Self.collect(fixture.sourcePaths, on: graph)
+        await graph.close()
+        let reloaded = try GitGraphFixture.makeGraph(at: fixture.target, mintingFrom: Self.retryIDs)
+        let board = try await Self.board(on: reloaded)
+        await reloaded.close()
+        let expected = try [fixture.first.task, fixture.second.task].map(AddUpdateTaskTests.firstTask(in:))
+        #expect(Set(board.tasks.keys) == Set(expected), "\(board.tasks)")
+        #expect(expected.allSatisfy { task in board.tasks[task] == [CommentTests.body] }, "\(board.tasks)")
+        #expect(!CrossRepoWriteTests.hasBoardDirectory(inRepoAt: fixture.first.folder))
+        #expect(!CrossRepoWriteTests.hasBoardDirectory(inRepoAt: fixture.second.folder))
+        withExtendedLifetime(fixture.sandbox) {}
+    }
+
+    /// Runs a `collectBoards` call of the two sources on an engine of the target whose append number
+    /// ``failingAppend`` fails, checks that the call gives the fault, and closes the engine.
+    ///
+    /// - Parameter fixture: The fixture of the test.
+    /// - Throws: An error when the engine cannot start.
+    static func runFailingCollect(of fixture: Fixture) async throws {
         let graph = try KanbanGraphTests.makeGraph(
             at: fixture.target,
             readingKeyWith: BoardKey.read(fromRepoAt:),
@@ -534,13 +565,13 @@ struct CollectBoardsTests {
             try await CommentTests.run(Self.collectField(of: fixture.sourcePaths), on: graph)
         }
         await graph.close()
-        let after = try fixture.sourcePaths.map { path in try IncompatibleBoardTests.listing(of: URL(filePath: path)) }
-        #expect(after == sources)
-        #expect(try CrossRepoWriteTests.events(inRepoAt: fixture.target).isEmpty)
-        withExtendedLifetime(fixture.sandbox) {}
     }
 
-    /// The number of the append that fails in ``failedWriteKeepsSources()``: an append after the first, so that the
-    /// commit must take back a file that it wrote.
+    /// The number of the append that fails in ``runFailingCollect(of:)``: an append after the first, so that the
+    /// commit must abort its transaction in a file that it wrote.
     static let failingAppend = 2
+
+    /// The ULID source of the engine that collects again after a failed collect. Its time step is after the step of
+    /// ``GitGraphFixture/thirdEngineIDs``, the source of the failed collect, so the new collect has a new transaction.
+    static let retryIDs = FixedULIDSource(at: ReplayTests.date(atStep: GitGraphFixture.thirdEngineStep + 1))
 }

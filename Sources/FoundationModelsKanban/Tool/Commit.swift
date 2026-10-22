@@ -140,7 +140,8 @@ struct WorkingCopy: Sendable {
 
     /// The events of other boards that a `collectBoards` field added to this board, in the order that the field merged
     /// them (divergence.md M9). The commit writes them as they are: each keeps its id, its transaction, its `ops`, and
-    /// its own `files` value, the same as a git union merge.
+    /// its own `files` value, the same as a git union merge. Each line also names the transaction of the call as
+    /// ``Event/copiedBy``, so that a failed commit drops it with its abort record.
     private(set) var merged: [Event] = []
 
     /// The source boards of a `collectBoards` field (divergence.md M9). The commit locks them with this board, checks
@@ -699,8 +700,8 @@ struct CommitSession: Sendable {
     /// signatures of the log files of each locked board with its live graph. When a log of one board changed, the
     /// commit applies the changed files to the live graph of each locked board and writes nothing. Else it appends
     /// the kept patches of each changed board with the `ops` of the full call and the keys of the other changed
-    /// boards, and each working copy becomes the live graph of its board. When an append fails, the commit puts
-    /// each log file that it changed back, and no live graph changes.
+    /// boards, and each working copy becomes the live graph of its board. When an append fails, the commit appends
+    /// the abort record of its transaction to each log file that it began to write, and no live graph changes.
     ///
     /// A run of `collectBoards` also gives source boards (divergence.md M9). The commit locks them with the other
     /// boards, in the same order. A source whose node files changed after the run read them counts as a changed log,
@@ -713,8 +714,9 @@ struct CommitSession: Sendable {
     ///   - related: The working copy of each related board that the run changed or read for a graph rule.
     /// - Returns: The result: the patches are written, or a log changed and the call must run again. The result
     ///   holds the session of each related board after the attempt.
-    /// - Throws: An ``EventLogError`` when a log file cannot be read, locked, or written. Then no log file keeps a
-    ///   part of the transaction, and no live graph changes.
+    /// - Throws: An ``EventLogError`` when a log file cannot be read, locked, or written. Then each log file that the
+    ///   commit began to write ends with the abort record of the transaction, replay skips the transaction, and no
+    ///   live graph changes.
     private mutating func commit(
         _ work: WorkingCopy,
         along related: [RelatedWork]
@@ -777,9 +779,9 @@ struct CommitSession: Sendable {
     /// Appends the kept patches of each changed board, and then makes each working copy the live graph of its board
     /// (plan.md §5.4 steps 5.3 to 5.5). No live graph changes until each append of each board succeeds.
     ///
-    /// Before the first append, the commit records the state of each log file that it changes. When an append or the
-    /// read of a new signature fails, the commit puts each of these files back while it holds the locks, and no live
-    /// graph changes. Thus no log keeps a part of the transaction.
+    /// When an append or the read of a new signature fails, the commit aborts its transaction while it holds the
+    /// locks (``abort(_:)``): each log file that it began to write gets the abort record of the transaction, and no
+    /// live graph changes. Replay then skips each line of the transaction. No log file shrinks.
     ///
     /// Each append calls fsync after each line that it writes (divergence.md Q23). Each line records the local refs of
     /// the files of its board that the transaction writes, so that a load after a crash between two files does not
@@ -788,16 +790,14 @@ struct CommitSession: Sendable {
     /// - Parameters:
     ///   - writes: The boards of the commit. Each changed board gets its new live graph.
     ///   - operations: The names of the public mutations of the full call.
-    /// - Throws: An ``EventLogError`` when the state of a log file cannot be read before the first append, and then
-    ///   nothing is written. The ``EventLogError`` of the append or the signature read that failed, after the
-    ///   rollback.
+    /// - Throws: The ``EventLogError`` of the append or the signature read that failed, after the abort records.
     private static func append(_ writes: inout [BoardWrite], recording operations: [String]) throws(EventLogError) {
         let changedBoards = writes.indices.filter { index in writes[index].hasPatches }
         let keys = changedBoards.map { index in writes[index].key.description }
-        let marks = try changedBoards.map { index throws(EventLogError) in try writes[index].marks() }.joined()
+        var touched: [TouchedLog] = []
         do throws(EventLogError) {
             let written = try changedBoards.map { index throws(EventLogError) in
-                try writes[index].append(recording: operations, changing: keys)
+                try writes[index].append(recording: operations, changing: keys, touching: &touched)
             }
             var adopted = writes
             for (index, events) in zip(changedBoards, written) {
@@ -805,24 +805,27 @@ struct CommitSession: Sendable {
             }
             writes = adopted
         } catch {
-            rollBack(Array(marks))
+            abort(touched)
             throw error
         }
     }
 
-    /// Puts each log file of a failed commit back to its mark (plan.md §5.4 step 5.5). A file that cannot be put
-    /// back does not stop the rollback of the other files. The rollback records it with swift-log, and the next
-    /// commit check of the board then finds the file changed and reads it again.
+    /// Aborts the transaction of a failed commit (plan.md §5.4 step 5.5): appends the abort record of the transaction
+    /// to each log file that the commit began to write. No file is cut, rewritten, or removed.
     ///
-    /// - Parameter marks: The mark of each log file that the commit changed.
-    private static func rollBack(_ marks: [LogFileMark]) {
-        for mark in marks {
+    /// A record that cannot be written does not stop the records of the other files. The failure is recorded with
+    /// swift-log. The transaction check at load (``IncompleteTransactions``) is then the fallback: it holds the
+    /// transaction when one of the files that its lines name has no line of it.
+    ///
+    /// - Parameter touched: Each log file that the commit began to write.
+    private static func abort(_ touched: [TouchedLog]) {
+        for log in touched {
             do {
-                try mark.restore()
+                try log.appendAbort()
             } catch {
                 Log.kanban.error(
-                    "A failed commit cannot put a log file back",
-                    metadata: ["path": "\(mark.file.path)", "error": "\(error)"]
+                    "A failed commit cannot append the abort record of its transaction",
+                    metadata: ["path": "\(log.file.path)", "txn": "\(log.txn.ulidString)", "error": "\(error)"]
                 )
             }
         }
@@ -904,24 +907,9 @@ private struct BoardWrite {
         return true
     }
 
-    /// Records the state of each node log that the kept patches of the board append to, before the first append
-    /// (plan.md §5.4 step 5.5).
-    ///
-    /// - Returns: The mark of each log file.
-    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when the state of a log file cannot be read.
-    func marks() throws(EventLogError) -> [LogFileMark] {
-        try writtenNodes.map { ref throws(EventLogError) in try live.log.mark(ofLogOf: ref) }
-    }
-
     /// The local refs of the nodes whose log files the kept patches of the board append to.
     private var keptNodes: Set<LocalRef> {
         Set(work.kept.map(\.patch.node))
-    }
-
-    /// The local refs of the nodes whose log files the commit appends to: the nodes of the kept patches, and the
-    /// nodes of the events that a `collectBoards` field merged into the board.
-    private var writtenNodes: Set<LocalRef> {
-        keptNodes.union(work.merged.map(\.patch.node))
     }
 
     /// Appends the kept patches of the board, and the events that a `collectBoards` field merged into the board, to
@@ -930,34 +918,73 @@ private struct BoardWrite {
     ///
     /// Each kept patch records the sorted local refs of the log files of the board that the kept patches write
     /// (divergence.md Q23). A merged event keeps its own transaction, its `ops`, and its own `files` value, so the list
-    /// of the transaction does not name a file that holds only merged events.
+    /// of the transaction does not name a file that holds only merged events. Its line also names the transaction of
+    /// the call as ``Event/copiedBy``, so that the abort record of the call drops the line too. The returned events
+    /// do not hold that value: they are the events that a read of the files gives.
+    ///
+    /// Before the append to each file, the file goes into `touched`, so that a failed commit aborts its transaction in
+    /// each file that it began to write, also in the file whose append failed.
     ///
     /// - Parameters:
     ///   - operations: The names of the public mutations of the full call.
     ///   - keys: The keys of all boards that the call changed. Each event records the keys of the other boards.
+    ///   - touched: The log files that the commit began to write. The call adds each file of this board.
     /// - Returns: The written events, in the order of their ids.
     /// - Throws: An ``EventLogError`` when a log file cannot be written.
-    func append(recording operations: [String], changing keys: [String]) throws(EventLogError) -> [Event] {
+    func append(
+        recording operations: [String],
+        changing keys: [String],
+        touching touched: inout [TouchedLog]
+    ) throws(EventLogError) -> [Event] {
         let files = keptNodes
         let recorded = work.kept.map { event in
             event.recording(operations: operations, changing: keys, inBoard: key.description)
                 .recording(files: files)
         }
-        let written = work.merged + recorded
-        for (ref, events) in OrderedDictionary(grouping: written, by: \.patch.node) {
-            try writer.append(contentsOf: events, toLogOf: ref, in: live.log)
+        let copies = work.merged.map { event in event.copied(by: work.stamp.txn) }
+        for (ref, lines) in OrderedDictionary(grouping: copies + recorded, by: \.patch.node) {
+            touched.append(TouchedLog(ref: ref, log: live.log, txn: work.stamp.txn, writer: writer))
+            try writer.append(contentsOf: lines, toLogOf: ref, in: live.log)
         }
-        return written.sorted { lhs, rhs in lhs.id < rhs.id }
+        return (work.merged + recorded).sorted { lhs, rhs in lhs.id < rhs.id }
     }
 
     /// Makes the working copy the live graph, and records the new signature of each log file that the commit
     /// appended to (plan.md §5.4 step 5.4).
     ///
-    /// - Parameter written: The events that ``append(recording:changing:)`` wrote.
+    /// - Parameter written: The events that ``append(recording:changing:touching:)`` wrote.
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a log file cannot be read. Then the live graph does
     ///   not change.
     mutating func adopt(writing written: [Event]) throws(EventLogError) {
         try live.adopt(work.graph, writing: written)
+    }
+}
+
+/// One log file that a commit began to write: a file that gets the abort record of the transaction when the commit
+/// fails (plan.md §5.4 step 5.5).
+private struct TouchedLog {
+    /// The local ref of the node of the file.
+    let ref: LocalRef
+
+    /// The event log of the board of the file.
+    let log: EventLog
+
+    /// The transaction ULID of the commit.
+    let txn: ULID
+
+    /// The writer of the appends to the logs of the board.
+    let writer: any EventLogWriter
+
+    /// The log file.
+    var file: URL {
+        log.fileURL(for: ref)
+    }
+
+    /// Appends the abort record of the transaction to the file.
+    ///
+    /// - Throws: The ``EventLogError`` of the writer when the record cannot be written.
+    func appendAbort() throws(EventLogError) {
+        try writer.appendAbort(of: txn, toLogOf: ref, in: log)
     }
 }
 

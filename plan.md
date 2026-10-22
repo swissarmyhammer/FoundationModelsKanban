@@ -408,6 +408,7 @@ All refs are in the stored form of §3.2. The first `dependsOn` target is in the
 | `ops` | The names of the public mutations in the tool call, for example `["moveTask"]`. Only for `history`. Replay does not use it. |
 | `boards` | Only when the transaction changes more than one board: the keys of the **other** boards that it changes. The board of this log is implied, so its own key is not stored. `undo` uses it (§6.5). |
 | `undoes` | Only on the patches of `undoChange` and `redoChange`: the `txn` that this transaction reverses. |
+| `copiedBy` | Only on a line that `collectBoards` copied from a source board into the target: the `txn` of the collect. The line keeps its own `txn` (divergence.md Q23). The abort record of the collect drops the line (§5.3 step 1). The read removes the field from each line that it keeps, so a copy is the same event as the line that it copies, and the event dedup is unchanged. |
 | `query`, `variables` | A GraphQL request to the internal `patch` mutation. |
 
 The `PatchInput` has these parts. Each part is optional, except `node` and `type`:
@@ -426,6 +427,8 @@ The `PatchInput` has these parts. Each part is optional, except `node` and `type
 - **Create, read, update, and delete are all patches.** A node exists after its first patch. There is no separate "create" event.
 - **Set-valued properties use `add` and `remove`, not a full list.** Thus, when two branches add different tags to the same task, the merge keeps both tags.
 - **The `patch` mutation is internal.** It is not in the public schema, so the model cannot write a patch directly.
+
+**Abort record.** A log line can also be the abort record of a transaction: `{"abort":"<txn ULID>"}`. A commit that fails after it began to append writes it to each log file that it began to write (§5.4 step 5.5). Replay skips each event of that transaction in the file, and each line of the file whose `copiedBy` names the transaction (§5.3 step 1). The place of the record in the file does not matter. A later `collectBoards` call that copies the same events has a new `txn`, so its copies apply. Like every line, it is appended: no line of a log changes, and no log file shrinks or is removed.
 
 ### 5.2 Layout on disk
 
@@ -473,7 +476,7 @@ See §12, item 5.
 
 Steps 1 to 3 are done by a worker, for one node. Steps 4 and 5 are done on the joined `Graph`, after the last stage.
 
-1. Read the `*.jsonl` file of the node. Parse each line. Sort the events of the file by event `id`.
+1. Read the `*.jsonl` file of the node. Parse each line. Drop each event of a transaction that an abort record of the file names, and each line whose `copiedBy` an abort record of the file names (§5.1). Remove `copiedBy` from each line that stays. Sort the events of the file by event `id`.
 2. Apply each patch to the empty state of the node. The state of a node is the accumulated result of its patches:
    - `set` writes a value. A later `set` of the same property wins (the order is the event ULID).
    - `unset` clears a value.
@@ -517,9 +520,9 @@ Steps 1 to 3 are done by a worker, for one node. Steps 4 and 5 are done on the j
 5. **Commit, at the end of the call.** If the call kept at least one patch:
    1. Get an exclusive lock on the `.kanban/.lock` of each board that the call changed or read for a graph rule. Lock in the sort order of the board key, so that two calls cannot deadlock.
    2. Under the locks, check that no log of these boards changed after the live graph last read it. The check compares the file signature of each log (§5.6) and the list of files in each node directory. It does not wait for the watcher. If a log changed, apply the changed files to the live graph (§5.6), release the locks, discard the working copy, all kept patches, and the response, and run the call again from step 2. After 5 runs, stop and return the error `BOARD_BUSY`. The message tells the caller to send the call again.
-   3. Before the first append, record the size and the modification time of each log file that the call will append to, in each board. For a new file, record that the file does not exist. Then append each kept patch to its node log in its board. Each patch has the `txn`, `ops`, and `boards` values of the full call, which are now known.
+   3. Append each kept patch to its node log in its board. Each patch has the `txn`, `ops`, and `boards` values of the full call, which are now known. Record each log file that the call begins to append to, in each board, before its first line.
    4. When all appends of all boards succeed, record the new file signature of each log that the call appended to. The working copy of each board then becomes its live graph. No live graph changes before all appends of all boards succeed. Thus, the watcher event for this write finds no change, and the tool does not read its own write again.
-   5. If an append or a signature read fails, roll back while the locks are still held: cut each changed file back to its recorded size, give it back its recorded modification time, and remove each new file, in each board. No live graph and no recorded signature changes. Then release the locks, and return the error. The commit is all or nothing: no log keeps a part of the transaction, and the next call sees no part of it. Else release the locks, and return the response.
+   5. If an append or a signature read fails, abort the transaction while the locks are still held: append the abort record of the `txn` (§5.1) to each log file that the call began to append to, in each board, through `JSONLFile.append`. No code cuts, rewrites, or removes a log file: the lines of the failed transaction stay, and the abort record follows them. Replay skips each event of an aborted transaction, and each line that a `collectBoards` transaction copied with `copiedBy` set to the aborted `txn` (§5.3), so the commit is all or nothing: the next call sees no part of the transaction. If an abort record cannot be written, the transaction check at load (`IncompleteTransactions`, divergence.md Q23) is the fallback: it holds the transaction when a file that its lines name has no line of it. No live graph and no recorded signature changes. Then release the locks, and return the error. The abort records changed the files, so the commit check of the next call applies them, which changes no node, and runs the call again (step 5.2). Else release the locks, and return the response.
 6. A mutation that changes nothing writes no patch. This is the same as the Rust no-op rule.
 
 ### 5.5 Documents and the body diff

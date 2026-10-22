@@ -75,8 +75,24 @@ comments:
     - evidence: local commit "refactor(events)!: move EventLog onto Extras JSONLFile (^4wft5zd)" (not pushed; sha is HEAD of main at time of writing)
     - next: review
   timestamp: 2026-10-22T16:44:16.480198+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5j89r06vvcj1g6rkpy8k44b
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (e0802ff) — 0 findings, 0 confirmed, 1 refuted, 14 attempted, 0 failed; 13 files reviewed (.kanban/ ignored, Package.resolved files had no matching validator)
+    - next: none — task moved to done
+  timestamp: 2026-10-22T16:49:52.134141+00:00
+- actor: claude-code
+  id: 01m5j8a0xq095td1w5gsf428d2
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 15 files; Extras pin → e08f50d
+    - test: green — swift test, 1752 passed, 0 warnings; IntegrationTests builds
+    - commit: e0802ff
+    - review: clean — zero findings; task moved to done
+  timestamp: 2026-10-22T16:50:01.271889+00:00
+position_column: done
+position_ordinal: ffb280
 title: Write and read the event log through Extras JSONLFile (append mode, one line per write, fsync per line)
 ---
 ## What

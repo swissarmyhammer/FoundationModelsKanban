@@ -440,7 +440,7 @@ For completeness only. These need no decision.
 - **New items:** the virtual tags CONFLICT, DELETED, DONE, HIGH, MEDIUM, and LOW, and the `INVALID_ORDINAL` and `CONFLICTING_PLACEMENT` errors.
 - **Filter:** `$project` is removed. `%column`, `~type`, and URL atoms are added.
 - **Search:** it uses `MetadataSearcher`. Done tasks are hits.
-- **Storage:** an event log with union merge, unified diffs for body edits, and an undo from `undoes` with no stored stack. GraphQL subscriptions replace the Rust watcher and change events, and an FSEvents watcher with signatures keeps the graph live. Locks for each board, `BOARD_BUSY`, and rollback by truncate are new.
+- **Storage:** an event log with union merge, unified diffs for body edits, and an undo from `undoes` with no stored stack. GraphQL subscriptions replace the Rust watcher and change events, and an FSEvents watcher with signatures keeps the graph live. Locks for each board, `BOARD_BUSY`, and the rollback of a failed commit by an appended abort record are new.
 
 ---
 
@@ -581,6 +581,7 @@ All 26 questions have a decision. Section 11 lists the changes to the code and t
   - A line with no field is complete. A line with the old number keeps the count check, so the current boards still load. A write records only the list.
   - Reason: a count cannot tell which file is missing, and a wrong file with the same `txn` can fill it.
   - Lines that a `collectBoards` call merges from a source keep their own `txn` and their own list. The list of the collect transaction names only the files that hold its new lines (the `collected` events and the link repairs). The merged lines are not part of the collect transaction.
+  - **Changed (2026-10-22):** each line that a `collectBoards` call copies into the target also gets the field `copiedBy` with the `txn` of the collect. The line keeps its own `txn` and its own list, so this check treats it as before. When the collect fails, its abort record (plan §5.4 step 5.5) drops each event of the collect transaction and each line whose `copiedBy` names it, so a failed collect leaves no copied event in the target, and the source keeps its `.kanban/`. A retry has a new `txn`, so its copies apply. The order of the lines in a file does not matter. The read removes `copiedBy` from each line that it keeps, so the dedup of an event that two lines hold is unchanged. The check at load does not read `copiedBy`: when an abort record cannot be written, a copy whose own transaction is complete applies, and a retry of the collect dedups it by event.
 
 **Q24. Does the lock have a time limit that gives `BOARD_BUSY`?** (S6) **DECIDED:** No. Keep the current behavior: the lock waits with no time limit.
 
@@ -1060,6 +1061,7 @@ This section lists the work in sections 10–14 that we can drop. The reasons: t
     - When the target has no board, collect makes it (with a new ULID). In a git repo the target must be the repo top.
     - Collect locks all the boards and checks that each is compatible (a Rust board stops it with `INCOMPATIBLE_BOARD`). The write is crash safe.
     - Collect removes each source `.kanban` folder after the write.
+    - **Changed (2026-10-22):** each line that collect copies into the target carries `copiedBy` with the `txn` of the collect (Q23). A failed write keeps each source `.kanban` folder, and its abort record drops each copied line, so the target shows no event of the failed call. A retry copies the events again with a new `txn`.
     - Collect is final. `undo` does not reverse it. `dryRun: true` reports the slug merges, the conflicts, and the link repairs, and writes nothing.
     - Collect runs `checkLinks` and `repairLinks` on the target. It repairs other reachable boards only when the reach option is set. It always reports the old-name links that it finds in other boards.
   - **DECIDED: `checkLinks` and `repairLinks`.**
