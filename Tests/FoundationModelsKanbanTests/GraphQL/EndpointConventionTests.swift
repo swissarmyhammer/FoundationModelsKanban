@@ -6,8 +6,9 @@ import Testing
 @testable import FoundationModelsKanban
 
 /// Tests the `kanban` endpoint against the test kit of the GraphQL toolkit (EXTRAS-9 rule 11): the SDL is the SDL of
-/// the golden file, each part of the schema has a description, and the endpoint passes the conformance check with an
-/// alias probe. The test that the tool gives the endpoint is ``KanbanEndpointTests/toolGivesEndpoint()``.
+/// the golden file, each part of the schema has a description, and the endpoint passes the conformance check with a
+/// mutation alias probe and a subscription alias probe. The test that the tool gives the endpoint is
+/// ``KanbanEndpointTests/toolGivesEndpoint()``.
 @Suite("Kanban endpoint: the conventions of the GraphQL toolkit", .watcherBudget)
 struct EndpointConventionTests {
     /// The golden file of the SDL of the endpoint, relative to the repository root. It is outside the test target, so
@@ -21,11 +22,31 @@ struct EndpointConventionTests {
     static let probeCanonicalName = "addTask"
 
     /// The alias probe of the conformance check: a mutation that names `addTask` by its synonym `createTask`.
-    static let probe = GraphQLAliasProbe(
+    static let mutationProbe = GraphQLAliasProbe(
         query: #"mutation { \#(probeAlias)(input: { title: "\#(KanbanGraphTests.laterTitle)" }) { id } }"#,
         from: probeAlias,
         to: probeCanonicalName
     )
+
+    /// The alias of the subscription probe: the `<noun>Changes` alias of the canonical subscription `changes`.
+    static let changesAlias = "kanbanChanges"
+
+    /// The canonical name that the rewrite of the subscription probe gives.
+    static let changesCanonicalName = "changes"
+
+    /// The alias probe of the subscription: `changes` by its alias `kanbanChanges`, after the cursor of a read.
+    ///
+    /// - Parameter cursor: The cursor of the root `cursor` query.
+    /// - Returns: The probe.
+    static func changesProbe(after cursor: String) -> GraphQLAliasProbe {
+        GraphQLAliasProbe(
+            query: "subscription($after: String) { \(changesAlias)(after: $after) { cursor } }",
+            variables: ["after": .string(cursor)],
+            from: changesAlias,
+            to: changesCanonicalName,
+            kind: .subscription
+        )
+    }
 
     /// The board ref of the errors that name a board.
     static let boardReference = BoardLocatorTests.libName
@@ -83,10 +104,12 @@ struct EndpointConventionTests {
         let directory = try TemporaryDirectory()
         _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
         let graph = try KanbanGraphTests.makeGraph(at: directory.url)
+        let read = try await KanbanGraphTests.execute("{ cursor }", on: graph)
+        let cursor = try #require(KanbanGraphTests.data(of: read)["cursor"] as? String, "\(read)")
         let problems = await GraphQLEndpointConformance.problems(
             of: graph,
             scope: .sessionFolder,
-            probe: probe,
+            probes: [mutationProbe, changesProbe(after: cursor)],
             codes: codes,
             exceptions: []
         )
@@ -108,7 +131,7 @@ struct EndpointConventionTests {
         #expect(undescribed == [])
     }
 
-    @Test("The endpoint passes the conformance check with the alias probe createTask, with no exception")
+    @Test("The endpoint passes the conformance check with the alias probes createTask and kanbanChanges, no exception")
     func endpointConforms() async throws {
         #expect(try await Self.conformanceProblems() == [])
     }
