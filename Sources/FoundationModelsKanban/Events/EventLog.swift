@@ -1,9 +1,11 @@
 import Foundation
+import FoundationModelsExtras
 import ULID
 
 /// The log files of one board: the `.kanban/` directory of a repo (plan.md §5.2).
 ///
-/// Each node has its own log file, and each line of a file is one ``Event`` of that node:
+/// Each node has its own log file, and each line of a file is one ``Event`` of that node. Each log file is a
+/// ``JSONLFile``: it is written and read only through that type, and it is append-only.
 ///
 /// ```
 /// .kanban/
@@ -45,13 +47,6 @@ struct EventLog: Hashable, Sendable {
         gitattributesFileName: "*.\(logExtension) merge=union\n",
         gitignoreFileName: "\(lockFileName)\n",
     ]
-
-    /// The character at the end of each line.
-    static let lineBreak = "\n"
-
-    /// The characters that end a line when a log file is read: ``lineBreak``, and the carriage return and line feed
-    /// of a file that a Windows editor wrote. Swift keeps the two characters of `"\r\n"` as one `Character`.
-    private static let lineBreaks: Set<Character> = [Character(lineBreak), "\r\n"]
 
     /// The `.kanban/` directory of the board.
     let directory: URL
@@ -97,24 +92,27 @@ struct EventLog: Hashable, Sendable {
 extension EventLog {
     /// Appends events to the log file of one node, one line for each event, in the order of the list.
     ///
-    /// The append makes the directories that are necessary, and the git files of the board that are not there. It
-    /// does not change a line that is in the file. When the last line of the file has no line break (for example
-    /// after a manual edit), the append adds the line break first. An empty list writes nothing.
+    /// Each line goes through ``JSONLFile/append(_:)``: the file opens in append mode, the whole line goes to the disk
+    /// in one write, and an fsync follows each line, so that a crash after the call does not lose a line
+    /// (divergence.md Q23). The append makes the directories that are necessary, and the git files of the board that
+    /// are not there. It does not change a byte that is in the file. When the file ends with a torn line (for example
+    /// after a crash or a manual edit), the line break that ends it goes out in the write of the next line. An empty
+    /// list writes nothing.
     ///
     /// - Parameters:
     ///   - events: The events. Each event must change the node.
     ///   - ref: The local ref of the node.
-    /// - Throws: ``EventLogError/nodeMismatch(log:event:)`` when an event changes a different node, and then the
-    ///   append writes nothing. ``EventLogError/unencodable(_:)`` when an event cannot be a line.
+    /// - Throws: ``EventLogError/nodeMismatch(log:event:)`` when an event changes a different node, and
+    ///   ``EventLogError/unencodable(_:)`` when an event cannot be a line. In both cases the append writes nothing.
     ///   ``EventLogError/fileSystem(path:detail:)`` when a directory or a file cannot be written.
     func append(contentsOf events: [Event], toLogOf ref: LocalRef) throws(EventLogError) {
         if let other = events.first(where: { event in event.patch.node != ref }) {
             throw .nodeMismatch(log: ref, event: other.patch.node)
         }
-        let lines = try events.map { event throws(EventLogError) in try Self.line(of: event) }
-        guard !lines.isEmpty else {
+        guard !events.isEmpty else {
             return
         }
+        try Self.checkEncoding(of: events)
         try prepareDirectory()
         let file = fileURL(for: ref)
         try Self.run(onFileAt: file) {
@@ -122,35 +120,29 @@ extension EventLog {
                 at: file.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
-            try Self.write(appending: lines.joined(), to: file)
+        }
+        let lines = JSONLFile(url: file)
+        for event in events {
+            do {
+                try lines.append(event)
+            } catch {
+                throw Self.failure(of: error, onFileAt: file)
+            }
         }
     }
 
-    /// Writes the data of the log file of one node to the disk with fsync, so that a crash after the call does not
-    /// lose the lines that the file holds (divergence.md Q23). The commit calls it on each file that it appended to,
-    /// after all appends of the transaction.
+    /// Checks that each event can be a line before the first line is written, so that an event that cannot be JSON
+    /// writes no line of the list.
     ///
-    /// - Parameter ref: The local ref of the node.
-    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when the file is not there or the fsync fails.
-    func synchronize(logOf ref: LocalRef) throws(EventLogError) {
-        let file = fileURL(for: ref)
-        try Self.run(onFileAt: file) {
-            let handle = try FileHandle(forWritingTo: file)
-            defer { try? handle.close() }
-            try handle.synchronize()
-        }
-    }
-
-    /// Writes an event as one line, with its line break.
-    ///
-    /// - Parameter event: The event.
-    /// - Returns: The text of the line.
-    /// - Throws: ``EventLogError/unencodable(_:)`` when the event cannot be JSON.
-    private static func line(of event: Event) throws(EventLogError) -> String {
-        do {
-            return try event.encodedLine() + lineBreak
-        } catch {
-            throw .unencodable(error)
+    /// - Parameter events: The events.
+    /// - Throws: ``EventLogError/unencodable(_:)`` for the first event that cannot be JSON.
+    private static func checkEncoding(of events: [Event]) throws(EventLogError) {
+        for event in events {
+            do {
+                _ = try event.encodedLine()
+            } catch {
+                throw .unencodable(error)
+            }
         }
     }
 
@@ -176,64 +168,77 @@ extension EventLog {
             }
         }
     }
-
-    /// Appends text at the end of a file. The file is made when it is not there.
-    ///
-    /// - Parameters:
-    ///   - text: The lines to add, each with its line break.
-    ///   - file: The file.
-    /// - Throws: An error from `FileHandle` when the file cannot be read or written.
-    private static func write(appending text: String, to file: URL) throws {
-        if !FileManager.default.fileExists(atPath: file.path) {
-            FileManager.default.createFile(atPath: file.path, contents: nil)
-        }
-        let handle = try FileHandle(forUpdating: file)
-        defer { try? handle.close() }
-        let prefix = try hasLineBreakAtEnd(of: handle) ? "" : lineBreak
-        try handle.seekToEnd()
-        try handle.write(contentsOf: Data((prefix + text).utf8))
-    }
-
-    /// Tells if a file is empty or ends with a line break.
-    ///
-    /// - Parameter handle: The open file.
-    /// - Returns: `true` when the next line can start at the end of the file.
-    /// - Throws: An error from `FileHandle` when the file cannot be read.
-    private static func hasLineBreakAtEnd(of handle: FileHandle) throws -> Bool {
-        let end = try handle.seekToEnd()
-        guard end > 0 else {
-            return true
-        }
-        try handle.seek(toOffset: end - 1)
-        return try handle.read(upToCount: 1) == Data(lineBreak.utf8)
-    }
 }
 
 // MARK: - Read
 
 extension EventLog {
-    /// Reads the log file of one node, and folds its lines into the state of the node.
+    /// Reads the log file of one node through ``JSONLFile/records(as:)``, and folds its events into the state of the
+    /// node.
+    ///
+    /// Only a line feed ends a line, so a value that holds U+2028, U+2029 or U+0085 stays in its line. The read
+    /// drops a torn final line, the bytes after the last line feed, and skips a whole line that does not decode; each
+    /// of the two is recorded with swift-log. A line ends with a carriage return when a Windows editor wrote it, and
+    /// JSON reads the carriage return as white space.
     ///
     /// - Parameter ref: The local ref of the node.
     /// - Returns: The folded log. A node with no file gives a log with no events and no node.
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when the file is there and cannot be read.
     func readLog(of ref: LocalRef) throws(EventLogError) -> NodeLog {
-        let data = try Self.runIfPresent(onFileAt: fileURL(for: ref)) { file in try Data(contentsOf: file) }
-        return NodeLog(parsing: Self.lines(of: data ?? Data()).map(String.init), for: ref)
+        let lines = try Self.records(of: ReplayedEvent.self, inFileAt: fileURL(for: ref))
+        return NodeLog(replaying: lines.map(\.event), for: ref)
     }
 
-    /// Splits the data of a log file into its lines. A line that holds only white space is not in the result.
+    /// Reads the records of one log file through ``JSONLFile/records(as:)``.
     ///
-    /// Only a line feed, or a carriage return and a line feed, ends a line. `JSONEncoder` does not escape U+2028,
-    /// U+2029 or U+0085, so these characters can be in a JSON line, and they must not split it. The replay and the
-    /// file signature use this one split.
+    /// - Parameters:
+    ///   - type: The type of each line.
+    ///   - file: The log file. It does not have to exist.
+    /// - Returns: The records of the lines that decode, in file order. No records when the file is not there.
+    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when the file is there and cannot be read.
+    private static func records<Record: Decodable>(
+        of type: Record.Type,
+        inFileAt file: URL
+    ) throws(EventLogError) -> [Record] {
+        do {
+            return try JSONLFile(url: file).records(as: type)
+        } catch {
+            throw failure(of: error, onFileAt: file)
+        }
+    }
+
+    /// Changes an error of a ``JSONLFile`` to an ``EventLogError``.
     ///
-    /// - Parameter data: The data of the file.
-    /// - Returns: The lines, in file order, with no line break.
-    private static func lines(of data: Data) -> [Substring] {
-        String(decoding: data, as: UTF8.self)
-            .split { character in lineBreaks.contains(character) }
-            .filter { line in !line.allSatisfy(\.isWhitespace) }
+    /// - Parameters:
+    ///   - error: The error of the JSONL file.
+    ///   - file: The log file.
+    /// - Returns: ``EventLogError/unencodable(_:)`` for a record that does not encode, and
+    ///   ``EventLogError/fileSystem(path:detail:)`` for a failed system call or read.
+    private static func failure(of error: JSONLFileError, onFileAt file: URL) -> EventLogError {
+        switch error {
+        case .encodingFailed(let description):
+            .unencodable(.unencodable(detail: description))
+        case .openFailed, .tailCheckFailed, .writeFailed, .shortWrite, .syncFailed, .closeFailed, .readFailed:
+            .fileSystem(path: file.path, detail: String(describing: error))
+        }
+    }
+}
+
+/// One line of a node log, read for the replay: its event, with each value of the patch that does not decode left out
+/// (``PatchValuePolicy/skip``). Replay never refuses a log (plan.md §3.3, rule 7), so the other values of the line
+/// still apply.
+private struct ReplayedEvent: Decodable {
+    /// The event of the line.
+    let event: Event
+
+    /// Reads the event of one line with the ``PatchValuePolicy/skip`` policy.
+    ///
+    /// - Parameter decoder: The decoder of the line.
+    /// - Throws: The decode error when the envelope, the `node` or the `type` of the patch does not decode.
+    init(from decoder: any Decoder) throws {
+        event = try PatchValuePolicy.$current.withValue(.skip) {
+            try Event(from: decoder)
+        }
     }
 }
 
@@ -250,27 +255,31 @@ struct FileSignature: Hashable, Sendable {
     /// The time of the last change of the file.
     let modified: Date
 
-    /// The id of the event of the last line of the file, or `nil` when the file has no line, or its last line does
-    /// not have an event id.
+    /// The id of the event of the last whole line of the file that has an event id, or `nil` when no whole line has
+    /// one.
     let lastEventID: ULID?
 }
 
 extension EventLog {
-    /// Calculates the signature of the log file of one node.
+    /// Calculates the signature of the log file of one node. The id of the last event comes from the read of the file
+    /// through ``JSONLFile/records(as:)``, so a torn final line gives no id.
     ///
     /// - Parameter ref: The local ref of the node.
     /// - Returns: The signature, or `nil` when the node has no file.
     /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when the file is there and cannot be read.
     func signature(of ref: LocalRef) throws(EventLogError) -> FileSignature? {
-        try Self.runIfPresent(onFileAt: fileURL(for: ref)) { file in
-            let data = try Data(contentsOf: file)
-            let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
-            return FileSignature(
-                size: data.count,
-                modified: attributes[.modificationDate] as? Date ?? .distantPast,
-                lastEventID: Self.lines(of: data).last.flatMap(EventIDLine.id(of:))
-            )
+        let file = fileURL(for: ref)
+        let attributes = try Self.runIfPresent(onFileAt: file) { url in
+            try FileManager.default.attributesOfItem(atPath: url.path)
         }
+        guard let attributes else {
+            return nil
+        }
+        return FileSignature(
+            size: attributes[.size] as? Int ?? .zero,
+            modified: attributes[.modificationDate] as? Date ?? .distantPast,
+            lastEventID: try Self.records(of: EventIDLine.self, inFileAt: file).last?.id
+        )
     }
 
     /// Lists each node file of the board with its signature. A file in a node directory that is not a log, or whose
@@ -386,14 +395,6 @@ extension EventLog {
 private struct EventIDLine: Decodable {
     /// The event id.
     let id: ULID
-
-    /// Reads the event id of one line.
-    ///
-    /// - Parameter line: The text of the line.
-    /// - Returns: The event id, or `nil` when the line is not JSON or has no valid `id`.
-    static func id(of line: Substring) -> ULID? {
-        try? JSONDecoder().decode(Self.self, from: Data(line.utf8)).id
-    }
 }
 
 // MARK: - File system calls

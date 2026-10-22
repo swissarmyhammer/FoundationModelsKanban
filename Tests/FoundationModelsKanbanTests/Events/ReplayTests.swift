@@ -22,6 +22,9 @@ struct ReplayTests {
     /// The number of random orders that the shuffle test folds.
     static let shuffleCount = 50
 
+    /// The character at the end of each line of a log file.
+    static let lineBreak = "\n"
+
     /// The actor of each test event.
     static let actor = LocalRef.actor(slug: "claude-code")
 
@@ -115,7 +118,21 @@ struct ReplayTests {
         of ref: LocalRef,
         folding lines: [String]
     ) throws -> State {
-        try #require(NodeLog(parsing: lines, for: ref).node?.state as? State)
+        try #require(try readLog(of: lines, for: ref).node?.state as? State)
+    }
+
+    /// Writes lines as the log file of one node, each with ``lineBreak``, and reads the file back through
+    /// ``EventLog/readLog(of:)``, as the loader reads a log.
+    ///
+    /// - Parameters:
+    ///   - lines: The lines of the node log, in file order.
+    ///   - ref: The local ref of the node.
+    /// - Returns: The folded log.
+    static func readLog(of lines: some Sequence<String>, for ref: LocalRef) throws -> NodeLog {
+        let directory = try TemporaryDirectory()
+        let log = EventLog(repositoryAt: directory.url)
+        try EventLogTests.writeLogFile(lines.map { line in line + lineBreak }.joined(), of: ref, in: log)
+        return try log.readLog(of: ref)
     }
 
     /// Folds one patch into the state of its node.
@@ -373,18 +390,18 @@ struct ReplayTests {
     @Test("Lines in random orders give the same events, the same state, and the same time values")
     func shuffledLinesFoldTheSame() throws {
         let lines = try Self.mixedLines()
-        let expected = NodeLog(parsing: lines, for: try Self.taskRef())
+        let expected = try Self.readLog(of: lines, for: Self.taskRef())
         #expect(expected.node != nil)
         for _ in 0..<Self.shuffleCount {
             let shuffled = lines.shuffled()
-            #expect(NodeLog(parsing: shuffled, for: try Self.taskRef()) == expected, "order: \(shuffled)")
+            #expect(try Self.readLog(of: shuffled, for: Self.taskRef()) == expected, "order: \(shuffled)")
         }
     }
 
     @Test("The events of a log are in the order of their event ids")
     func eventsAreSorted() throws {
         let lines = try Self.mixedLines()
-        let log = NodeLog(parsing: lines.reversed(), for: try Self.taskRef())
+        let log = try Self.readLog(of: lines.reversed(), for: Self.taskRef())
         let ids = log.events.map(\.id)
         #expect(ids == ids.sorted())
         #expect(ids.count == lines.count)
@@ -401,7 +418,7 @@ struct ReplayTests {
             #"{"id":"bad"}"#,
             try Self.line(atStep: 2, patch: Self.titlePatch(setting: "second")),
         ]
-        let log = NodeLog(parsing: lines, for: try Self.taskRef())
+        let log = try Self.readLog(of: lines, for: Self.taskRef())
         #expect(log.events.count == 2)
         #expect((log.node?.state as? TaskNode)?.title == "second")
     }
@@ -412,14 +429,14 @@ struct ReplayTests {
             try Self.line(atStep: 1, patch: Self.titlePatch(setting: "mine")),
             try Self.line(atStep: 2, patch: PatchInput(node: Self.commentRef(), set: ["title": .json("other")])),
         ]
-        let log = NodeLog(parsing: lines, for: try Self.taskRef())
+        let log = try Self.readLog(of: lines, for: Self.taskRef())
         #expect(log.events.count == 1)
         #expect((log.node?.state as? TaskNode)?.title == "mine")
     }
 
     @Test("A log with no line that decodes gives no node")
     func noEventGivesNoNode() throws {
-        let log = NodeLog(parsing: ["{not json", ""], for: try Self.taskRef())
+        let log = try Self.readLog(of: ["{not json", ""], for: Self.taskRef())
         #expect(log.events.isEmpty)
         #expect(log.node == nil)
     }

@@ -264,7 +264,7 @@ extension Design {
         /// - Returns: The lines, with no line break.
         static func bodyLines(of task: ULID, in branch: Branch) async throws -> [String] {
             let body = try #require(try await Self.task(task, selecting: bodySelection, in: branch)["body"].string)
-            return body.split(separator: EventLog.lineBreak).map(String.init)
+            return body.split(separator: ReplayTests.lineBreak).map(String.init)
         }
 
         /// Gives the virtual tags of a task.

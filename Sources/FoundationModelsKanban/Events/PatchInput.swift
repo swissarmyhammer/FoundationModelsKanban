@@ -77,8 +77,9 @@ enum PatchValuePolicy: Sendable {
     /// never refuses a log, and a schema change needs no upgrade step (plan.md §3.3, rule 7).
     case skip
 
-    /// The policy of the patch decodes that run now. ``Event/init(parsing:policy:)`` sets it for the decode of one
-    /// line. The default is ``refuse``.
+    /// The policy of the patch decodes that run now. ``Event/init(parsing:)`` sets ``refuse`` for the decode of one
+    /// line, and the read of a log file (``EventLog/readLog(of:)``) sets ``skip`` for the decode of each of its lines.
+    /// The default is ``refuse``.
     @TaskLocal static var current: PatchValuePolicy = .refuse
 }
 

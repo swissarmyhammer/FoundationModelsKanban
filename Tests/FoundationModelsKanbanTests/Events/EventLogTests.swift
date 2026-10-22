@@ -30,6 +30,12 @@ struct EventLogTests {
     /// a thread.
     private static let waitingTasksPerProcessor = 2
 
+    /// The number of tasks that append to one log at the same time in the concurrent append test.
+    private static let concurrentAppenderCount = 8
+
+    /// The number of appends of each task in the concurrent append test. Each append writes one event.
+    private static let appendsPerAppender = 16
+
     /// The record of the lock test when the first lock is released.
     static let releasedRecord = "first released"
 
@@ -220,6 +226,30 @@ struct EventLogTests {
         #expect(try Self.text(of: file) == "\(try first.encodedLine())\n\(try second.encodedLine())\n")
     }
 
+    @Test("Appends that run at the same time to one log only grow the file, and each line stays whole")
+    func concurrentAppendsKeepEachLine() async throws {
+        let directory = try TemporaryDirectory()
+        let log = EventLog(repositoryAt: directory.url)
+        let task = try ReplayTests.taskRef()
+        let steps = 1...(Self.concurrentAppenderCount * Self.appendsPerAppender)
+        let events = try steps.map { step in try Self.titleEvent(atStep: step, setting: "title \(step)") }
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for appender in 0..<Self.concurrentAppenderCount {
+                let own = events.enumerated().filter { index, _ in index % Self.concurrentAppenderCount == appender }
+                group.addTask {
+                    for (_, event) in own {
+                        try log.append(contentsOf: [event], toLogOf: task)
+                    }
+                }
+            }
+            try await group.waitForAll()
+        }
+        let lines = try Self.text(of: log.fileURL(for: task)).split(separator: "\n", omittingEmptySubsequences: false)
+        #expect(lines.last == "")
+        #expect(Set(lines.dropLast().map(String.init)) == Set(try events.map { event in try event.encodedLine() }))
+        #expect(try log.readLog(of: task).events == events)
+    }
+
     @Test("The first append makes the git files of the board")
     func appendMakesGitFiles() throws {
         let directory = try TemporaryDirectory()
@@ -283,6 +313,19 @@ struct EventLogTests {
         let read = try log.readLog(of: task)
         #expect(read.events == events)
         #expect((read.node?.state as? TaskNode)?.title == Self.unicodeBreakText)
+    }
+
+    @Test("A read drops a torn final line, the bytes after the last line break, and keeps the whole lines")
+    func readDropsTornFinalLine() throws {
+        let directory = try TemporaryDirectory()
+        let log = EventLog(repositoryAt: directory.url)
+        let task = try ReplayTests.taskRef()
+        let first = try Self.titleEvent(atStep: 1, setting: "first")
+        let torn = try Self.titleEvent(atStep: 2, setting: "torn")
+        try Self.writeLogFile("\(try first.encodedLine())\n\(try torn.encodedLine())", of: task, in: log)
+        let read = try log.readLog(of: task)
+        #expect(read.events == [first])
+        #expect(try log.signature(of: task)?.lastEventID == first.id)
     }
 
     @Test("A read accepts lines that end with a carriage return and a line feed")

@@ -23,16 +23,17 @@ struct NodeLog: Hashable, Sendable {
     /// (plan.md §5.1).
     let node: Node?
 
-    /// Reads the lines of the log file of one node, and folds them into the state of the node.
+    /// Folds the events that the lines of the log file of one node hold into the state of the node. The read of the
+    /// file (``EventLog/readLog(of:)``) decodes the lines, and skips each line whose envelope does not decode.
     ///
-    /// A line that holds only white space is skipped with no record, because a file ends with a line break. When two
-    /// lines hold the same event, the fold applies it one time.
+    /// An event whose patch changes a different node is skipped. When two lines hold the same event, the fold applies
+    /// it one time.
     ///
     /// - Parameters:
-    ///   - lines: The lines of the file, in any order.
+    ///   - lines: The events of the lines of the file, in any order.
     ///   - ref: The local ref of the node of the file.
-    init(parsing lines: some Sequence<String>, for ref: LocalRef) {
-        let parsed = lines.compactMap { line in ParsedLine(parsing: line, for: ref) }
+    init(replaying lines: some Sequence<Event>, for ref: LocalRef) {
+        let parsed = lines.compactMap { event in ParsedLine(holding: event, for: ref) }
         events = Self.uniqueEvents(of: parsed.sorted(by: ParsedLine.precedes))
         node = NodeFold(folding: events, for: ref)?.node
     }
@@ -111,13 +112,13 @@ extension Graph {
 
 // MARK: - Parse
 
-/// One line of a node log that decodes to an event of the node.
+/// One line of a node log that holds an event of the node.
 private struct ParsedLine {
     /// The event of the line.
     let event: Event
 
-    /// The text of the line. It breaks a tie between two different lines with the same event id, so that the replay
-    /// order does not depend on the order of the lines in the file.
+    /// The canonical text of the event (``Event/encodedLine()``). It breaks a tie between two different lines with the
+    /// same event id, so that the replay order does not depend on the order of the lines in the file.
     let text: String
 
     /// Tells if one line comes before a different line in replay order: by event id, then by text.
@@ -130,28 +131,14 @@ private struct ParsedLine {
         (lhs.event.id, lhs.text) < (rhs.event.id, rhs.text)
     }
 
-    /// Reads one line of the log of a node. A value of the patch that does not decode is left out of the event
-    /// (``PatchValuePolicy/skip``), so the other values of the line still apply.
+    /// Takes the event of one line of the log of a node.
     ///
     /// - Parameters:
-    ///   - text: The text of the line.
+    ///   - event: The event that the line holds.
     ///   - ref: The local ref of the node of the log.
-    /// - Returns: The line, or `nil` when the line is blank, its envelope does not decode, or it changes a different
-    ///   node.
-    init?(parsing text: String, for ref: LocalRef) {
-        guard !text.allSatisfy(\.isWhitespace) else {
-            return nil
-        }
-        let event: Event
-        do {
-            event = try Event(parsing: text, policy: .skip)
-        } catch {
-            Log.kanban.warning(
-                "Replay skips a log line that does not decode",
-                metadata: ["node": "\(ref)", "error": "\(error)"]
-            )
-            return nil
-        }
+    /// - Returns: The line, or `nil` when the event changes a different node, or has no canonical text. Each skip is
+    ///   recorded with swift-log.
+    init?(holding event: Event, for ref: LocalRef) {
         guard event.patch.node == ref else {
             Log.kanban.warning(
                 "Replay skips a log line that changes a different node",
@@ -159,8 +146,16 @@ private struct ParsedLine {
             )
             return nil
         }
+        do {
+            text = try event.encodedLine()
+        } catch {
+            Log.kanban.warning(
+                "Replay skips a log line whose event has no canonical text",
+                metadata: ["node": "\(ref)", "event": "\(event.id)", "error": "\(error)"]
+            )
+            return nil
+        }
         self.event = event
-        self.text = text
     }
 }
 

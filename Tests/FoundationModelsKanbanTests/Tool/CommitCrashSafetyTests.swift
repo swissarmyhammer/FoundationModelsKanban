@@ -1,16 +1,15 @@
 import Foundation
 import Synchronization
 import Testing
-import ULID
 
 @testable import FoundationModelsKanban
 
 /// Tests the write side of the crash safety of a transaction on many files (divergence.md Q23, S5): each line of a
-/// commit records the sorted local refs of the files that the transaction wrote in its board, and the commit calls
-/// fsync on each file that it appended to, after all appends of the transaction.
+/// commit records the sorted local refs of the files that the transaction wrote in its board, and the commit appends
+/// to each of these files. The fsync of each line is the work of ``EventLog/append(contentsOf:toLogOf:)``.
 ///
 /// Each test writes the board fixture to a temporary folder. No test reads the `.kanban/` folder of this repo.
-@Suite("Commit crash safety: file refs and fsync", .watcherBudget)
+@Suite("Commit crash safety: file refs and appended files", .watcherBudget)
 struct CommitCrashSafetyTests {
     /// Runs one call of a session that sets ``CommitTests/callTitle`` on each of some tasks, one mutation field for
     /// each task.
@@ -24,21 +23,6 @@ struct CommitCrashSafetyTests {
                 try await CommitTests.setTitle(CommitTests.callTitle, of: task, as: CommitTests.firstOperation, in: store)
             }
         }
-    }
-
-    /// Checks that each file of the appends of a writer is synchronized one time, and that each synchronize comes
-    /// after the last append.
-    ///
-    /// - Parameter steps: The steps of the writer, in order.
-    static func expectEachAppendedFileSynchronizedAfterAppends(_ steps: [RecordingLogWriter.Step]) throws {
-        let appended = steps.filter { step in step.kind == .append }.map(\.file)
-        let synchronized = steps.filter { step in step.kind == .synchronize }.map(\.file)
-        #expect(!appended.isEmpty)
-        #expect(Set(synchronized) == Set(appended))
-        #expect(synchronized.count == Set(appended).count)
-        let lastAppend = try #require(steps.lastIndex { step in step.kind == .append })
-        let firstSynchronize = try #require(steps.firstIndex { step in step.kind == .synchronize })
-        #expect(lastAppend < firstSynchronize)
     }
 
     // MARK: - File refs
@@ -86,23 +70,21 @@ struct CommitCrashSafetyTests {
         try await LiveGraphApplyTests.expectEqualToFreshLoad(session.live, of: log)
     }
 
-    // MARK: - fsync
+    // MARK: - Appended files
 
-    @Test("A commit synchronizes each file that it appended to, after the last append")
-    func commitSynchronizesEachAppendedFile() async throws {
+    @Test("A commit appends to each file that it writes, and to no other file")
+    func commitAppendsToEachWrittenFile() async throws {
         let directory = try TemporaryDirectory()
         let (log, tasks) = try CommitTests.writeBoard(in: directory)
         let writer = RecordingLogWriter()
         var session = try await CommitTests.makeSession(of: log, writingWith: writer)
         let written = [tasks[0], tasks[1]]
         try await Self.setCallTitle(of: written, in: &session)
-        let steps = writer.steps
-        try Self.expectEachAppendedFileSynchronizedAfterAppends(steps)
-        #expect(Set(steps.map(\.file)) == Set(written.map(log.fileURL(for:))))
+        #expect(Set(writer.appendedFiles) == Set(written.map(log.fileURL(for:))))
     }
 
-    @Test("A commit on two boards synchronizes each file of both boards, after the last append of both boards")
-    func twoBoardCommitSynchronizesEachFile() async throws {
+    @Test("A commit on two boards appends to the files of both boards")
+    func twoBoardCommitAppendsToBothBoards() async throws {
         let directory = try TemporaryDirectory()
         let app = try CommitRollbackTests.makeRepo(named: CommitRollbackTests.appName, in: directory)
         let lib = try CommitRollbackTests.makeRepo(named: CommitRollbackTests.libName, in: directory)
@@ -115,66 +97,28 @@ struct CommitCrashSafetyTests {
         let response = try await KanbanGraphTests.execute(CommitRollbackTests.twoBoardCall, on: graph)
         await graph.close()
         #expect(try CrossRepoWriteTests.hasNoErrors(response))
-        let steps = writer.steps
-        try Self.expectEachAppendedFileSynchronizedAfterAppends(steps)
-        let boards = Set(steps.map { step in step.file.deletingLastPathComponent().resolvingSymlinksInPath().path })
+        let boards = Set(
+            writer.appendedFiles.map { file in file.deletingLastPathComponent().resolvingSymlinksInPath().path }
+        )
         let libDirectory = EventLog(repositoryAt: lib).directory.resolvingSymlinksInPath().path
         #expect(boards.contains { path in path.hasPrefix(libDirectory) })
         #expect(boards.contains { path in !path.hasPrefix(libDirectory) })
-    }
-
-    @Test("A synchronize of a log file that is not there gives a file system error")
-    func synchronizeOfMissingFileFails() throws {
-        let directory = try TemporaryDirectory()
-        let log = EventLog(repositoryAt: directory.url)
-        let task = LocalRef.task(ULID())
-        let error = #expect(throws: EventLogError.self) { try log.synchronize(logOf: task) }
-        #expect(Self.fileSystemPath(of: error) == log.fileURL(for: task).path)
-    }
-
-    /// Gives the path of a ``EventLogError/fileSystem(path:detail:)`` error.
-    ///
-    /// - Parameter error: The error.
-    /// - Returns: The path, or `nil` for no error or a different error.
-    static func fileSystemPath(of error: EventLogError?) -> String? {
-        switch error {
-        case .fileSystem(let path, _)?: path
-        default: nil
-        }
     }
 }
 
 // MARK: - Recording writer
 
-/// A log writer for tests: it writes each append and each synchronize through ``FileEventLogWriter``, and records
-/// the file of each one, in order.
+/// A log writer for tests: it writes each append through ``FileEventLogWriter``, and records the file of each one, in
+/// order.
 ///
 /// The type is a class, because all sessions of one engine share its record.
 final class RecordingLogWriter: EventLogWriter {
-    /// One call of the writer.
-    struct Step: Hashable, Sendable {
-        /// The kind of a call.
-        enum Kind: Hashable, Sendable {
-            /// An append of lines to a log file.
-            case append
+    /// The log file of each append, in order.
+    private let files = Mutex<[URL]>([])
 
-            /// An fsync of a log file.
-            case synchronize
-        }
-
-        /// The kind of the call.
-        let kind: Kind
-
-        /// The log file of the call.
-        let file: URL
-    }
-
-    /// The calls of the writer, in order.
-    private let calls = Mutex<[Step]>([])
-
-    /// The calls of the writer, in order.
-    var steps: [Step] {
-        calls.withLock { steps in steps }
+    /// The log file of each append, in order.
+    var appendedFiles: [URL] {
+        files.withLock { files in files }
     }
 
     /// Appends the events, and records the file.
@@ -186,28 +130,7 @@ final class RecordingLogWriter: EventLogWriter {
     /// - Throws: The error of the file writer.
     func append(contentsOf events: [Event], toLogOf ref: LocalRef, in log: EventLog) throws(EventLogError) {
         try FileEventLogWriter().append(contentsOf: events, toLogOf: ref, in: log)
-        record(.append, of: ref, in: log)
-    }
-
-    /// Synchronizes the log file, and records the file.
-    ///
-    /// - Parameters:
-    ///   - ref: The local ref of the node.
-    ///   - log: The event log of the board.
-    /// - Throws: The error of the file writer.
-    func synchronize(logOf ref: LocalRef, in log: EventLog) throws(EventLogError) {
-        try FileEventLogWriter().synchronize(logOf: ref, in: log)
-        record(.synchronize, of: ref, in: log)
-    }
-
-    /// Records one call.
-    ///
-    /// - Parameters:
-    ///   - kind: The kind of the call.
-    ///   - ref: The local ref of the node of the file.
-    ///   - log: The event log of the board.
-    private func record(_ kind: Step.Kind, of ref: LocalRef, in log: EventLog) {
-        let step = Step(kind: kind, file: log.fileURL(for: ref))
-        calls.withLock { steps in steps.append(step) }
+        let file = log.fileURL(for: ref)
+        files.withLock { files in files.append(file) }
     }
 }

@@ -704,8 +704,8 @@ struct CommitSession: Sendable {
     ///
     /// A run of `collectBoards` also gives source boards (divergence.md M9). The commit locks them with the other
     /// boards, in the same order. A source whose node files changed after the run read them counts as a changed log,
-    /// so the call runs again and reads the source again. After each append and each fsync succeeds, the commit
-    /// removes the `.kanban/` of each source, while it still holds the locks. Thus a crash before the removal leaves
+    /// so the call runs again and reads the source again. After each append succeeds, with the fsync of each of its
+    /// lines, the commit removes the `.kanban/` of each source, while it still holds the locks. Thus a crash before the removal leaves
     /// each source as it was, and a crash after it leaves each event in the target.
     ///
     /// - Parameters:
@@ -777,20 +777,20 @@ struct CommitSession: Sendable {
     /// Appends the kept patches of each changed board, and then makes each working copy the live graph of its board
     /// (plan.md §5.4 steps 5.3 to 5.5). No live graph changes until each append of each board succeeds.
     ///
-    /// Before the first append, the commit records the state of each log file that it changes. When an append, the
-    /// fsync, or the read of a new signature fails, the commit puts each of these files back while it holds the
-    /// locks, and no live graph changes. Thus no log keeps a part of the transaction.
+    /// Before the first append, the commit records the state of each log file that it changes. When an append or the
+    /// read of a new signature fails, the commit puts each of these files back while it holds the locks, and no live
+    /// graph changes. Thus no log keeps a part of the transaction.
     ///
-    /// After the appends of all boards, the commit calls fsync on each file that it appended to (divergence.md Q23).
-    /// Each line records the local refs of the files of its board that the transaction writes, so that a load after a
-    /// crash between two files does not apply a part of the transaction.
+    /// Each append calls fsync after each line that it writes (divergence.md Q23). Each line records the local refs of
+    /// the files of its board that the transaction writes, so that a load after a crash between two files does not
+    /// apply a part of the transaction.
     ///
     /// - Parameters:
     ///   - writes: The boards of the commit. Each changed board gets its new live graph.
     ///   - operations: The names of the public mutations of the full call.
     /// - Throws: An ``EventLogError`` when the state of a log file cannot be read before the first append, and then
-    ///   nothing is written. The ``EventLogError`` of the append, the fsync, or the signature read that failed, after
-    ///   the rollback.
+    ///   nothing is written. The ``EventLogError`` of the append or the signature read that failed, after the
+    ///   rollback.
     private static func append(_ writes: inout [BoardWrite], recording operations: [String]) throws(EventLogError) {
         let changedBoards = writes.indices.filter { index in writes[index].hasPatches }
         let keys = changedBoards.map { index in writes[index].key.description }
@@ -798,9 +798,6 @@ struct CommitSession: Sendable {
         do throws(EventLogError) {
             let written = try changedBoards.map { index throws(EventLogError) in
                 try writes[index].append(recording: operations, changing: keys)
-            }
-            for index in changedBoards {
-                try writes[index].synchronize()
             }
             var adopted = writes
             for (index, events) in zip(changedBoards, written) {
@@ -951,16 +948,6 @@ private struct BoardWrite {
             try writer.append(contentsOf: events, toLogOf: ref, in: live.log)
         }
         return written.sorted { lhs, rhs in lhs.id < rhs.id }
-    }
-
-    /// Calls fsync on each log file of the board that the kept patches appended to (divergence.md Q23). The commit
-    /// calls it after the appends of all boards.
-    ///
-    /// - Throws: An ``EventLogError`` when a log file is not there or the fsync fails.
-    func synchronize() throws(EventLogError) {
-        for ref in writtenNodes.sorted() {
-            try writer.synchronize(logOf: ref, in: live.log)
-        }
     }
 
     /// Makes the working copy the live graph, and records the new signature of each log file that the commit

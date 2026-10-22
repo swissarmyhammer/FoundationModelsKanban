@@ -39,7 +39,7 @@ struct ReplayBadValueTests {
         let handle = try FileHandle(forWritingTo: log.fileURL(for: ref))
         defer { try? handle.close() }
         try handle.seekToEnd()
-        try handle.write(contentsOf: Data((text + EventLog.lineBreak).utf8))
+        try handle.write(contentsOf: Data((text + ReplayTests.lineBreak).utf8))
     }
 
     /// Loads a board, and gives the state of one task.

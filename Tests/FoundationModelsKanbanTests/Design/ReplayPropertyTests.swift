@@ -133,7 +133,7 @@ extension Design {
         static func expectOnlyChangingPatches(in log: EventLog) throws {
             for ref in try log.nodeFileSignatures().keys {
                 let text = try String(contentsOf: log.fileURL(for: ref), encoding: .utf8)
-                let lines = text.split(separator: EventLog.lineBreak)
+                let lines = text.split(separator: ReplayTests.lineBreak)
                 let events = try lines.map { line in try Event(parsing: String(line)) }
                     .sorted { lhs, rhs in lhs.id < rhs.id }
                 for (index, event) in events.enumerated() {
@@ -185,9 +185,9 @@ extension Design {
         static func shuffleLines(of log: EventLog, using generator: inout SplitMix64) throws {
             for ref in try log.nodeFileSignatures().keys {
                 let file = log.fileURL(for: ref)
-                let lines = try String(contentsOf: file, encoding: .utf8).split(separator: EventLog.lineBreak)
-                let shuffled = lines.shuffled(using: &generator).joined(separator: EventLog.lineBreak)
-                try (shuffled + EventLog.lineBreak).write(to: file, atomically: true, encoding: .utf8)
+                let lines = try String(contentsOf: file, encoding: .utf8).split(separator: ReplayTests.lineBreak)
+                let shuffled = lines.shuffled(using: &generator).joined(separator: ReplayTests.lineBreak)
+                try (shuffled + ReplayTests.lineBreak).write(to: file, atomically: true, encoding: .utf8)
             }
         }
 
