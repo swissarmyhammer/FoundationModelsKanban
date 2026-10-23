@@ -3,25 +3,32 @@ assignees:
 - claude-code
 position_column: todo
 position_ordinal: '8980'
-title: Add acceptReview and rejectReview mutations
+title: 'Add rejectTask: move a task back with a comment, in one transaction'
 ---
 ## What
 
-KanbanViewKit has the verbs "accept a task" and "reject it with a comment" (its plan §3.4). The schema has no review verbs today. The board has a `review` column (order 2, between `doing` and `done`).
+The agent moves a task to Done itself, and the user does not accept each task (TestudoApp D92). The user can move a card back, with a comment that goes to the agent (D92 (e)). KanbanViewKit has the verb "reject with a comment" for this (its plan §3.4). There is no "accept" verb (decision of the user, 2026-10-23).
 
-- `acceptReview(input: {id})`: completes the task (the same result as `completeTask`: the task goes to the done column).
-- `rejectReview(input: {id, comment})`: adds the comment to the task and moves the task back to the doing column (the column before `review` in board order), in one transaction. The comment is required.
-- Find the review column and the target columns by their role, not by a fixed slug, if the board model has column roles. Else use the board order, and record the rule.
-- A task that is not in the review column: decide to refuse it or to accept it (very forgiving tool inputs: accept it when the result is clear). Record the decision in `divergence.md`.
-- Add schema descriptions and update the tool description.
+Today the client must send `moveTask` and `addComment` as two mutations.
+
+## Work
+
+- Add `rejectTask(input: {id, comment, column, before, after, ordinal})`.
+- It adds the comment to the task (the actor of the call is the author) and moves the task, in one transaction. One `undoChange` reverses both.
+- `comment` is required and must not be empty.
+- The placement fields are the same as in `moveTask`. With no `column`, the task goes to the column before its current column in board order (from Done or Review, to the column before it). A task in the first column with no `column` gives a clear error.
+- A move is never refused for a version conflict (KanbanViewKit D100): `rejectTask` takes no `ifVersion`.
+- Add schema descriptions, update the tool description, and record the verb and the default column rule in `divergence.md`.
 
 ## Acceptance criteria
 
-- [ ] `acceptReview` moves a review task to done, in one transaction.
-- [ ] `rejectReview` adds the comment and moves the task to doing, in one transaction. One `undoChange` reverses both.
-- [ ] `rejectReview` with no comment gives a clear error.
+- [ ] `rejectTask(input: {id, comment: "..."})` on a task in Done adds the comment and moves the task to the column before Done, in one transaction.
+- [ ] With `column: "doing"`, the task goes to Doing.
+- [ ] One `undoChange` removes the comment and moves the task back.
+- [ ] A missing or empty comment gives a clear error and writes nothing.
+- [ ] The `changes` event holds the moved task and the new comment.
 
 ## Tests
 
 - Unit tests in `T/` for each criterion.
-- `swift test` passes with no new warnings. #kanbanviewkit
+- `swift test` passes with no new warnings.
