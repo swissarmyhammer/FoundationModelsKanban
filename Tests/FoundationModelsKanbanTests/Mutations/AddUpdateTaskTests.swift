@@ -35,8 +35,17 @@ struct AddUpdateTaskTests {
     /// The order of ``backlogName``: less than the order 0 of `todo`.
     private static let backlogOrder = -1
 
+    /// The slug of ``backlogName``.
+    private static let backlogSlug = "backlog"
+
     /// The name of a column that a test adds after `todo`.
     private static let doingName = "Doing"
+
+    /// The slug of ``doingName``.
+    private static let doingSlug = "doing"
+
+    /// The slug of the column that ``doneColumn`` adds.
+    private static let doneSlug = "done"
 
     /// The mutation field that adds a terminal column after `todo`, so that a task in `todo` is not done.
     static let doneColumn = #"addColumn(input: { name: "Done" }) { id }"#
@@ -50,6 +59,9 @@ struct AddUpdateTaskTests {
     /// The mutation fields that add the actors ``alice`` and ``bob``.
     static let addActors = #"a: addActor(input: { name: "\#(alice)" }) { id } "#
         + #"b: addActor(input: { name: "\#(bob)" }) { id }"#
+
+    /// The two fields that ``addActors`` gives in the `data` object of a response, with no braces around them.
+    static let addedActorsJSON = #""a":\#(idJSON(of: .actor(slug: alice))),"b":\#(idJSON(of: .actor(slug: bob)))"#
 
     /// A ref that names no actor.
     static let unknownActor = "nobody"
@@ -198,6 +210,14 @@ struct AddUpdateTaskTests {
     /// - Returns: The URI text.
     private static func id(of task: ULID) -> String {
         ColumnActorTests.id(of: .task(task))
+    }
+
+    /// Gives the JSON object that the selection ``idSelection`` gives in a response for a node of the fixture board.
+    ///
+    /// - Parameter ref: The local ref of the node.
+    /// - Returns: The JSON object text, for example `{"id":"kanban://…/task/…"}`.
+    static func idJSON(of ref: LocalRef) -> String {
+        #"{"id":"\#(ColumnActorTests.id(of: ref))"}"#
     }
 
     /// Gives the full URI of a task of the fixture board of ``makeRemoteKeyFixture(in:)``, with the host of the key
@@ -383,9 +403,10 @@ struct AddUpdateTaskTests {
             + Self.idSelection
         let mutation = Self.mutation(of: backlog, Self.addTask(with: "", selecting: "{ column { name } }"))
         let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
+        let column = Self.idJSON(of: .column(slug: Self.backlogSlug))
         #expect(
             KanbanGraphTests.withoutTransaction(response)
-                .hasSuffix(#""addTask":{"column":{"name":"\#(Self.backlogName)"}}}}"#)
+                == #"{"data":{"addColumn":\#(column),"addTask":{"column":{"name":"\#(Self.backlogName)"}}}}"#
         )
     }
 
@@ -393,11 +414,12 @@ struct AddUpdateTaskTests {
     func addTaskUsesGivenColumn() async throws {
         let directory = try TemporaryDirectory()
         let doing = #"addColumn(input: { name: "\#(Self.doingName)" }) { id }"#
-        let add = Self.addTask(with: #"column: "doing""#, selecting: "{ column { name } }")
+        let add = Self.addTask(with: #"column: "\#(Self.doingSlug)""#, selecting: "{ column { name } }")
         let response = try await ColumnActorTests.respond(to: Self.mutation(of: doing, add), onFixtureIn: directory)
+        let column = Self.idJSON(of: .column(slug: Self.doingSlug))
         #expect(
             KanbanGraphTests.withoutTransaction(response)
-                .hasSuffix(#""addTask":{"column":{"name":"\#(Self.doingName)"}}}}"#)
+                == #"{"data":{"addColumn":\#(column),"addTask":{"column":{"name":"\#(Self.doingName)"}}}}"#
         )
     }
 
@@ -549,10 +571,8 @@ struct AddUpdateTaskTests {
         let add = Self.addTask(with: #"tags: ["\#(Self.tagName)"]"#, selecting: "{ id tags { name } }")
         let response = try await ColumnActorTests.respond(to: Self.mutation(of: add), onFixtureIn: directory)
         let task = try Self.firstTask(in: response)
-        #expect(
-            KanbanGraphTests.withoutTransaction(response)
-                .hasSuffix(#""tags":[{"name":"\#(Self.storedTagName)"}]}}}"#)
-        )
+        let added = #"{"id":"\#(Self.id(of: task))","tags":[{"name":"\#(Self.storedTagName)"}]}"#
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"addTask":\#(added)}}"#)
         let tag = LocalRef.tag(slug: Self.tagSlug)
         let tagPatch = try PatchInput(node: tag, set: [PropertyName.name: .string(Self.storedTagName)])
         #expect(try ColumnActorTests.patches(of: tag, in: directory) == [tagPatch])
@@ -571,7 +591,7 @@ struct AddUpdateTaskTests {
         let add = Self.addTask(with: input, selecting: "{ tags { name } }")
         let response = try await ColumnActorTests.respond(to: Self.mutation(of: add), onFixtureIn: directory)
         let sorted = #""tags":[{"name":"\#(Self.alphaSlug)"},{"name":"\#(Self.zetaSlug)"}]"#
-        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(sorted + "}}}"))
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"addTask":{\#(sorted)}}}"#)
     }
 
     @Test("addTask with a tag that the board has writes no second tag patch")
@@ -615,7 +635,8 @@ struct AddUpdateTaskTests {
         let add = Self.addTask(with: #"body: "Fix #\#(Self.markerSlug)""#, selecting: "{ id tags { name } }")
         let response = try await ColumnActorTests.respond(to: Self.mutation(of: add), onFixtureIn: directory)
         let task = try Self.firstTask(in: response)
-        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#""tags":[{"name":"\#(Self.markerSlug)"}]}}}"#))
+        let added = #"{"id":"\#(Self.id(of: task))","tags":[{"name":"\#(Self.markerSlug)"}]}"#
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"addTask":\#(added)}}"#)
         let tag = LocalRef.tag(slug: Self.markerSlug)
         let tagPatch = try PatchInput(node: tag, set: [PropertyName.name: .string(Self.markerSlug)])
         #expect(try ColumnActorTests.patches(of: tag, in: directory) == [tagPatch])
@@ -673,7 +694,8 @@ struct AddUpdateTaskTests {
         let task = try #require(try Self.taskULIDs(in: response).first { task in task != fixture.task })
         let json = #"{"blockedBy":[{"id":"\#(Self.id(of: fixture.task))"}],"#
             + #""id":"\#(Self.id(of: task))","ready":false}"#
-        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#""addTask":\#(json)}}"#))
+        let done = Self.idJSON(of: .column(slug: Self.doneSlug))
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"addColumn":\#(done),"addTask":\#(json)}}"#)
         let expected = try PatchInput(
             node: .task(task),
             set: Self.addedValues,
@@ -716,9 +738,16 @@ struct AddUpdateTaskTests {
         let field = "created"
         let directory = try TemporaryDirectory()
         let add = Self.addTask(with: #"\#(field): "2026-10-07T00:00:00Z""#)
-        let response = try await ColumnActorTests.respondWritingNothing(to: Self.mutation(of: add), in: directory)
-        #expect(response.hasPrefix(#"{"errors":"#))
-        #expect(response.contains(field))
+        let document = Self.mutation(of: add)
+        let response = try await ColumnActorTests.respondWritingNothing(to: document, in: directory)
+        let start = try #require(document.range(of: field)).lowerBound
+        let column = document.distance(from: document.startIndex, to: start) + 1
+        let fields = "title, body, column, ordinal, assignees, tags, dependsOn, board, priority"
+        let message = #"Field \"\#(field)\" is not defined by type \"AddTaskInput\". "#
+            + "The fields of AddTaskInput are: \(fields)."
+        let error = #"{"extensions":{"code":"GRAPHQL_VALIDATION_FAILED"},"locations":[{"column":\#(column),"line":1}],"#
+            + #""message":"\#(message)","path":[]}"#
+        #expect(response == #"{"errors":[\#(error)]}"#)
     }
 
     // MARK: - updateTask fields
@@ -794,7 +823,10 @@ struct AddUpdateTaskTests {
             with: Self.bodyVariables,
             onFixtureIn: directory
         )
-        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#""second":{"body":""}}}"#))
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == #"{"data":{"first":\#(Self.idJSON(of: .task(task))),"second":{"body":""}}}"#
+        )
         let edit = PatchEdit(body: ReplayTests.diff(from: Self.body, to: ""))
         #expect(try Self.lastPatch(of: task, in: directory) == PatchInput(node: .task(task), edit: edit))
     }
@@ -838,7 +870,11 @@ struct AddUpdateTaskTests {
             "second: " + clear
         )
         let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
-        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#""second":{"assignees":[]}}}"#))
+        let first = Self.idJSON(of: .task(task))
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == #"{"data":{\#(Self.addedActorsJSON),"first":\#(first),"second":{"assignees":[]}}}"#
+        )
         let removed = [PropertyName.assignees: Self.actorRefs(Self.alice)]
         #expect(try Self.lastPatch(of: task, in: directory) == PatchInput(node: .task(task), remove: removed))
     }
@@ -887,9 +923,10 @@ struct AddUpdateTaskTests {
             "second: " + Self.updateTask(task, with: "tags: []", selecting: "{ tags { name } }")
         )
         let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
+        let tags = #"{"tags":[{"name":"\#(Self.markerSlug)"}]}"#
         #expect(
             KanbanGraphTests.withoutTransaction(response)
-                .hasSuffix(#""second":{"tags":[{"name":"\#(Self.markerSlug)"}]}}}"#)
+                == #"{"data":{"first":\#(Self.idJSON(of: .task(task))),"second":\#(tags)}}"#
         )
         let removed = [PropertyName.tags: Self.tagRefs(Self.tagSlug)]
         #expect(try Self.lastPatch(of: task, in: directory) == PatchInput(node: .task(task), remove: removed))

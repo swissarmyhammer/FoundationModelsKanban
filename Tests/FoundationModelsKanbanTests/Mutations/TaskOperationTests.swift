@@ -130,6 +130,19 @@ struct TaskOperationTests {
     /// The `input` field that names the actor ``AddUpdateTaskTests/alice``.
     static let aliceInput = actorInput(naming: AddUpdateTaskTests.alice)
 
+    /// The field that ``AddUpdateTaskTests/doneColumn`` gives in the `data` object of a response, with no braces
+    /// around it.
+    private static let addedDoneColumnField = #""addColumn":\#(AddUpdateTaskTests.idJSON(of: .column(slug: doneSlug)))"#
+
+    /// The JSON object that the field `a` of ``AddUpdateTaskTests/addActors`` gives in a response.
+    private static let addedAliceJSON = AddUpdateTaskTests.idJSON(of: .actor(slug: AddUpdateTaskTests.alice))
+
+    /// The JSON object that the field `b` of ``AddUpdateTaskTests/addActors`` gives in a response.
+    private static let addedBobJSON = AddUpdateTaskTests.idJSON(of: .actor(slug: AddUpdateTaskTests.bob))
+
+    /// The JSON object of an `untagTask` field with the selection ``tagsSelection`` when the task has no tag.
+    private static let noTagsJSON = #"{"tags":[]}"#
+
     /// Each mutation of this suite, with the other fields of its `input` object, for the not-found test.
     private static let mutationInputs = [
         ("moveTask", #"column: "\#(todoSlug)""#),
@@ -385,7 +398,10 @@ struct TaskOperationTests {
             on: fixture.graph
         )
         let json = #"{"column":{"name":"\#(Self.doneName)"},"ordinal":"\#(Ordinal.first.value)"}"#
-        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#""moveTask":\#(json)}}"#))
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == Self.dataResponse(of: #"\#(Self.addedDoneColumnField),"moveTask":\#(json)"#)
+        )
         let expected = try PatchInput(
             node: .task(fixture.task),
             set: [
@@ -406,7 +422,10 @@ struct TaskOperationTests {
             AddUpdateTaskTests.mutation(of: AddUpdateTaskTests.doneColumn, toDone),
             on: fixture.graph
         )
-        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#""moveTask":{"virtualTags":["DONE"]}}}"#))
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == Self.dataResponse(of: #"\#(Self.addedDoneColumnField),"moveTask":{"virtualTags":["DONE"]}"#)
+        )
         #expect(try await Self.listedTasks(by: Self.doneTasksQuery, on: fixture.graph) == [fixture.task])
         let back = Self.taskField(
             "moveTask",
@@ -574,7 +593,10 @@ struct TaskOperationTests {
         let complete = try Self.fixtureField("completeTask", selecting: Self.positionSelection)
         let response = try await Self.respond(toFields: AddUpdateTaskTests.doneColumn, complete, in: directory)
         let json = #"{"column":{"name":"\#(Self.doneName)"},"ordinal":"\#(Ordinal.first.value)"}"#
-        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#""completeTask":\#(json)}}"#))
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == Self.dataResponse(of: #"\#(Self.addedDoneColumnField),"completeTask":\#(json)"#)
+        )
     }
 
     @Test("Two tasks completed one after the other are in the terminal column in that order")
@@ -586,9 +608,9 @@ struct TaskOperationTests {
             "second: " + Self.taskField("completeTask", of: tasks.first, selecting: Self.ordinalSelection)
         )
         let response = try await KanbanGraphTests.execute(mutation, on: tasks.graph)
-        let json = #""first":{"ordinal":"\#(Ordinal.first.value)"},"#
-            + #""second":{"ordinal":"\#(Ordinal(after: .first).value)"}}}"#
-        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(json))
+        let json = #"\#(Self.addedDoneColumnField),"first":{"ordinal":"\#(Ordinal.first.value)"},"#
+            + #""second":{"ordinal":"\#(Ordinal(after: .first).value)"}"#
+        #expect(KanbanGraphTests.withoutTransaction(response) == Self.dataResponse(of: json))
         #expect(try await Self.listedTasks(on: tasks.graph) == [tasks.second, tasks.third, tasks.first])
     }
 
@@ -600,7 +622,11 @@ struct TaskOperationTests {
         let task = try AddUpdateTaskTests.fixtureTask()
         let assign = Self.taskField("assignTask", of: task, with: Self.aliceInput, selecting: Self.assigneesSelection)
         let response = try await Self.respond(toFields: AddUpdateTaskTests.addActors, assign, in: directory)
-        #expect(response.contains(Self.assigneesField(of: "assignTask", assigning: AddUpdateTaskTests.alice)))
+        let assigned = Self.assigneesField(of: "assignTask", assigning: AddUpdateTaskTests.alice)
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == Self.dataResponse(of: #""a":\#(Self.addedAliceJSON),\#(assigned),"b":\#(Self.addedBobJSON)"#)
+        )
         let added = [PropertyName.assignees: AddUpdateTaskTests.actorRefs(AddUpdateTaskTests.alice)]
         let expected = try PatchInput(node: .task(task), add: added)
         #expect(try AddUpdateTaskTests.lastPatch(of: task, in: directory) == expected)
@@ -637,7 +663,12 @@ struct TaskOperationTests {
             Self.taskField("unassignTask", of: task, with: Self.aliceInput, selecting: Self.assigneesSelection),
             in: directory
         )
-        #expect(response.contains(Self.assigneesField(of: "unassignTask", assigning: AddUpdateTaskTests.bob)))
+        let unassigned = Self.assigneesField(of: "unassignTask", assigning: AddUpdateTaskTests.bob)
+        let updated = #""updateTask":\#(AddUpdateTaskTests.idJSON(of: .task(task)))"#
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == Self.dataResponse(of: #"\#(AddUpdateTaskTests.addedActorsJSON),\#(unassigned),\#(updated)"#)
+        )
         let removed = [PropertyName.assignees: AddUpdateTaskTests.actorRefs(AddUpdateTaskTests.alice)]
         let expected = try PatchInput(node: .task(task), remove: removed)
         #expect(try AddUpdateTaskTests.lastPatch(of: task, in: directory) == expected)
@@ -720,7 +751,11 @@ struct TaskOperationTests {
             Self.taskField("untagTask", of: task, with: input, selecting: Self.tagsSelection),
             in: directory
         )
-        #expect(response.contains(#""untagTask":{"tags":[]}"#))
+        let tagged = AddUpdateTaskTests.idJSON(of: .task(task))
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == Self.dataResponse(of: #""tagTask":\#(tagged),"untagTask":\#(Self.noTagsJSON)"#)
+        )
         let removed = [PropertyName.tags: AddUpdateTaskTests.tagRefs(Self.feature)]
         let expected = try PatchInput(node: .task(task), remove: removed)
         #expect(try AddUpdateTaskTests.lastPatch(of: task, in: directory) == expected)
@@ -784,7 +819,11 @@ struct TaskOperationTests {
             with: Self.markedBodyVariables,
             in: directory
         )
-        #expect(response.contains(#""untagTask":{"tags":[]}"#))
+        let updated = AddUpdateTaskTests.idJSON(of: .task(task))
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == Self.dataResponse(of: #""untagTask":\#(Self.noTagsJSON),"updateTask":\#(updated)"#)
+        )
         let expected = try PatchInput(
             node: .task(task),
             remove: [PropertyName.tags: AddUpdateTaskTests.tagRefs(AddUpdateTaskTests.markerSlug)],
@@ -803,7 +842,14 @@ struct TaskOperationTests {
             Self.taskField("untagTask", of: task, with: Self.tagsInput(Self.defect), selecting: Self.tagsSelection),
             in: directory
         )
-        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#""untagTask":{"tags":[]}}}"#))
+        let renamed = AddUpdateTaskTests.idJSON(of: .tag(slug: Self.defect))
+        let tagged = AddUpdateTaskTests.idJSON(of: .task(task))
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == Self.dataResponse(
+                    of: #""renameTag":\#(renamed),"tagTask":\#(tagged),"untagTask":\#(Self.noTagsJSON)"#
+                )
+        )
         let removed = [PropertyName.tags: AddUpdateTaskTests.tagRefs(Self.bug)]
         let expected = try PatchInput(node: .task(task), remove: removed)
         #expect(try AddUpdateTaskTests.lastPatch(of: task, in: directory) == expected)
@@ -842,7 +888,11 @@ struct TaskOperationTests {
             Self.taskField("undeleteTask", of: fixture.task, selecting: "{ deleted }")
         )
         let response = try await KanbanGraphTests.execute(mutation, on: fixture.graph)
-        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#""undeleteTask":{"deleted":null}}}"#))
+        let deleted = AddUpdateTaskTests.idJSON(of: .task(fixture.task))
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == Self.dataResponse(of: #""deleteTask":\#(deleted),"undeleteTask":{"deleted":null}"#)
+        )
         #expect(try ColumnActorTests.lastPatch(of: .task(fixture.task), isDelete: false, in: directory))
         #expect(try await Self.listedTasks(on: fixture.graph) == [fixture.task])
         #expect(try await Self.listedTasks(by: Self.deletedTasksQuery, on: fixture.graph).isEmpty)

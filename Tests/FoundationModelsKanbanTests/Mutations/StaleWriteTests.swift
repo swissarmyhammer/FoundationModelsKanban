@@ -155,9 +155,10 @@ struct StaleWriteTests {
                 + AddUpdateTaskTests.updateTask(task, with: #"title: "\#(Self.secondTitle)""#, selecting: "{ title }")
         )
         let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
+        let first = #"{"id":"\#(ColumnActorTests.id(of: .task(task)))"}"#
         #expect(
             KanbanGraphTests.withoutTransaction(response)
-                .hasSuffix(#""second":{"title":"\#(Self.secondTitle)"}}}"#)
+                == #"{"data":{"first":\#(first),"second":{"title":"\#(Self.secondTitle)"}}}"#
         )
     }
 

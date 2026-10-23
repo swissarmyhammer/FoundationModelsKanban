@@ -78,6 +78,14 @@ struct TagMutationTests {
     /// The mutation document that adds ``bug``.
     private static let addBug = AddUpdateTaskTests.mutation(of: addTag(named: bug))
 
+    /// The JSON object that ``addTag(named:)`` with the name ``bug`` gives in a response: the slug as the name and the
+    /// auto color.
+    private static let bugJSON = tagJSON(bug)
+
+    /// The JSON object that a field of a tag mutation with the selection ``AddUpdateTaskTests/idSelection`` gives in a
+    /// response for ``bug``.
+    private static let bugIDJSON = AddUpdateTaskTests.idJSON(of: bugTag)
+
     /// The response of a query of the tasks that match a filter, when one task matches.
     private static let oneMatch = #"{"data":{"board":{"tasks":{"totalCount":1}}}}"#
 
@@ -186,6 +194,15 @@ struct TagMutationTests {
     /// - Returns: The response JSON text.
     private static func idResponse(of field: String, naming ref: LocalRef) -> String {
         #"{"data":{"\#(field)":{"id":"\#(ColumnActorTests.id(of: ref))"}}}"#
+    }
+
+    /// Gives the response of a mutation that adds ``bug`` with the selection ``tagSelection``, then updates it with
+    /// `updateTag`. The response has no transaction id.
+    ///
+    /// - Parameter tag: The JSON object that the `updateTag` field gives.
+    /// - Returns: The response JSON text.
+    private static func addBugResponse(updatingTo tag: String) -> String {
+        #"{"data":{"addTag":\#(bugJSON),"updateTag":\#(tag)}}"#
     }
 
     /// Gives the `set` part of the patch of a tag that a mutation adds with no color: the name and the auto color.
@@ -378,7 +395,10 @@ struct TagMutationTests {
             "second: " + Self.addTag(named: Self.bug)
         )
         let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
-        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#""second":\#(Self.tagJSON(Self.bug))}}"#))
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == #"{"data":{"deleteTag":\#(Self.bugIDJSON),"first":\#(Self.bugJSON),"second":\#(Self.bugJSON)}}"#
+        )
         #expect(try ColumnActorTests.lastPatch(of: Self.bugTag, isDelete: false, in: directory))
     }
 
@@ -426,7 +446,7 @@ struct TagMutationTests {
         )
         let id = ColumnActorTests.id(of: Self.bugTag)
         let tag = #"{"body":"\#(ColumnActorTests.bodyJSON)","id":"\#(id)","name":"\#(Self.capitalizedName)"}"#
-        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#""updateTag":\#(tag)}}"#))
+        #expect(KanbanGraphTests.withoutTransaction(response) == Self.addBugResponse(updatingTo: tag))
         let set = ColumnActorTests.setting(name: Self.capitalizedName, color: ColumnActorTests.green)
         let expected = try ColumnActorTests.bodyPatch(of: Self.bugTag, setting: set)
         #expect(try Self.lastPatch(of: Self.bugTag, in: directory) == expected)
@@ -458,7 +478,7 @@ struct TagMutationTests {
         )
         let id = ColumnActorTests.id(of: Self.defectTag)
         let tag = #"{"body":"\#(ColumnActorTests.bodyJSON)","color":"\#(ColumnActorTests.green)","id":"\#(id)"}"#
-        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#""updateTag":\#(tag)}}"#))
+        #expect(KanbanGraphTests.withoutTransaction(response) == Self.addBugResponse(updatingTo: tag))
         let set = [PropertyName.color: PatchValue.string(ColumnActorTests.green)]
         let expected = try ColumnActorTests.bodyPatch(of: Self.defectTag, setting: set)
         #expect(try Self.lastPatch(of: Self.defectTag, in: directory) == expected)
@@ -476,7 +496,7 @@ struct TagMutationTests {
             onFixtureIn: directory
         )
         let tag = #"{"body":"\#(ColumnActorTests.bodyJSON)","name":"\#(Self.bug)"}"#
-        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#""updateTag":\#(tag)}}"#))
+        #expect(KanbanGraphTests.withoutTransaction(response) == Self.addBugResponse(updatingTo: tag))
         #expect(try Self.lastPatch(of: Self.bugTag, in: directory) == Self.greenPatch(of: Self.bugTag))
     }
 
@@ -490,7 +510,7 @@ struct TagMutationTests {
             with: ColumnActorTests.bodyVariables,
             onFixtureIn: directory
         )
-        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#""updateTag":{"body":""}}}"#))
+        #expect(KanbanGraphTests.withoutTransaction(response) == Self.addBugResponse(updatingTo: #"{"body":""}"#))
         let edit = PatchEdit(body: ReplayTests.diff(from: ColumnActorTests.body, to: ""))
         #expect(try Self.lastPatch(of: Self.bugTag, in: directory) == PatchInput(node: Self.bugTag, edit: edit))
     }
@@ -585,9 +605,10 @@ struct TagMutationTests {
             Self.bugField("undeleteTag", selecting: "{ name deleted }")
         )
         let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
+        let undeleted = #"{"deleted":null,"name":"\#(Self.bug)"}"#
         #expect(
             KanbanGraphTests.withoutTransaction(response)
-                .hasSuffix(#""undeleteTag":{"deleted":null,"name":"\#(Self.bug)"}}}"#)
+                == #"{"data":{"addTag":\#(Self.bugJSON),"deleteTag":\#(Self.bugIDJSON),"undeleteTag":\#(undeleted)}}"#
         )
         #expect(try ColumnActorTests.lastPatch(of: Self.bugTag, isDelete: false, in: directory))
     }
@@ -606,8 +627,12 @@ struct TagMutationTests {
             with: ColumnActorTests.bodyVariables,
             onFixtureIn: directory
         )
+        let bug = Self.tagJSON(Self.bug, color: ColumnActorTests.red)
         let defect = Self.tagJSON(Self.defect, color: ColumnActorTests.red)
-        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#""\#(Self.renameKey)":\#(defect)}}"#))
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == #"{"data":{"addTag":\#(bug),"\#(Self.renameKey)":\#(defect)}}"#
+        )
         let set = ColumnActorTests.setting(name: Self.defect, color: ColumnActorTests.red)
         let expected = try ColumnActorTests.bodyPatch(of: Self.defectTag, setting: set)
         #expect(try ColumnActorTests.patches(of: Self.defectTag, in: directory) == [expected])
@@ -658,7 +683,10 @@ struct TagMutationTests {
         )
         let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
         let defect = Self.tagJSON(Self.defect, color: ColumnActorTests.green)
-        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#""\#(Self.renameKey)":\#(defect)}}"#))
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == #"{"data":{"a":\#(Self.bugJSON),"b":\#(defect),"\#(Self.renameKey)":\#(defect)}}"#
+        )
         let added = try PatchInput(
             node: Self.defectTag,
             set: ColumnActorTests.setting(name: Self.defect, color: ColumnActorTests.green)

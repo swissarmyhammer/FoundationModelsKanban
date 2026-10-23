@@ -219,9 +219,10 @@ struct CommentTests {
         let mutation = AddUpdateTaskTests.mutation(of: addActor, add)
         let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
         let actor = LocalRef.actor(slug: Self.alice)
+        let actorID = #"{"id":"\#(ColumnActorTests.id(of: actor))"}"#
         #expect(
             KanbanGraphTests.withoutTransaction(response)
-                .hasSuffix(#""addComment":{"author":{"id":"\#(ColumnActorTests.id(of: actor))"}}}}"#)
+                == #"{"data":{"addActor":\#(actorID),"addComment":{"author":\#(actorID)}}}"#
         )
         #expect(try ColumnActorTests.patches(of: actor, in: directory).count == 1)
         let commentPatch = try ColumnActorTests.patches(of: .comment(Self.firstComment(in: directory)), in: directory)

@@ -34,6 +34,10 @@ struct RustFieldTests {
     static let addActorField = #"addActor(input: { id: "\#(actorSlug)", avatar: "\#(robotAvatar)" }) "#
         + "{ id name avatar }"
 
+    /// The JSON object that ``addActorField`` gives in a response.
+    static let addedActorJSON = #"{"avatar":"\#(robotAvatar)","id":"\#(ColumnActorTests.id(of: actor))","#
+        + #""name":"\#(actorSlug)"}"#
+
     /// The body of a task with one checked item and one open item.
     static let halfDoneBody = #"- [x] read the grammar\n- [ ] write the parser\n"#
 
@@ -91,9 +95,7 @@ struct RustFieldTests {
             to: "mutation { \(Self.addActorField) }",
             onFixtureIn: directory
         )
-        let actor = #"{"avatar":"\#(Self.robotAvatar)","id":"\#(ColumnActorTests.id(of: Self.actor))","#
-            + #""name":"\#(Self.actorSlug)"}"#
-        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"addActor":\#(actor)}}"#)
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"addActor":\#(Self.addedActorJSON)}}"#)
         let set: [String: PatchValue] = [
             PropertyName.name: .json(.string(Self.actorSlug)),
             PropertyName.avatar: .json(.string(Self.robotAvatar)),
@@ -121,7 +123,10 @@ struct RustFieldTests {
         let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
         let changed = #""first":{"avatar":"\#(Self.catAvatar)"}"#
         let cleared = #""second":{"avatar":null,"name":"\#(Self.actorSlug)"}"#
-        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#"\#(changed),\#(cleared)}}"#))
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == #"{"data":{"addActor":\#(Self.addedActorJSON),\#(changed),\#(cleared)}}"#
+        )
         let expected = try PatchInput(node: Self.actor, unset: [PropertyName.avatar])
         #expect(try ColumnActorTests.patches(of: Self.actor, in: directory).last == expected)
     }
@@ -150,7 +155,11 @@ struct RustFieldTests {
         let mutation = #"mutation { addActor(input: { id: "\#(Self.actorSlug)", image: "\#(Self.robotAvatar)" }) "#
             + "{ avatar } }"
         let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
-        #expect(response.contains(#"{"addActor":{"avatar":"\#(Self.robotAvatar)"}}"#))
+        let rewrite = #"{"from":"image","path":["addActor","input","image"],"to":"avatar"}"#
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == #"{"data":{"addActor":{"avatar":"\#(Self.robotAvatar)"}},"extensions":{"rewrites":[\#(rewrite)]}}"#
+        )
     }
 
     // MARK: - Board model

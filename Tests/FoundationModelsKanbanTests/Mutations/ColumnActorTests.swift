@@ -77,6 +77,9 @@ struct ColumnActorTests {
     /// The mutation that adds the actor ``aliceName`` with the color ``red``.
     private static let addAlice = "mutation { \(addAliceField) }"
 
+    /// The JSON object that ``addAliceField`` gives in a response.
+    private static let addedAliceJSON = #"{"color":"\#(red)","id":"\#(id(of: alice))","name":"\#(aliceName)"}"#
+
     /// The `input` argument that names the added column.
     static let qaReference = #"input: { id: "\#(Self.qaSlug)" }"#
 
@@ -475,9 +478,11 @@ struct ColumnActorTests {
         let mutation = "mutation { \(Self.addQA) deleteColumn(\(Self.qaReference)) { id } "
             + "undeleteColumn(\(Self.qaReference)) { name deleted } }"
         let response = try await Self.respond(to: mutation, onFixtureIn: directory)
+        let qa = #"{"id":"\#(Self.id(of: Self.qaColumn))"}"#
+        let undeleted = #"{"deleted":null,"name":"\#(Self.qaName)"}"#
         #expect(
             KanbanGraphTests.withoutTransaction(response)
-                .hasSuffix(#""undeleteColumn":{"deleted":null,"name":"\#(Self.qaName)"}}}"#)
+                == #"{"data":{"addColumn":\#(qa),"deleteColumn":\#(qa),"undeleteColumn":\#(undeleted)}}"#
         )
         #expect(try Self.lastPatch(of: Self.qaColumn, isDelete: false, in: directory))
     }
@@ -499,8 +504,7 @@ struct ColumnActorTests {
     func addActor() async throws {
         let directory = try TemporaryDirectory()
         let response = try await Self.respond(to: Self.addAlice, onFixtureIn: directory)
-        let actor = #"{"color":"\#(Self.red)","id":"\#(Self.id(of: Self.alice))","name":"\#(Self.aliceName)"}"#
-        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"addActor":\#(actor)}}"#)
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"addActor":\#(Self.addedAliceJSON)}}"#)
         let expected = try PatchInput(node: Self.alice, set: Self.setting(name: Self.aliceName, color: Self.red))
         #expect(try Self.patches(of: Self.alice, in: directory) == [expected])
     }
@@ -511,7 +515,8 @@ struct ColumnActorTests {
         let graph = try Self.makeFixtureGraph(in: directory).graph
         _ = try await KanbanGraphTests.execute(Self.addAlice, on: graph)
         let response = try await KanbanGraphTests.execute("{ board { actors { id } } }", on: graph)
-        #expect(response.contains(#"{"id":"\#(Self.id(of: Self.alice))"}"#))
+        let actors = #"[{"id":"\#(Self.id(of: Self.alice))"},{"id":"\#(Self.id(of: ReplayTests.actor))"}]"#
+        #expect(response == #"{"data":{"board":{"actors":\#(actors)}}}"#)
     }
 
     @Test("addActor with the slug of an actor that exists gives DUPLICATE_ID and writes nothing")
@@ -596,7 +601,10 @@ struct ColumnActorTests {
         let response = try await Self.respond(to: mutation, with: Self.bodyVariables, onFixtureIn: directory)
         let actor = #"{"body":"\#(Self.bodyJSON)","color":"\#(Self.green)","id":"\#(Self.id(of: Self.alice))","#
             + #""name":"\#(Self.renamedAlice)"}"#
-        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#""updateActor":\#(actor)}}"#))
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == #"{"data":{"addActor":\#(Self.addedAliceJSON),"updateActor":\#(actor)}}"#
+        )
         let set = Self.setting(name: Self.renamedAlice, color: Self.green)
         let expected = try Self.bodyPatch(of: Self.alice, setting: set)
         #expect(try Self.patches(of: Self.alice, in: directory).last == expected)
@@ -608,9 +616,10 @@ struct ColumnActorTests {
         let update = #"updateActor(input: { id: "\#(Self.aliceSlug)", color: null }) { name color }"#
         let mutation = "mutation { \(Self.addAliceField) \(update) }"
         let response = try await Self.respond(to: mutation, onFixtureIn: directory)
+        let updated = #"{"color":null,"name":"\#(Self.aliceName)"}"#
         #expect(
             KanbanGraphTests.withoutTransaction(response)
-                .hasSuffix(#""updateActor":{"color":null,"name":"\#(Self.aliceName)"}}}"#)
+                == #"{"data":{"addActor":\#(Self.addedAliceJSON),"updateActor":\#(updated)}}"#
         )
         let expected = try PatchInput(node: Self.alice, unset: [PropertyName.color])
         #expect(try Self.patches(of: Self.alice, in: directory).last == expected)
@@ -634,9 +643,10 @@ struct ColumnActorTests {
         let directory = try TemporaryDirectory()
         let mutation = "mutation { \(Self.addAliceField) deleteActor(\(Self.aliceReference)) { deleted } }"
         let response = try await Self.respond(to: mutation, onFixtureIn: directory)
+        let deleted = #"{"deleted":"\#(KanbanGraphTests.time.rfc3339)"}"#
         #expect(
             KanbanGraphTests.withoutTransaction(response)
-                .hasSuffix(#""deleteActor":{"deleted":"\#(KanbanGraphTests.time.rfc3339)"}}}"#)
+                == #"{"data":{"addActor":\#(Self.addedAliceJSON),"deleteActor":\#(deleted)}}"#
         )
         #expect(try Self.lastPatch(of: Self.alice, isDelete: true, in: directory))
     }
