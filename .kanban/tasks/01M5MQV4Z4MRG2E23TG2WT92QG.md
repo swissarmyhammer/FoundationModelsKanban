@@ -100,8 +100,24 @@ comments:
     - TDD note: this is a test-only refactor. The expected strings do not change, so no RED run was possible. The full suite is the check.
     - next: /review
   timestamp: 2026-10-23T17:35:35.273103+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5mxfgf83tkr6p643b5qcr00
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (2bec125) — 0 findings, 0 confirmed, 0 refuted; 14 validator runs, 0 failed; 6 files reviewed; all 5 prior findings checked
+    - next: none; task moved to done
+  timestamp: 2026-10-23T17:38:29.992224+00:00
+- actor: claude-code
+  id: 01m5mxftwyy87maya3pbe6sk7e
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — 6 test files
+    - test: green — swift test, 1776 passed in 148 suites
+    - commit: 2bec125
+    - review: clean — 0 findings; all 5 prior findings checked
+  timestamp: 2026-10-23T17:38:40.670501+00:00
+position_column: done
+position_ordinal: ffb580
 title: Give the txn of the call in each mutation result
 ---
 ## What
