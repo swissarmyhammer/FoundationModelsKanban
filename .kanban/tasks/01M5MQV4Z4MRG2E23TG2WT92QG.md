@@ -67,6 +67,39 @@ comments:
     - Not changed: `contains`/`hasPrefix` that 579c3a0 did not add in other files (NameRewriteTests message hasPrefix, GraphQLEngineTests:172, CommitTests:433). A task id that the engine makes is read from the response in AddUpdateTaskTests; the rest of each such response is compared in full.
     - next: /review
   timestamp: 2026-10-23T17:27:03.574171+00:00
+- actor: claude-code
+  id: 01m5mx1yds7xa1vsnhg932xsxj
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD — 1 finding (1 confirmed, 2 refuted) — Tests/FoundationModelsKanbanTests/Mutations/TaskOperationTests.swift:141
+    - next: implement the open item in "Review Findings (2026-10-23 12:28)", then review again.
+  timestamp: 2026-10-23T17:31:05.529839+00:00
+- actor: claude-code
+  id: 01m5mx2b2v1z0n2jm82sczeywg
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 7 test files
+    - test: green — swift test, 1776 passed in 148 suites
+    - commit: 9feb26e
+    - review: findings — TaskOperationTests.swift:141
+  timestamp: 2026-10-23T17:31:18.491522+00:00
+- actor: claude-code
+  id: 01m5mx5hm4gvq3pfwmsk4y3m22
+  text: |-
+    Picked up again for the finding at TaskOperationTests.swift:141 (reuse/reuse).
+    - Research: `AddUpdateTaskTests.idJSON(of:)` (added in 9feb26e) is the one helper for the JSON object `{"id":"<uri>"}`. The same cause is in more sites: parallel per-actor copies (`addedAliceJSON`, `addedBobJSON`, the two halves of `AddUpdateTaskTests.addedActorsJSON`) and inline copies of the `{"id":"\#(ColumnActorTests.id(of: X))"}` expression that do not call the helper.
+    - Inline copies found in the files of 9feb26e: TaskOperationTests `assigneesField`; AddUpdateTaskTests (session actor assignee, blockedBy); ColumnActorTests (addColumnSlugsName, deleteEmptyColumn, undeleteColumn, addedActorIsListed); CommentTests (addComment author and task, addCommentByKnownActor, updateCommentByIDOnly); StaleWriteTests (first field); TagMutationTests `idResponse`. RustFieldTests has none.
+    - Plan: add `AddUpdateTaskTests.actorIDJSON(_ slug:)` (name by role: it is also used for assignees, not only added actors), remove `addedAliceJSON`/`addedBobJSON`, and call `idJSON(of:)` / `actorIDJSON(_:)` at each inline site. Test-only refactor: the expected strings do not change, so no RED run is possible; the existing tests must stay green.
+  timestamp: 2026-10-23T17:33:03.492037+00:00
+- actor: claude-code
+  id: 01m5mxa5v9c4bf30xnwpkt8rgq
+  text: |-
+    ### implement — changed
+    - evidence: `swift build --build-tests` gives only the accepted "missing creator" warning. `swift test`: 1776 tests in 148 suites passed, no issue. 6 test files: T/Mutations/AddUpdateTaskTests.swift (new documented helper `actorIDJSON(_ slug:)`; `addedActorsJSON`, the session-actor assignee and the blockedBy object use the helpers), T/Mutations/TaskOperationTests.swift (`addedAliceJSON` and `addedBobJSON` removed; `assignTask` and `assigneesField` call `actorIDJSON`), T/Mutations/ColumnActorTests.swift (addColumnSlugsName, deleteEmptyColumn, undeleteColumn, addedActorIsListed call `idJSON(of:)`), T/Mutations/CommentTests.swift (3 tests), T/Mutations/StaleWriteTests.swift (1), T/Mutations/TagMutationTests.swift (`idResponse`). RustFieldTests had no copy.
+    - The finding at TaskOperationTests.swift:141 is checked. The helper name is `actorIDJSON`, not `addedActorJSON`, because `assigneesField` also uses it for assignees, which are not added actors.
+    - TDD note: this is a test-only refactor. The expected strings do not change, so no RED run was possible. The full suite is the check.
+    - next: /review
+  timestamp: 2026-10-23T17:35:35.273103+00:00
 position_column: doing
 position_ordinal: '80'
 title: Give the txn of the call in each mutation result
@@ -108,3 +141,12 @@ KanbanViewKit sends `undoChange(txn:)` and `redoChange(txn:)` for one transactio
 - [x] `Tests/FoundationModelsKanbanTests/Mutations/ColumnActorTests.swift:480` `test-integrity/no-test-cheating` — The undeleteColumn test now checks only the end of the response with hasSuffix, not the whole response. A wrong leading field or a wrong response shape would still pass, so the assertion is weaker than an exact comparison. Compare the full response with `==`, as the other tests in this change do, and include the leading `{"data":...}` part.
 - [x] `Tests/FoundationModelsKanbanTests/Mutations/ColumnActorTests.swift:599` `test-integrity/no-test-cheating` — The updateActor test checks only the suffix of the response. The data prefix is not compared, so the assertion is weaker than an exact match. Use `==` against the full expected response `{"data":{"updateActor":...}}`.
 - [x] `Tests/FoundationModelsKanbanTests/Mutations/TagMutationTests.swift:461` `test-integrity/no-test-cheating` — The updateTag rename test checks only the suffix of the response. The data prefix is not compared. Compare the full response with `==`.
+
+## Review Findings (2026-10-23 12:28)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 7 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Tests/FoundationModelsKanbanTests/Mutations/TaskOperationTests.swift:141` `reuse/reuse` — `addedBobJSON` repeats `addedAliceJSON` (line 138) with only the actor constant changed. A parallel property per actor means each new actor adds another copy of the same expression, and the copies can drift apart. The actor should be a parameter of one helper. Replace both properties with one helper, for example `private static func addedActorJSON(_ slug: String) -> String { AddUpdateTaskTests.idJSON(of: .actor(slug: slug)) }`, and call it with `AddUpdateTaskTests.alice` and `AddUpdateTaskTests.bob` at the two use sites (lines 628 and 628/628 area of the `assignTask` and `unassignTaskKeepsOthers` tests).

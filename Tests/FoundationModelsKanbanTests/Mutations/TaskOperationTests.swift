@@ -134,12 +134,6 @@ struct TaskOperationTests {
     /// around it.
     private static let addedDoneColumnField = #""addColumn":\#(AddUpdateTaskTests.idJSON(of: .column(slug: doneSlug)))"#
 
-    /// The JSON object that the field `a` of ``AddUpdateTaskTests/addActors`` gives in a response.
-    private static let addedAliceJSON = AddUpdateTaskTests.idJSON(of: .actor(slug: AddUpdateTaskTests.alice))
-
-    /// The JSON object that the field `b` of ``AddUpdateTaskTests/addActors`` gives in a response.
-    private static let addedBobJSON = AddUpdateTaskTests.idJSON(of: .actor(slug: AddUpdateTaskTests.bob))
-
     /// The JSON object of an `untagTask` field with the selection ``tagsSelection`` when the task has no tag.
     private static let noTagsJSON = #"{"tags":[]}"#
 
@@ -373,7 +367,7 @@ struct TaskOperationTests {
     ///   - slugs: The slugs of the assignees.
     /// - Returns: The JSON text of the field: its name and its value.
     private static func assigneesField(of field: String, assigning slugs: String...) -> String {
-        let ids = slugs.map { slug in #"{"id":"\#(ColumnActorTests.id(of: .actor(slug: slug)))"}"# }
+        let ids = slugs.map(AddUpdateTaskTests.actorIDJSON)
         return #""\#(field)":{"assignees":[\#(ids.joined(separator: ","))]}"#
     }
 
@@ -622,10 +616,12 @@ struct TaskOperationTests {
         let task = try AddUpdateTaskTests.fixtureTask()
         let assign = Self.taskField("assignTask", of: task, with: Self.aliceInput, selecting: Self.assigneesSelection)
         let response = try await Self.respond(toFields: AddUpdateTaskTests.addActors, assign, in: directory)
+        let alice = AddUpdateTaskTests.actorIDJSON(AddUpdateTaskTests.alice)
+        let bob = AddUpdateTaskTests.actorIDJSON(AddUpdateTaskTests.bob)
         let assigned = Self.assigneesField(of: "assignTask", assigning: AddUpdateTaskTests.alice)
         #expect(
             KanbanGraphTests.withoutTransaction(response)
-                == Self.dataResponse(of: #""a":\#(Self.addedAliceJSON),\#(assigned),"b":\#(Self.addedBobJSON)"#)
+                == Self.dataResponse(of: #""a":\#(alice),\#(assigned),"b":\#(bob)"#)
         )
         let added = [PropertyName.assignees: AddUpdateTaskTests.actorRefs(AddUpdateTaskTests.alice)]
         let expected = try PatchInput(node: .task(task), add: added)

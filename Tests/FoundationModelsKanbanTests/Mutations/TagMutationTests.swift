@@ -193,7 +193,7 @@ struct TagMutationTests {
     ///   - ref: The local ref of the tag.
     /// - Returns: The response JSON text.
     private static func idResponse(of field: String, naming ref: LocalRef) -> String {
-        #"{"data":{"\#(field)":{"id":"\#(ColumnActorTests.id(of: ref))"}}}"#
+        #"{"data":{"\#(field)":\#(AddUpdateTaskTests.idJSON(of: ref))}}"#
     }
 
     /// Gives the response of a mutation that adds ``bug`` with the selection ``tagSelection``, then updates it with

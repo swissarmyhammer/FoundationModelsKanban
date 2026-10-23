@@ -61,7 +61,7 @@ struct AddUpdateTaskTests {
         + #"b: addActor(input: { name: "\#(bob)" }) { id }"#
 
     /// The two fields that ``addActors`` gives in the `data` object of a response, with no braces around them.
-    static let addedActorsJSON = #""a":\#(idJSON(of: .actor(slug: alice))),"b":\#(idJSON(of: .actor(slug: bob)))"#
+    static let addedActorsJSON = #""a":\#(actorIDJSON(alice)),"b":\#(actorIDJSON(bob))"#
 
     /// A ref that names no actor.
     static let unknownActor = "nobody"
@@ -218,6 +218,14 @@ struct AddUpdateTaskTests {
     /// - Returns: The JSON object text, for example `{"id":"kanban://…/task/…"}`.
     static func idJSON(of ref: LocalRef) -> String {
         #"{"id":"\#(ColumnActorTests.id(of: ref))"}"#
+    }
+
+    /// Gives the JSON object that the selection ``idSelection`` gives in a response for an actor of the fixture board.
+    ///
+    /// - Parameter slug: The slug of the actor, for example ``alice``.
+    /// - Returns: The JSON object text, for example `{"id":"kanban://…/actor/alice"}`.
+    static func actorIDJSON(_ slug: String) -> String {
+        idJSON(of: .actor(slug: slug))
     }
 
     /// Gives the full URI of a task of the fixture board of ``makeRemoteKeyFixture(in:)``, with the host of the key
@@ -556,10 +564,10 @@ struct AddUpdateTaskTests {
         _ = try await KanbanGraphTests.execute(Self.mutation(of: addActor), on: graph)
         let mutation = Self.mutation(of: Self.addTask(with: "", selecting: "{ assignees { id } }"))
         let response = try await KanbanGraphTests.execute(mutation, on: graph)
-        let assignee = ColumnActorTests.id(of: actor.ref)
+        let assignee = Self.idJSON(of: actor.ref)
         #expect(
             KanbanGraphTests.withoutTransaction(response)
-                == #"{"data":{"addTask":{"assignees":[{"id":"\#(assignee)"}]}}}"#
+                == #"{"data":{"addTask":{"assignees":[\#(assignee)]}}}"#
         )
     }
 
@@ -692,7 +700,7 @@ struct AddUpdateTaskTests {
         let mutation = Self.mutation(of: Self.doneColumn, add)
         let response = try await KanbanGraphTests.execute(mutation, on: fixture.graph)
         let task = try #require(try Self.taskULIDs(in: response).first { task in task != fixture.task })
-        let json = #"{"blockedBy":[{"id":"\#(Self.id(of: fixture.task))"}],"#
+        let json = #"{"blockedBy":[\#(Self.idJSON(of: .task(fixture.task)))],"#
             + #""id":"\#(Self.id(of: task))","ready":false}"#
         let done = Self.idJSON(of: .column(slug: Self.doneSlug))
         #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"addColumn":\#(done),"addTask":\#(json)}}"#)

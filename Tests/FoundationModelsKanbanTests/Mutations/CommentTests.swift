@@ -199,9 +199,9 @@ struct CommentTests {
         let response = try await Self.run(add, on: fixture.graph)
         let comment = try Self.firstComment(in: directory)
         let author = KanbanGraphTests.sessionActor.ref
-        let json = #"{"author":{"id":"\#(ColumnActorTests.id(of: author))"},"body":"\#(Self.body)","#
+        let json = #"{"author":\#(AddUpdateTaskTests.idJSON(of: author)),"body":"\#(Self.body)","#
             + #""id":"\#(ColumnActorTests.id(of: .comment(comment)))","shortId":"\#(ShortID(of: comment).value)","#
-            + #""task":{"id":"\#(ColumnActorTests.id(of: .task(fixture.task)))"}}"#
+            + #""task":\#(AddUpdateTaskTests.idJSON(of: .task(fixture.task)))}"#
         #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"addComment":\#(json)}}"#)
         let expected = try PatchInput(
             node: .comment(comment),
@@ -219,7 +219,7 @@ struct CommentTests {
         let mutation = AddUpdateTaskTests.mutation(of: addActor, add)
         let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
         let actor = LocalRef.actor(slug: Self.alice)
-        let actorID = #"{"id":"\#(ColumnActorTests.id(of: actor))"}"#
+        let actorID = AddUpdateTaskTests.actorIDJSON(Self.alice)
         #expect(
             KanbanGraphTests.withoutTransaction(response)
                 == #"{"data":{"addActor":\#(actorID),"addComment":{"author":\#(actorID)}}}"#
@@ -305,8 +305,8 @@ struct CommentTests {
             selecting: "{ body author { id } }"
         )
         let response = try await Self.run(update, on: added.graph)
-        let author = ColumnActorTests.id(of: KanbanGraphTests.sessionActor.ref)
-        let json = #"{"author":{"id":"\#(author)"},"body":"\#(Self.editedBody)"}"#
+        let author = AddUpdateTaskTests.idJSON(of: KanbanGraphTests.sessionActor.ref)
+        let json = #"{"author":\#(author),"body":"\#(Self.editedBody)"}"#
         #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"updateComment":\#(json)}}"#)
         let edit = PatchEdit(body: ReplayTests.diff(from: Self.body, to: Self.editedBody))
         let expected = try PatchInput(node: .comment(added.comment), edit: edit)

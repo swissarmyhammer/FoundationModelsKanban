@@ -155,7 +155,7 @@ struct StaleWriteTests {
                 + AddUpdateTaskTests.updateTask(task, with: #"title: "\#(Self.secondTitle)""#, selecting: "{ title }")
         )
         let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
-        let first = #"{"id":"\#(ColumnActorTests.id(of: .task(task)))"}"#
+        let first = AddUpdateTaskTests.idJSON(of: .task(task))
         #expect(
             KanbanGraphTests.withoutTransaction(response)
                 == #"{"data":{"first":\#(first),"second":{"title":"\#(Self.secondTitle)"}}}"#

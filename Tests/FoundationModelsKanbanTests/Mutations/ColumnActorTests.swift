@@ -355,7 +355,7 @@ struct ColumnActorTests {
         let response = try await Self.respond(to: mutation, onFixtureIn: directory)
         #expect(
             KanbanGraphTests.withoutTransaction(response)
-                == #"{"data":{"addColumn":{"id":"\#(Self.id(of: .column(slug: "in-qa")))"}}}"#
+                == #"{"data":{"addColumn":\#(AddUpdateTaskTests.idJSON(of: .column(slug: "in-qa")))}}"#
         )
     }
 
@@ -447,10 +447,11 @@ struct ColumnActorTests {
         let mutation = "mutation { \(Self.addQA) deleteColumn(\(Self.qaReference)) { id deleted } }"
         let response = try await Self.respond(to: mutation, onFixtureIn: directory)
         let qa = Self.id(of: Self.qaColumn)
+        let added = AddUpdateTaskTests.idJSON(of: Self.qaColumn)
         let deleted = #"{"deleted":"\#(KanbanGraphTests.time.rfc3339)","id":"\#(qa)"}"#
         #expect(
             KanbanGraphTests.withoutTransaction(response)
-                == #"{"data":{"addColumn":{"id":"\#(qa)"},"deleteColumn":\#(deleted)}}"#
+                == #"{"data":{"addColumn":\#(added),"deleteColumn":\#(deleted)}}"#
         )
         #expect(try Self.lastPatch(of: Self.qaColumn, isDelete: true, in: directory))
     }
@@ -478,7 +479,7 @@ struct ColumnActorTests {
         let mutation = "mutation { \(Self.addQA) deleteColumn(\(Self.qaReference)) { id } "
             + "undeleteColumn(\(Self.qaReference)) { name deleted } }"
         let response = try await Self.respond(to: mutation, onFixtureIn: directory)
-        let qa = #"{"id":"\#(Self.id(of: Self.qaColumn))"}"#
+        let qa = AddUpdateTaskTests.idJSON(of: Self.qaColumn)
         let undeleted = #"{"deleted":null,"name":"\#(Self.qaName)"}"#
         #expect(
             KanbanGraphTests.withoutTransaction(response)
@@ -515,8 +516,8 @@ struct ColumnActorTests {
         let graph = try Self.makeFixtureGraph(in: directory).graph
         _ = try await KanbanGraphTests.execute(Self.addAlice, on: graph)
         let response = try await KanbanGraphTests.execute("{ board { actors { id } } }", on: graph)
-        let actors = #"[{"id":"\#(Self.id(of: Self.alice))"},{"id":"\#(Self.id(of: ReplayTests.actor))"}]"#
-        #expect(response == #"{"data":{"board":{"actors":\#(actors)}}}"#)
+        let actors = [Self.alice, ReplayTests.actor].map(AddUpdateTaskTests.idJSON).joined(separator: ",")
+        #expect(response == #"{"data":{"board":{"actors":[\#(actors)]}}}"#)
     }
 
     @Test("addActor with the slug of an actor that exists gives DUPLICATE_ID and writes nothing")
