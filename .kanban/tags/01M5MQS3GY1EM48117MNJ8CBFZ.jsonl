@@ -1,0 +1,1 @@
+{"id":"01M5MQS3GZ45KSAT33XFSJ9Y0C","timestamp":"2026-10-23T15:58:52.959004Z","op":"create","item_id":"01M5MQS3GY1EM48117MNJ8CBFZ","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: '008672'\n+tag_name: filter-agent\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: '008672'\n-tag_name: filter-agent\n","transaction_id":null}

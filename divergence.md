@@ -1080,3 +1080,21 @@ This section lists the work in sections 10–14 that we can drop. The reasons: t
     - A bare repo works: each worktree has its own top folder.
     - Add tests: a session in a worktree uses the worktree board; two worktrees are two engines with the same key; a git merge of two worktree branches gives the union of both boards.
   - ~~**DECIDED: all worktrees use the board of the main clone.**~~ (Replaced.) A session in any worktree of a repo reads and writes `<main clone top>/.kanban/` (the folder above `git rev-parse --git-common-dir`). With the host, this is one engine for the whole repo, and each agent sees each change at once. This replaces "the top folder of the worktree" in the M5 decision. Known result: task changes are written in the working copy of the main clone, not on the branch of the worktree. Plan §12 item 26 ("a related key resolves to the first copy in scan order") then applies only to separate clones, not to worktrees. Add tests: two sessions in two worktrees share one engine and see each change at once; a write from a worktree goes to the main clone's `.kanban/`.
+
+## 17. English filters: the filter agent
+
+**DECIDED (2026-10-23, a request from KanbanViewKit for the user).** This adds to plan §6.3 and §7.2. The user asked for a small coding agent for the filter language in the engine, not in `KanbanTool`.
+
+A person can type English where a filter goes, for example "bugs that alice has not finished". The filter agent of the engine writes a filter statement from it, for example `#bug @alice !#DONE`. The first client is the filter field of KanbanViewKit (its plan §6.9).
+
+- **In the engine, not in the tool.** The agent is part of `KanbanGraph`. `KanbanTool` does not use it: the agent of a session writes the filter language directly.
+- **The host gives the model.** `KanbanGraph(..., embedder: ..., filterModel: (any LanguageModel)? = nil)`, in the same way as the embedder (plan §6.4). With no model, `translateFilter` gives the error `FILTER_MODEL_MISSING`, and the filter language works as before.
+- **The query.** `translateFilter(board: ID, text: String!): FilterTranslation!`, with `FilterTranslation { filter: String, message: String, attempts: Int! }`. It is a query: it writes nothing, it is not in the event log, and it pushes no undo entry. When `text` already parses, the engine gives it back with `attempts: 0` and does not call the model.
+- **A smart prompt.** The system prompt is a resource of the package, not text in the code. It holds:
+  - the grammar of the filter language, each sigil, each operator, the precedence and the implicit AND;
+  - each virtual tag and its meaning (`READY`, `BLOCKED`, `BLOCKING`, `CONFLICT`, `DELETED`, `DONE`, `HIGH`, `MEDIUM`, `LOW`), and the rules of the default selection;
+  - tested examples of English and the filter statement for each one. Each example is also a test, so it cannot go out of date (the same rule as the tool description, plan §7.1).
+- **The vocabulary of the board, on each call.** The engine adds to the prompt the live names of the board: each tag (slug, name and description), each actor (slug and name), and each column (slug, name and board order). It also adds the actor of the caller, so that "my tasks" and "me" become `@<actor>`. Thus the model uses only names that exist, and maps a word such as "finished" or "urgent" to the correct tag or virtual tag.
+- **The loop.** The model writes one statement. The engine parses it and resolves each name against the board. A parse error, or a name that names nothing, goes back to the model as the `INVALID_FILTER` message (the position, the specific message and the corrected example), and the model writes again. The engine stops after 3 attempts. The first statement that parses and names only nodes of the board is the result. After 3 failed attempts, `filter` is null and `message` gives the last error.
+- **No memory.** Each call makes a new `LanguageModelSession`. A call does not see the earlier calls.
+- **Tests.** Unit tests drive the loop with a scripted model: a correct statement at once, a parse error and then a correction, a name that does not exist and then a correction, and 3 failed attempts. A test in the nested `IntegrationTests/` package runs the examples of the prompt with a real model.
