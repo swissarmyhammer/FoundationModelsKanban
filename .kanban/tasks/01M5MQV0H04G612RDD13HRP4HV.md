@@ -32,6 +32,38 @@ comments:
     - evidence: `swift build --build-tests` clean (only the accepted SwiftPM "missing creator" warning); `swift test` 1770 tests in 147 suites passed. 17 files: Sources/FoundationModelsKanban/{Events/Replay.swift, Model/Node.swift, GraphQL/Errors.swift, GraphQL/FieldAliases.swift, GraphQL/QueryResolvers.swift, GraphQL/Schema.swift, GraphQL/SchemaDescription.swift, GraphQL/SchemaDescription+Mutations.swift, GraphQL/SchemaDescription+Types.swift, GraphQL/TaskMutations.swift, Tool/KanbanTool.swift}, Tests/FoundationModelsKanbanTests/Mutations/StaleWriteTests.swift (new), Tests/FoundationModelsKanbanTests/GraphQL/KanbanErrorTests.swift, Tests/Fixtures/kanban.graphql, divergence.md, and the kanban card files.
     - next: /review
   timestamp: 2026-10-23T16:38:41.523991+00:00
+- actor: claude-code
+  id: 01m5mtbzcytcsrtz277mc3wfrk
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (local backend), 1 finding (1 confirmed, 0 refuted) — Tests/FoundationModelsKanbanTests/Mutations/StaleWriteTests.swift:50 (completeness/invariant-propagation)
+    - next: implement the open item in the "Review Findings (2026-10-23 11:40)" section; the task stays in review.
+  timestamp: 2026-10-23T16:44:08.478381+00:00
+- actor: claude-code
+  id: 01m5mtc9qpvzepmd54drbx0km5
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 15 files
+    - test: green — swift test, 1770 passed in 147 suites
+    - commit: dd65859
+    - review: findings — Tests/FoundationModelsKanbanTests/Mutations/StaleWriteTests.swift:50
+  timestamp: 2026-10-23T16:44:19.062243+00:00
+- actor: claude-code
+  id: 01m5mtke2nrc6kzt6v47jcfjjm
+  text: |-
+    Finding fixed: `StaleWriteTests.eachNodeHasVersion` now covers all six node types.
+    - The test adds a comment with a new author (`actor: "Bob Smith"`, which makes the actor) and a tag on the fixture board. Then it reads each node file in the repo (`BoardMutationTests.storedRefs`), and it checks that the node types are all of `PatchNodeType.allCases`. One query reads `version` of each node through `node(id:)` with aliases `node0`, `node1`, and so on. Each version must equal the id of the last event of the node.
+    - The test reads all node files of the repo, not a fixed list. Thus a node that the setup writes, for example the session actor, is also checked.
+    - RED check: for a short time I made `GraphNodeObject.version` give nil for comments. The test failed on the comment version. Then I removed that change; Sources has no diff.
+    - No production code changed in this pass.
+  timestamp: 2026-10-23T16:48:12.885750+00:00
+- actor: claude-code
+  id: 01m5mtkfy4yr3qdwd0k46x4vpt
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsKanbanTests/Mutations/StaleWriteTests.swift (and the card files). `swift build --build-tests` clean (only the accepted SwiftPM "missing creator" warning); `swift test` 1770 tests in 147 suites passed. Finding "StaleWriteTests.swift:50 completeness/invariant-propagation" is now `- [x]`.
+    - next: /review
+  timestamp: 2026-10-23T16:48:14.788848+00:00
 position_column: doing
 position_ordinal: '80'
 title: Add ifVersion to updateTask and refuse a stale write with STALE_WRITE
@@ -58,3 +90,16 @@ KanbanViewKit edits the title and the description of a task in place (its plan �
 
 - Unit tests in `T/` for each criterion.
 - `swift test` passes with no new warnings. #kanbanviewkit
+
+## Review Findings (2026-10-23 11:40)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 13 file(s) reviewed, 4 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 2 file(s) not reviewed — no validator matched:
+> - `Tests/Fixtures/kanban.graphql` — no validator matches this file
+> - `divergence.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsKanbanTests/Mutations/StaleWriteTests.swift:50` `completeness/invariant-propagation` — The test is named 'Each node type gives the id of its last event as its version', but the body checks only the board and the column. The version is stored in the shared NodeFields type for all six node types. The task, actor, tag, comment, and other node types are not checked, so a fault that affects only one of them would pass this test. Extend the query to read `version` on a task, an actor, a tag, and a comment, and assert each one equals the id of its last event. Or rename the test to say it covers only the board and the column.

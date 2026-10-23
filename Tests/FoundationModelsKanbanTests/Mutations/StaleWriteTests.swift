@@ -8,7 +8,8 @@ import ULID
 ///
 /// The version of a node is the id of the last event of the node, so each write gives a new version. `updateTask` with
 /// an `ifVersion` that is not the current version of the task gives `STALE_WRITE`, and writes nothing. Each test uses
-/// the fixture logs of ``KanbanGraphTests``: the board, the column `todo`, and one task in `todo`.
+/// the fixture logs of ``KanbanGraphTests``: the board, the column `todo`, and one task in `todo`. The test of all node
+/// types also adds a comment, the actor of the comment, and a tag.
 @Suite("Node version and ifVersion", .watcherBudget)
 struct StaleWriteTests {
     /// The title that the first write of a test gives to the fixture task.
@@ -25,6 +26,15 @@ struct StaleWriteTests {
 
     /// The code of the error of a stale write.
     private static let staleWriteCode = "STALE_WRITE"
+
+    /// The name of the actor that a test makes as the author of a comment.
+    private static let authorName = "Bob Smith"
+
+    /// The name of the tag that a test adds.
+    private static let tagName = "bug"
+
+    /// The start of the response key of each `node` field of a query that reads more than one node.
+    private static let nodeFieldPrefix = "node"
 
     // MARK: - Version
 
@@ -50,15 +60,28 @@ struct StaleWriteTests {
     @Test("Each node type gives the id of its last event as its version")
     func eachNodeHasVersion() async throws {
         let directory = try TemporaryDirectory()
-        let query = #"{ board { version column(id: "\#(KanbanGraphTests.todoName)") { version } } }"#
-        let response = try await ColumnActorTests.respond(to: query, onFixtureIn: directory)
-        let board = try KanbanGraphTests.object(named: "board", in: response)
-        let column = try #require(board["column"] as? [String: Any])
-        #expect(board["version"] as? String == (try Self.lastEventID(of: .board, in: directory).ulidString))
-        #expect(
-            column["version"] as? String
-                == (try Self.lastEventID(of: KanbanGraphTests.todoColumn, in: directory).ulidString)
+        let (graph, task) = try ColumnActorTests.makeFixtureGraph(in: directory)
+        let setup = AddUpdateTaskTests.mutation(
+            of: CommentTests.addComment(
+                to: AddUpdateTaskTests.sigilRef(of: task),
+                with: #"actor: "\#(Self.authorName)""#
+            ),
+            TagMutationTests.addTag(named: Self.tagName)
         )
+        let setupResponse = try await KanbanGraphTests.execute(setup, on: graph)
+        #expect(try CrossRepoWriteTests.hasNoErrors(setupResponse), "\(setupResponse)")
+        let refs = try BoardMutationTests.storedRefs(inRepoAt: directory.url).sorted { left, right in
+            left.description < right.description
+        }
+        #expect(Set(refs.map(\.nodeType)) == Set(PatchNodeType.allCases))
+        let fields = refs.enumerated().map { index, ref in
+            #"\#(Self.nodeField(at: index)): node(id: "\#(ColumnActorTests.id(of: ref))") { version }"#
+        }
+        let response = try await KanbanGraphTests.execute("{ \(fields.joined(separator: " ")) }", on: graph)
+        for (index, ref) in refs.enumerated() {
+            let version = try Self.version(in: response, ofField: Self.nodeField(at: index))
+            #expect(version == (try Self.lastEventID(of: ref, in: directory).ulidString), "\(ref)")
+        }
     }
 
     // MARK: - ifVersion
@@ -167,6 +190,14 @@ struct StaleWriteTests {
     /// - Returns: The event id.
     private static func lastEventID(of ref: LocalRef, in directory: TemporaryDirectory) throws -> ULID {
         try #require(BoardMutationTests.events(of: ref, inRepoAt: directory.url).last).id
+    }
+
+    /// Gives the response key of one `node` field of a query that reads more than one node.
+    ///
+    /// - Parameter index: The place of the field in the query.
+    /// - Returns: The response key.
+    private static func nodeField(at index: Int) -> String {
+        "\(nodeFieldPrefix)\(index)"
     }
 
     /// Gives the `version` of the object of one field of the `data` object of a response.
