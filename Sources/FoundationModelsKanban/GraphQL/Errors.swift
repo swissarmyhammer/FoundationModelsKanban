@@ -84,6 +84,12 @@ enum KanbanError: CodedError, Hashable {
     /// these place fields, in the order of the input type.
     case conflictingPlacement(fields: [String])
 
+    /// `STALE_WRITE`: the `ifVersion` of an `updateTask` call is not the current version of the task, so a different
+    /// change came first, and the call wrote nothing (divergence.md §18). The task is the task ref as the call wrote
+    /// it, the given version is the `ifVersion` as the call wrote it, and the current version is the ULID of the last
+    /// event of the task.
+    case staleWrite(task: String, givenVersion: String, currentVersion: String)
+
     /// `BOARD_BUSY`: the log of the board changed during each commit attempt (plan.md §5.4).
     case boardBusy(attempts: Int)
 
@@ -132,6 +138,7 @@ extension KanbanError {
         case .invalidSlug, .reservedSlug: "INVALID_SLUG"
         case .invalidOrdinal: "INVALID_ORDINAL"
         case .conflictingPlacement: "CONFLICTING_PLACEMENT"
+        case .staleWrite: "STALE_WRITE"
         case .boardBusy: "BOARD_BUSY"
         case .unreachableBoard, .unreachableBoards: "UNREACHABLE_BOARD"
         }
@@ -202,6 +209,10 @@ extension KanbanError {
             "The input gives more than one place field: \(fields.joined(separator: Self.listSeparator)). "
                 + "Give only one of ordinal, before, and after, or give none of them to put the task at the end of "
                 + "the column."
+        case .staleWrite(let task, let givenVersion, let currentVersion):
+            "The task \"\(task)\" changed after the version \"\(givenVersion)\": its current version is "
+                + "\"\(currentVersion)\", so the call wrote nothing. Read the task again, and then send the call "
+                + "again with ifVersion: \"\(currentVersion)\", or with no ifVersion to write over the change."
         case .boardBusy(let attempts):
             "The board changed during each of the \(attempts) commit attempts, so the call wrote nothing. "
                 + "Send the call again."

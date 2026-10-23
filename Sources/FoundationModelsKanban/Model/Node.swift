@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsExtras
+import ULID
 
 /// The target of one stored edge in the ``Graph`` (plan.md §3.3, §5.3).
 ///
@@ -35,9 +36,10 @@ enum EdgeTarget: Hashable, Sendable {
     }
 }
 
-/// The fields that all six node types have: the Markdown body and the time values (plan.md §4.1, §5.3).
+/// The fields that all six node types have: the Markdown body, the time values, and the version (plan.md §4.1, §5.3).
 ///
-/// Replay records each time value from the envelope `at` of a patch. No patch stores a time value.
+/// Replay records each time value from the envelope `at` of a patch, and the version from the event id. No patch
+/// stores a time value or a version.
 struct NodeFields: Hashable, Sendable {
     /// The Markdown body of the node. It is empty when no patch set it.
     var body = ""
@@ -57,6 +59,11 @@ struct NodeFields: Hashable, Sendable {
     /// The properties that the patches wrote and that the node type does not know. Replay keeps them, and no
     /// resolver reads them (plan.md §5.3, schema changes).
     var unknownProperties = PropertyBag()
+
+    /// The version of the node: the id of its last event (divergence.md §18). Each write of the node gives a new
+    /// version, and the log already holds it, so no patch stores it. It is `nil` only for a node that no event wrote,
+    /// for example the empty board in memory of a repo with no board log.
+    var version: ULID?
 
     /// The tombstone flag: `true` when the node is deleted (plan.md §3.3, rule 2).
     var isDeleted: Bool {

@@ -68,6 +68,9 @@ enum KanbanFieldAliases {
     /// The aliases of the priority value of a task input (divergence.md P2 and K15).
     private static let priority = ["prio", "urgent"]
 
+    /// The aliases of the version check of `UpdateTaskInput` (divergence.md §18).
+    private static let ifVersion = ["version", "expectedVersion", "baseVersion", "ifMatch", "etag"]
+
     /// The aliases of the avatar of an actor input (divergence.md Q19).
     private static let avatar = ["avatarUrl", "image", "imageUrl", "icon", "picture", "photo", "emoji"]
 
@@ -146,7 +149,7 @@ enum KanbanFieldAliases {
         ],
         "UpdateTaskInput": [
             "id": taskID, "title": title, "column": column, "assignees": assignees, "dependsOn": dependsOn,
-            "priority": priority,
+            "priority": priority, "ifVersion": ifVersion,
         ],
         "MoveTaskInput": taskPlacement,
         "CopyTaskInput": taskPlacement,

@@ -101,6 +101,11 @@ extension GraphNodeObject {
     var deleted: DateTime? {
         state.fields.deleted
     }
+
+    /// The version of the node: the ULID of its last event, or `nil` for a node that no event wrote.
+    var version: NodeID? {
+        state.fields.version.map { version in NodeID(text: version.ulidString) }
+    }
 }
 
 /// A GraphQL object of a node that has a slot in the graph: each node type other than the board.

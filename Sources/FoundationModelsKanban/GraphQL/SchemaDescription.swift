@@ -242,6 +242,12 @@ enum SchemaDescription {
         when the priority moves it there. A slug that no column has makes the column, the same as moveTask.
         """
 
+    /// The `ifVersion` field of `UpdateTaskInput` (divergence.md §18).
+    static let updateTaskIfVersion = """
+        The version of the task that you read (Task.version). When a different change came first, the call gives \
+        STALE_WRITE with the current version and writes nothing. No value writes with no check.
+        """
+
     /// The `priority` field of `AddTaskInput` and `UpdateTaskInput` (divergence.md P2 and K15).
     static let taskPriority = """
         Not stored: a task has no priority field, and the place in the column is the priority. urgent, critical, \

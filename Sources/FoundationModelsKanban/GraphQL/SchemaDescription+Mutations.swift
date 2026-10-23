@@ -121,7 +121,8 @@ extension SchemaDescription {
     /// The `Mutation.updateTask` field.
     static let updateTask = """
         Changes the given fields of a task. A list replaces the old list. A column moves the task to the end of that \
-        column, or to the top when the priority moves it there.
+        column, or to the top when the priority moves it there. An ifVersion that is not the current version of the \
+        task gives STALE_WRITE, and the call writes nothing.
         """
 
     /// The `Mutation.moveTask` field.

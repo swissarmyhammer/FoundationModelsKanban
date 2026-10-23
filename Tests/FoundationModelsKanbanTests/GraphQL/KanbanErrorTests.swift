@@ -54,9 +54,16 @@ struct KanbanErrorTests {
         (.invalidSlug(name: "---"), "INVALID_SLUG"),
         (.invalidOrdinal(ordinal: "zz!"), "INVALID_ORDINAL"),
         (.conflictingPlacement(fields: ["before", "after"]), "CONFLICTING_PLACEMENT"),
+        (.staleWrite(task: "^aaaaaaa", givenVersion: staleVersion, currentVersion: currentVersion), "STALE_WRITE"),
         (.boardBusy(attempts: commitAttempts), "BOARD_BUSY"),
         (.incompatibleBoard(directory: rustBoardPath), "INCOMPATIBLE_BOARD"),
     ]
+
+    /// The old version of the task in the `STALE_WRITE` tests: the version that the caller read.
+    static let staleVersion = "01KTXN0001AAAAAAAAAAAAAAAA"
+
+    /// The current version of the task in the `STALE_WRITE` tests.
+    static let currentVersion = "01KTXN0002BBBBBBBBBBBBBBBB"
 
     /// The path of a `.kanban/` directory of the old Rust kanban, in the `INCOMPATIBLE_BOARD` tests.
     static let rustBoardPath = "/tmp/rust-repo/.kanban"
@@ -78,7 +85,7 @@ struct KanbanErrorTests {
         #expect(error.code == expectedCode)
     }
 
-    @Test("The cases give sixteen different codes")
+    @Test("The cases give seventeen different codes")
     func codesAreDistinct() {
         #expect(Set(Self.codes.map { $0.0.code }).count == Self.codes.count)
     }
@@ -306,6 +313,22 @@ struct KanbanErrorTests {
             KanbanError.invalidOrdinal(ordinal: "zz!").message
                 == "The ordinal \"zz!\" is not a valid fractional index. Use before or after with a neighbor task, "
                 + "or leave out the ordinal to put the task at the end of the column."
+        )
+    }
+
+    @Test("STALE_WRITE names the task and both versions, and tells the caller to read the task again")
+    func staleWriteMessage() {
+        let error = KanbanError.staleWrite(
+            task: "^aaaaaaa",
+            givenVersion: Self.staleVersion,
+            currentVersion: Self.currentVersion
+        )
+        #expect(
+            error.message
+                == "The task \"^aaaaaaa\" changed after the version \"01KTXN0001AAAAAAAAAAAAAAAA\": its current version "
+                + "is \"01KTXN0002BBBBBBBBBBBBBBBB\", so the call wrote nothing. Read the task again, and then send the "
+                + "call again with ifVersion: \"01KTXN0002BBBBBBBBBBBBBBBB\", or with no ifVersion to write over the "
+                + "change."
         )
     }
 

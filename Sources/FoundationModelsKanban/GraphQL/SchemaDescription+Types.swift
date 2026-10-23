@@ -63,6 +63,13 @@ extension SchemaDescription {
     /// The `deleted` field of `Node`.
     static let nodeDeleted = "The time of the delete. Null for a live node; a value means that the node is deleted."
 
+    /// The `version` field of `Node` (divergence.md §18).
+    static let nodeVersion = """
+        The version of the node: the ULID of its last change. Each change of the node gives a new version. Give it \
+        as ifVersion to updateTask, so that the call writes only when no other change came first. Null only for a \
+        board that no change wrote yet.
+        """
+
     // MARK: - Board
 
     /// The `Board` type.

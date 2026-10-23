@@ -810,6 +810,10 @@ protocol NodeObject: Sendable {
     /// The time of the delete, only on a tombstone (plan.md §3.3).
     var deleted: DateTime? { get }
 
+    /// The version of the node: the ULID of its last event (divergence.md §18), or `nil` for a node that no event
+    /// wrote.
+    var version: NodeID? { get }
+
     /// The values of the public fields that a `Change` compares before and after a transaction (plan.md §6.7).
     var trackedFields: TrackedFields { get }
 }
@@ -1191,7 +1195,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     ///
     /// - Parameter node: The key path from the object to its value as the `Node` interface type. The interface
     ///   and the object types have different Swift types, so each field reads through this key path.
-    /// - Returns: The fields `id`, `body`, `created`, `updated`, and `deleted`.
+    /// - Returns: The fields `id`, `body`, `created`, `updated`, `deleted`, and `version`.
     @FieldComponentBuilder<Object, KanbanContext>
     private static func nodeFields<Object: Sendable>(
         of node: KeyPath<Object, any NodeObject>
@@ -1201,6 +1205,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
         Field("created", at: node.appending(path: \.created)).description(SchemaDescription.nodeCreated)
         Field("updated", at: node.appending(path: \.updated)).description(SchemaDescription.nodeUpdated)
         Field("deleted", at: node.appending(path: \.deleted)).description(SchemaDescription.nodeDeleted)
+        Field("version", at: node.appending(path: \.version)).description(SchemaDescription.nodeVersion)
     }
 
     /// Gives the fields of an actor or a tag, after the fields of the `Node` interface.

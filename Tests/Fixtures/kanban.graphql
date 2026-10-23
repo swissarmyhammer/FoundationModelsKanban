@@ -31,6 +31,11 @@ interface Node {
   The time of the delete. Null for a live node; a value means that the node is deleted.
   """
   deleted: DateTime
+
+  """
+  The version of the node: the ULID of its last change. Each change of the node gives a new version. Give it as ifVersion to updateTask, so that the call writes only when no other change came first. Null only for a board that no change wrote yet.
+  """
+  version: ID
 }
 
 """
@@ -53,6 +58,11 @@ type Board implements Node {
   The time of the delete. Null for a live node; a value means that the node is deleted.
   """
   deleted: DateTime
+
+  """
+  The version of the node: the ULID of its last change. Each change of the node gives a new version. Give it as ifVersion to updateTask, so that the call writes only when no other change came first. Null only for a board that no change wrote yet.
+  """
+  version: ID
 
   """
   The current key of the board, for example github.com/owner/repo. The kanban:// URI of each node of the board starts with it.
@@ -228,6 +238,11 @@ type Column implements Node {
   """
   deleted: DateTime
 
+  """
+  The version of the node: the ULID of its last change. Each change of the node gives a new version. Give it as ifVersion to updateTask, so that the call writes only when no other change came first. Null only for a board that no change wrote yet.
+  """
+  version: ID
+
   """The display name of the column."""
   name: String!
 
@@ -276,6 +291,11 @@ type Actor implements Node {
   """
   deleted: DateTime
 
+  """
+  The version of the node: the ULID of its last change. Each change of the node gives a new version. Give it as ifVersion to updateTask, so that the call writes only when no other change came first. Null only for a board that no change wrote yet.
+  """
+  version: ID
+
   """The display name."""
   name: String!
 
@@ -318,6 +338,11 @@ type Tag implements Node {
   The time of the delete. Null for a live node; a value means that the node is deleted.
   """
   deleted: DateTime
+
+  """
+  The version of the node: the ULID of its last change. Each change of the node gives a new version. Give it as ifVersion to updateTask, so that the call writes only when no other change came first. Null only for a board that no change wrote yet.
+  """
+  version: ID
 
   """The display name."""
   name: String!
@@ -397,6 +422,11 @@ type Task implements Node {
   The time of the delete. Null for a live node; a value means that the node is deleted.
   """
   deleted: DateTime
+
+  """
+  The version of the node: the ULID of its last change. Each change of the node gives a new version. Give it as ifVersion to updateTask, so that the call writes only when no other change came first. Null only for a board that no change wrote yet.
+  """
+  version: ID
 
   """
   The short id: the last 7 characters of the ULID, in lowercase. The ref ^<short id> names the node.
@@ -486,6 +516,11 @@ type Comment implements Node {
   The time of the delete. Null for a live node; a value means that the node is deleted.
   """
   deleted: DateTime
+
+  """
+  The version of the node: the ULID of its last change. Each change of the node gives a new version. Give it as ifVersion to updateTask, so that the call writes only when no other change came first. Null only for a board that no change wrote yet.
+  """
+  version: ID
 
   """
   The short id: the last 7 characters of the ULID, in lowercase. The ref ^<short id> names the node.
@@ -1065,6 +1100,11 @@ input UpdateTaskInput {
   Not stored: a task has no priority field, and the place in the column is the priority. urgent, critical, high, P0, P1, or true moves the task to the top of its column; low, P3, or P4 moves it to the end. Each other value makes no move. The case does not matter, and the response gives a warning.
   """
   priority: Priority
+
+  """
+  The version of the task that you read (Task.version). When a different change came first, the call gives STALE_WRITE with the current version and writes nothing. No value writes with no check.
+  """
+  ifVersion: ID
 }
 
 """
@@ -1678,7 +1718,7 @@ type Mutation {
   ): Task
 
   """
-  Changes the given fields of a task. A list replaces the old list. A column moves the task to the end of that column, or to the top when the priority moves it there.
+  Changes the given fields of a task. A list replaces the old list. A column moves the task to the end of that column, or to the top when the priority moves it there. An ifVersion that is not the current version of the task gives STALE_WRITE, and the call writes nothing.
   """
   updateTask(
     """

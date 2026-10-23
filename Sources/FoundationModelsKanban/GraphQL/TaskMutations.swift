@@ -1,6 +1,8 @@
+import Foundation
 import FoundationModelsExtras
 import Graphiti
 import GraphQL
+import ULID
 
 // MARK: - Names
 
@@ -97,6 +99,10 @@ private struct UpdateTaskInput: TaskReferenceInput, TaskPriorityInput, ChangedBo
     /// The priority value, or `nil` for none (divergence.md P2 and K15). It is not stored: it moves the task to the
     /// top or to the end of its column, in the same change, and gives a warning.
     let priority: PriorityValue?
+
+    /// The version of the task that the caller read, or `nil` to write with no check (divergence.md §18). A version
+    /// that is not the current version of the task gives ``KanbanError/staleWrite(task:givenVersion:currentVersion:)``.
+    let ifVersion: NodeID?
 }
 
 // MARK: - Change
@@ -184,8 +190,9 @@ extension KanbanResolver {
     /// - Returns: The task after the change.
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live task has the id, or a dependency names no
     ///   task. ``KanbanError/actorNotFound(reference:)``, ``KanbanError/invalidTagName(name:)``,
-    ///   ``KanbanError/reservedTagName``, ``KanbanError/virtualTagName(tag:)``, and
-    ///   ``KanbanError/dependencyCycle(path:)``.
+    ///   ``KanbanError/reservedTagName``, ``KanbanError/virtualTagName(tag:)``,
+    ///   ``KanbanError/dependencyCycle(path:)``, and ``KanbanError/staleWrite(task:givenVersion:currentVersion:)``
+    ///   when the `ifVersion` is not the current version of the task.
     fileprivate func updateTask(
         context: KanbanContext,
         arguments: InputArguments<UpdateTaskInput>
@@ -194,6 +201,7 @@ extension KanbanResolver {
         let board = MutationBoard.holding(input.id)
         let task = try await context.changeTask(named: MutationName.updateTask, on: board) { work, resolver, time in
             let ref = try resolver.nodeRef(for: input.id, ofType: .task)
+            try work.graph.checkVersion(of: ref, against: input.ifVersion, namedBy: input.id)
             let edges = try work.edges(
                 assignees: input.assignees.value(clearingTo: []),
                 tags: input.tags.value(clearingTo: []),
@@ -625,6 +633,27 @@ extension Graph {
         return try columnRef(atSlot: ColumnOrder(of: self).first)
     }
 
+    /// Checks the `ifVersion` of an `updateTask` field against the current version of the task (divergence.md §18).
+    /// The check ignores the case and the spaces at the two ends of the given version. A text that is not a ULID is
+    /// never the current version.
+    ///
+    /// - Parameters:
+    ///   - ref: The local ref of the task.
+    ///   - expected: The version that the caller read, or `nil` for no check.
+    ///   - id: The task ref as the caller wrote it, for the error.
+    /// - Throws: ``KanbanError/staleWrite(task:givenVersion:currentVersion:)`` when the given version is not the
+    ///   current version of the task.
+    fileprivate func checkVersion(of ref: LocalRef, against expected: NodeID?, namedBy id: NodeID) throws(KanbanError) {
+        guard let expected, let current = node(for: ref)?.state.fields.version else {
+            return
+        }
+        let given = ULID(ulidString: expected.text.trimmingCharacters(in: .whitespacesAndNewlines).uppercased())
+        guard given != current else {
+            return
+        }
+        throw .staleWrite(task: id.text, givenVersion: expected.text, currentVersion: current.ulidString)
+    }
+
     /// Gives the local ref of the column in a slot of ``ColumnOrder``, for example its first or its terminal column.
     ///
     /// - Parameter slot: The slot of the column, or `nil` when the board has no live column.
@@ -722,6 +751,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 InputField("dependsOn", at: \.dependsOn.value).description(SchemaDescription.updateTaskDependsOn)
                 InputField("column", at: \.column).description(SchemaDescription.updateTaskColumn)
                 Self.makeTaskPriorityField()
+                InputField("ifVersion", at: \.ifVersion).description(SchemaDescription.updateTaskIfVersion)
             }
             .description(SchemaDescription.updateTaskInput)
         }

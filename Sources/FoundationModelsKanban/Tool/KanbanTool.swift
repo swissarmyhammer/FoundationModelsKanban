@@ -42,8 +42,8 @@ public struct KanbanTool: GraphQLEndpointTool {
 
     /// The short description of the tool: its purpose, the root fields, one example query, one example of the
     /// history filter, the dependencies between repos (divergence.md R17), the ref forms (divergence.md R18, Q25, C3,
-    /// E4), the warnings, and the board place. The description does not hold the schema. The agent learns the schema
-    /// with introspection (plan.md §12 item 10).
+    /// E4), the version check of `updateTask` (divergence.md §18), the warnings, and the board place. The description
+    /// does not hold the schema. The agent learns the schema with introspection (plan.md §12 item 10).
     public let description = """
         Reads and changes the kanban task graph of this repo with GraphQL. Send one GraphQL document in query. \
         The root query fields are board, boards, node, nodes, and checkLinks. Mutations, for example addTask and \
@@ -65,7 +65,9 @@ public struct KanbanTool: GraphQLEndpointTool {
         \(LinkStatus.allCases.map(\.rawValue).joined(separator: ", ")). A link with an old board name still works, \
         and the response gives the warning \(OldBoardName.warningCode). The repairLinks mutation rewrites each \
         \(LinkStatus.oldName.rawValue) link to the current name; repairLinks(input: { dryRun: true }) only lists the \
-        changes. Read the warnings in extensions.warnings. The board is in .kanban at the top of a git worktree. \
+        changes. Each node has a version. To change a task only when no other change came first, give its version as \
+        ifVersion to updateTask; a different version gives STALE_WRITE with the current version, and the call writes \
+        nothing. Read the warnings in extensions.warnings. The board is in .kanban at the top of a git worktree. \
         Outside git, the board is in the nearest folder up that has a .kanban folder, else in the working directory, \
         and its key is its board ID. The collectBoards mutation combines other .kanban folders, for example a board \
         in a subfolder (warning \(SubfolderBoard.warningCode)), into one target board: \

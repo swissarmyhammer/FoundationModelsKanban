@@ -172,6 +172,9 @@ private struct NodeFold {
     /// The time of the last patch so far.
     var updated: DateTime
 
+    /// The id of the last event so far: the version of the node (divergence.md §18).
+    var version: ULID
+
     /// The time of the last `delete: true`, only while the node is a tombstone.
     var deleted: DateTime?
 
@@ -200,17 +203,19 @@ private struct NodeFold {
         self.ref = ref
         created = first.at
         updated = first.at
+        version = first.id
         for event in events {
             update(with: event)
         }
     }
 
-    /// Applies the patch of one event, and records its time values.
+    /// Applies the patch of one event, and records its time values and its id.
     ///
     /// - Parameter event: The next event in replay order.
     mutating func update(with event: Event) {
         let patch = event.patch
         updated = event.at
+        version = event.id
         properties.update(with: patch)
         recordColumnMove(of: patch, at: event.at)
         if let delete = patch.delete {
@@ -267,9 +272,16 @@ extension NodeFold {
         return state.node
     }
 
-    /// The body and the time values of the node.
+    /// The body, the time values, and the version of the node.
     private var fields: NodeFields {
-        NodeFields(body: body, created: created, updated: updated, deleted: deleted, hasConflict: hasConflict)
+        NodeFields(
+            body: body,
+            created: created,
+            updated: updated,
+            deleted: deleted,
+            hasConflict: hasConflict,
+            version: version
+        )
     }
 
     /// Makes the typed state of the node. Each property that the node type reads is removed from the bag.
