@@ -64,8 +64,24 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsKanbanTests/Mutations/StaleWriteTests.swift (and the card files). `swift build --build-tests` clean (only the accepted SwiftPM "missing creator" warning); `swift test` 1770 tests in 147 suites passed. Finding "StaleWriteTests.swift:50 completeness/invariant-propagation" is now `- [x]`.
     - next: /review
   timestamp: 2026-10-23T16:48:14.788848+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5mtqyjkcwq3ap053jd4ghwn
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (c68d337) — 0 findings, 0 confirmed, 0 refuted; 7 validators attempted, 0 failed; 1 file reviewed (Tests/FoundationModelsKanbanTests/Mutations/StaleWriteTests.swift). All prior findings (2026-10-23 11:40) are checked.
+    - next: none. The task moved to done.
+  timestamp: 2026-10-23T16:50:40.851136+00:00
+- actor: claude-code
+  id: 01m5mtr99pz74kmbh4q0ccfrye
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 file (StaleWriteTests.swift)
+    - test: green — swift test, 1770 passed in 147 suites
+    - commit: c68d337
+    - review: clean — 0 findings; prior finding checked
+  timestamp: 2026-10-23T16:50:51.830683+00:00
+position_column: done
+position_ordinal: ffb480
 title: Add ifVersion to updateTask and refuse a stale write with STALE_WRITE
 ---
 ## What
