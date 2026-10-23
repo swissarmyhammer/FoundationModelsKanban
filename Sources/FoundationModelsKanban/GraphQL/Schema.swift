@@ -2,6 +2,7 @@ import Foundation
 import FoundationModelsExtras
 import Graphiti
 import GraphQL
+import ULID
 
 /// The working copy of the current board for one run of a call, which the resolvers read and change (plan.md §5.4).
 ///
@@ -61,6 +62,13 @@ actor BoardStore {
         self.source = source
         self.related = related
         self.reach = reach
+    }
+
+    /// The transaction of the run when the run writes, else `nil` (divergence.md §19). A run that keeps no patch and
+    /// merges no event has no transaction: a query, a field that the call refused, a `dryRun`, and a patch that
+    /// changes nothing. Each mutation field of the run writes in this one transaction.
+    var writtenTransaction: ULID? {
+        work.writes(along: relatedWork.values) ? work.stamp.txn : nil
     }
 
     /// The read view of the working graph now. Its cross-board dependencies read the related boards of the run.
@@ -620,6 +628,21 @@ struct KanbanContext: GraphQLRunContext {
     /// The warnings of the run: `extensions.warnings` of its response (plan.md §4.4). Each context has a new
     /// collector, so each run has its own list.
     let warnings = ResponseWarnings()
+
+    /// The key of the transaction of the run in the `extensions` object of its response (divergence.md §19).
+    static let transactionKey = "txn"
+
+    /// Gives the transaction of the run in `extensions.txn` of its response, when the run writes (divergence.md §19).
+    /// The commit writes the events of the run that made the response, so this is the `txn` that `undoChange` takes
+    /// to reverse the call. A run that writes nothing gives no key.
+    ///
+    /// - Returns: The `txn` key with the ULID text of the transaction, or no key.
+    func responseExtensions() async -> [String: Map] {
+        guard let transaction = await store.writtenTransaction else {
+            return [:]
+        }
+        return [Self.transactionKey: .string(transaction.ulidString)]
+    }
 }
 
 // MARK: - Arguments

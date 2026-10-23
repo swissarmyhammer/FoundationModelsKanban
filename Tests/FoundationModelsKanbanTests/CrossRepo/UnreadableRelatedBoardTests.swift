@@ -270,13 +270,15 @@ struct UnreadableRelatedBoardTests {
         )
     }
 
-    /// Tells if a response has no `extensions` object, and thus no warning.
+    /// Tells if a response has no `extensions.warnings` key, and thus no warning. The `extensions` object of a call
+    /// that writes also has `txn` (divergence.md §19).
     ///
     /// - Parameter response: The response JSON text.
     /// - Returns: `true` when the response has no warning.
     /// - Throws: An error when the response is not a JSON object.
     static func hasNoWarning(_ response: String) throws -> Bool {
-        try KanbanGraphTests.object(of: response)["extensions"] == nil
+        let extensions = try KanbanGraphTests.object(of: response)["extensions"] as? [String: Any]
+        return extensions?["warnings"] == nil
     }
 
     @Test(

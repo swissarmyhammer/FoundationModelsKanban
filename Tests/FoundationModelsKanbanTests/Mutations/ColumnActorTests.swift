@@ -326,7 +326,7 @@ struct ColumnActorTests {
         let response = try await Self.respond(to: mutation, onFixtureIn: directory)
         let column = #"{"id":"\#(Self.id(of: Self.qaColumn))","name":"\#(Self.qaName)","#
             + #""order":\#(Self.nextOrder)}"#
-        #expect(response == #"{"data":{"addColumn":\#(column)}}"#)
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"addColumn":\#(column)}}"#)
         let set = Self.setting(name: Self.qaName, order: Self.nextOrder)
         #expect(try Self.patches(of: Self.qaColumn, in: directory) == [PatchInput(node: Self.qaColumn, set: set)])
     }
@@ -339,7 +339,7 @@ struct ColumnActorTests {
             + "{ order body } }"
         let response = try await Self.respond(to: mutation, with: Self.bodyVariables, onFixtureIn: directory)
         let column = #"{"body":"\#(Self.bodyJSON)","order":\#(Self.givenOrder)}"#
-        #expect(response == #"{"data":{"addColumn":\#(column)}}"#)
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"addColumn":\#(column)}}"#)
         let set = Self.setting(name: Self.qaName, order: Self.givenOrder)
         let expected = try Self.bodyPatch(of: Self.qaColumn, setting: set)
         #expect(try Self.patches(of: Self.qaColumn, in: directory) == [expected])
@@ -350,7 +350,10 @@ struct ColumnActorTests {
         let directory = try TemporaryDirectory()
         let mutation = #"mutation { addColumn(input: { name: "In QA" }) { id } }"#
         let response = try await Self.respond(to: mutation, onFixtureIn: directory)
-        #expect(response == #"{"data":{"addColumn":{"id":"\#(Self.id(of: .column(slug: "in-qa")))"}}}"#)
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == #"{"data":{"addColumn":{"id":"\#(Self.id(of: .column(slug: "in-qa")))"}}}"#
+        )
     }
 
     @Test("addColumn with the slug of a column that exists gives DUPLICATE_ID and writes nothing")
@@ -393,7 +396,7 @@ struct ColumnActorTests {
         let response = try await Self.respond(to: mutation, onFixtureIn: directory)
         let todo = Self.id(of: KanbanGraphTests.todoColumn)
         let column = #"{"id":"\#(todo)","name":"\#(Self.backlogName)","order":\#(Self.givenOrder)}"#
-        #expect(response == #"{"data":{"updateColumn":\#(column)}}"#)
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"updateColumn":\#(column)}}"#)
         let expected = try PatchInput(
             node: KanbanGraphTests.todoColumn,
             set: Self.setting(name: Self.backlogName, order: Self.givenOrder)
@@ -442,7 +445,10 @@ struct ColumnActorTests {
         let response = try await Self.respond(to: mutation, onFixtureIn: directory)
         let qa = Self.id(of: Self.qaColumn)
         let deleted = #"{"deleted":"\#(KanbanGraphTests.time.rfc3339)","id":"\#(qa)"}"#
-        #expect(response == #"{"data":{"addColumn":{"id":"\#(qa)"},"deleteColumn":\#(deleted)}}"#)
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == #"{"data":{"addColumn":{"id":"\#(qa)"},"deleteColumn":\#(deleted)}}"#
+        )
         #expect(try Self.lastPatch(of: Self.qaColumn, isDelete: true, in: directory))
     }
 
@@ -469,7 +475,10 @@ struct ColumnActorTests {
         let mutation = "mutation { \(Self.addQA) deleteColumn(\(Self.qaReference)) { id } "
             + "undeleteColumn(\(Self.qaReference)) { name deleted } }"
         let response = try await Self.respond(to: mutation, onFixtureIn: directory)
-        #expect(response.hasSuffix(#""undeleteColumn":{"deleted":null,"name":"\#(Self.qaName)"}}}"#))
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                .hasSuffix(#""undeleteColumn":{"deleted":null,"name":"\#(Self.qaName)"}}}"#)
+        )
         #expect(try Self.lastPatch(of: Self.qaColumn, isDelete: false, in: directory))
     }
 
@@ -491,7 +500,7 @@ struct ColumnActorTests {
         let directory = try TemporaryDirectory()
         let response = try await Self.respond(to: Self.addAlice, onFixtureIn: directory)
         let actor = #"{"color":"\#(Self.red)","id":"\#(Self.id(of: Self.alice))","name":"\#(Self.aliceName)"}"#
-        #expect(response == #"{"data":{"addActor":\#(actor)}}"#)
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"addActor":\#(actor)}}"#)
         let expected = try PatchInput(node: Self.alice, set: Self.setting(name: Self.aliceName, color: Self.red))
         #expect(try Self.patches(of: Self.alice, in: directory) == [expected])
     }
@@ -537,7 +546,7 @@ struct ColumnActorTests {
         let mutation = #"mutation { addActor(input: { id: "\#(Self.aliceSlug)", \#(property): "\#(value)", "#
             + "ensure: true }) { \(property) } }"
         let response = try await KanbanGraphTests.execute(mutation, on: graph)
-        #expect(response == #"{"data":{"addActor":{"\#(property)":"\#(value)"}}}"#)
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"addActor":{"\#(property)":"\#(value)"}}}"#)
         let expected = try PatchInput(node: Self.alice, set: [property: .json(.string(value))])
         #expect(try Self.patches(of: Self.alice, in: directory).last == expected)
     }
@@ -550,7 +559,10 @@ struct ColumnActorTests {
         _ = try await KanbanGraphTests.execute("mutation { deleteActor(\(Self.aliceReference)) { id } }", on: graph)
         let mutation = #"mutation { addActor(input: { id: "\#(Self.aliceSlug)", ensure: true }) { name deleted } }"#
         let response = try await KanbanGraphTests.execute(mutation, on: graph)
-        #expect(response == #"{"data":{"addActor":{"deleted":null,"name":"\#(Self.aliceName)"}}}"#)
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == #"{"data":{"addActor":{"deleted":null,"name":"\#(Self.aliceName)"}}}"#
+        )
         #expect(try Self.lastPatch(of: Self.alice, isDelete: false, in: directory))
     }
 
@@ -560,7 +572,7 @@ struct ColumnActorTests {
         let mutation = #"mutation { addActor(input: { name: "\#(Self.aliceName)", ensure: true }) { id name } }"#
         let response = try await Self.respond(to: mutation, onFixtureIn: directory)
         let actor = #"{"id":"\#(Self.id(of: .actor(slug: "alice-smith")))","name":"\#(Self.aliceName)"}"#
-        #expect(response == #"{"data":{"addActor":\#(actor)}}"#)
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"addActor":\#(actor)}}"#)
     }
 
     @Test("addActor with a name that gives an empty slug gives INVALID_SLUG and writes nothing")
@@ -584,7 +596,7 @@ struct ColumnActorTests {
         let response = try await Self.respond(to: mutation, with: Self.bodyVariables, onFixtureIn: directory)
         let actor = #"{"body":"\#(Self.bodyJSON)","color":"\#(Self.green)","id":"\#(Self.id(of: Self.alice))","#
             + #""name":"\#(Self.renamedAlice)"}"#
-        #expect(response.hasSuffix(#""updateActor":\#(actor)}}"#))
+        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#""updateActor":\#(actor)}}"#))
         let set = Self.setting(name: Self.renamedAlice, color: Self.green)
         let expected = try Self.bodyPatch(of: Self.alice, setting: set)
         #expect(try Self.patches(of: Self.alice, in: directory).last == expected)
@@ -596,7 +608,10 @@ struct ColumnActorTests {
         let update = #"updateActor(input: { id: "\#(Self.aliceSlug)", color: null }) { name color }"#
         let mutation = "mutation { \(Self.addAliceField) \(update) }"
         let response = try await Self.respond(to: mutation, onFixtureIn: directory)
-        #expect(response.hasSuffix(#""updateActor":{"color":null,"name":"\#(Self.aliceName)"}}}"#))
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                .hasSuffix(#""updateActor":{"color":null,"name":"\#(Self.aliceName)"}}}"#)
+        )
         let expected = try PatchInput(node: Self.alice, unset: [PropertyName.color])
         #expect(try Self.patches(of: Self.alice, in: directory).last == expected)
     }
@@ -619,7 +634,10 @@ struct ColumnActorTests {
         let directory = try TemporaryDirectory()
         let mutation = "mutation { \(Self.addAliceField) deleteActor(\(Self.aliceReference)) { deleted } }"
         let response = try await Self.respond(to: mutation, onFixtureIn: directory)
-        #expect(response.hasSuffix(#""deleteActor":{"deleted":"\#(KanbanGraphTests.time.rfc3339)"}}}"#))
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                .hasSuffix(#""deleteActor":{"deleted":"\#(KanbanGraphTests.time.rfc3339)"}}}"#)
+        )
         #expect(try Self.lastPatch(of: Self.alice, isDelete: true, in: directory))
     }
 
@@ -632,7 +650,10 @@ struct ColumnActorTests {
         #expect(try Self.lastPatch(of: Self.alice, isDelete: true, in: directory))
         let mutation = "mutation { undeleteActor(\(Self.aliceReference)) { name deleted } }"
         let response = try await KanbanGraphTests.execute(mutation, on: graph)
-        #expect(response == #"{"data":{"undeleteActor":{"deleted":null,"name":"\#(Self.aliceName)"}}}"#)
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == #"{"data":{"undeleteActor":{"deleted":null,"name":"\#(Self.aliceName)"}}}"#
+        )
         #expect(try Self.lastPatch(of: Self.alice, isDelete: false, in: directory))
     }
 }

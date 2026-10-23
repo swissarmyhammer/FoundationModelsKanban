@@ -485,7 +485,7 @@ struct NameRewriteTests {
         let task = try AddUpdateTaskTests.firstTask(in: response)
         let added = #"{"data":{"taskAdd":{"id":"\#(ColumnActorTests.id(of: .task(task)))"}}"#
         let rewrite = #"{"from":"taskAdd","path":["taskAdd"],"to":"addTask"}"#
-        #expect(response == added + Self.extensionsSuffix(rewrite: rewrite))
+        #expect(KanbanGraphTests.withoutTransaction(response) == added + Self.extensionsSuffix(rewrite: rewrite))
     }
 
     @Test("tagTask with the input field label tags the task, and the response has label to tags in extensions.rewrites")
@@ -503,7 +503,7 @@ struct NameRewriteTests {
         )
         let tagged = #"{"data":{"tagTask":{"tags":[{"name":"\#(TagMutationTests.bug)"}]}}"#
         let rewrite = #"{"from":"label","path":["tagTask","input","label"],"to":"tags"}"#
-        #expect(response == tagged + Self.extensionsSuffix(rewrite: rewrite))
+        #expect(KanbanGraphTests.withoutTransaction(response) == tagged + Self.extensionsSuffix(rewrite: rewrite))
     }
 
     @Test("createBoard and newBoard run initBoard through execute, under the response key that the caller wrote",
@@ -514,7 +514,7 @@ struct NameRewriteTests {
         let (root, response) = try await BoardMutationTests.execute(mutation, onEmptyRepoIn: directory)
         let rewrite = #"{"from":"\#(name)","path":["\#(name)"],"to":"initBoard"}"#
         let data = #"{"data":{"\#(name)":\#(BoardMutationTests.boardJSON)}"#
-        #expect(response == data + Self.extensionsSuffix(rewrite: rewrite))
+        #expect(KanbanGraphTests.withoutTransaction(response) == data + Self.extensionsSuffix(rewrite: rewrite))
         #expect(try BoardMutationTests.storedRefs(inRepoAt: root) == BoardMutationTests.initializedRefs)
     }
 

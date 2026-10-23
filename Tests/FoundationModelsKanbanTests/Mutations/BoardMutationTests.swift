@@ -133,7 +133,7 @@ struct BoardMutationTests {
         let (root, response) = try await Self.execute(mutation, onEmptyRepoIn: directory)
         let board = #"{"actors":\#(Self.sessionActorJSON),"body":"Plan","columns":\#(Self.defaultColumnsJSON),"#
             + #""name":"\#(KanbanGraphTests.emptyRepoName)"}"#
-        #expect(response == #"{"data":{"updateBoard":\#(board)}}"#)
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"updateBoard":\#(board)}}"#)
         #expect(try Self.storedRefs(inRepoAt: root) == Self.initializedRefs)
     }
 
@@ -147,7 +147,11 @@ struct BoardMutationTests {
         )
         let fresh = try KanbanGraphTests.makeGraph(at: root)
         let query = try await KanbanGraphTests.execute("{ board { \(selection) } }", on: fresh)
-        #expect(query == response.replacingOccurrences(of: "initBoard", with: "board"))
+        #expect(
+            query
+                == KanbanGraphTests.withoutTransaction(response)
+                    .replacingOccurrences(of: "initBoard", with: "board")
+        )
     }
 
     @Test("initBoard with an empty input on an empty repo makes the board with the name of the repo directory")
@@ -158,7 +162,7 @@ struct BoardMutationTests {
             onEmptyRepoIn: directory
         )
         let board = #"{"columns":\#(Self.defaultColumnsJSON),"name":"\#(KanbanGraphTests.emptyRepoName)"}"#
-        #expect(response == #"{"data":{"initBoard":\#(board)}}"#)
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"initBoard":\#(board)}}"#)
         #expect(try Self.storedRefs(inRepoAt: root) == Self.initializedRefs)
     }
 
@@ -170,7 +174,7 @@ struct BoardMutationTests {
             "mutation { initBoard(\(Self.boardInput)) { name body } }",
             onEmptyRepoIn: directory
         )
-        #expect(response == #"{"data":{"initBoard":\#(Self.boardJSON)}}"#)
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"initBoard":\#(Self.boardJSON)}}"#)
         let expected = try PatchInput(
             node: .board,
             set: ["name": .json(.string(Self.boardName))],
@@ -192,7 +196,7 @@ struct BoardMutationTests {
         let columns = #"[{"name":"\#(KanbanGraphTests.todoName)"}]"#
         let board = #"{"body":"\#(Self.boardBody)","columns":\#(columns),"#
             + #""name":"\#(KanbanGraphTests.boardName)"}"#
-        #expect(response == #"{"data":{"initBoard":\#(board)}}"#)
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"initBoard":\#(board)}}"#)
         let written = try Self.events(of: .board, inRepoAt: directory.url).dropFirst(boardEventsBefore.count)
         let diff = UnifiedDiff(from: "", to: Self.boardBody).text
         let expected = try PatchInput(node: .board, edit: PatchEdit(body: diff))
@@ -223,7 +227,7 @@ struct BoardMutationTests {
         _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
         let mutation = "mutation { updateBoard(\(Self.boardInput)) { name body } }"
         let response = try await KanbanGraphTests.execute(mutation, on: KanbanGraphTests.makeGraph(at: directory.url))
-        #expect(response == #"{"data":{"updateBoard":\#(Self.boardJSON)}}"#)
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"updateBoard":\#(Self.boardJSON)}}"#)
     }
 
     @Test("A body input writes an edit patch with the diff from the current body, and no set of the body")
@@ -251,7 +255,10 @@ struct BoardMutationTests {
             + "second: updateBoard(input: { body: null }) { name body } }"
         let response = try await KanbanGraphTests.execute(mutation, on: KanbanGraphTests.makeGraph(at: directory.url))
         let second = #"{"body":"","name":"\#(KanbanGraphTests.boardName)"}"#
-        #expect(response == #"{"data":{"first":{"body":"\#(Self.boardBody)"},"second":\#(second)}}"#)
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == #"{"data":{"first":{"body":"\#(Self.boardBody)"},"second":\#(second)}}"#
+        )
         let last = try #require(try Self.events(of: .board, inRepoAt: directory.url).last)
         let expected = try PatchInput(
             node: .board,
@@ -271,7 +278,10 @@ struct BoardMutationTests {
             actingAs: actor,
             onEmptyRepoIn: directory
         )
-        #expect(response == #"{"data":{"initBoard":{"actors":\#(Self.actorsJSON(of: actor))}}}"#)
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == #"{"data":{"initBoard":{"actors":\#(Self.actorsJSON(of: actor))}}}"#
+        )
         let events = try Self.storedRefs(inRepoAt: root).flatMap { ref in try Self.events(of: ref, inRepoAt: root) }
         #expect(!events.isEmpty)
         #expect(events.allSatisfy { event in event.actor == .actor(slug: "test-actor") })
@@ -287,7 +297,10 @@ struct BoardMutationTests {
             onEmptyRepoIn: directory
         )
         let userActor = try KanbanGraphTests.osUserActor()
-        #expect(response == #"{"data":{"initBoard":{"actors":\#(Self.actorsJSON(of: userActor))}}}"#)
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == #"{"data":{"initBoard":{"actors":\#(Self.actorsJSON(of: userActor))}}}"#
+        )
     }
 
     @Test("A later call that writes to the board writes no second actor patch")

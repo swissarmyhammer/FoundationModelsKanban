@@ -115,8 +115,13 @@ let added = try await graph.execute(
 The response:
 
 ```json
-{"data":{"addActor":{"name":"Alice"},"addTask":{"assignees":[{"name":"Alice"}],"column":{"name":"To Do"},"tags":[{"name":"bug"}],"title":"Fix the login bug"}}}
+{"data":{"addActor":{"name":"Alice"},"addTask":{"assignees":[{"name":"Alice"}],"column":{"name":"To Do"},"tags":[{"name":"bug"}],"title":"Fix the login bug"}},"extensions":{"txn":"01JABCDEFGHJKMNPQRSTVWXYZ0"}}
 ```
+
+The response of a call that writes gives the ULID of its transaction in
+`extensions.txn`. Each call has a new ULID. Give it to
+`undoChange(input: { txn: "<ULID>" })` to reverse the call. A call that writes
+nothing, for example a query or a refused mutation, gives no `txn`.
 
 The mutation also made the board with its default columns. This query reads
 them:

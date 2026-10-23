@@ -13,7 +13,9 @@ import Testing
 /// ``ExampleBoard``). The folder of the repo has the name ``folderName``. The board key is `local/<root commit>` of
 /// that commit, and each test has its own key. Each response must
 /// have no `errors`. A response with no minted id and no transaction ULID must be the same text as a
-/// ```` ```json ```` block of the README.
+/// ```` ```json ```` block of the README. The response of a call that writes has a new transaction ULID in
+/// `extensions.txn` (divergence.md §19). The README shows ``readmeTransaction`` there, so the test puts that value in
+/// place of the ULID of the call before it compares.
 @Suite("README: the Get started examples", .watcherBudget)
 struct ReadmeExamplesTests {
     /// The README, relative to the repository root.
@@ -37,6 +39,9 @@ struct ReadmeExamplesTests {
 
     /// The variables of ``addTaskMutation``.
     private static let addTaskVariables: [String: Map] = ["title": .string(taskTitle)]
+
+    /// The transaction ULID that the README shows in `extensions.txn` of the response of ``addTaskMutation``.
+    private static let readmeTransaction = "01JABCDEFGHJKMNPQRSTVWXYZ0"
 
     /// The Swift text of ``addTaskVariables`` in the README.
     private static let addTaskVariablesText = #"variables: ["title": "\#(taskTitle)"]"#
@@ -170,6 +175,19 @@ struct ReadmeExamplesTests {
         #expect(blocks.contains(response), "README.md must have the json block \(response); found \(blocks)")
     }
 
+    /// Gives the response of a call that writes as the README shows it: with ``readmeTransaction`` in place of the
+    /// transaction ULID of the call in `extensions.txn` (divergence.md §19).
+    ///
+    /// - Parameter response: The response JSON text, with sorted keys and with no other `extensions` key.
+    /// - Returns: The response text that the README shows.
+    /// - Throws: An error when the response has no `extensions.txn`.
+    private static func readmeForm(ofWrite response: String) throws -> String {
+        let extensions = try #require(KanbanGraphTests.object(of: response)["extensions"] as? [String: Any])
+        #expect(extensions.keys.sorted() == [KanbanContext.transactionKey], "\(response)")
+        let data = String(KanbanGraphTests.withoutTransaction(response).dropLast())
+        return data + #","extensions":{"\#(KanbanContext.transactionKey)":"\#(readmeTransaction)"}}"#
+    }
+
     /// Runs the mutation of example 2.
     ///
     /// - Parameter graph: The engine.
@@ -271,7 +289,7 @@ struct ReadmeExamplesTests {
         let task = try KanbanGraphTests.object(named: "addTask", in: response)
         #expect(task["title"] as? String == Self.taskTitle)
         #expect(try RepositoryFile.text(at: Self.readmePath).contains(Self.addTaskVariablesText))
-        try Self.expectReadmeShows(response)
+        try Self.expectReadmeShows(Self.readmeForm(ofWrite: response))
     }
 
     @Test("The tasks filter #bug && @alice lists the task of example 2")

@@ -104,7 +104,10 @@ struct StaleWriteTests {
             to: AddUpdateTaskTests.mutation(of: update),
             onFixtureIn: directory
         )
-        #expect(response == #"{"data":{"updateTask":{"title":"\#(Self.firstTitle)"}}}"#)
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == #"{"data":{"updateTask":{"title":"\#(Self.firstTitle)"}}}"#
+        )
     }
 
     @Test("updateTask with an old version in ifVersion gives STALE_WRITE with the current version and writes nothing")
@@ -152,7 +155,10 @@ struct StaleWriteTests {
                 + AddUpdateTaskTests.updateTask(task, with: #"title: "\#(Self.secondTitle)""#, selecting: "{ title }")
         )
         let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
-        #expect(response.hasSuffix(#""second":{"title":"\#(Self.secondTitle)"}}}"#))
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                .hasSuffix(#""second":{"title":"\#(Self.secondTitle)"}}}"#)
+        )
     }
 
     // MARK: - Helpers

@@ -56,11 +56,11 @@ struct GraphQLEngineTests {
             context: context
         )
         #expect(
-            mutation
+            KanbanGraphTests.withoutTransaction(mutation)
                 == #"{"data":{"updateBoard":{"name":"Port","body":"","updated":"2026-10-07T08:30:00.001Z"}}}"#
         )
         let query = try await schema.respond(to: "{ board { name } }", context: context)
-        #expect(query == #"{"data":{"board":{"name":"Port"}}}"#)
+        #expect(KanbanGraphTests.withoutTransaction(query) == #"{"data":{"board":{"name":"Port"}}}"#)
     }
 
     @Test("A DateTime value round-trips through RFC 3339 text")
@@ -118,7 +118,7 @@ struct GraphQLEngineTests {
             context: Self.makeContext()
         )
         #expect(
-            response
+            KanbanGraphTests.withoutTransaction(response)
                 == #"{"data":{"patch":{"add":{"tags":["tag/kanban"]},"delete":false,"node":"task/01K6Z3ABCDEFGHJKMNPQRSTVWX","set":{"open":true,"ordinal":"80","points":3,"title":"Port the filter DSL"},"type":"Task"}}}"#
         )
     }
@@ -130,7 +130,7 @@ struct GraphQLEngineTests {
             context: Self.makeContext()
         )
         #expect(
-            response
+            KanbanGraphTests.withoutTransaction(response)
                 == #"{"data":{"patch":{"delete":true,"node":"tag/bug","set":{"list":[1,"two",null,true],"name":"bug","rank":2},"type":"Tag","unset":["color"]}}}"#
         )
     }

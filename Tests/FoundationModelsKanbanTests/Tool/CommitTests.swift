@@ -447,7 +447,7 @@ struct CommitTests {
         _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
         let mutation = #"mutation { updateBoard(input: { name: "Port" }) { name } }"#
         let response = try await KanbanGraphTests.execute(mutation, on: KanbanGraphTests.makeGraph(at: directory.url))
-        #expect(response == #"{"data":{"updateBoard":{"name":"Port"}}}"#)
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"updateBoard":{"name":"Port"}}}"#)
         let fresh = try KanbanGraphTests.makeGraph(at: directory.url)
         let query = try await KanbanGraphTests.execute(KanbanGraphTests.nameQuery, on: fresh)
         #expect(query == #"{"data":{"board":{"name":"Port"}}}"#)

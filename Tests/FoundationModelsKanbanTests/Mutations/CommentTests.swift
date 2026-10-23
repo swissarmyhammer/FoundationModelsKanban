@@ -202,7 +202,7 @@ struct CommentTests {
         let json = #"{"author":{"id":"\#(ColumnActorTests.id(of: author))"},"body":"\#(Self.body)","#
             + #""id":"\#(ColumnActorTests.id(of: .comment(comment)))","shortId":"\#(ShortID(of: comment).value)","#
             + #""task":{"id":"\#(ColumnActorTests.id(of: .task(fixture.task)))"}}"#
-        #expect(response == #"{"data":{"addComment":\#(json)}}"#)
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"addComment":\#(json)}}"#)
         let expected = try PatchInput(
             node: .comment(comment),
             set: [PropertyName.task: .ref(.local(.task(fixture.task))), PropertyName.author: .ref(.local(author))],
@@ -219,7 +219,10 @@ struct CommentTests {
         let mutation = AddUpdateTaskTests.mutation(of: addActor, add)
         let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
         let actor = LocalRef.actor(slug: Self.alice)
-        #expect(response.hasSuffix(#""addComment":{"author":{"id":"\#(ColumnActorTests.id(of: actor))"}}}}"#))
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                .hasSuffix(#""addComment":{"author":{"id":"\#(ColumnActorTests.id(of: actor))"}}}}"#)
+        )
         #expect(try ColumnActorTests.patches(of: actor, in: directory).count == 1)
         let commentPatch = try ColumnActorTests.patches(of: .comment(Self.firstComment(in: directory)), in: directory)
         #expect(commentPatch.first?.set[PropertyName.author] == .ref(.local(actor)))
@@ -236,7 +239,7 @@ struct CommentTests {
         )
         let actor = LocalRef.actor(slug: Self.newActorSlug)
         let author = #"{"id":"\#(ColumnActorTests.id(of: actor))","name":"\#(Self.newActorName)"}"#
-        #expect(response == #"{"data":{"addComment":{"author":\#(author)}}}"#)
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"addComment":{"author":\#(author)}}}"#)
         let expected = try PatchInput(node: actor, set: [PropertyName.name: .string(Self.newActorName)])
         #expect(try ColumnActorTests.patches(of: actor, in: directory) == [expected])
     }
@@ -303,7 +306,7 @@ struct CommentTests {
         let response = try await Self.run(update, on: added.graph)
         let author = ColumnActorTests.id(of: KanbanGraphTests.sessionActor.ref)
         let json = #"{"author":{"id":"\#(author)"},"body":"\#(Self.editedBody)"}"#
-        #expect(response == #"{"data":{"updateComment":\#(json)}}"#)
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"updateComment":\#(json)}}"#)
         let edit = PatchEdit(body: ReplayTests.diff(from: Self.body, to: Self.editedBody))
         let expected = try PatchInput(node: .comment(added.comment), edit: edit)
         #expect(try ColumnActorTests.patches(of: .comment(added.comment), in: directory).last == expected)
@@ -328,7 +331,10 @@ struct CommentTests {
         let comment = ColumnActorTests.id(of: .comment(added.comment))
         let delete = Self.nodeField(MutationName.deleteComment, naming: comment, selecting: "{ deleted }")
         let response = try await Self.run(delete, on: added.graph)
-        #expect(response == #"{"data":{"deleteComment":{"deleted":"\#(KanbanGraphTests.time.rfc3339)"}}}"#)
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == #"{"data":{"deleteComment":{"deleted":"\#(KanbanGraphTests.time.rfc3339)"}}}"#
+        )
         #expect(try ColumnActorTests.lastPatch(of: .comment(added.comment), isDelete: true, in: directory))
         let listed = try await Self.commentBodies(of: added.task, on: added.graph)
         #expect(listed == Self.commentBodiesResponse())
@@ -342,7 +348,10 @@ struct CommentTests {
         _ = try await Self.run(Self.nodeField(MutationName.deleteComment, naming: comment), on: added.graph)
         let undelete = Self.nodeField(MutationName.undeleteComment, naming: comment, selecting: "{ body deleted }")
         let response = try await Self.run(undelete, on: added.graph)
-        #expect(response == #"{"data":{"undeleteComment":{"body":"\#(Self.body)","deleted":null}}}"#)
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == #"{"data":{"undeleteComment":{"body":"\#(Self.body)","deleted":null}}}"#
+        )
         #expect(try ColumnActorTests.lastPatch(of: .comment(added.comment), isDelete: false, in: directory))
         let listed = try await Self.commentBodies(of: added.task, on: added.graph)
         #expect(listed == Self.commentBodiesResponse(Self.body))

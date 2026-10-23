@@ -93,7 +93,7 @@ struct RustFieldTests {
         )
         let actor = #"{"avatar":"\#(Self.robotAvatar)","id":"\#(ColumnActorTests.id(of: Self.actor))","#
             + #""name":"\#(Self.actorSlug)"}"#
-        #expect(response == #"{"data":{"addActor":\#(actor)}}"#)
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"addActor":\#(actor)}}"#)
         let set: [String: PatchValue] = [
             PropertyName.name: .json(.string(Self.actorSlug)),
             PropertyName.avatar: .json(.string(Self.robotAvatar)),
@@ -121,7 +121,7 @@ struct RustFieldTests {
         let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
         let changed = #""first":{"avatar":"\#(Self.catAvatar)"}"#
         let cleared = #""second":{"avatar":null,"name":"\#(Self.actorSlug)"}"#
-        #expect(response.hasSuffix(#"\#(changed),\#(cleared)}}"#))
+        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#"\#(changed),\#(cleared)}}"#))
         let expected = try PatchInput(node: Self.actor, unset: [PropertyName.avatar])
         #expect(try ColumnActorTests.patches(of: Self.actor, in: directory).last == expected)
     }
@@ -131,7 +131,7 @@ struct RustFieldTests {
         let directory = try TemporaryDirectory()
         let mutation = #"mutation { addActor(input: { name: "Bob" }) { avatar } }"#
         let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
-        #expect(response == #"{"data":{"addActor":{"avatar":null}}}"#)
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"addActor":{"avatar":null}}}"#)
     }
 
     @Test("addActor with no id and no name gives INVALID_SLUG", arguments: [
@@ -160,7 +160,7 @@ struct RustFieldTests {
         let directory = try TemporaryDirectory()
         let mutation = #"mutation { initBoard(input: { model: "\#(Self.haiku)" }) { model } }"#
         let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
-        #expect(response == #"{"data":{"initBoard":{"model":"\#(Self.haiku)"}}}"#)
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"initBoard":{"model":"\#(Self.haiku)"}}}"#)
         let expected = try PatchInput(node: .board, set: [PropertyName.model: .json(.string(Self.haiku))])
         // The first write of the fixture board also gives it its board ID: the board names patch comes after the
         // patch of the field (divergence.md M9).
@@ -186,7 +186,7 @@ struct RustFieldTests {
             + "third: updateBoard(input: { model: null }) { model } }"
         let response = try await ColumnActorTests.respond(to: mutation, onFixtureIn: directory)
         let expected = #"{"first":{"model":null},"second":{"model":"\#(Self.haiku)"},"third":{"model":null}}"#
-        #expect(response == #"{"data":\#(expected)}"#)
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":\#(expected)}"#)
         let unset = try PatchInput(node: .board, unset: [PropertyName.model])
         #expect(try ColumnActorTests.patches(of: .board, in: directory).last == unset)
     }

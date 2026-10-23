@@ -385,7 +385,7 @@ struct TaskOperationTests {
             on: fixture.graph
         )
         let json = #"{"column":{"name":"\#(Self.doneName)"},"ordinal":"\#(Ordinal.first.value)"}"#
-        #expect(response.hasSuffix(#""moveTask":\#(json)}}"#))
+        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#""moveTask":\#(json)}}"#))
         let expected = try PatchInput(
             node: .task(fixture.task),
             set: [
@@ -406,7 +406,7 @@ struct TaskOperationTests {
             AddUpdateTaskTests.mutation(of: AddUpdateTaskTests.doneColumn, toDone),
             on: fixture.graph
         )
-        #expect(response.hasSuffix(#""moveTask":{"virtualTags":["DONE"]}}}"#))
+        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#""moveTask":{"virtualTags":["DONE"]}}}"#))
         #expect(try await Self.listedTasks(by: Self.doneTasksQuery, on: fixture.graph) == [fixture.task])
         let back = Self.taskField(
             "moveTask",
@@ -415,7 +415,10 @@ struct TaskOperationTests {
             selecting: Self.virtualTagsSelection
         )
         let backResponse = try await CommentTests.run(back, on: fixture.graph)
-        #expect(backResponse == #"{"data":{"moveTask":{"virtualTags":["READY","HIGH"]}}}"#)
+        #expect(
+            KanbanGraphTests.withoutTransaction(backResponse)
+                == #"{"data":{"moveTask":{"virtualTags":["READY","HIGH"]}}}"#
+        )
         #expect(try await Self.listedTasks(by: Self.doneTasksQuery, on: fixture.graph).isEmpty)
     }
 
@@ -481,7 +484,7 @@ struct TaskOperationTests {
         let input = Self.moveInput(placing: #"\#(Self.ordinalField): "\#(ordinal)""#)
         let move = Self.taskField("moveTask", of: tasks.first, with: input, selecting: Self.ordinalSelection)
         let response = try await CommentTests.run(move, on: tasks.graph)
-        #expect(response == #"{"data":{"moveTask":{"ordinal":"\#(ordinal)"}}}"#)
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"moveTask":{"ordinal":"\#(ordinal)"}}}"#)
         #expect(try await Self.listedTasks(on: tasks.graph) == [tasks.second, tasks.third, tasks.first])
     }
 
@@ -540,7 +543,7 @@ struct TaskOperationTests {
         let column = LocalRef.column(slug: Self.newColumnSlug)
         let json = #"{"id":"\#(ColumnActorTests.id(of: column))","name":"\#(Self.newColumnName)","#
             + #""order":\#(Self.nextColumnOrder)}"#
-        #expect(response == #"{"data":{"moveTask":{"column":\#(json)}}}"#)
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"moveTask":{"column":\#(json)}}}"#)
         let columnPatch = try PatchInput(
             node: column,
             set: [
@@ -571,7 +574,7 @@ struct TaskOperationTests {
         let complete = try Self.fixtureField("completeTask", selecting: Self.positionSelection)
         let response = try await Self.respond(toFields: AddUpdateTaskTests.doneColumn, complete, in: directory)
         let json = #"{"column":{"name":"\#(Self.doneName)"},"ordinal":"\#(Ordinal.first.value)"}"#
-        #expect(response.hasSuffix(#""completeTask":\#(json)}}"#))
+        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#""completeTask":\#(json)}}"#))
     }
 
     @Test("Two tasks completed one after the other are in the terminal column in that order")
@@ -585,7 +588,7 @@ struct TaskOperationTests {
         let response = try await KanbanGraphTests.execute(mutation, on: tasks.graph)
         let json = #""first":{"ordinal":"\#(Ordinal.first.value)"},"#
             + #""second":{"ordinal":"\#(Ordinal(after: .first).value)"}}}"#
-        #expect(response.hasSuffix(json))
+        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(json))
         #expect(try await Self.listedTasks(on: tasks.graph) == [tasks.second, tasks.third, tasks.first])
     }
 
@@ -659,7 +662,7 @@ struct TaskOperationTests {
         let task = try AddUpdateTaskTests.fixtureTask()
         let tag = Self.taskField("tagTask", of: task, with: Self.tagsInput(Self.feature), selecting: Self.tagsSelection)
         let response = try await Self.respond(toFields: tag, in: directory)
-        #expect(response == Self.tagsResponse(of: "tagTask", named: Self.feature))
+        #expect(KanbanGraphTests.withoutTransaction(response) == Self.tagsResponse(of: "tagTask", named: Self.feature))
         let tagRef = LocalRef.tag(slug: Self.feature)
         let tagPatch = try PatchInput(node: tagRef, set: [PropertyName.name: .string(Self.feature)])
         #expect(try ColumnActorTests.patches(of: tagRef, in: directory) == [tagPatch])
@@ -673,7 +676,10 @@ struct TaskOperationTests {
         let input = Self.tagsInput(Self.feature, Self.bug)
         let tag = try Self.fixtureField("tagTask", with: input, selecting: Self.tagsSelection)
         let response = try await Self.respond(toFields: tag, in: try TemporaryDirectory())
-        #expect(response == Self.tagsResponse(of: "tagTask", named: Self.bug, Self.feature))
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == Self.tagsResponse(of: "tagTask", named: Self.bug, Self.feature)
+        )
     }
 
     @Test("tagTask with a tag that the task has writes nothing")
@@ -732,7 +738,10 @@ struct TaskOperationTests {
             in: directory
         )
         let untagged = #""untagTask":{"body":"\#(Self.jsonText(of: Self.unmarkedBody))","tags":[]}"#
-        #expect(response == Self.dataResponse(of: #"\#(untagged),"updateTask":{"tags":[{"name":"\#(slug)"}]}"#))
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == Self.dataResponse(of: #"\#(untagged),"updateTask":{"tags":[{"name":"\#(slug)"}]}"#)
+        )
         let edit = PatchEdit(body: ReplayTests.diff(from: markedBody, to: Self.unmarkedBody))
         let expected = try PatchInput(node: .task(task), edit: edit)
         #expect(try AddUpdateTaskTests.lastPatch(of: task, in: directory) == expected)
@@ -755,10 +764,13 @@ struct TaskOperationTests {
             selecting: Self.tagsSelection
         )
         let unmarked = try await CommentTests.run(unmark, on: fixture.graph)
-        #expect(unmarked == Self.tagsResponse(of: "updateTask", named: marker))
+        #expect(KanbanGraphTests.withoutTransaction(unmarked) == Self.tagsResponse(of: "updateTask", named: marker))
         let input = Self.tagsInput(marker)
         let untag = Self.taskField("untagTask", of: fixture.task, with: input, selecting: Self.tagsSelection)
-        #expect(try await CommentTests.run(untag, on: fixture.graph) == Self.tagsResponse(of: "untagTask"))
+        #expect(
+            KanbanGraphTests.withoutTransaction(try await CommentTests.run(untag, on: fixture.graph))
+                == Self.tagsResponse(of: "untagTask")
+        )
     }
 
     @Test("untagTask on a tag on an edge and in a marker removes the two in one patch")
@@ -791,7 +803,7 @@ struct TaskOperationTests {
             Self.taskField("untagTask", of: task, with: Self.tagsInput(Self.defect), selecting: Self.tagsSelection),
             in: directory
         )
-        #expect(response.hasSuffix(#""untagTask":{"tags":[]}}}"#))
+        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#""untagTask":{"tags":[]}}}"#))
         let removed = [PropertyName.tags: AddUpdateTaskTests.tagRefs(Self.bug)]
         let expected = try PatchInput(node: .task(task), remove: removed)
         #expect(try AddUpdateTaskTests.lastPatch(of: task, in: directory) == expected)
@@ -812,7 +824,10 @@ struct TaskOperationTests {
         let fixture = try ColumnActorTests.makeFixtureGraph(in: directory)
         let delete = Self.taskField("deleteTask", of: fixture.task, selecting: "{ deleted }")
         let response = try await CommentTests.run(delete, on: fixture.graph)
-        #expect(response == #"{"data":{"deleteTask":{"deleted":"\#(KanbanGraphTests.time.rfc3339)"}}}"#)
+        #expect(
+            KanbanGraphTests.withoutTransaction(response)
+                == #"{"data":{"deleteTask":{"deleted":"\#(KanbanGraphTests.time.rfc3339)"}}}"#
+        )
         #expect(try ColumnActorTests.lastPatch(of: .task(fixture.task), isDelete: true, in: directory))
         #expect(try await Self.listedTasks(on: fixture.graph).isEmpty)
         #expect(try await Self.listedTasks(by: Self.deletedTasksQuery, on: fixture.graph) == [fixture.task])
@@ -827,7 +842,7 @@ struct TaskOperationTests {
             Self.taskField("undeleteTask", of: fixture.task, selecting: "{ deleted }")
         )
         let response = try await KanbanGraphTests.execute(mutation, on: fixture.graph)
-        #expect(response.hasSuffix(#""undeleteTask":{"deleted":null}}}"#))
+        #expect(KanbanGraphTests.withoutTransaction(response).hasSuffix(#""undeleteTask":{"deleted":null}}}"#))
         #expect(try ColumnActorTests.lastPatch(of: .task(fixture.task), isDelete: false, in: directory))
         #expect(try await Self.listedTasks(on: fixture.graph) == [fixture.task])
         #expect(try await Self.listedTasks(by: Self.deletedTasksQuery, on: fixture.graph).isEmpty)

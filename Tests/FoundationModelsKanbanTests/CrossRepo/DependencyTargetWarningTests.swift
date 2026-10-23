@@ -138,6 +138,6 @@ struct DependencyTargetWarningTests {
         let task = try KanbanGraphTests.object(named: MutationName.addTask, in: response)
         #expect(UnresolvedDependsOnTests.blockerIDs(in: task) == [dependency.target], "\(response)")
         #expect(task["unresolvedDependsOn"] as? [String] == [], "\(response)")
-        #expect(try KanbanGraphTests.object(of: response)["extensions"] == nil, "\(response)")
+        #expect(try UnreadableRelatedBoardTests.hasNoWarning(response), "\(response)")
     }
 }

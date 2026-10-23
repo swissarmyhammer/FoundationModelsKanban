@@ -287,6 +287,15 @@ struct WorkingCopy: Sendable {
         !kept.isEmpty || !merged.isEmpty
     }
 
+    /// Tells if the run of this working copy writes: it kept a patch of this board or of a related board, or merged
+    /// an event of a different board into this board. A run that writes commits the transaction of ``stamp``.
+    ///
+    /// - Parameter related: The working copy of each related board that the run changed.
+    /// - Returns: `true` when the commit of the run writes a board.
+    func writes(along related: some Sequence<RelatedWork>) -> Bool {
+        hasChanges || related.contains(where: \.hasPatches)
+    }
+
     /// Adds the events of other boards to the nodes of this board as they are (divergence.md M9, `collectBoards`), the
     /// same as a git union merge: each node folds again from its events and the new events, by event order. An event
     /// that the node already has adds nothing. The commit writes the new events with no change. Each event that the
@@ -575,7 +584,7 @@ struct CommitSession: Sendable {
                 loadingWith: load,
                 call
             )
-            guard work.hasChanges || relatedWork.contains(where: \.hasPatches) else {
+            guard work.writes(along: relatedWork) else {
                 return response
             }
             let readOnlyWork = readOnlyWork(of: work, along: relatedWork, in: related)

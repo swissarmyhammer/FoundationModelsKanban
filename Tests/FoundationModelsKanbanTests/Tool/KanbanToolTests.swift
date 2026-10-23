@@ -214,6 +214,12 @@ struct KanbanToolTests {
         #expect(description.contains(SchemaDescriptionTests.uriScheme))
     }
 
+    @Test("The description tells that a call that writes gives its txn in extensions.txn for undoChange (§19)")
+    func descriptionNamesTheResponseTransaction() throws {
+        let description = try Self.makeTool(inRepoAt: TemporaryDirectory().url).description
+        #expect(description.contains("extensions.txn"))
+    }
+
     @Test("The description tells that a ref can be the stored local form type/id (divergence.md R18)")
     func descriptionNamesTheStoredLocalForm() throws {
         let description = try Self.makeTool(inRepoAt: TemporaryDirectory().url).description

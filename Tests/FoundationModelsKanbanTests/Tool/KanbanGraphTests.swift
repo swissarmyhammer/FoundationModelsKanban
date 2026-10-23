@@ -320,7 +320,60 @@ struct KanbanGraphTests {
         try #require(data(of: response)[key] as? [String: Any], "\(response)")
     }
 
+    /// The `txn` key of the top-level `extensions` object with its ULID text, as a regular expression.
+    private static let transactionPattern = #""txn":"[0-9A-Z]{26}""#
+
+    /// The start of the top-level `extensions` object of a response.
+    private static let extensionsStart = #""extensions":{"#
+
+    /// Gives a response with no `extensions.txn` (divergence.md §19), so that a test of a call that writes can
+    /// compare the rest of the response with fixed text. ``ResponseTransactionTests`` tests the transaction itself.
+    /// The top-level `extensions` object is the last key of a response, so the function changes only the text from
+    /// its start. An `extensions` object with no other key goes away. The other text does not change.
+    ///
+    /// - Parameter response: The response JSON text.
+    /// - Returns: The response text with no transaction.
+    static func withoutTransaction(_ response: String) -> String {
+        guard let start = response.range(of: extensionsStart, options: .backwards) else {
+            return response
+        }
+        let extensions = response[start.lowerBound...]
+            .replacingOccurrences(of: ",\(transactionPattern)", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "\(transactionPattern),?", with: "", options: .regularExpression)
+        let head = String(response[..<start.lowerBound])
+        let empty = extensionsStart + "}"
+        guard extensions.hasPrefix(empty) else {
+            return head + extensions
+        }
+        return String(head.dropLast()) + extensions.dropFirst(empty.count)
+    }
+
     // MARK: - Tests
+
+    /// The `txn` key of a sample `extensions` object, with a valid ULID text.
+    private static let sampleTransaction = #""txn":"01K6Z3ABCDEFGHJKMNPQRSTVWX""#
+
+    /// Each sample response of the test of ``withoutTransaction(_:)``, with the text that the function gives.
+    private static let transactionSamples = [
+        (#"{"data":{"a":1},"extensions":{\#(sampleTransaction)}}"#, #"{"data":{"a":1}}"#),
+        (
+            #"{"data":{"txn":"x"},"extensions":{"rewrites":[],\#(sampleTransaction)}}"#,
+            #"{"data":{"txn":"x"},"extensions":{"rewrites":[]}}"#
+        ),
+        (
+            #"{"data":{},"extensions":{\#(sampleTransaction),"warnings":[]}}"#,
+            #"{"data":{},"extensions":{"warnings":[]}}"#
+        ),
+        (nameResponse, nameResponse),
+    ]
+
+    @Test(
+        "withoutTransaction(_:) removes only extensions.txn, and an extensions object with no other key",
+        arguments: transactionSamples
+    )
+    func withoutTransactionRemovesTransaction(response: String, expected: String) {
+        #expect(Self.withoutTransaction(response) == expected)
+    }
 
     @Test("object(named:in:) gives the named object of the data object of a response")
     func objectNamedGivesDataObject() throws {
