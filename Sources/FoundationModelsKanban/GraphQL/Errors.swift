@@ -1,4 +1,5 @@
 import FoundationModelsExtras
+import GraphQL
 
 /// An error of the kanban schema that the tool returns to the caller in the `errors` list of a GraphQL response
 /// (plan.md §4.4).
@@ -59,12 +60,15 @@ enum KanbanError: CodedError, Hashable {
     case undoConflict(transaction: String, laterTransactions: [String])
 
     /// `INVALID_FILTER`: the filter does not parse. The position is the range of characters where the parse
-    /// failed, the detail tells the problem, and the example is one correct filter.
+    /// failed, the detail tells the problem, and the example is one correct filter. The position counts Swift
+    /// `Character`s from the start of the filter, and its end is exclusive. The error also gives it in
+    /// `extensions.start` and `extensions.end` (``extensionFields``).
     case invalidFilter(filter: String, position: Range<Int>, detail: String, example: String)
 
     /// `FILTER_MODEL_MISSING`: the text of `translateFilter` is not a filter of the board, and the engine has no filter
     /// model to write a filter from it (divergence.md §17). The filter error is the `INVALID_FILTER` error of the text:
-    /// the parse error, or the first name that names nothing.
+    /// the parse error, or the first name that names nothing. The error gives the span of the filter error in
+    /// `extensions.start` and `extensions.end` (``extensionFields``).
     indirect case filterModelMissing(filterError: KanbanError)
 
     /// `FILTER_AGENT_FAILED`: the filter agent stopped before it wrote a filter, for example because the filter model
@@ -289,6 +293,40 @@ extension KanbanError {
         let boardURI = "\(NodeURI.scheme)<board-key>\(LocalRef.separator)\(LocalRef.board)"
         return "The slug \"\(Slug.reservedForBoard)\" is reserved for the board URI \(boardURI), "
             + "so a \(noun(for: type)) cannot have it."
+    }
+}
+
+// MARK: - Extension fields
+
+extension KanbanError {
+    /// The `extensions` key of the start of the span of a filter error.
+    static let spanStartKey = "start"
+
+    /// The `extensions` key of the end of the span of a filter error. The end is exclusive.
+    static let spanEndKey = "end"
+
+    /// The other keys of `extensions` for the error, beside `code`.
+    ///
+    /// `INVALID_FILTER` gives the span of its position in `start` and `end`. The span counts Swift `Character`s from
+    /// the start of the filter, and `end` is exclusive, so the span is `start..<end`. These are the numbers of the
+    /// message (`start..end`). `FILTER_MODEL_MISSING` gives the span of its filter error. Each other case gives no
+    /// key.
+    var extensionFields: [String: Map] {
+        switch self {
+        case .invalidFilter(_, let position, _, _):
+            [
+                Self.spanStartKey: .number(Number(position.lowerBound)),
+                Self.spanEndKey: .number(Number(position.upperBound)),
+            ]
+        case .filterModelMissing(let filterError):
+            filterError.extensionFields
+        case .notFound, .nodesNotFound, .boardNotFound, .transactionBoardNotLoaded, .incompatibleBoard, .ambiguousID,
+            .actorNotFound, .duplicateID, .columnNotEmpty, .dependencyCycle, .tagRenameCycle, .nothingToUndo,
+            .undoConflict, .filterAgentFailed, .invalidTagName, .reservedTagName, .virtualTagName, .invalidSlug,
+            .reservedSlug, .invalidOrdinal, .conflictingPlacement, .staleWrite, .emptyComment, .noPreviousColumn,
+            .boardBusy, .unreachableBoard, .unreachableBoards:
+            [:]
+        }
     }
 }
 

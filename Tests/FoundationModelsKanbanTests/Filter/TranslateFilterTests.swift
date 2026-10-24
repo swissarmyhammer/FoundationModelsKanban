@@ -26,6 +26,9 @@ struct TranslateFilterTests {
     /// A column atom with a name one letter from the column `todo` of the fixture board.
     private static let misspelledColumn = "%todoo"
 
+    /// The span of the name error of ``misspelledColumn``: the full atom, in characters, with the end exclusive.
+    private static let misspelledColumnSpan = 0..<6
+
     // MARK: - Helpers
 
     /// Makes a query document with one `translateFilter` field that reads each field of the result.
@@ -34,6 +37,20 @@ struct TranslateFilterTests {
     /// - Returns: The document.
     private static func translation(of text: String) -> String {
         #"{ translateFilter(text: "\#(text)") { attempts filter message } }"#
+    }
+
+    /// Gives the `INVALID_FILTER` error of ``misspelledColumn``: the column `todoo` names nothing, and the nearest
+    /// column is `todo`.
+    ///
+    /// - Returns: The name error.
+    /// - Throws: An error when the filter does not hold the atom.
+    private static func misspelledColumnError() throws -> KanbanError {
+        try FilterNameCheckTests.unknownName(
+            in: misspelledColumn,
+            at: misspelledColumn,
+            detail: "no column named `todoo`; the nearest column is `todo`",
+            example: "%todo"
+        )
     }
 
     // MARK: - A text that is a filter
@@ -70,14 +87,25 @@ struct TranslateFilterTests {
     @Test("A name that names nothing, with no filter model, gives FILTER_MODEL_MISSING with the name error")
     func unknownNameWithNoModelGivesModelMissing() async throws {
         let directory = try TemporaryDirectory()
-        let nameError = try FilterNameCheckTests.unknownName(
-            in: Self.misspelledColumn,
-            at: Self.misspelledColumn,
-            detail: "no column named `todoo`; the nearest column is `todo`",
-            example: "%todo"
-        )
+        let nameError = try Self.misspelledColumnError()
         let error = try await ColumnActorTests.failure(of: Self.translation(of: Self.misspelledColumn), in: directory)
         #expect(error == .filterModelMissing(filterError: nameError))
+    }
+
+    @Test("FILTER_MODEL_MISSING gives the span of its name error in characters in extensions.start and end")
+    func modelMissingGivesTheSpanOfItsFilterError() async throws {
+        let directory = try TemporaryDirectory()
+        let document = Self.translation(of: Self.misspelledColumn)
+        let response = try await ColumnActorTests.respondWritingNothing(to: document, in: directory)
+        let span = ErrorCoverageTests.spanJSON(of: Self.misspelledColumnSpan)
+        let error = try ErrorCoverageTests.errorJSON(
+            of: .filterModelMissing(filterError: try Self.misspelledColumnError()),
+            extensions: #"{"code":"FILTER_MODEL_MISSING",\#(span)}"#,
+            at: "translateFilter",
+            in: document,
+            path: #"["translateFilter"]"#
+        )
+        #expect(response == #"{"errors":[\#(error)]}"#)
     }
 
     @Test("With a filter model, English text gives the statement of the model with attempts 1, and writes nothing")

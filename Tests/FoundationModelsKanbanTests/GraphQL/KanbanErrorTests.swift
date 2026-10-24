@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsExtras
+import GraphQL
 import Testing
 
 @testable import FoundationModelsKanban
@@ -101,6 +102,35 @@ struct KanbanErrorTests {
     @Test("Each case of the code table gives a different code")
     func codesAreDistinct() {
         #expect(Set(Self.codes.map { $0.0.code }).count == Self.codes.count)
+    }
+
+    // MARK: - Extension fields
+
+    /// The codes of the errors that give the span of a filter error in `extensions`.
+    static let spanCodes: Set = ["INVALID_FILTER", "FILTER_MODEL_MISSING"]
+
+    /// The `extensions` keys of the span of ``filterError``: its start and its end, in characters.
+    static let filterErrorSpan: [String: Map] = [
+        "start": .number(Number(filterFailureStart)),
+        "end": .number(Number(filterFailureEnd)),
+    ]
+
+    @Test("INVALID_FILTER gives the start and the end of its position in extensions")
+    func invalidFilterGivesTheSpan() {
+        #expect(Self.filterError.extensionFields == Self.filterErrorSpan)
+    }
+
+    @Test("FILTER_MODEL_MISSING gives the start and the end of the position of its filter error in extensions")
+    func filterModelMissingGivesTheSpanOfItsFilterError() {
+        #expect(KanbanError.filterModelMissing(filterError: Self.filterError).extensionFields == Self.filterErrorSpan)
+    }
+
+    @Test(
+        "An error with no filter error gives no extension field",
+        arguments: (codes + reservedSlugCodes).map(\.0).filter { error in !spanCodes.contains(error.code) }
+    )
+    func errorWithNoSpanGivesNoExtensionField(error: KanbanError) {
+        #expect(error.extensionFields == [:])
     }
 
     // MARK: - Messages
@@ -462,6 +492,16 @@ struct KanbanErrorTests {
     func responseJSONHasOnlyErrors() throws {
         let error = KanbanError.boardBusy(attempts: Self.commitAttempts)
         let object = #"{"extensions":{"code":"BOARD_BUSY"},"message":"\#(error.message)","path":[]}"#
+        #expect(try error.responseJSON() == #"{"errors":[\#(object)]}"#)
+    }
+
+    @Test("The response of a call that fails with INVALID_FILTER has the start and the end in extensions")
+    func invalidFilterResponseJSONHasTheSpan() throws {
+        let error = Self.filterError
+        let span = ErrorCoverageTests.spanJSON(of: Self.filterFailureStart..<Self.filterFailureEnd)
+        let extensions = #"{"code":"INVALID_FILTER",\#(span)}"#
+        let message = try KanbanArgumentsTests.jsonLiteral(of: error.message)
+        let object = #"{"extensions":\#(extensions),"message":\#(message),"path":[]}"#
         #expect(try error.responseJSON() == #"{"errors":[\#(object)]}"#)
     }
 

@@ -27,6 +27,22 @@ struct ErrorCoverageTests {
     /// The key of the code in the extensions object of a GraphQL error.
     static let codeKey = "code"
 
+    /// A filter that does not parse: `&&` at the end has no term after it.
+    static let unfinishedFilter = "#bug &&"
+
+    /// The span of the error of ``unfinishedFilter``: the `&&`, in characters, with the end exclusive.
+    static let unfinishedFilterSpan = 5..<7
+
+    /// A filter that does not parse, with an emoji before the error. The emoji is one character and two UTF-16 units.
+    static let emojiFilter = "#🐛 &&"
+
+    /// The span of the error of ``emojiFilter``: the `&&`, in characters, with the end exclusive. In UTF-16 units, the
+    /// span is `4..<6`.
+    static let emojiFilterSpan = 3..<5
+
+    /// Each filter of the span test, with the span of its error.
+    static let filterSpans = [(unfinishedFilter, unfinishedFilterSpan), (emojiFilter, emojiFilterSpan)]
+
     // MARK: - Helpers
 
     /// Runs a document through `KanbanGraph.execute` on a new engine of the fixture repo, and expects that the call
@@ -73,6 +89,39 @@ struct ErrorCoverageTests {
         #expect(error["message"] as? String == expected.message)
         #expect(error["path"] as? [String] == [field])
         #expect(Self.code(of: error) == code)
+    }
+
+    /// Gives the JSON text of one error of a response, with the keys in sorted order: `extensions`, the location of
+    /// the field that failed, the message of the error, and the path.
+    ///
+    /// - Parameters:
+    ///   - error: The error that gives the message.
+    ///   - extensions: The JSON text of the `extensions` object, for example `{"code":"NOT_FOUND"}`.
+    ///   - field: The name of the field that failed. The location is the first place of this name in the document.
+    ///   - document: The GraphQL document, on one line.
+    ///   - path: The JSON text of the path, for example `["board","tasks"]`.
+    /// - Returns: The JSON text of the error.
+    /// - Throws: An error when the document does not hold the field.
+    static func errorJSON(
+        of error: KanbanError,
+        extensions: String,
+        at field: String,
+        in document: String,
+        path: String
+    ) throws -> String {
+        let start = try #require(document.range(of: field)).lowerBound
+        let column = document.distance(from: document.startIndex, to: start) + 1
+        let message = try KanbanArgumentsTests.jsonLiteral(of: error.message)
+        return #"{"extensions":\#(extensions),"locations":[{"column":\#(column),"line":1}],"#
+            + #""message":\#(message),"path":\#(path)}"#
+    }
+
+    /// Gives the JSON text of the start and the end of a span, as `extensions` gives them.
+    ///
+    /// - Parameter span: The span, in characters, with the end exclusive.
+    /// - Returns: The JSON text of the two keys, for example `"end":7,"start":5`.
+    static func spanJSON(of span: Range<Int>) -> String {
+        #""end":\#(span.upperBound),"start":\#(span.lowerBound)"#
     }
 
     /// Runs a mutation document with one field on a new engine of the fixture repo.
@@ -188,6 +237,26 @@ struct ErrorCoverageTests {
             try FilterExpr(parsing: NameRewriteTests.invalidFilter)
         }
         try Self.expectFailure(of: "tasks", in: response, giving: expected, coded: "INVALID_FILTER")
+    }
+
+    @Test(
+        "INVALID_FILTER of tasks(filter:) gives the span of the error in characters in extensions.start and end",
+        arguments: filterSpans
+    )
+    func invalidFilterGivesTheSpan(filter: String, span: Range<Int>) async throws {
+        let document = #"{ board { tasks(filter: "\#(filter)") { totalCount } } }"#
+        let response = try await ColumnActorTests.respond(to: document, onFixtureIn: TemporaryDirectory())
+        let expected = try #require(throws: KanbanError.self) {
+            try FilterExpr(parsing: filter)
+        }
+        let error = try Self.errorJSON(
+            of: expected,
+            extensions: #"{"code":"INVALID_FILTER",\#(Self.spanJSON(of: span))}"#,
+            at: "tasks",
+            in: document,
+            path: #"["board","tasks"]"#
+        )
+        #expect(response == #"{"data":{"board":{"tasks":null}},"errors":[\#(error)]}"#)
     }
 
     @Test("INVALID_TAG_NAME comes back with its message, the path, and extensions.code")
