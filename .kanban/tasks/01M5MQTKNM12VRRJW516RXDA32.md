@@ -96,12 +96,28 @@ comments:
     - evidence: 1 file — Sources/FoundationModelsKanban/Filter/FilterAgentLoop.swift. leadingMarkCount and trailingMarkCount are now one function, markCount(of:fromEnd:), and the four callers use it. The file has no other copy of this pattern. `swift build --build-tests`: only the accepted "missing creator" warning. The first full `swift test` run stopped with a fatal error in KanbanGraph ("The view holds the engine of the board ... and has no session of it"). That code is not part of this change. The second full run passed: 1868 tests in 161 suites, with only the accepted warning. The intermittent crash is recorded as a new task.
     - next: /review
   timestamp: 2026-10-24T09:45:11.766870+00:00
+- actor: claude-code
+  id: 01m5pmwxayg7c9pzbp65va18ec
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 75a5275): 0 findings, 0 confirmed, 0 refuted; 7 validator runs, 0 failed. 1 file reviewed. All 3 earlier findings are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-24T09:47:00.830087+00:00
+- actor: claude-code
+  id: 01m5pmxc23w7vvtapf3pa0b885
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — 1 file, markCount(of:fromEnd:)
+    - test: green — swift test, 1868 tests in 161 suites
+    - commit: 75a5275
+    - review: clean — 0 findings, 3/3 earlier findings checked
+  timestamp: 2026-10-24T09:47:15.907127+00:00
 depends_on:
 - 01M5MQS3GXPJ1ZDMZ9V9HQJWT8
 - 01M5MQSGQF8VVFY28RNK1S3550
 - 01M5MQTEP4SYRD67XJSJ48GSQ3
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffbe80
 title: 'Filter agent: the write, parse and correct loop, with a scripted model'
 ---
 ## What
