@@ -65,6 +65,9 @@ struct KanbanErrorTests {
     /// The current version of the task in the `STALE_WRITE` tests.
     static let currentVersion = "01KTXN0002BBBBBBBBBBBBBBBB"
 
+    /// The task refs that name no task, in the test of `NOT_FOUND` for a list of ids.
+    static let missingTaskRefs = ["^zzzzzzz", "^yyyyyyy"]
+
     /// The path of a `.kanban/` directory of the old Rust kanban, in the `INCOMPATIBLE_BOARD` tests.
     static let rustBoardPath = "/tmp/rust-repo/.kanban"
 
@@ -124,6 +127,17 @@ struct KanbanErrorTests {
             error.message
                 == "No task has the reference \"^zzzzzzz\". Query the board to get the correct ids, "
                 + "and then send the call again."
+        )
+    }
+
+    @Test("NOT_FOUND for a list of ids has the code NOT_FOUND, names each reference, and tells that nothing changed")
+    func nodesNotFoundMessage() {
+        let error = KanbanError.nodesNotFound(type: .task, references: Self.missingTaskRefs)
+        #expect(error.code == "NOT_FOUND")
+        #expect(
+            error.message
+                == "No task has the references \"^zzzzzzz\", \"^yyyyyyy\", so the call wrote nothing. Query the board "
+                + "to get the correct ids, and then send the call again."
         )
     }
 

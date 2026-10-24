@@ -1203,6 +1203,52 @@ input UndeleteTaskInput {
 }
 
 """
+The fields of moveTasks. Give at most one of ordinal, before, and after.
+"""
+input MoveTasksInput {
+  """
+  The tasks: a list of full URIs or short forms, or one of them. A JSON array in one string is also a list. The result gives each task one time, in the order of the list. When a ref names no task, the call writes nothing, and the error names each such ref.
+  """
+  id: [ID!]!
+
+  """
+  The column: a full URI, the slug, or a name. A slug that no column has makes the column. No column gives the column where the first task of the list shows.
+  """
+  column: ID
+
+  """
+  The place of the first task in the column, as a fractional index. Each next task goes after the task before it. No ordinal, before, or after puts the tasks at the end of the column.
+  """
+  ordinal: String
+
+  """
+  The task to put the tasks before: a full URI or a short form. A ref that names no live task puts the task at the end of the column, with a warning.
+  """
+  before: ID
+
+  """
+  The task to put the tasks after: a full URI or a short form. A ref that names no live task puts the task at the end of the column, with a warning.
+  """
+  after: ID
+}
+
+"""The tasks of deleteTasks."""
+input DeleteTasksInput {
+  """
+  The tasks: a list of full URIs or short forms, or one of them. A JSON array in one string is also a list. The result gives each task one time, in the order of the list. When a ref names no task, the call writes nothing, and the error names each such ref.
+  """
+  id: [ID!]!
+}
+
+"""The tasks of undeleteTasks."""
+input UndeleteTasksInput {
+  """
+  The tasks: a list of full URIs or short forms, or one of them. A JSON array in one string is also a list. The result gives each task one time, in the order of the list. When a ref names no task, the call writes nothing, and the error names each such ref.
+  """
+  id: [ID!]!
+}
+
+"""
 The fields of copyTask. Give at most one of ordinal, before, and after.
 """
 input CopyTaskInput {
@@ -1792,6 +1838,36 @@ type Mutation {
     """
     input: UndeleteTaskInput!
   ): Task
+
+  """
+  Moves a list of tasks to a column, as one block at one place in that column, in the order of the list. No place puts the tasks at the end of the column. The call is one transaction, so one undoChange reverses it. When a ref names no task, the call writes nothing, and the error names each such ref.
+  """
+  moveTasks(
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
+    input: MoveTasksInput!
+  ): [Task!]
+
+  """
+  Makes each task of a list a tombstone. The call is one transaction, so one undoChange reverses it. When a ref names no task, the call writes nothing, and the error names each such ref.
+  """
+  deleteTasks(
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
+    input: DeleteTasksInput!
+  ): [Task!]
+
+  """
+  Makes each tombstoned task of a list live again. A live task does not change. The call is one transaction, so one undoChange reverses it. When a ref names no task, the call writes nothing, and the error names each such ref.
+  """
+  undeleteTasks(
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
+    input: UndeleteTasksInput!
+  ): [Task!]
 
   """
   Copies a task to a column and to a place in that column, in the same board or in a different board. No board field copies the task in its board.

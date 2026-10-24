@@ -61,6 +61,7 @@ struct EndpointConventionTests {
     /// list because they share a code.
     static let errors: [KanbanError] =
         (KanbanErrorTests.codes + KanbanErrorTests.reservedSlugCodes).map { error, _ in error } + [
+            .nodesNotFound(type: .task, references: KanbanErrorTests.missingTaskRefs),
             .boardNotFound(reference: boardReference, searchRoots: []),
             .transactionBoardNotLoaded(transaction: transaction, board: boardReference),
             .unreachableBoard(reference: boardReference),

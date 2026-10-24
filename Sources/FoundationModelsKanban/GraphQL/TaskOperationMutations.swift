@@ -620,7 +620,7 @@ extension Graph {
     ///   - column: The local ref of the column.
     ///   - task: The local ref of the moved task. The column order does not count this task.
     /// - Returns: The ordinal.
-    private func ordinal(
+    fileprivate func ordinal(
         beside neighbor: LocalRef,
         on side: NeighborSide,
         inColumn column: LocalRef,
@@ -746,6 +746,354 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 MutationName.undeleteTask,
                 at: KanbanResolver.undeleteTask,
                 description: SchemaDescription.undeleteTask
+            )
+        }
+        .addTaskListMutations()
+    }
+}
+
+// MARK: - List mutations
+
+extension MutationName {
+    /// The mutation that moves a list of tasks to a column, as one block at one place in that column (divergence.md
+    /// §20).
+    static let moveTasks = "moveTasks"
+
+    /// The mutation that makes each task of a list a tombstone (divergence.md §20).
+    static let deleteTasks = "deleteTasks"
+
+    /// The mutation that makes each tombstoned task of a list live again (divergence.md §20).
+    static let undeleteTasks = "undeleteTasks"
+}
+
+/// An `input` object that names a list of tasks in its `id` field: the input of `moveTasks`, `deleteTasks`, or
+/// `undeleteTasks` (divergence.md §20). ``SchemaBuilder/makeTaskListField()`` gives the schema of the field.
+private protocol TaskListReferenceInput: Decodable, Sendable {
+    /// The tasks: full URIs or short forms (plan.md §3.2), in the order of the list.
+    var id: [NodeID] { get }
+}
+
+/// The `input` object of `moveTasks` (divergence.md §20): the tasks, the column, and one place field or none. The
+/// input has no `board` field, so the tasks stay on their board. It has no `ifVersion` field, because a move is never
+/// refused (KanbanViewKit D100).
+private struct MoveTasksInput: TaskListReferenceInput, TaskPlaceInput {
+    /// The keys of the fields of the input that are not place fields. ``Placement`` reads the place fields.
+    private enum CodingKeys: String, CodingKey {
+        /// The key of the tasks.
+        case id
+
+        /// The key of the column.
+        case column
+    }
+
+    /// The tasks: full URIs or short forms (plan.md §3.2), in the order of the block.
+    let id: [NodeID]
+
+    /// The column: a full URI, the slug, or a name, or `nil` for the column where the first task shows. A slug that
+    /// no column has makes a new column.
+    let column: NodeID?
+
+    /// The place of the block in the column.
+    let placement: Placement
+
+    /// Reads the input object of a move of a list of tasks.
+    ///
+    /// - Parameter decoder: The decoder of the input object.
+    /// - Throws: ``KanbanError/conflictingPlacement(fields:)`` when the input gives more than one place field. A
+    ///   `DecodingError` when the input has no `id`, or a field has the wrong type.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode([NodeID].self, forKey: .id)
+        column = try container.decodeIfPresent(NodeID.self, forKey: .column)
+        placement = try Placement(from: decoder)
+    }
+}
+
+/// The `input` object of `deleteTasks` or `undeleteTasks` (divergence.md §20): the tasks. Each mutation has its own
+/// `input` type, `DeleteTasksInput` or `UndeleteTasksInput` (``SharedInputMutation``), that
+/// ``SchemaBuilder/makeTaskListInput(of:)`` gives.
+private struct TaskListInput<Mutation: SharedInputMutation>: TaskListReferenceInput {
+    /// The GraphQL name of this `input` type: the `input` type name of its mutation (EXTRAS-9 rule 7).
+    static var inputTypeName: String { Mutation.inputTypeName }
+
+    /// The tasks: full URIs or short forms (plan.md §3.2), in the order of the list.
+    let id: [NodeID]
+}
+
+/// The `deleteTasks` mutation, for its `input` type `DeleteTasksInput`.
+private enum DeleteTasksMutation: SharedInputMutation {
+    /// The name of the mutation.
+    static let name = MutationName.deleteTasks
+}
+
+/// The `undeleteTasks` mutation, for its `input` type `UndeleteTasksInput`.
+private enum UndeleteTasksMutation: SharedInputMutation {
+    /// The name of the mutation.
+    static let name = MutationName.undeleteTasks
+}
+
+extension KanbanResolver {
+    /// Resolves `Mutation.moveTasks`: writes one task patch with a `set` of the column and the ordinal for each task
+    /// of the list, in one transaction (divergence.md §20). The tasks go to the column as one block, in the order of
+    /// the list (``WorkingCopy/move(_:to:placing:resolvingWith:at:)``). A move is never refused for a version
+    /// conflict (KanbanViewKit D100).
+    ///
+    /// - Parameters:
+    ///   - context: The context of the call.
+    ///   - arguments: The tasks, the column, and the place of the block in the column.
+    /// - Returns: Each task after the move, in the order of the list. The GraphQL field is nullable, so that an error
+    ///   gives `null` for this field only.
+    /// - Throws: The errors of ``KanbanContext/changeTasks(_:named:includingTombstones:_:)``, and of the column and
+    ///   the place: ``KanbanError/invalidOrdinal(ordinal:)``, ``KanbanError/invalidSlug(name:)``, and
+    ///   ``KanbanError/reservedSlug(type:)``. The decode of the input throws
+    ///   ``KanbanError/conflictingPlacement(fields:)`` before this resolver runs, so that the field writes nothing.
+    fileprivate func moveTasks(
+        context: KanbanContext,
+        arguments: InputArguments<MoveTasksInput>
+    ) async throws -> [TaskObject]? {
+        let input = arguments.input
+        return try await context.changeTasks(input.id, named: MutationName.moveTasks) { work, resolver, refs, time in
+            try work.move(refs, to: input.column, placing: input.placement, resolvingWith: resolver, at: time)
+        }
+    }
+
+    /// Resolves `Mutation.deleteTasks`: makes each task of the list a tombstone, in one transaction (divergence.md
+    /// §20).
+    ///
+    /// - Parameters:
+    ///   - context: The context of the call.
+    ///   - arguments: The tasks.
+    /// - Returns: Each tombstone, with `deleted` set, in the order of the list.
+    /// - Throws: The errors of ``KanbanContext/changeTasks(_:named:includingTombstones:_:)``: a ref that names no live
+    ///   task gives `NOT_FOUND`.
+    fileprivate func deleteTasks(
+        context: KanbanContext,
+        arguments: InputArguments<TaskListInput<DeleteTasksMutation>>
+    ) async throws -> [TaskObject]? {
+        try await changeTombstones(to: true, context: context, arguments)
+    }
+
+    /// Resolves `Mutation.undeleteTasks`: makes each tombstoned task of the list live again, in one transaction
+    /// (divergence.md §20). A live task does not change. Each task obeys the dependency rule of plan.md §3.3, rule 6.
+    ///
+    /// - Parameters:
+    ///   - context: The context of the call.
+    ///   - arguments: The tasks.
+    /// - Returns: Each live task, in the order of the list.
+    /// - Throws: The errors of ``KanbanContext/changeTasks(_:named:includingTombstones:_:)``: a ref that names no task
+    ///   gives `NOT_FOUND`. ``KanbanError/dependencyCycle(path:)`` when a task closes a `dependsOn` cycle. The call
+    ///   then writes nothing.
+    fileprivate func undeleteTasks(
+        context: KanbanContext,
+        arguments: InputArguments<TaskListInput<UndeleteTasksMutation>>
+    ) async throws -> [TaskObject]? {
+        try await changeTombstones(to: false, context: context, arguments)
+    }
+
+    /// Writes a `delete` patch on each task of a list, in one transaction: `true` makes a tombstone, `false` makes a
+    /// tombstone live again. A patch that does not change the task is not written.
+    ///
+    /// - Parameters:
+    ///   - isDeleted: `true` for a delete, `false` for an undelete.
+    ///   - context: The context of the call.
+    ///   - arguments: The tasks. A delete names live tasks. An undelete can also name tombstones. The mutation of the
+    ///     `input` type is the public mutation of the call.
+    /// - Returns: Each task after the change, in the order of the list.
+    /// - Throws: The errors of ``KanbanContext/changeTasks(_:named:includingTombstones:_:)``.
+    ///   ``KanbanError/dependencyCycle(path:)`` when an undeleted task closes a `dependsOn` cycle.
+    private func changeTombstones<Mutation: SharedInputMutation>(
+        to isDeleted: Bool,
+        context: KanbanContext,
+        _ arguments: InputArguments<TaskListInput<Mutation>>
+    ) async throws -> [TaskObject]? {
+        try await context.changeTasks(
+            arguments.input.id,
+            named: Mutation.name,
+            includingTombstones: !isDeleted
+        ) { work, resolver, refs, time in
+            for ref in refs {
+                try work.setDeleted(isDeleted, of: ref, inBoard: resolver.boardKey, at: time)
+            }
+        }
+    }
+}
+
+extension KanbanContext {
+    /// Runs one public list mutation field that changes tasks of one board at the time of ``clock``, and gives the
+    /// tasks after the field (divergence.md §20). The first ref names the board of the field. The field obeys the
+    /// rules of ``runMutation(named:on:_:)``: its patches are one transaction, and the field writes nothing when the
+    /// body throws. An empty list writes nothing and gives an empty list.
+    ///
+    /// - Parameters:
+    ///   - ids: The tasks: full URIs or short forms, in the order of the list.
+    ///   - operation: The name of the public mutation of the field.
+    ///   - includesTombstones: `true` when a ref can name a tombstone.
+    ///   - body: Makes and applies the patches of the field. It gets the working copy, a resolver of the forgiving
+    ///     refs of the working graph, the local ref of each task in the order of the list with each task one time, and
+    ///     the time.
+    /// - Returns: Each task object, in the order of the list.
+    /// - Throws: The errors of ``RefResolver/taskRefs(for:includingTombstones:)``.
+    ///   ``KanbanError/notFound(type:reference:)`` when the engine did not load the board of the tasks yet, so that the
+    ///   field never gives `null` with no error. The store then records the request, and the call runs again after the
+    ///   load. The error of the body.
+    fileprivate func changeTasks(
+        _ ids: [NodeID],
+        named operation: String,
+        includingTombstones includesTombstones: Bool = false,
+        _ body: sending (inout WorkingCopy, RefResolver, [LocalRef], DateTime) throws -> Void
+    ) async throws -> [TaskObject] {
+        guard let first = ids.first else {
+            return []
+        }
+        let changed = try await runMutation(named: operation, on: .holding(first)) { work, resolver, time in
+            let refs = try resolver.taskRefs(for: ids, includingTombstones: includesTombstones)
+            try body(&work, resolver, refs, time)
+            return refs
+        }
+        guard let changed else {
+            throw KanbanError.notFound(type: .task, reference: first.text)
+        }
+        return changed.value.compactMap { ref -> TaskObject? in changed.view.object(of: ref) }
+    }
+}
+
+extension RefResolver {
+    /// Changes the forgiving refs of a list mutation to the local refs of tasks of this board (divergence.md §20).
+    /// The result keeps the order of the list, and gives a task that two refs name one time, at its first place. Each
+    /// ref is resolved before the call writes, so that a ref that names no task stops the whole call.
+    ///
+    /// - Parameters:
+    ///   - ids: The refs as the caller wrote them.
+    ///   - includesTombstones: `true` when a ref can name a tombstone.
+    /// - Returns: The local ref of each task.
+    /// - Throws: ``KanbanError/notFound(type:reference:)`` when one ref names no task, and
+    ///   ``KanbanError/nodesNotFound(type:references:)`` with each such ref when two or more refs name no task. The
+    ///   other errors of ``nodeRef(for:ofType:includingTombstones:)``, for example
+    ///   ``KanbanError/ambiguousID(reference:matches:)``.
+    fileprivate func taskRefs(
+        for ids: [NodeID],
+        includingTombstones includesTombstones: Bool
+    ) throws(KanbanError) -> [LocalRef] {
+        let resolved = ids.map { id in
+            Result { () throws(KanbanError) in
+                try nodeRef(for: id, ofType: .task, includingTombstones: includesTombstones)
+            }
+        }
+        let missing = zip(ids, resolved).compactMap { id, result -> String? in
+            guard case .failure(.notFound) = result else {
+                return nil
+            }
+            return id.text
+        }
+        guard missing.isEmpty else {
+            throw missing.count == 1
+                ? .notFound(type: .task, reference: missing[0])
+                : .nodesNotFound(type: .task, references: missing)
+        }
+        let refs = try resolved.map { result throws(KanbanError) in try result.get() }
+        return refs.enumerated()
+            .filter { entry in refs.firstIndex(of: entry.element) == entry.offset }
+            .map(\.element)
+    }
+}
+
+extension WorkingCopy {
+    /// Writes the task patches of a move of a list of tasks: the tasks go to the column as one block, in the order of
+    /// the list (divergence.md §20). The first task goes to the place of the input, with the rules of
+    /// ``Graph/ordinal(placing:inColumn:moving:resolvingWith:)``, and each next task goes just after the task before
+    /// it. A `before` or `after` ref that names no live task puts the block at the end of the column, with one
+    /// warning (divergence.md P1).
+    ///
+    /// - Parameters:
+    ///   - tasks: The local refs of the tasks, in the order of the block.
+    ///   - id: The column that the input names, or `nil` for the column where the first task shows.
+    ///   - placement: The place of the block in the column.
+    ///   - resolver: The resolver of the forgiving refs of the board.
+    ///   - time: The time of the change.
+    /// - Throws: The errors of ``columnRef(forMoveOf:to:resolvingWith:at:)`` and of
+    ///   ``Graph/ordinal(placing:inColumn:moving:resolvingWith:)``. An ``EventError`` when a patch breaks a rule of
+    ///   the log.
+    fileprivate mutating func move(
+        _ tasks: [LocalRef],
+        to id: NodeID?,
+        placing placement: Placement,
+        resolvingWith resolver: RefResolver,
+        at time: DateTime
+    ) throws {
+        guard let first = tasks.first else {
+            return
+        }
+        let column = try columnRef(forMoveOf: first, to: id, resolvingWith: resolver, at: time)
+        let ordinal = try graph.ordinal(placing: placement, inColumn: column, moving: first, resolvingWith: resolver)
+        try move(first, to: column, placingAt: ordinal, at: time)
+        for (previous, task) in zip(tasks, tasks.dropFirst()) {
+            let next = graph.ordinal(beside: previous, on: .after, inColumn: column, moving: task)
+            try move(task, to: column, placingAt: next, at: time)
+        }
+    }
+}
+
+extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanContext {
+    /// Gives the `id` input field of an `input` type of a list mutation of tasks, so that the field has one
+    /// definition.
+    ///
+    /// - Returns: The field `id`, with the description of a list of task refs.
+    fileprivate static func makeTaskListField<Listed: TaskListReferenceInput>(
+    ) -> InputFieldComponent<Listed, KanbanContext> {
+        InputField("id", at: \Listed.id).description(SchemaDescription.taskListReference)
+    }
+
+    /// The input fields of `MoveTasksInput`.
+    ///
+    /// - Returns: The fields `id`, `column`, `ordinal`, `before`, and `after`.
+    fileprivate static func moveTasksFields() -> [InputFieldComponent<MoveTasksInput, KanbanContext>] {
+        let head: [InputFieldComponent<MoveTasksInput, KanbanContext>] = [
+            makeTaskListField(),
+            InputField("column", at: \.column).description(SchemaDescription.taskBlockColumn),
+        ]
+        return head + placeFields(describedBy: .taskBlock)
+    }
+
+    /// Gives the `input` type of `deleteTasks` or `undeleteTasks` (``TaskListInput``), with the name of the mutation
+    /// (EXTRAS-9 rule 7), so that the fields have one definition.
+    ///
+    /// - Parameter mutation: The mutation of the `input` type.
+    /// - Returns: The `input` type `<Mutation>Input`, with its one field `id`.
+    fileprivate static func makeTaskListInput<Mutation: SharedInputMutation>(
+        of mutation: Mutation.Type
+    ) -> Input<KanbanResolver, KanbanContext, TaskListInput<Mutation>> {
+        Input(TaskListInput<Mutation>.self, as: TaskListInput<Mutation>.inputTypeName) {
+            Self.makeTaskListField()
+        }
+        .description(SchemaDescription.taskListInput(of: mutation.name))
+    }
+
+    /// Adds the list mutations of tasks and their `input` types (divergence.md §20): `moveTasks`, `deleteTasks`, and
+    /// `undeleteTasks`. These are the list mutations of the TestudoApp design KANBAN-8. Each mutation has an `input`
+    /// type of its own name (EXTRAS-9 rule 7).
+    ///
+    /// - Returns: This builder, for method chaining.
+    fileprivate func addTaskListMutations() -> Self {
+        add {
+            Input(MoveTasksInput.self, Self.moveTasksFields).description(SchemaDescription.moveTasksInput)
+            Self.makeTaskListInput(of: DeleteTasksMutation.self)
+            Self.makeTaskListInput(of: UndeleteTasksMutation.self)
+        }
+        .addMutation {
+            Self.mutationField(
+                MutationName.moveTasks,
+                at: KanbanResolver.moveTasks,
+                description: SchemaDescription.moveTasks
+            )
+            Self.mutationField(
+                MutationName.deleteTasks,
+                at: KanbanResolver.deleteTasks,
+                description: SchemaDescription.deleteTasks
+            )
+            Self.mutationField(
+                MutationName.undeleteTasks,
+                at: KanbanResolver.undeleteTasks,
+                description: SchemaDescription.undeleteTasks
             )
         }
     }

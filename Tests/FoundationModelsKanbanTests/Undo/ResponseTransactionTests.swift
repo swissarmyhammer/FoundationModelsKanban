@@ -36,6 +36,8 @@ struct ResponseTransactionTests {
         case updateTask
         case moveTask
         case deleteTask
+        case moveTasks
+        case deleteTasks
 
         /// Makes the mutation field of the write.
         ///
@@ -47,13 +49,13 @@ struct ResponseTransactionTests {
                 AddUpdateTaskTests.addTask(with: "")
             case .updateTask:
                 AddUpdateTaskTests.updateTask(task, with: #"title: "\#(newTitle)""#)
-            case .moveTask:
+            case .moveTask, .moveTasks:
                 TaskOperationTests.taskField(
                     rawValue,
                     of: task,
                     with: TaskOperationTests.moveInput(to: TaskOperationTests.newColumnSlug)
                 )
-            case .deleteTask:
+            case .deleteTask, .deleteTasks:
                 TaskOperationTests.taskField(rawValue, of: task)
             }
         }
@@ -167,7 +169,7 @@ struct ResponseTransactionTests {
     ///   - graph: The engine of the fixture repo.
     ///   - directory: The temporary repo directory.
     /// - Returns: The response JSON text, and the text of each transaction that the call added to the log, sorted.
-    private static func run(
+    static func run(
         _ document: String,
         on graph: KanbanGraph,
         in directory: TemporaryDirectory
@@ -183,7 +185,7 @@ struct ResponseTransactionTests {
     ///
     /// - Parameter response: The response JSON text.
     /// - Returns: The transaction ULID text.
-    private static func transaction(of response: String) throws -> String {
+    static func transaction(of response: String) throws -> String {
         let extensions = try #require(
             KanbanGraphTests.object(of: response)[extensionsKey] as? [String: Any],
             "\(response)"

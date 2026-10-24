@@ -93,6 +93,19 @@ enum KanbanFieldAliases {
         "board": ["toBoard", "targetBoard", "destination", "repo"],
     ]
 
+    /// The aliases of the `id` field of an input that names a list of tasks (divergence.md §20): the aliases of a task
+    /// ref, and the plural forms.
+    private static let taskListID = taskID + ["ids", "tasks", "taskIds", "refs", "uris", "keys"]
+
+    /// The aliases of the fields of `DeleteTasksInput` and `UndeleteTasksInput` (divergence.md §20).
+    private static let taskList = ["id": taskListID]
+
+    /// The aliases of the fields of `MoveTasksInput` (divergence.md §20): the aliases of `MoveTaskInput` with no
+    /// `board` field, and the aliases of a list of tasks.
+    private static let taskBlockPlacement = taskPlacement
+        .filter { field, _ in field != "board" }
+        .merging(taskList) { _, list in list }
+
     /// The aliases of the `boards` argument of `checkLinks` and `repairLinks`: the boards of the links (divergence.md
     /// M9).
     private static let linkBoards = ["board", "ids", "id", "keys", "key", "repos", "repo", "paths", "path"]
@@ -160,6 +173,9 @@ enum KanbanFieldAliases {
         "UntagTaskInput": nodeReference(ofType: "task"),
         "DeleteTaskInput": nodeReference(ofType: "task"),
         "UndeleteTaskInput": nodeReference(ofType: "task"),
+        "MoveTasksInput": taskBlockPlacement,
+        "DeleteTasksInput": taskList,
+        "UndeleteTasksInput": taskList,
         "AddCommentInput": ["task": commentTask, "actor": ["author", "user"]],
         "UpdateCommentInput": commentReference,
         "DeleteCommentInput": commentReference,

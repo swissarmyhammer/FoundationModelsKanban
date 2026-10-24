@@ -69,7 +69,8 @@ public struct KanbanTool: GraphQLEndpointTool {
         changes. Each node has a version. To change a task only when no other change came first, give its version as \
         ifVersion to updateTask; a different version gives STALE_WRITE with the current version, and the call writes \
         nothing. Read the warnings in extensions.warnings. The response of a call that writes gives its transaction \
-        in extensions.txn; give it as txn to undoChange to reverse the call. \
+        in extensions.txn; give it as txn to undoChange to reverse the call. To change many tasks in one \
+        transaction, give a list of ids as id to moveTasks, deleteTasks, or undeleteTasks. \
         The board is in .kanban at the top of a git worktree. \
         Outside git, the board is in the nearest folder up that has a .kanban folder, else in the working directory, \
         and its key is its board ID. The collectBoards mutation combines other .kanban folders, for example a board \

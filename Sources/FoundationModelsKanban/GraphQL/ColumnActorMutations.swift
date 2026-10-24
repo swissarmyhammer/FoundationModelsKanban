@@ -522,7 +522,7 @@ extension WorkingCopy {
     /// - Throws: ``KanbanError/columnNotEmpty(column:liveTaskCount:)`` when a deleted column shows live tasks.
     ///   ``KanbanError/dependencyCycle(path:)`` when an undeleted task closes a cycle. An ``EventError`` when the
     ///   patch breaks a rule of the log.
-    fileprivate mutating func setDeleted(
+    mutating func setDeleted(
         _ isDeleted: Bool,
         of ref: LocalRef,
         inBoard key: String,

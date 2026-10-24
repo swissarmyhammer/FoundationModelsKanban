@@ -225,7 +225,7 @@ struct TaskOperationTests {
     ///   - side: `before` or `after`.
     ///   - task: The ULID of the neighbor task.
     /// - Returns: The `input` field.
-    private static func neighbor(_ side: String, of task: ULID) -> String {
+    static func neighbor(_ side: String, of task: ULID) -> String {
         neighbor(side, naming: AddUpdateTaskTests.sigilRef(of: task))
     }
 
@@ -263,7 +263,7 @@ struct TaskOperationTests {
     /// - Parameter directory: The temporary repo directory. The result holds it, so that the repo stays on disk while
     ///   the test uses the engine.
     /// - Returns: The directory, the engine, and the ULIDs of the three tasks, in the order of their ordinals.
-    private static func threeTasks(
+    static func threeTasks(
         in directory: TemporaryDirectory
     ) async throws -> (directory: TemporaryDirectory, graph: KanbanGraph, first: ULID, second: ULID, third: ULID) {
         let fixture = try ColumnActorTests.makeFixtureGraph(in: directory)
@@ -281,7 +281,7 @@ struct TaskOperationTests {
     ///   - query: The query. The default lists the live tasks in board order: column order, then ordinal.
     ///   - graph: The engine.
     /// - Returns: The ULID of each task of the response, in the order of the response.
-    private static func listedTasks(
+    static func listedTasks(
         by query: String = KanbanGraphTests.boardQuery,
         on graph: KanbanGraph
     ) async throws -> [ULID] {
@@ -345,7 +345,7 @@ struct TaskOperationTests {
     ///
     /// - Parameter field: The JSON text of the field: its name and its value.
     /// - Returns: The response JSON text.
-    private static func dataResponse(of field: String) -> String {
+    static func dataResponse(of field: String) -> String {
         #"{"data":{\#(field)}}"#
     }
 

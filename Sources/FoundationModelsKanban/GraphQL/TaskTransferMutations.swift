@@ -48,9 +48,16 @@ struct TaskPlacementFields: Decodable, Sendable {
     }
 }
 
+/// An `input` object with the place fields `ordinal`, `before`, and `after`: the input of `moveTask`, `copyTask`, or
+/// `moveTasks`. The schema gets the type of each place field from the properties of this protocol.
+protocol TaskPlaceInput: Decodable, Sendable {
+    /// The place in the column that the place fields give.
+    var placement: Placement { get }
+}
+
 /// An `input` object with the fields of ``TaskPlacementFields``: the input of `moveTask` or `copyTask`. The schema
 /// gets the type of each input field from the properties of this protocol.
-protocol TaskPlacementInput: TaskReferenceInput {
+protocol TaskPlacementInput: TaskReferenceInput, TaskPlaceInput {
     /// The fields of the input.
     var fields: TaskPlacementFields { get }
 }
@@ -71,9 +78,16 @@ extension TaskPlacementInput {
         fields.board
     }
 
+    /// The place in the column of the input.
+    var placement: Placement {
+        fields.placement
+    }
+}
+
+extension TaskPlaceInput {
     /// The `ordinal` field of the input, or `nil`.
     var ordinal: String? {
-        guard case .ordinal(let text) = fields.placement else {
+        guard case .ordinal(let text) = placement else {
             return nil
         }
         return text
@@ -81,7 +95,7 @@ extension TaskPlacementInput {
 
     /// The `before` field of the input, or `nil`.
     var before: NodeID? {
-        guard case .before(let neighbor) = fields.placement else {
+        guard case .before(let neighbor) = placement else {
             return nil
         }
         return neighbor
@@ -89,7 +103,7 @@ extension TaskPlacementInput {
 
     /// The `after` field of the input, or `nil`.
     var after: NodeID? {
-        guard case .after(let neighbor) = fields.placement else {
+        guard case .after(let neighbor) = placement else {
             return nil
         }
         return neighbor
@@ -438,14 +452,26 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
     /// The input fields of `MoveTaskInput` and `CopyTaskInput`: the fields of ``TaskPlacementFields``.
     ///
     /// - Returns: The fields `id`, `column`, `ordinal`, `before`, `after`, and `board`.
-    @InputFieldComponentBuilder<Placed, KanbanContext>
     static func placementFields<Placed: TaskPlacementInput>() -> [InputFieldComponent<Placed, KanbanContext>] {
-        Self.makeTaskReferenceField()
-        InputField("column", at: \.column).description(SchemaDescription.placementColumn)
-        InputField("ordinal", at: \.ordinal).description(SchemaDescription.placementOrdinal)
-        InputField("before", at: \.before).description(SchemaDescription.placementBefore)
-        InputField("after", at: \.after).description(SchemaDescription.placementAfter)
-        InputField("board", at: \.board).description(SchemaDescription.taskTargetBoard)
+        [
+            Self.makeTaskReferenceField(),
+            InputField("column", at: \.column).description(SchemaDescription.placementColumn),
+        ]
+            + placeFields(describedBy: .oneTask)
+            + [InputField("board", at: \.board).description(SchemaDescription.taskTargetBoard)]
+    }
+
+    /// The place fields of an `input` type of a move or a copy, so that the fields have one definition.
+    ///
+    /// - Parameter descriptions: The descriptions of the fields: for one task, or for a block of tasks.
+    /// - Returns: The fields `ordinal`, `before`, and `after`.
+    @InputFieldComponentBuilder<Placed, KanbanContext>
+    static func placeFields<Placed: TaskPlaceInput>(
+        describedBy descriptions: SchemaDescription.PlaceFields
+    ) -> [InputFieldComponent<Placed, KanbanContext>] {
+        InputField("ordinal", at: \.ordinal).description(descriptions.ordinal)
+        InputField("before", at: \.before).description(descriptions.before)
+        InputField("after", at: \.after).description(descriptions.after)
     }
 
     /// Adds the `copyTask` mutation and its `input` type (divergence.md Q21).

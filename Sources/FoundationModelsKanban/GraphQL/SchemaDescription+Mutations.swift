@@ -152,6 +152,26 @@ extension SchemaDescription {
     /// The `Mutation.undeleteTask` field.
     static let undeleteTask = undeleteText(of: .task)
 
+    /// The rule of a list mutation of tasks (divergence.md §20).
+    private static let taskListRule = """
+        The call is one transaction, so one undoChange reverses it. When a ref names no task, the call writes \
+        nothing, and the error names each such ref.
+        """
+
+    /// The `Mutation.moveTasks` field (divergence.md §20).
+    static let moveTasks = """
+        Moves a list of tasks to a column, as one block at one place in that column, in the order of the list. No \
+        place puts the tasks at the end of the column. \(taskListRule)
+        """
+
+    /// The `Mutation.deleteTasks` field (divergence.md §20).
+    static let deleteTasks = "Makes each task of a list a tombstone. \(taskListRule)"
+
+    /// The `Mutation.undeleteTasks` field (divergence.md §20).
+    static let undeleteTasks = """
+        Makes each tombstoned task of a list live again. A live task does not change. \(taskListRule)
+        """
+
     /// The `Mutation.copyTask` field.
     static let copyTask = """
         Copies a task to a column and to a place in that column, in the same board or in a different board. No board \
@@ -380,17 +400,61 @@ extension SchemaDescription {
         the first column.
         """
 
-    /// The `ordinal` field of `MoveTaskInput` and `CopyTaskInput`.
-    static let placementOrdinal = """
-        The place in the column, as a fractional index. No ordinal, before, or after puts the task at the end of the \
-        column.
+    /// The descriptions of the place fields `ordinal`, `before`, and `after` of the `input` type of a move or a copy.
+    struct PlaceFields: Sendable {
+        /// The description of the `ordinal` field.
+        let ordinal: String
+
+        /// The description of the `before` field (divergence.md P1).
+        let before: String
+
+        /// The description of the `after` field (divergence.md P1).
+        let after: String
+
+        /// The place fields of `MoveTaskInput` and `CopyTaskInput`: the place of one task.
+        static let oneTask = PlaceFields(
+            ordinal: """
+                The place in the column, as a fractional index. No ordinal, before, or after puts the task at the end \
+                of the column.
+                """,
+            before: "The task to put this task before: a full URI or a short form. \(missingNeighbor)",
+            after: "The task to put this task after: a full URI or a short form. \(missingNeighbor)"
+        )
+
+        /// The place fields of `MoveTasksInput`: the place of the block of tasks (divergence.md §20).
+        static let taskBlock = PlaceFields(
+            ordinal: """
+                The place of the first task in the column, as a fractional index. Each next task goes after the task \
+                before it. No ordinal, before, or after puts the tasks at the end of the column.
+                """,
+            before: "The task to put the tasks before: a full URI or a short form. \(missingNeighbor)",
+            after: "The task to put the tasks after: a full URI or a short form. \(missingNeighbor)"
+        )
+    }
+
+    /// The `MoveTasksInput` type (divergence.md §20).
+    static let moveTasksInput = "The fields of moveTasks. \(placementRule)"
+
+    /// The `column` field of `MoveTasksInput` (divergence.md §20).
+    static let taskBlockColumn = """
+        The column: a full URI, the slug, or a name. A slug that no column has makes the column. No column gives the \
+        column where the first task of the list shows.
         """
 
-    /// The `before` field of `MoveTaskInput` and `CopyTaskInput` (divergence.md P1).
-    static let placementBefore = "The task to put this task before: a full URI or a short form. \(missingNeighbor)"
+    /// The `id` field of the `input` type of a list mutation of tasks (divergence.md §20).
+    static let taskListReference = """
+        The tasks: a list of full URIs or short forms, or one of them. A JSON array in one string is also a list. The \
+        result gives each task one time, in the order of the list. When a ref names no task, the call writes nothing, \
+        and the error names each such ref.
+        """
 
-    /// The `after` field of `MoveTaskInput` and `CopyTaskInput` (divergence.md P1).
-    static let placementAfter = "The task to put this task after: a full URI or a short form. \(missingNeighbor)"
+    /// Gives the description of the `input` type of a list mutation of tasks that names only the tasks.
+    ///
+    /// - Parameter mutation: The name of the mutation, for example `deleteTasks`.
+    /// - Returns: The description, for example "The tasks of deleteTasks.".
+    static func taskListInput(of mutation: String) -> String {
+        "The tasks of \(mutation)."
+    }
 
     /// The `tags` field of `TagTaskInput` and `UntagTaskInput`.
     static let tagTaskTags = "The tags to add or to remove. \(tagForms)"

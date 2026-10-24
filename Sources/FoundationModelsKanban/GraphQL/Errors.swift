@@ -12,6 +12,10 @@ enum KanbanError: CodedError, Hashable {
     /// `NOT_FOUND`: no node of the type has the reference.
     case notFound(type: PatchNodeType, reference: String)
 
+    /// `NOT_FOUND`: two or more refs of the list of a list mutation name no node of the type, so the call wrote
+    /// nothing (divergence.md §20). The references are these refs as the call wrote them, in the order of the list.
+    case nodesNotFound(type: PatchNodeType, references: [String])
+
     /// `NOT_FOUND`: the scan finds no board for the board ref (plan.md §6.6). The search roots are the places that
     /// the scan looked in, in scan order.
     case boardNotFound(reference: String, searchRoots: [String])
@@ -123,7 +127,7 @@ extension KanbanError {
     /// The code of the error, as `extensions.code` gives it, for example `NOT_FOUND`.
     var code: String {
         switch self {
-        case .notFound, .boardNotFound, .transactionBoardNotLoaded: "NOT_FOUND"
+        case .notFound, .nodesNotFound, .boardNotFound, .transactionBoardNotLoaded: "NOT_FOUND"
         case .incompatibleBoard: "INCOMPATIBLE_BOARD"
         case .ambiguousID: "AMBIGUOUS_ID"
         case .actorNotFound: "ACTOR_NOT_FOUND"
@@ -150,6 +154,10 @@ extension KanbanError {
         case .notFound(let type, let reference):
             "No \(Self.noun(for: type)) has the reference \"\(reference)\". Query the board to get the correct ids, "
                 + "and then send the call again."
+        case .nodesNotFound(let type, let references):
+            "No \(Self.noun(for: type)) has the references "
+                + "\(references.map { reference in "\"\(reference)\"" }.joined(separator: Self.listSeparator)), so the "
+                + "call wrote nothing. Query the board to get the correct ids, and then send the call again."
         case .boardNotFound(let reference, let searchRoots):
             "No board has the reference \"\(reference)\". The scan looked for git repos and for folders with a "
                 + ".kanban/ folder in: \(searchRoots.joined(separator: Self.listSeparator)). Use a board key, a board "
