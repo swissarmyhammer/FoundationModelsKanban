@@ -219,7 +219,9 @@ type Board implements Node {
   cursor: String!
 }
 
-"""A column of the board. Each live task shows in one column."""
+"""
+A column of the board. Each live task shows in one column. The YAML frontmatter at the top of the body holds the trigger of the column: trigger: <skill> and next: <true or false>.
+"""
 type Column implements Node {
   """The full kanban:// URI of the node."""
   id: ID!
@@ -250,6 +252,16 @@ type Column implements Node {
   The sort key of the column on the board. The column with the lowest order is the first column, and the column with the highest order is the terminal column: a task there is done.
   """
   order: Int!
+
+  """
+  The skill that runs when a task enters the column, from the trigger key of the frontmatter of the body. Null when the body has no trigger, or when its frontmatter is not valid.
+  """
+  trigger: String
+
+  """
+  True when the task moves to the next column when the skill of the trigger ends, from the next key of the frontmatter of the body. True when the body does not give a valid value.
+  """
+  next: Boolean!
 
   """
   The number of live tasks in the column. A task whose column is not a live column counts in the first column.
@@ -736,7 +748,7 @@ type NodeUpdate {
   kind: UpdateKind!
 
   """
-  The change of each tracked field of the node that changed. The tracked fields are body and deleted, and: the name, model, and summary of a board; the name and order of a column; the name, color, and avatar of an actor; the name and color of a tag; the title, column, ordinal, assignees, tags, dependsOn, blockedBy, unresolvedDependsOn, ready, virtualTags, progress, started, and completed of a task; the task and author of a comment. Each other field is not tracked, for example created, updated, taskCount, and readyCount.
+  The change of each tracked field of the node that changed. The tracked fields are body and deleted, and: the name, model, and summary of a board; the name, order, trigger, and next of a column; the name, color, and avatar of an actor; the name and color of a tag; the title, column, ordinal, assignees, tags, dependsOn, blockedBy, unresolvedDependsOn, ready, virtualTags, progress, started, and completed of a task; the task and author of a comment. Each other field is not tracked, for example created, updated, taskCount, and readyCount.
   """
   fields: [FieldChange!]!
 
@@ -909,13 +921,23 @@ input AddColumnInput {
   body: String
 
   """
+  The skill that runs when a task enters the column. The call writes it as the trigger key of the YAML frontmatter at the top of the body, and keeps the other keys and the text. Null or empty text removes the key: the column then has no trigger.
+  """
+  trigger: String
+
+  """
+  True when the task moves to the next column when the skill of the trigger ends. The call writes it as the next key of the frontmatter of the body. Null removes the key, and no key gives true.
+  """
+  next: Boolean
+
+  """
   The board to change. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. No value changes the current board. The short refs of the input name nodes of this board.
   """
   board: String
 }
 
 """
-The fields of updateColumn. A field that is not set does not change. Null for the order gives the order 0; null clears the body; null for the name gives no change and a warning.
+The fields of updateColumn. A field that is not set does not change. Null for the order gives the order 0; null clears the body; null for the trigger or next removes its key from the frontmatter of the body; null for the name gives no change and a warning. A trigger or next with a body goes into the frontmatter of that body.
 """
 input UpdateColumnInput {
   """
@@ -933,6 +955,16 @@ input UpdateColumnInput {
   The new Markdown body: the full text. The call writes the diff from the current body.
   """
   body: String
+
+  """
+  The skill that runs when a task enters the column. The call writes it as the trigger key of the YAML frontmatter at the top of the body, and keeps the other keys and the text. Null or empty text removes the key: the column then has no trigger.
+  """
+  trigger: String
+
+  """
+  True when the task moves to the next column when the skill of the trigger ends. The call writes it as the next key of the frontmatter of the body. Null removes the key, and no key gives true.
+  """
+  next: Boolean
 }
 
 """The fields of addActor. The input gives an id, a name, or both."""
@@ -1720,7 +1752,9 @@ type Mutation {
     input: UpdateBoardInput!
   ): Board
 
-  """Makes a column."""
+  """
+  Makes a column. A trigger or next goes into the frontmatter of the body.
+  """
   addColumn(
     """
     The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
@@ -1728,7 +1762,9 @@ type Mutation {
     input: AddColumnInput!
   ): Column
 
-  """Changes the name, the order, or the body of a column."""
+  """
+  Changes the name, the order, the body, or the trigger of a column. A trigger or next goes into the frontmatter of the body, and the other lines of the body do not change.
+  """
   updateColumn(
     """
     The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.

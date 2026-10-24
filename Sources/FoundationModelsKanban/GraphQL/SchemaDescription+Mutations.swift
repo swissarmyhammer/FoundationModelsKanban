@@ -87,10 +87,13 @@ extension SchemaDescription {
     // MARK: - Column and actor mutations
 
     /// The `Mutation.addColumn` field.
-    static let addColumn = "Makes a column."
+    static let addColumn = "Makes a column. A trigger or next goes into the frontmatter of the body."
 
-    /// The `Mutation.updateColumn` field.
-    static let updateColumn = "Changes the name, the order, or the body of a column."
+    /// The `Mutation.updateColumn` field (divergence.md §22).
+    static let updateColumn = """
+        Changes the name, the order, the body, or the trigger of a column. A trigger or next goes into the frontmatter \
+        of the body, and the other lines of the body do not change.
+        """
 
     /// The `Mutation.deleteColumn` field.
     static let deleteColumn = tombstoneText(of: .column) + " A column with live tasks gives COLUMN_NOT_EMPTY."
@@ -311,7 +314,8 @@ extension SchemaDescription {
     /// The `UpdateColumnInput` type.
     static let updateColumnInput = """
         The fields of updateColumn. A field that is not set does not change. Null for the order gives the order 0; \
-        null clears the body; null for the name gives no change and a warning.
+        null clears the body; null for the trigger or next removes its key from the frontmatter of the body; null for \
+        the name gives no change and a warning. A trigger or next with a body goes into the frontmatter of that body.
         """
 
     /// The `id` field of `UpdateColumnInput`.
@@ -319,6 +323,19 @@ extension SchemaDescription {
 
     /// The `order` field of `UpdateColumnInput`.
     static let changedColumnOrder = "The new sort key of the column."
+
+    /// The `trigger` field of `AddColumnInput` and `UpdateColumnInput` (divergence.md §22).
+    static let columnTrigger = """
+        The skill that runs when a task enters the column. The call writes it as the \(ColumnTrigger.triggerKey) key \
+        of the YAML frontmatter at the top of the body, and keeps the other keys and the text. Null or empty text \
+        removes the key: the column then has no trigger.
+        """
+
+    /// The `next` field of `AddColumnInput` and `UpdateColumnInput` (divergence.md §22).
+    static let columnNext = """
+        True when the task moves to the next column when the skill of the trigger ends. The call writes it as the \
+        \(ColumnTrigger.nextKey) key of the frontmatter of the body. Null removes the key, and no key gives true.
+        """
 
     /// The `AddActorInput` type.
     static let addActorInput = "The fields of addActor. The input gives an id, a name, or both."

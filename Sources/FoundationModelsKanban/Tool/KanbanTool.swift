@@ -33,6 +33,15 @@ public struct KanbanTool: GraphQLEndpointTool {
     /// title `Fix login bug`.
     static let titleSlugRefExample = "fix-login-bug"
 
+    /// The skill of the trigger of ``columnTriggerExample``.
+    static let columnTriggerSkill = "triage"
+
+    /// The column trigger example of the description (divergence.md §22): it writes the trigger and `next` into the
+    /// frontmatter of the body of the column `todo`. A test runs it.
+    static let columnTriggerExample = """
+        mutation { updateColumn(input: { id: "todo", trigger: "\(columnTriggerSkill)", next: false }) { trigger next } }
+        """
+
     /// What the agent does in place of a subscription, for the `SUBSCRIPTION_NOT_IN_TOOL` error: it reads the
     /// changes again with the history query (EXTRAS-9 rule 10).
     static let subscriptionHint = "Use board { history(since: <txn>) } to get the changes after a known transaction."
@@ -43,8 +52,8 @@ public struct KanbanTool: GraphQLEndpointTool {
     /// The short description of the tool: its purpose, the root fields, one example query, one example of the
     /// history filter, the dependencies between repos (divergence.md R17), the ref forms (divergence.md R18, Q25, C3,
     /// E4), the version check of `updateTask` (divergence.md §18), the warnings, the transaction of the response
-    /// (divergence.md §19), the list mutations (divergence.md §20), `rejectTask` (divergence.md §21), and the board
-    /// place. The description
+    /// (divergence.md §19), the list mutations (divergence.md §20), `rejectTask` (divergence.md §21), the column
+    /// trigger (divergence.md §22), and the board place. The description
     /// does not hold the schema. The agent learns the schema with introspection (plan.md §12 item 10).
     public let description = """
         Reads and changes the kanban task graph of this repo with GraphQL. Send one GraphQL document in query. \
@@ -74,6 +83,10 @@ public struct KanbanTool: GraphQLEndpointTool {
         transaction, give a list of ids as id to moveTasks, deleteTasks, or undeleteTasks. To send a task back with a \
         comment to the agent, use rejectTask(input: { id, comment }): one transaction adds the comment and moves the \
         task, by default to the column before its column. \
+        The trigger of a column is YAML frontmatter at the top of the column body: trigger is the skill that runs \
+        when a task enters the column, and next tells if the task then moves to the next column. Give trigger and \
+        next to addColumn or updateColumn, and read Column.trigger and Column.next. Example: \
+        \(KanbanTool.columnTriggerExample) \
         The board is in .kanban at the top of a git worktree. \
         Outside git, the board is in the nearest folder up that has a .kanban folder, else in the working directory, \
         and its key is its board ID. The collectBoards mutation combines other .kanban folders, for example a board \

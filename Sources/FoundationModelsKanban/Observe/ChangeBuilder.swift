@@ -436,11 +436,17 @@ extension BoardObject {
 }
 
 extension ColumnObject {
-    /// The values of the public fields of the column: `name` and `order`. The derived counts `taskCount` and
-    /// `readyCount` are not in the values: a change of a task gives the update of the task and of the board summary,
-    /// and no update of each column that the task leaves or enters.
+    /// The values of the public fields of the column: `name`, `order`, and the `trigger` and `next` of the
+    /// frontmatter of the body (divergence.md §22). The derived counts `taskCount` and `readyCount` are not in the
+    /// values: a change of a task gives the update of the task and of the board summary, and no update of each column
+    /// that the task leaves or enters.
     var trackedFields: TrackedFields {
-        nodeFields(named: name, adding: [("order", .single(Map(order)))])
+        let trigger = columnTrigger
+        return nodeFields(named: name, adding: [
+            ("order", .single(Map(order))),
+            ("trigger", .single(Map(trigger.skill))),
+            ("next", .single(Map(trigger.movesToNext))),
+        ])
     }
 }
 

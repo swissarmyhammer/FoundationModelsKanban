@@ -86,10 +86,10 @@ extension SchemaDescription {
     /// The `NodeUpdate.fields` field (``NodeObject/trackedFields``).
     static let nodeUpdateFields = """
         The change of each tracked field of the node that changed. The tracked fields are body and deleted, and: the \
-        name, model, and summary of a board; the name and order of a column; the name, color, and avatar of an actor; \
-        the name and color of a tag; the title, column, ordinal, assignees, tags, dependsOn, blockedBy, \
-        unresolvedDependsOn, ready, virtualTags, progress, started, and completed of a task; the task and author of a \
-        comment. Each other field is not tracked, for example created, updated, taskCount, and readyCount.
+        name, model, and summary of a board; the name, order, trigger, and next of a column; the name, color, and \
+        avatar of an actor; the name and color of a tag; the title, column, ordinal, assignees, tags, dependsOn, \
+        blockedBy, unresolvedDependsOn, ready, virtualTags, progress, started, and completed of a task; the task and \
+        author of a comment. Each other field is not tracked, for example created, updated, taskCount, and readyCount.
         """
 
     /// The `NodeUpdate.node` field.

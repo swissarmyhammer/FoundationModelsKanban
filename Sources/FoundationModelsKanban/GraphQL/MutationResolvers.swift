@@ -564,6 +564,14 @@ extension FieldUpdate {
         }
         return true
     }
+
+    /// `true` when the input does not have the field, so that the field does not change.
+    var isUnchanged: Bool {
+        guard case .unchanged = self else {
+            return false
+        }
+        return true
+    }
 }
 
 extension Graph {

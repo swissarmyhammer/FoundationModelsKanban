@@ -77,6 +77,12 @@ enum KanbanFieldAliases {
     /// The aliases of the model of a board input (divergence.md Q19).
     private static let model = ["modelId", "chatModel", "agentModel", "llm"]
 
+    /// The aliases of the trigger fields of a column (divergence.md §22): the skill of the trigger, and `next`.
+    private static let columnTrigger = [
+        "trigger": ["skill", "triggerSkill", "onEnter", "onEntry"],
+        "next": ["autoAdvance", "advance", "moveNext", "goNext"],
+    ]
+
     /// The aliases of the `id` of an input that names a task.
     private static let taskID = refAliases(ofType: "task")
 
@@ -198,7 +204,9 @@ enum KanbanFieldAliases {
         "UpdateCommentInput": commentReference,
         "DeleteCommentInput": commentReference,
         "UndeleteCommentInput": commentReference,
-        "UpdateColumnInput": nodeReference(ofType: "column"),
+        "Column": columnTrigger,
+        "AddColumnInput": columnTrigger,
+        "UpdateColumnInput": nodeReference(ofType: "column").merging(columnTrigger) { reference, _ in reference },
         "DeleteColumnInput": nodeReference(ofType: "column"),
         "UndeleteColumnInput": nodeReference(ofType: "column"),
         "AddActorInput": ["avatar": avatar],

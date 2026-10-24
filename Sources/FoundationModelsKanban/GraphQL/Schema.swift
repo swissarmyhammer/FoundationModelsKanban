@@ -1085,6 +1085,8 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             Self.nodeType(ColumnObject.self, as: GraphQLTypeName.column, description: SchemaDescription.column) {
                 Field("name", at: \.name).description(SchemaDescription.columnNameField)
                 Field("order", at: \.order).description(SchemaDescription.columnOrderField)
+                Field("trigger", at: \.trigger).description(SchemaDescription.columnTriggerField)
+                Field("next", at: \.next).description(SchemaDescription.columnNextField)
                 Field("taskCount", at: \.taskCount).description(SchemaDescription.columnTaskCount)
                 Field("readyCount", at: \.readyCount).description(SchemaDescription.columnReadyCount)
                 Self.taskListField()

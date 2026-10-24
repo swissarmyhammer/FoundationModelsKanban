@@ -234,6 +234,15 @@ struct KanbanToolTests {
         #expect(description.contains("^^"))
     }
 
+    @Test("The column trigger example of the description runs, and writes the trigger and next of the column (§22)")
+    func columnTriggerExampleRuns() async throws {
+        let description = try Self.makeTool(inRepoAt: TemporaryDirectory().url).description
+        #expect(description.contains(KanbanTool.columnTriggerExample))
+        let response = try await Self.call(query: KanbanTool.columnTriggerExample, variables: nil)
+        let column = #"{"next":false,"trigger":"\#(KanbanTool.columnTriggerSkill)"}"#
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"updateColumn":\#(column)}}"#)
+    }
+
     @Test("The history example of the description runs, and its filter keeps only the task updates")
     func historyExampleRuns() async throws {
         #expect(try Self.makeTool(inRepoAt: TemporaryDirectory().url).description.contains(KanbanTool.historyExample))

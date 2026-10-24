@@ -540,6 +540,21 @@ extension ColumnObject: TaskHolderObject {
         state.order
     }
 
+    /// The trigger of the column, from the frontmatter of its body (divergence.md §22).
+    var columnTrigger: ColumnTrigger {
+        ColumnTrigger(body: body)
+    }
+
+    /// The skill that runs when a task enters the column, or `nil` for no trigger (divergence.md §22).
+    var trigger: String? {
+        columnTrigger.skill
+    }
+
+    /// `true` when a task moves to the next column when the skill of the trigger ends (divergence.md §22).
+    var next: Bool {
+        columnTrigger.movesToNext
+    }
+
     /// The number of live tasks that show in the column (divergence.md Q19). Rust calls it `task_count`.
     var taskCount: Int {
         view.readiness.taskCount(inColumnAt: slot)

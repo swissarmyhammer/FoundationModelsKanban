@@ -8,7 +8,7 @@ extension MutationName {
     /// The mutation that makes a column.
     static let addColumn = "addColumn"
 
-    /// The mutation that changes the name, the order, or the body of a column.
+    /// The mutation that changes the name, the order, the body, or the trigger of a column.
     static let updateColumn = "updateColumn"
 
     /// The mutation that makes a column a tombstone.
@@ -54,9 +54,31 @@ private struct AddColumnInput: Codable, NewNodeBodyInput, TargetBoardInput {
     /// The Markdown body of the column: the full text, or `nil` for no body.
     let body: String?
 
+    /// The skill of the trigger of the column, or `nil` for no trigger (divergence.md §22). The call writes it into
+    /// the frontmatter of the body.
+    let trigger: String?
+
+    /// `true` when a task moves to the next column when the skill ends, or `nil` for no `next` key (divergence.md
+    /// §22). The call writes it into the frontmatter of the body.
+    let next: Bool?
+
     /// The board of the column: a board key, a repo directory name, or a path, or `nil` for the current board
     /// (plan.md §6.6).
     let board: String?
+
+    /// The body of the new column: ``body``, with ``trigger`` and ``next`` in its frontmatter (``ColumnTrigger``).
+    var columnBody: String {
+        ColumnTrigger.body(
+            body ?? "",
+            settingSkill: trigger.map(FieldUpdate.changed) ?? .unchanged,
+            next: next.map(FieldUpdate.changed) ?? .unchanged
+        )
+    }
+
+    /// `true` when the input gives a body, a trigger, or a `next` value, so that the call writes the body.
+    var writesBody: Bool {
+        body != nil || trigger != nil || next != nil
+    }
 }
 
 /// The `input` object of `updateColumn` (plan.md §4.2). A field that is not set does not change. `null` for the
@@ -75,6 +97,32 @@ private struct UpdateColumnInput: ChangedNameInput, ChangedBodyInput {
 
     /// The new Markdown body of the column: the full text. The mutation writes the diff from the current body.
     let body: FieldUpdate<String>
+
+    /// The new skill of the trigger of the column (divergence.md §22). `null` removes the `trigger` key from the
+    /// frontmatter of the body.
+    let trigger: FieldUpdate<String>
+
+    /// The new `next` value of the column (divergence.md §22). `null` removes the `next` key from the frontmatter of
+    /// the body, so the column gets the default `true`.
+    let next: FieldUpdate<Bool>
+
+    /// `true` when the input changes the body, the trigger, or the `next` value, so that the call writes the body.
+    var writesBody: Bool {
+        !(body.isUnchanged && trigger.isUnchanged && next.isUnchanged)
+    }
+
+    /// Gives the update of the body: the new body, or the current body, with the trigger change in its frontmatter
+    /// (``ColumnTrigger``).
+    ///
+    /// - Parameter current: The current body of the column.
+    /// - Returns: The update of the body. With no trigger change, ``body`` as the input gives it.
+    func bodyUpdate(from current: String) -> FieldUpdate<String> {
+        guard !trigger.isUnchanged || !next.isUnchanged else {
+            return body
+        }
+        let base = body.value(clearingTo: "") ?? current
+        return .changed(ColumnTrigger.body(base, settingSkill: trigger, next: next))
+    }
 }
 
 /// The `input` object of `addActor` (plan.md §4.2). The input must give an id or a name, or both.
@@ -165,7 +213,8 @@ private enum UndeleteActorMutation: SharedInputMutation {
 
 extension KanbanResolver {
     /// Resolves `Mutation.addColumn`: makes a column with a `set` of the name and the order, and an `edit` of the
-    /// body, in one patch (plan.md §4.2).
+    /// body, in one patch (plan.md §4.2). The body gets the trigger and the `next` value in its frontmatter
+    /// (divergence.md §22). A frontmatter that is not valid gives a warning, and the call writes the body.
     ///
     /// - Parameters:
     ///   - context: The context of the call.
@@ -188,12 +237,17 @@ extension KanbanResolver {
             let values = [String: PatchValue](
                 givenValues: [PropertyName.name: .string(input.name), PropertyName.order: .integer(order)]
             )
-            try work.addNode(ref, setting: values, body: input.body, at: time)
+            try work.addNode(ref, setting: values, body: input.columnBody, at: time)
+            if input.writesBody {
+                work.warnOfFrontmatterProblem(ofColumn: ref)
+            }
             return ref
         }
     }
 
-    /// Resolves `Mutation.updateColumn`: changes the given fields of a column. The slug does not change.
+    /// Resolves `Mutation.updateColumn`: changes the given fields of a column. The slug does not change. A trigger or
+    /// a `next` value goes into the frontmatter of the new body, or of the current body when the input gives no body
+    /// (divergence.md §22). A frontmatter that is not valid gives a warning, and the call writes the body.
     ///
     /// - Parameters:
     ///   - context: The context of the call.
@@ -215,7 +269,11 @@ extension KanbanResolver {
                 PropertyName.name: input.name.ignoringNull.map(PatchValue.string),
                 PropertyName.order: input.order.map(PatchValue.integer),
             ]
-            try work.updateNode(ref, updating: values, body: input.body, at: time)
+            let body = input.bodyUpdate(from: work.graph.body(of: ref))
+            try work.updateNode(ref, updating: values, body: body, at: time)
+            if input.writesBody {
+                work.warnOfFrontmatterProblem(ofColumn: ref)
+            }
             return ref
         }
         await context.warnIfNull(input.name, forField: PropertyName.name, of: MutationName.updateColumn)
@@ -566,6 +624,18 @@ extension WorkingCopy {
         try updateNode(ref, updating: values, body: .unchanged, at: time)
     }
 
+    /// Adds the warning of the frontmatter of the body of a column to the warnings of the run, when the frontmatter
+    /// does not give a valid trigger (divergence.md §22). The write stays: the column uses the default values.
+    ///
+    /// - Parameter ref: The local ref of the column.
+    fileprivate func warnOfFrontmatterProblem(ofColumn ref: LocalRef) {
+        let trigger = ColumnTrigger(body: graph.body(of: ref))
+        guard let slug = ref.localID, let warning = trigger.warning(ofColumn: slug) else {
+            return
+        }
+        ResolverWarnings.current?.add(warning)
+    }
+
     /// Checks that a column shows no live task, so that a delete can make it a tombstone (plan.md §3.3, rule 5). The
     /// tasks are the tasks of `Column.tasks`, so the count in the error is the count that the caller sees.
     ///
@@ -693,6 +763,8 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 InputField("name", at: \.name).description(SchemaDescription.columnName)
                 InputField("order", at: \.order).description(SchemaDescription.columnOrder)
                 Self.makeNewBodyField()
+                InputField("trigger", at: \.trigger).description(SchemaDescription.columnTrigger)
+                InputField("next", at: \.next).description(SchemaDescription.columnNext)
                 Self.makeTargetBoardField()
             }
             .description(SchemaDescription.addColumnInput)
@@ -701,6 +773,8 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Self.makeChangedNameField()
                 InputField("order", at: \.order.value).description(SchemaDescription.changedColumnOrder)
                 Self.makeChangedBodyField()
+                InputField("trigger", at: \.trigger.value).description(SchemaDescription.columnTrigger)
+                InputField("next", at: \.next.value).description(SchemaDescription.columnNext)
             }
             .description(SchemaDescription.updateColumnInput)
             Input(AddActorInput.self) {

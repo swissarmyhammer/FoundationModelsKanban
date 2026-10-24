@@ -150,7 +150,10 @@ extension SchemaDescription {
     // MARK: - Column, actor, and tag
 
     /// The `Column` type.
-    static let column = "A column of the board. Each live task shows in one column."
+    static let column = """
+        A column of the board. Each live task shows in one column. The YAML frontmatter at the top of the body holds \
+        the trigger of the column: \(ColumnTrigger.triggerKey): <skill> and \(ColumnTrigger.nextKey): <true or false>.
+        """
 
     /// The `Column.name` field.
     static let columnNameField = "The display name of the column."
@@ -159,6 +162,18 @@ extension SchemaDescription {
     static let columnOrderField = """
         The sort key of the column on the board. The column with the lowest order is the first column, and the column \
         with the highest order is the terminal column: a task there is done.
+        """
+
+    /// The `Column.trigger` field.
+    static let columnTriggerField = """
+        The skill that runs when a task enters the column, from the \(ColumnTrigger.triggerKey) key of the frontmatter \
+        of the body. Null when the body has no trigger, or when its frontmatter is not valid.
+        """
+
+    /// The `Column.next` field.
+    static let columnNextField = """
+        True when the task moves to the next column when the skill of the trigger ends, from the \
+        \(ColumnTrigger.nextKey) key of the frontmatter of the body. True when the body does not give a valid value.
         """
 
     /// The `tasks` field of `Column`, `Actor`, and `Tag`.

@@ -375,7 +375,7 @@ struct TaskOperationTests {
     ///
     /// - Parameter body: The body.
     /// - Returns: The JSON text of the body, without the quotes.
-    private static func jsonText(of body: String) -> String {
+    static func jsonText(of body: String) -> String {
         body.replacingOccurrences(of: "\n", with: "\\n")
     }
 
