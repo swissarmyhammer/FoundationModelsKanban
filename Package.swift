@@ -121,7 +121,13 @@ let package = Package(
                 .product(name: metadataRegistryPackage, package: metadataRegistryPackage),
                 .product(name: extrasPackage, package: extrasPackage),
             ],
-            path: "Sources/\(packageName)"
+            path: "Sources/\(packageName)",
+            // The system prompt of the filter agent (divergence.md §17, "A smart
+            // prompt"). The file is a copy at the top of the resource bundle, so
+            // `Bundle.module` finds it by its name.
+            resources: [
+                .copy("Resources/FilterAgentPrompt.md")
+            ]
         ),
         // Swift Testing only (plan.md §11). This target holds the unit tests,
         // which need no external system.

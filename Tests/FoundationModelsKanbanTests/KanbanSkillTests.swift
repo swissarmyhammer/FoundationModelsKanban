@@ -33,10 +33,11 @@ struct KanbanSkillTests {
     /// The indent of a key of the `metadata` object of the frontmatter.
     private static let metadataIndent = "  "
 
-    /// The heading of the section of the skill that lists the virtual tags.
+    /// The heading of the section that lists the virtual tags, in the skill and in the system prompt of the filter
+    /// agent.
     private static let virtualTagHeading = "## Virtual tags"
 
-    /// The start of each level-two heading of the skill.
+    /// The start of each level-two heading of a Markdown text.
     private static let sectionStart = "\n## "
 
     /// The name that is not a virtual tag in the Swift kanban (divergence.md Q1, C1).
@@ -172,6 +173,20 @@ struct KanbanSkillTests {
         String(line.prefix { character in character != ":" }).trimmingCharacters(in: .whitespaces)
     }
 
+    /// Reads the tag of each row of the table in the ``virtualTagHeading`` section of a Markdown text: the skill, or
+    /// the system prompt of the filter agent (``FilterAgentPromptTests``). The first cell of a row is the tag in code.
+    ///
+    /// - Parameter text: The Markdown text.
+    /// - Returns: The tags, in table order.
+    /// - Throws: An error of `#require` when the text has no ``virtualTagHeading`` section.
+    static func virtualTagNames(inTableOf text: String) throws -> [String] {
+        let heading = virtualTagHeading
+        let section = try #require(text.range(of: heading), "the text must have \(heading)")
+        let rest = text[section.upperBound...]
+        let body = rest.range(of: sectionStart).map { end in rest[..<end.lowerBound] } ?? rest
+        return body.matches(of: #/(?m)^\| `(?<tag>[A-Z]+)` \|/#).map { row in String(row.tag) }
+    }
+
     /// Runs each example of the skill, in skill order, on one new board.
     ///
     /// A result that is not JSON, for example the error text of a script that throws, stays as it is, so that the
@@ -212,13 +227,7 @@ struct KanbanSkillTests {
 
     @Test("The virtual tag table of the skill names each virtual tag of the Swift kanban")
     func virtualTagTableNamesEachVirtualTag() throws {
-        let text = try Self.skillText()
-        let heading = Self.virtualTagHeading
-        let section = try #require(text.range(of: heading), "the skill must have \(heading)")
-        let rest = text[section.upperBound...]
-        let body = rest.range(of: Self.sectionStart).map { end in rest[..<end.lowerBound] } ?? rest
-        let tags = body.matches(of: #/(?m)^\| `(?<tag>[A-Z]+)` \|/#).map { row in String(row.tag) }
-        #expect(tags == VirtualTag.allCases.map(\.rawValue))
+        #expect(try Self.virtualTagNames(inTableOf: Self.skillText()) == VirtualTag.allCases.map(\.rawValue))
     }
 
     @Test("Each line of the skill that names BLOCKING says that it is an ordinary tag")
