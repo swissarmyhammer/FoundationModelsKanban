@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModels
 import FoundationModelsExtras
 
 /// Sends the changes of the live graphs of some boards to the session views of the process (plan.md §6.7,
@@ -86,6 +87,9 @@ actor BoardEngine {
     /// session view of the board reads.
     nonisolated let feed: ChangeFeed
 
+    /// The model of the filter agent of `translateFilter`, or `nil` for no filter agent (divergence.md §17).
+    nonisolated let filterModel: (any LanguageModel)?
+
     /// The live graph of the board and its commit path.
     private(set) var session: CommitSession
 
@@ -124,6 +128,7 @@ actor BoardEngine {
     ///   - root: The root directory of the repo of the board.
     ///   - session: The loaded session of the board.
     ///   - capacity: The number of the newest changes that the change log of the board keeps.
+    ///   - filterModel: The model of the filter agent, or `nil` for no filter agent.
     ///   - batchObserver: Gets a call when the watcher applies a batch, or `nil` for no calls.
     ///   - publish: Sends the changes of a batch of the watcher to the session views.
     ///   - reportRetirement: Tells the host that the engine retired.
@@ -132,6 +137,7 @@ actor BoardEngine {
         root: URL,
         session: CommitSession,
         keepingChanges capacity: Int,
+        translatingFiltersWith filterModel: (any LanguageModel)?,
         observingBatchesWith batchObserver: (any LiveGraphObserver)?,
         publishingTo publish: @escaping ChangePublisher,
         reportingRetirementTo reportRetirement: @escaping EngineRetirement
@@ -142,6 +148,7 @@ actor BoardEngine {
         self.root = root
         self.session = session
         self.feed = feed
+        self.filterModel = filterModel
         newestCursor = cursor
         loggedSession = session.read(atCursor: cursor)
         self.batchObserver = batchObserver
@@ -206,6 +213,7 @@ actor BoardEngine {
             root: request.root,
             session: session,
             keepingChanges: request.configuration.changeLogCapacity,
+            translatingFiltersWith: request.filterModel,
             observingBatchesWith: request.configuration.batchObserver,
             publishingTo: request.publish,
             reportingRetirementTo: request.reportRetirement
@@ -592,6 +600,9 @@ struct EngineLoad: Sendable {
 
     /// The embedder of the search of the board, or `nil` for BM25 and trigram only.
     let embedder: (any PooledEmbedding)?
+
+    /// The model of the filter agent of the board, or `nil` for no filter agent (divergence.md §17).
+    let filterModel: (any LanguageModel)?
 
     /// `true` when the engine starts a file watcher. A closed host loads a board with no watcher.
     let startsWatcher: Bool

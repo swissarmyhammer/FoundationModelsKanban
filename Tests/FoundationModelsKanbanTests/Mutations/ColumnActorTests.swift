@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModels
 import GraphQL
 import Testing
 import ULID
@@ -121,13 +122,20 @@ struct ColumnActorTests {
     /// - Parameters:
     ///   - directory: The temporary repo directory.
     ///   - keyReader: Reads the key of the board. The default gives the fake key of ``KanbanGraphTests``.
+    ///   - filterModel: The model of the filter agent, or `nil` for no model.
     /// - Returns: The engine, and the ULID of the fixture task.
     static func makeFixtureGraph(
         in directory: TemporaryDirectory,
-        readingKeyWith keyReader: @escaping BoardKeyReader = KanbanGraphTests.fakeKey
+        readingKeyWith keyReader: @escaping BoardKeyReader = KanbanGraphTests.fakeKey,
+        filterModel: (any LanguageModel)? = nil
     ) throws -> (graph: KanbanGraph, task: ULID) {
         let task = try KanbanGraphTests.writeFixture(inRepoAt: directory.url).task
-        return (try KanbanGraphTests.makeGraph(at: directory.url, readingKeyWith: keyReader), task)
+        let graph = try KanbanGraphTests.makeGraph(
+            at: directory.url,
+            readingKeyWith: keyReader,
+            filterModel: filterModel
+        )
+        return (graph, task)
     }
 
     /// Runs one document on a new engine of the fixture repo.
@@ -150,16 +158,18 @@ struct ColumnActorTests {
     ///
     /// - Parameters:
     ///   - setup: A document that runs before the body, or `nil` for none.
+    ///   - filterModel: The model of the filter agent of the engine, or `nil` for no model.
     ///   - directory: The temporary repo directory.
     ///   - body: Gets the engine, the event log of the board, and the response of the setup document, and gives the
     ///     result.
     /// - Returns: The result of the body.
     private static func runWritingNothing<Result>(
         after setup: String?,
+        filteringWith filterModel: (any LanguageModel)? = nil,
         in directory: TemporaryDirectory,
         _ body: (KanbanGraph, EventLog, String) async throws -> Result
     ) async throws -> Result {
-        let graph = try makeFixtureGraph(in: directory).graph
+        let graph = try makeFixtureGraph(in: directory, filterModel: filterModel).graph
         let setupResponse = try await KanbanGraphTests.execute(setup ?? KanbanGraphTests.nameQuery, on: graph)
         let log = EventLog(repositoryAt: directory.url)
         let before = try log.nodeFileSignatures()
@@ -226,14 +236,16 @@ struct ColumnActorTests {
     /// - Parameters:
     ///   - document: The GraphQL document.
     ///   - setup: A document that runs before it, on the same engine, or `nil` for none.
+    ///   - filterModel: The model of the filter agent of the engine, or `nil` for no model.
     ///   - directory: The temporary repo directory.
     /// - Returns: The response JSON text of the document.
     static func respondWritingNothing(
         to document: String,
         after setup: String? = nil,
+        filteringWith filterModel: (any LanguageModel)? = nil,
         in directory: TemporaryDirectory
     ) async throws -> String {
-        try await runWritingNothing(after: setup, in: directory) { graph, _, _ in
+        try await runWritingNothing(after: setup, filteringWith: filterModel, in: directory) { graph, _, _ in
             try await KanbanGraphTests.execute(document, on: graph)
         }
     }

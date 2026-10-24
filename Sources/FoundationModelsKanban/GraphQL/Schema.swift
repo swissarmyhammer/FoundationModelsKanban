@@ -107,6 +107,22 @@ actor BoardStore {
         return try view(ofBoardNamed: reference)
     }
 
+    /// Gives the read view of the current board, or of the board that a board ref names, for a field that must not
+    /// give `null` with no error: the root `cursor` and `translateFilter`.
+    ///
+    /// - Parameter reference: The board ref: a board key, a repo directory name, a path, or the URI of a board. `nil`
+    ///   gives the current board.
+    /// - Returns: The read view.
+    /// - Throws: The errors of ``view(ofBoard:)``. ``KanbanError/notFound(type:reference:)`` for the board when the
+    ///   engine did not load the board yet: the store then records the request, and the call runs again after the
+    ///   load, and the response of that run replaces this error.
+    func loadedView(ofBoard reference: String?) throws(KanbanError) -> BoardView {
+        guard let view = try view(ofBoard: reference) else {
+            throw .notFound(type: .board, reference: reference ?? boardKey)
+        }
+        return view
+    }
+
     /// The working graph now, as a read of a related board sees the current board.
     private var snapshot: BoardSnapshot {
         BoardSnapshot(key: boardKey, graph: work.graph, source: source)
@@ -625,6 +641,9 @@ struct KanbanContext: GraphQLRunContext {
     /// (plan.md §6.7).
     let feed: SessionFeeds
 
+    /// The filter agent of `Query.translateFilter` (divergence.md §17). The default has no filter model.
+    var filterAgent = FilterAgent(model: nil)
+
     /// The warnings of the run: `extensions.warnings` of its response (plan.md §4.4). Each context has a new
     /// collector, so each run has its own list.
     let warnings = ResponseWarnings()
@@ -994,6 +1013,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             .addChangeTypes()
             .addTimelineTypes()
             .addLinkCheckTypes()
+            .addFilterTranslationTypes()
             .addQuery {
                 Field("board", at: KanbanResolver.board) {
                     Argument("id", at: \.id).description(SchemaDescription.boardToRead)
@@ -1019,6 +1039,11 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                     Argument("board", at: \.board).description(SchemaDescription.cursorBoard)
                 }
                 .description(SchemaDescription.queryCursor)
+                Field("translateFilter", at: KanbanResolver.translateFilter) {
+                    Argument("board", at: \.board).description(SchemaDescription.translationBoard)
+                    Argument("text", at: \.text).description(SchemaDescription.translationText)
+                }
+                .description(SchemaDescription.queryTranslateFilter)
             }
     }
 

@@ -81,12 +81,12 @@ The host loads each board one time for the process, also when many sessions
 use the same repo, a symbolic link to it, or a subfolder of it. The board then
 stays in memory, and a file watcher brings each change from outside the
 process into memory. A write of one session shows at once in a read of each
-other session. To give the related boards more search roots, or to give the
-search an embedder, call
-`await KanbanHost.shared.configure(locator:embedder:)` one time, before the
-first session. A session is ready before the embeddings of its board are done:
-until then, `searchTasks` ranks with BM25 and trigram only, and `cosine` is
-null. When a session ends, call `await graph.close()`.
+other session. To give the related boards more search roots, to give the
+search an embedder, or to give `translateFilter` a filter model, call
+`await KanbanHost.shared.configure(locator:embedder:filterModel:)` one time,
+before the first session. A session is ready before the embeddings of its
+board are done: until then, `searchTasks` ranks with BM25 and trigram only,
+and `cosine` is null. When a session ends, call `await graph.close()`.
 
 ### 2. Add and list tasks
 

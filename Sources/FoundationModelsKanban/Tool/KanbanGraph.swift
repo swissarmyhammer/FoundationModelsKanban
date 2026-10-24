@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModels
 import FoundationModelsExtras
 import GraphQL
 
@@ -107,8 +108,8 @@ public actor KanbanGraph: GraphQLEndpoint {
     }
 
     /// Makes a view with its own host, with a key reader, a clock, a session actor, a ULID source, a locator, an
-    /// embedder, and observers that a test gives. The view finds and loads its board at its first call. ``close()``
-    /// closes the host of the view, so that its file watchers stop.
+    /// embedder, a filter model, and observers that a test gives. The view finds and loads its board at its first
+    /// call. ``close()`` closes the host of the view, so that its file watchers stop.
     ///
     /// - Parameters:
     ///   - root: The working directory.
@@ -120,6 +121,8 @@ public actor KanbanGraph: GraphQLEndpoint {
     ///   - ids: The source of the transaction ULIDs and the event ids.
     ///   - locator: Finds the related boards. The default looks only in the parent directory of the repo.
     ///   - embedder: The embedder of `searchTasks`, or `nil` for BM25 and trigram only.
+    ///   - filterModel: The model of the filter agent of `translateFilter`, or `nil` for no filter agent
+    ///     (divergence.md §17).
     ///   - observer: Gets a call when each call starts and ends, or `nil` for no calls.
     ///   - batchObserver: Gets a call when a file watcher applies a batch, or `nil` for no calls.
     ///   - logWriter: The writer of the appends of each commit. The default writes the log files.
@@ -135,6 +138,7 @@ public actor KanbanGraph: GraphQLEndpoint {
         mintingFrom ids: any ULIDSource,
         locatedBy locator: BoardLocator = .default,
         embeddingWith embedder: (any PooledEmbedding)? = nil,
+        filterModel: (any LanguageModel)? = nil,
         reportingTo observer: (any KanbanCallObserver)? = nil,
         observingBatchesWith batchObserver: (any LiveGraphObserver)? = nil,
         writingLogsWith logWriter: any EventLogWriter = FileEventLogWriter(),
@@ -147,6 +151,7 @@ public actor KanbanGraph: GraphQLEndpoint {
             ids: ids,
             locator: locator,
             embedder: embedder,
+            filterModel: filterModel,
             batchObserver: batchObserver,
             logWriter: logWriter
         )
@@ -725,6 +730,7 @@ public actor KanbanGraph: GraphQLEndpoint {
         var session = await engine.readSessionHoldingGate()
         let copy = session.copy(at: engine.root)
         let (clock, search, feeds) = (host.configuration.clock, session.source.search, feeds)
+        let filterAgent = FilterAgent(model: engine.filterModel)
         let subfolderBoard = subfolderBoard
         do {
             let response = try await session.run(
@@ -748,7 +754,13 @@ public actor KanbanGraph: GraphQLEndpoint {
                     try await self.admit(paths, holding: held, current: engine)
                 },
                 { store in
-                    let context = KanbanContext(store: store, clock: clock, search: search, feed: feeds)
+                    let context = KanbanContext(
+                        store: store,
+                        clock: clock,
+                        search: search,
+                        feed: feeds,
+                        filterAgent: filterAgent
+                    )
                     await lastRun.record(context.warnings)
                     try await Self.checkUnreadableBoards(of: store, in: context)
                     await Self.addPlaceWarnings(of: store, subfolderBoard: subfolderBoard, in: context)

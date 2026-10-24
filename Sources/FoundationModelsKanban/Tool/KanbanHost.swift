@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModels
 import FoundationModelsExtras
 import Logging
 
@@ -32,12 +33,15 @@ public actor KanbanHost {
     /// system gives few FSEvents streams to all processes together, so the host does not start one for each folder.
     nonisolated let folderStreams: FolderStreams
 
-    /// Finds the related boards (plan.md §6.6). ``configure(locator:embedder:)`` can change it before the first
-    /// session.
+    /// Finds the related boards (plan.md §6.6). ``configure(locator:embedder:filterModel:)`` can change it before the
+    /// first session.
     private(set) var locator: BoardLocator
 
     /// The embedder of the search of each board, or `nil` for BM25 and trigram only.
     private var embedder: (any PooledEmbedding)?
+
+    /// The model of the filter agent of each board, or `nil` for no filter agent (divergence.md §17).
+    private var filterModel: (any LanguageModel)?
 
     /// The engine of each board, by the identity of its repo directory: loaded, or loading.
     private var engines: [FolderIdentity: EngineSlot] = [:]
@@ -99,19 +103,27 @@ public actor KanbanHost {
         folderStreams = FolderStreams(service: configuration.folderEvents)
         locator = configuration.locator
         embedder = configuration.embedder
+        filterModel = configuration.filterModel
     }
 
-    /// Sets the locator of the related boards and the embedder of the search. Call it one time when the process
-    /// starts, before the first session.
+    /// Sets the locator of the related boards, the embedder of the search, and the model of the filter agent. Call it
+    /// one time when the process starts, before the first session.
     ///
     /// - Parameters:
     ///   - locator: Finds the related boards: it holds the extra search roots (plan.md §6.6).
     ///   - embedder: The embedder of `searchTasks`, for example a `PooledEmbedder`, or `nil` for a search with BM25
     ///     and trigram only, which needs no model (plan.md §6.4).
-    public func configure(locator: BoardLocator, embedder: (any PooledEmbedding)?) {
+    ///   - filterModel: The model of the filter agent of `translateFilter`, for example a `PooledModel`, or `nil` for
+    ///     no filter agent: then a text that is not a filter gives `FILTER_MODEL_MISSING` (divergence.md §17).
+    public func configure(
+        locator: BoardLocator,
+        embedder: (any PooledEmbedding)?,
+        filterModel: (any LanguageModel)? = nil
+    ) {
         precondition(engines.isEmpty, "Configure the kanban host before the first session loads a board")
         self.locator = locator
         self.embedder = embedder
+        self.filterModel = filterModel
     }
 
     /// Makes the session view of a working directory, and loads its board before it returns (divergence.md §16,
@@ -259,6 +271,7 @@ public actor KanbanHost {
             knownKey: knownKey,
             configuration: configuration,
             embedder: embedder,
+            filterModel: filterModel,
             startsWatcher: !isClosed,
             folderStreams: folderStreams,
             publish: { [weak self] changed in await self?.publish(changed) },
@@ -1076,6 +1089,9 @@ struct HostConfiguration: Sendable {
     /// The embedder of the search of each board, or `nil` for BM25 and trigram only.
     let embedder: (any PooledEmbedding)?
 
+    /// The model of the filter agent of each board, or `nil` for no filter agent (divergence.md §17).
+    let filterModel: (any LanguageModel)?
+
     /// Gets a call when a file watcher applies a batch, or `nil` for no calls.
     let batchObserver: (any LiveGraphObserver)?
 
@@ -1131,6 +1147,7 @@ struct HostConfiguration: Sendable {
     ///   - ids: The source of the transaction ULIDs and the event ids.
     ///   - locator: Finds the related boards.
     ///   - embedder: The embedder of the search, or `nil` for BM25 and trigram only.
+    ///   - filterModel: The model of the filter agent, or `nil` for no filter agent (divergence.md §17).
     ///   - batchObserver: Gets a call when a file watcher applies a batch, or `nil` for no calls.
     ///   - logWriter: The writer of the appends of each commit.
     ///   - loadObserver: Gets a call when the file load of a board starts and ends, or `nil` for no calls.
@@ -1148,6 +1165,7 @@ struct HostConfiguration: Sendable {
         ids: any ULIDSource = SystemULIDSource(),
         locator: BoardLocator = .default,
         embedder: (any PooledEmbedding)? = nil,
+        filterModel: (any LanguageModel)? = nil,
         batchObserver: (any LiveGraphObserver)? = nil,
         logWriter: any EventLogWriter = FileEventLogWriter(),
         loadObserver: (any BoardLoadObserver)? = nil,
@@ -1162,6 +1180,7 @@ struct HostConfiguration: Sendable {
         self.ids = ids
         self.locator = locator
         self.embedder = embedder
+        self.filterModel = filterModel
         self.batchObserver = batchObserver
         self.logWriter = logWriter
         self.loadObserver = loadObserver

@@ -62,6 +62,11 @@ enum KanbanError: CodedError, Hashable {
     /// failed, the detail tells the problem, and the example is one correct filter.
     case invalidFilter(filter: String, position: Range<Int>, detail: String, example: String)
 
+    /// `FILTER_MODEL_MISSING`: the text of `translateFilter` is not a filter of the board, and the engine has no filter
+    /// model to write a filter from it (divergence.md §17). The filter error is the `INVALID_FILTER` error of the text:
+    /// the parse error, or the first name that names nothing.
+    indirect case filterModelMissing(filterError: KanbanError)
+
     /// `INVALID_TAG_NAME`: the tag name gives an empty slug.
     case invalidTagName(name: String)
 
@@ -147,6 +152,7 @@ extension KanbanError {
         case .nothingToUndo: "NOTHING_TO_UNDO"
         case .undoConflict: "UNDO_CONFLICT"
         case .invalidFilter: "INVALID_FILTER"
+        case .filterModelMissing: "FILTER_MODEL_MISSING"
         case .invalidTagName, .reservedTagName, .virtualTagName: "INVALID_TAG_NAME"
         case .invalidSlug, .reservedSlug: "INVALID_SLUG"
         case .invalidOrdinal: "INVALID_ORDINAL"
@@ -209,6 +215,9 @@ extension KanbanError {
         case .invalidFilter(let filter, let position, let detail, let example):
             "The filter \"\(filter)\" is not valid at \(position.lowerBound)..\(position.upperBound): \(detail). "
                 + "Correct the filter, for example: \(example)"
+        case .filterModelMissing(let filterError):
+            "The engine has no filter model, so it cannot write a filter from English text. Send the text in the "
+                + "filter language. \(filterError.message)"
         case .invalidTagName(let name):
             "The tag name \"\(name)\" gives an empty slug. \(Self.emptySlugCorrection)"
         case .reservedTagName:

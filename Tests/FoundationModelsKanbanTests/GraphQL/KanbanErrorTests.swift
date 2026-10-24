@@ -30,6 +30,14 @@ struct KanbanErrorTests {
         KanbanError.AmbiguousMatch(id: "^rc9rb4g", title: nil),
     ]
 
+    /// The `INVALID_FILTER` error of the codes test and of the `FILTER_MODEL_MISSING` test.
+    static let filterError = KanbanError.invalidFilter(
+        filter: "#bug &&",
+        position: filterFailureStart..<filterFailureEnd,
+        detail: "an operand must follow &&",
+        example: "#bug && @alice"
+    )
+
     /// One error of each case, with the code that the case must give.
     static let codes: [(KanbanError, String)] = [
         (.notFound(type: .task, reference: "^zzzzzzz"), "NOT_FOUND"),
@@ -41,15 +49,8 @@ struct KanbanErrorTests {
         (.tagRenameCycle(path: ["bug", "defect", "bug"]), "TAG_RENAME_CYCLE"),
         (.nothingToUndo, "NOTHING_TO_UNDO"),
         (.undoConflict(transaction: "01KTXN0001", laterTransactions: ["01KTXN0002"]), "UNDO_CONFLICT"),
-        (
-            .invalidFilter(
-                filter: "#bug &&",
-                position: filterFailureStart..<filterFailureEnd,
-                detail: "an operand must follow &&",
-                example: "#bug && @alice"
-            ),
-            "INVALID_FILTER"
-        ),
+        (filterError, "INVALID_FILTER"),
+        (.filterModelMissing(filterError: filterError), "FILTER_MODEL_MISSING"),
         (.invalidTagName(name: "!!!"), "INVALID_TAG_NAME"),
         (.invalidSlug(name: "---"), "INVALID_SLUG"),
         (.invalidOrdinal(ordinal: "zz!"), "INVALID_ORDINAL"),
@@ -93,7 +94,7 @@ struct KanbanErrorTests {
         #expect(error.code == expectedCode)
     }
 
-    @Test("The cases give nineteen different codes")
+    @Test("The cases give twenty different codes")
     func codesAreDistinct() {
         #expect(Set(Self.codes.map { $0.0.code }).count == Self.codes.count)
     }
@@ -366,6 +367,16 @@ struct KanbanErrorTests {
             KanbanError.noPreviousColumn(task: "^aaaaaaa", column: Self.firstColumn).message
                 == "The task \"^aaaaaaa\" is in the first column \"todo\", so no column comes before it, and the call "
                 + "wrote nothing. Give the column of the task, and then send the call again."
+        )
+    }
+
+    @Test("FILTER_MODEL_MISSING tells that the engine has no filter model, and gives the INVALID_FILTER message")
+    func filterModelMissingMessage() {
+        #expect(
+            KanbanError.filterModelMissing(filterError: Self.filterError).message
+                == "The engine has no filter model, so it cannot write a filter from English text. Send the text in "
+                + "the filter language. The filter \"#bug &&\" is not valid at 5..7: an operand must follow &&. "
+                + "Correct the filter, for example: #bug && @alice"
         )
     }
 

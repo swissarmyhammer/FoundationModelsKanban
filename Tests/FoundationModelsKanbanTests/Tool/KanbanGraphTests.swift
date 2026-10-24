@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModels
 import FoundationModelsExtras
 import GraphQL
 import Synchronization
@@ -109,6 +110,7 @@ struct KanbanGraphTests {
     ///   - actor: The session actor. The default is ``sessionActor``.
     ///   - ids: The source of the transaction ULIDs and the event ids. The default is ``mutationIDs``.
     ///   - locator: Finds the related boards. The default looks only in the parent directory of the repo.
+    ///   - filterModel: The model of the filter agent, or `nil` for no model.
     ///   - observer: Gets a call when each call starts and ends, or `nil` for no calls.
     ///   - batchObserver: Gets a call when the file watcher applies a batch, or `nil` for no calls.
     ///   - writer: The writer of the appends of each commit. The default writes the log files.
@@ -122,6 +124,7 @@ struct KanbanGraphTests {
         actingAs actor: SessionActor = sessionActor,
         mintingFrom ids: FixedULIDSource = mutationIDs,
         locatedBy locator: BoardLocator = .default,
+        filterModel: (any LanguageModel)? = nil,
         reportingTo observer: (any KanbanCallObserver)? = nil,
         observingBatchesWith batchObserver: (any LiveGraphObserver)? = nil,
         writingLogsWith writer: any EventLogWriter = FileEventLogWriter(),
@@ -135,6 +138,7 @@ struct KanbanGraphTests {
             actingAs: actor,
             mintingFrom: ids,
             locatedBy: locator,
+            filterModel: filterModel,
             reportingTo: observer,
             observingBatchesWith: batchObserver,
             writingLogsWith: writer,

@@ -31,18 +31,11 @@ extension KanbanResolver {
     ///   - context: The context of the call.
     ///   - arguments: The board, or no board for the current board.
     /// - Returns: The cursor.
-    /// - Throws: An error of ``BoardStore/view(ofBoardNamed:)``, for example
-    ///   ``KanbanError/unreachableBoard(reference:)`` when the call reaches only the board of its folder.
-    ///   ``KanbanError/notFound(type:reference:)`` for the board when the engine did not load the board yet: the store
-    ///   then records the request, and the call runs again after the load. An error of ``BoardView/changeCursor()``.
+    /// - Throws: An error of ``BoardStore/loadedView(ofBoard:)``, for example
+    ///   ``KanbanError/unreachableBoard(reference:)`` when the call reaches only the board of its folder. An error of
+    ///   ``BoardView/changeCursor()``.
     func cursor(context: KanbanContext, arguments: CursorArguments) async throws(KanbanError) -> String {
-        guard let reference = arguments.board else {
-            return try await context.store.view.changeCursor()
-        }
-        guard let view = try await context.store.view(ofBoardNamed: reference) else {
-            throw .notFound(type: .board, reference: reference)
-        }
-        return try view.changeCursor()
+        try await context.store.loadedView(ofBoard: arguments.board).changeCursor()
     }
 }
 

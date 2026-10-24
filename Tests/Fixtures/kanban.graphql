@@ -936,6 +936,26 @@ type LinkCheck {
 }
 
 """
+The result of translateFilter: a filter statement of the board for a text.
+"""
+type FilterTranslation {
+  """
+  The filter statement. Give it as filter to tasks. Null when the filter agent wrote no statement that parses and names only nodes of the board.
+  """
+  filter: String
+
+  """
+  A message for the caller, for example the last error when the filter agent wrote no filter. Null when there is nothing to tell.
+  """
+  message: String
+
+  """
+  The number of statements that the filter model wrote. 0 when the text is already a filter of the board.
+  """
+  attempts: Int!
+}
+
+"""
 The fields of initBoard. A name, model, or body that is not set does not change, and null clears it.
 """
 input InitBoardInput {
@@ -1810,6 +1830,21 @@ type Query {
     """
     board: String
   ): String!
+
+  """
+  Gives a filter statement of the board for a text. A text that is already a filter of the board comes back with attempts 0, and the filter model gets no call. Each other text, for example English, goes to the filter model of the host. With no filter model, the call gives FILTER_MODEL_MISSING. The call writes nothing.
+  """
+  translateFilter(
+    """
+    The board of the filter. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. No value gives the current board.
+    """
+    board: ID
+
+    """
+    The text: a filter statement, or English, for example bugs that alice has not finished.
+    """
+    text: String!
+  ): FilterTranslation!
 }
 
 type Mutation {
