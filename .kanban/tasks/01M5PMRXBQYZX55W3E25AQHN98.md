@@ -36,8 +36,24 @@ comments:
     - evidence: 4 files — Sources/FoundationModelsKanban/CrossRepo/BoardLocator.swift, Sources/FoundationModelsKanban/CrossRepo/ScanChange.swift, Tests/FoundationModelsKanbanTests/CrossRepo/CanonicalPathTests.swift (new), divergence.md. RED then GREEN with `swift test --filter CanonicalPathTests`; full `swift test`: 1872 tests in 162 suites passed, only the accepted "missing creator" warning.
     - next: /review
   timestamp: 2026-10-24T10:50:28.251983+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5prp6vc0mwwqfaajxf31grx
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (b3ccafa). 0 findings, 0 confirmed, 1 refuted, 7 attempted, 0 failed. The engine reviewed BoardLocator.swift, ScanChange.swift and CanonicalPathTests.swift. No validator matched divergence.md. The .reviewignore rule excluded the two .kanban files. The task had no prior Review Findings sections.
+    - next: none. The task moved to done.
+  timestamp: 2026-10-24T10:53:15.500856+00:00
+- actor: claude-code
+  id: 01m5prpjy5049d8p2rngva90xq
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 4 files, a stable canonicalPath (realpath of the nearest existing part), divergence.md R19
+    - test: green — swift test, 1872 tests in 162 suites
+    - commit: b3ccafa
+    - review: clean — 0 findings (1 refuted)
+  timestamp: 2026-10-24T10:53:27.877801+00:00
+position_column: done
+position_ordinal: ffc180
 title: Find the cause of the intermittent fatal error in KanbanGraph during swift test
 ---
 One full `swift test` run stopped with signal 5. The message was "KanbanGraph.swift: Fatal error: The view holds the engine of the board at .../EventLogTests-.../my-project, and has no session of it". The next full run passed (1868 tests). The crash happened near an undoChange test. Find the race and correct it.
