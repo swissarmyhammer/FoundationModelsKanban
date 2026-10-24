@@ -187,6 +187,22 @@ struct KanbanSkillTests {
         return body.matches(of: #/(?m)^\| `(?<tag>[A-Z]+)` \|/#).map { row in String(row.tag) }
     }
 
+    /// Expects that the table in the ``virtualTagHeading`` section of a Markdown text names each virtual tag, in the
+    /// order of ``VirtualTag/allCases``. The skill test and the test of the filter agent prompt
+    /// (``FilterAgentPromptTests``) use this one check.
+    ///
+    /// - Parameters:
+    ///   - text: The Markdown text.
+    ///   - sourceLocation: The location that a failure shows. The default is the location of the call.
+    /// - Throws: An error of `#require` when the text has no ``virtualTagHeading`` section.
+    static func expectVirtualTagTable(
+        in text: String,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) throws {
+        let names = try virtualTagNames(inTableOf: text)
+        #expect(names == VirtualTag.allCases.map(\.rawValue), sourceLocation: sourceLocation)
+    }
+
     /// Runs each example of the skill, in skill order, on one new board.
     ///
     /// A result that is not JSON, for example the error text of a script that throws, stays as it is, so that the
@@ -227,7 +243,7 @@ struct KanbanSkillTests {
 
     @Test("The virtual tag table of the skill names each virtual tag of the Swift kanban")
     func virtualTagTableNamesEachVirtualTag() throws {
-        #expect(try Self.virtualTagNames(inTableOf: Self.skillText()) == VirtualTag.allCases.map(\.rawValue))
+        try Self.expectVirtualTagTable(in: Self.skillText())
     }
 
     @Test("Each line of the skill that names BLOCKING says that it is an ordinary tag")

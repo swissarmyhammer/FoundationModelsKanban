@@ -34,6 +34,37 @@ comments:
     - evidence: 6 files — Sources/FoundationModelsKanban/Resources/FilterAgentPrompt.md (new), Sources/FoundationModelsKanban/Filter/FilterAgentPrompt.swift (new), Tests/FoundationModelsKanbanTests/Filter/FilterAgentPromptTests.swift (new), Tests/FoundationModelsKanbanTests/KanbanSkillTests.swift, Package.swift, divergence.md. `swift build` and `swift test`: 1853 tests in 159 suites passed; the only warning is the accepted SwiftPM "missing creator" warning.
     - next: /review
   timestamp: 2026-10-24T04:09:20.505038+00:00
+- actor: claude-code
+  id: 01m5p1qnsmag6haft2zhvpcs38
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD — 2 findings (2 confirmed, 0 refuted) — Sources/FoundationModelsKanban/Filter/FilterAgentPrompt.swift:14, Tests/FoundationModelsKanbanTests/Filter/FilterAgentPromptTests.swift:46
+    - next: implement the 2 open items in the "Review Findings (2026-10-23 23:11)" section, then review again.
+  timestamp: 2026-10-24T04:12:06.324972+00:00
+- actor: claude-code
+  id: 01m5p1re991bp82f9c14jk0kd8
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 6 files, FilterAgentPrompt.md resource and FilterAgentPrompt type
+    - test: green — swift test, 1853 tests in 159 suites
+    - commit: 14a0be9
+    - review: findings — Sources/FoundationModelsKanban/Filter/FilterAgentPrompt.swift:14, Tests/FoundationModelsKanbanTests/Filter/FilterAgentPromptTests.swift:46
+  timestamp: 2026-10-24T04:12:31.401623+00:00
+- actor: claude-code
+  id: 01m5p1xmdm3g8bdm4xygghqxq5
+  text: |-
+    Review findings fixed.
+    - Finding 1 (`english` is assign-only): ^sq21qxn sends the English text of each example to `translateFilter`, so the property stays. New parameterized test `FilterAgentPromptTests.exampleHasEnglishText` reads `example.english` for each of the 13 examples: the text is not empty and has no space at the start or end (that is, it is text that a person types). Check of the test: with a trailing space on the line "English: urgent bugs", the test failed for that example only. The resource is back as it was (git diff shows no change to it).
+    - Finding 2 (duplicate virtual tag test): new helper `KanbanSkillTests.expectVirtualTagTable(in:sourceLocation:)` calls `virtualTagNames(inTableOf:)` and runs the `#expect`, with the source location of the caller. Both `virtualTagTableNamesEachVirtualTag` tests call it; each `@Test` declaration stays.
+    - Note: `dump validators` for a .swift file gives a file of 754K characters, too large to read in one time. The rules that apply here (dead code, duplication, doc comment on each item, test integrity) come from the findings and the earlier pass.
+  timestamp: 2026-10-24T04:15:21.524285+00:00
+- actor: claude-code
+  id: 01m5p1xmx63tr23ap9zzaqc88b
+  text: |-
+    ### implement — changed
+    - evidence: 2 files — Tests/FoundationModelsKanbanTests/Filter/FilterAgentPromptTests.swift, Tests/FoundationModelsKanbanTests/KanbanSkillTests.swift. `swift build --build-tests`: complete. `swift test`: 1854 tests in 159 suites passed; the only warning is the accepted SwiftPM "missing creator" warning. Both review findings are marked `- [x]`.
+    - next: /review
+  timestamp: 2026-10-24T04:15:22.022895+00:00
 depends_on:
 - 01M5MQSBS3E7J746F17Z794J91
 position_column: doing
@@ -65,3 +96,17 @@ Note: `BLOCKING` is removed by divergence.md Q1 and C1. It is not a virtual tag,
 
 - Unit tests in `T/`: one test case for each example (parameterized), and the virtual tag test.
 - `swift test` passes with no new warnings. #kanbanviewkit #filter-agent
+
+## Review Findings (2026-10-23 23:11)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 4 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 2 file(s) not reviewed — no validator matched:
+> - `Sources/FoundationModelsKanban/Resources/FilterAgentPrompt.md` — no validator matches this file
+> - `divergence.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsKanban/Filter/FilterAgentPrompt.swift:14` `code-hygiene/dead-code-swift` — var.instance `english` is assignOnlyProperty.
+- [x] `Tests/FoundationModelsKanbanTests/Filter/FilterAgentPromptTests.swift:46` `duplication/duplication` — The new test `virtualTagTableNamesEachVirtualTag` repeats the body of the test of the same name in `KanbanSkillTests`. Both tests read a Markdown text, call `virtualTagNames(inTableOf:)`, and compare the result with `VirtualTag.allCases.map(\.rawValue)`. Only the text source differs. If one assertion changes, the other copy can drift out of sync. Move the assertion into one shared helper, for example `KanbanSkillTests.expectVirtualTagTable(in text: String)`, that calls `virtualTagNames(inTableOf:)` and runs the `#expect`. Call it from both tests with the skill text and the prompt text. Keep the two `@Test` declarations so each test still reports its own name.

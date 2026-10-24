@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import FoundationModelsKanban
@@ -5,8 +6,9 @@ import Testing
 /// Tests the system prompt of the filter agent (divergence.md §17, "A smart prompt"): the resource
 /// `FilterAgentPrompt.md` of the package.
 ///
-/// Each example of the prompt is also a test, so it cannot go out of date: the statement parses, and it passes the
-/// name check on the sample board of ``FilterEvaluatorTests``, which has each name of the examples.
+/// Each example of the prompt is also a test, so it cannot go out of date: the English text is text that a person
+/// types, the statement parses, and it passes the name check on the sample board of ``FilterEvaluatorTests``, which
+/// has each name of the examples.
 @Suite("Filter agent prompt")
 struct FilterAgentPromptTests {
     /// The path of the resource file, relative to the repository root.
@@ -43,8 +45,7 @@ struct FilterAgentPromptTests {
 
     @Test("The virtual tag table of the prompt names each virtual tag, in the order of VirtualTag.allCases")
     func virtualTagTableNamesEachVirtualTag() throws {
-        let names = try KanbanSkillTests.virtualTagNames(inTableOf: FilterAgentPrompt.load().text)
-        #expect(names == VirtualTag.allCases.map(\.rawValue))
+        try KanbanSkillTests.expectVirtualTagTable(in: FilterAgentPrompt.load().text)
     }
 
     @Test("The prompt has examples, and each English line of the prompt has a filter line after it")
@@ -65,6 +66,15 @@ struct FilterAgentPromptTests {
     }
 
     // MARK: - The examples
+
+    @Test(
+        "The English text of the example is text that a person types: not empty, with no space at the start or end",
+        arguments: try examples()
+    )
+    func exampleHasEnglishText(_ example: FilterAgentPrompt.Example) {
+        #expect(!example.english.isEmpty)
+        #expect(example.english == example.english.trimmingCharacters(in: .whitespaces))
+    }
 
     @Test("The statement of the example parses with the filter parser", arguments: try examples())
     func exampleParses(_ example: FilterAgentPrompt.Example) {
