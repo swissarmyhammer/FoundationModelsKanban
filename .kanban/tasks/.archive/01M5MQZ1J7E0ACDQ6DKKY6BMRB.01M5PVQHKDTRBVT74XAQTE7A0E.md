@@ -1,6 +1,17 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m5pvqgyegvhxxkyxmms245hn
+  text: |-
+    ### decision (user, 2026-10-24) — do not do
+    Do not add Actor.state. It is denormalized state that the board can compute, and tags already cover it:
+    - working, done and ready are already virtual tags.
+    - error has no meaning on a kanban board.
+    - needs input is a real tag that an agent can apply to its task.
+    This task is archived.
+  timestamp: 2026-10-24T11:46:24.334705+00:00
 position_column: todo
 position_ordinal: 8c80
 title: Add the live state of an actor for sessions (KANBAN-15, Step 3)
