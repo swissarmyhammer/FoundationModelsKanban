@@ -65,10 +65,26 @@ comments:
     - evidence: 2 files — Tests/FoundationModelsKanbanTests/Filter/FilterAgentPromptTests.swift, Tests/FoundationModelsKanbanTests/KanbanSkillTests.swift. `swift build --build-tests`: complete. `swift test`: 1854 tests in 159 suites passed; the only warning is the accepted SwiftPM "missing creator" warning. Both review findings are marked `- [x]`.
     - next: /review
   timestamp: 2026-10-24T04:15:22.022895+00:00
+- actor: claude-code
+  id: 01m5p215ttsq6z938ha540qe29
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 87e7883) gave 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. Both earlier findings are checked and fixed. The test `exampleHasEnglishText` reads `english` (Tests/FoundationModelsKanbanTests/Filter/FilterAgentPromptTests.swift:75). The shared helper `KanbanSkillTests.expectVirtualTagTable(in:)` (Tests/FoundationModelsKanbanTests/KanbanSkillTests.swift:198) has calls from both virtual tag tests.
+    - next: none. The task is in done.
+  timestamp: 2026-10-24T04:17:17.658960+00:00
+- actor: claude-code
+  id: 01m5p21nwzr63ye6kmyj6s62hx
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 2 files, the 2 findings fixed
+    - test: green — swift test, 1854 tests in 159 suites
+    - commit: 87e7883
+    - review: clean — 0 findings, 2/2 earlier findings checked
+  timestamp: 2026-10-24T04:17:34.111553+00:00
 depends_on:
 - 01M5MQSBS3E7J746F17Z794J91
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffbc80
 title: 'Filter agent: write the system prompt as a package resource, with tested examples'
 ---
 ## What
