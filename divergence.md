@@ -710,6 +710,11 @@ Bugs:
   - Tests: `Tests/FoundationModelsKanbanTests/Mutations/StoredTagRefTests.swift`.
 - F9 (section 15): sort `Task.tags` by slug.
 - S7 (section 15): a directory path inside `.kanban/` starts the full compare (`S/Tool/Commit.swift:346`).
+- R19 (new, found by ^5aqhn98): the canonical path of a board changed when its folder was removed, and one `swift test` run stopped with the assertion "The view holds the engine of the board at …, and has no session of it" (`KanbanGraph.publish(_:skipping:)`).
+  - Cause: `URL.canonicalPath` was `resolvingSymlinksInPath().path`. Foundation removes `/private` only while the path without `/private` exists. git gives the real root `/private/tmp/…/my-project`, so its canonical path was `/tmp/…/my-project` while the folder existed, and `/private/tmp/…/my-project` after the removal. A change round reads the path of the board two times (the engines and the sessions of the view). When a test removed its folder between the two reads, the keys did not agree.
+  - Fix: the canonical path is the real path (`realpath(3)`) of the nearest item of the path that exists, then the parts that do not exist. `/private` is removed when a link at the root points to the top folder (for example `/tmp` to `/private/tmp`). That check reads only the link, so the path does not change when the folder goes away. The path of a folder that exists is the same as before.
+  - The assertion stays: it is correct, because each loaded engine must have a session in the round.
+  - Test: `Tests/FoundationModelsKanbanTests/CrossRepo/CanonicalPathTests.swift`.
 - The missing tests listed in sections 1–3 (K14: keep all, as one test task). Leave out only "a related board that cannot be read", because the Q7 tests cover it. The fixes for X4, X5, and X6 each need their test from that list.
 
 ---

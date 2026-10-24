@@ -553,9 +553,60 @@ struct UnreadableBoard: Hashable, BoardWarning {
 }
 
 extension URL {
+    /// The folder of the system that holds the folders that a symbolic link at the root points to, for example
+    /// `/tmp` to `/private/tmp`.
+    private static let privateFolderPath = "/private"
+
     /// The path of the file URL with no `.` and `..` parts and with the symbolic links resolved. Two URLs of one
-    /// directory give the same path, for example `/var/…` and `/private/var/…`.
+    /// directory give the same path, for example `/var/…` and `/private/var/…`. As `resolvingSymlinksInPath()`
+    /// does, the path starts with `/var/…` or `/tmp/…`, and not with `/private/…`.
+    ///
+    /// The path does not change when the file is removed, because the package uses it as the key of a board.
+    /// `resolvingSymlinksInPath()` removes `/private` only while the path exists: for `/private/tmp/…/my-project`, it
+    /// gives `/tmp/…/my-project` before the removal and `/private/tmp/…/my-project` after it. Thus this path is the
+    /// real path of the nearest folder that exists, followed by the parts of the path that do not exist.
     var canonicalPath: String {
-        standardizedFileURL.resolvingSymlinksInPath().path
+        Self.removingPrivateFolder(from: standardizedFileURL.realPathOfNearestItem)
+    }
+
+    /// The real path of the file: each symbolic link resolved, with no other change (`realpath(3)`).
+    ///
+    /// `nil` when the file does not exist, or a folder of the path cannot be read.
+    var realPath: String? {
+        withUnsafeFileSystemRepresentation { representation in
+            guard let representation, let resolved = realpath(representation, nil) else {
+                return nil
+            }
+            defer { free(resolved) }
+            return String(cString: resolved)
+        }
+    }
+
+    /// The real path of the nearest item of the path that exists, the file or one of its folders, followed by the
+    /// parts of the path after that item. The parts after it do not exist, thus they hold no symbolic link.
+    private var realPathOfNearestItem: String {
+        if let realPath {
+            return realPath
+        }
+        let parent = deletingLastPathComponent().standardizedFileURL
+        guard parent.path != path else {
+            return path
+        }
+        return URL(filePath: parent.realPathOfNearestItem).appending(path: lastPathComponent).path
+    }
+
+    /// Removes `/private` from the start of a real path when a symbolic link at the root points to the top folder
+    /// of the path in `/private`, for example `/tmp` to `/private/tmp`. The check reads only that link, and not the
+    /// path, so the result is the same before and after the removal of the file.
+    ///
+    /// - Parameter path: The real path.
+    /// - Returns: The path with no `/private`, or the same path.
+    private static func removingPrivateFolder(from path: String) -> String {
+        let prefix = privateFolderPath + "/"
+        guard path.hasPrefix(prefix), let topName = path.dropFirst(prefix.count).split(separator: "/").first else {
+            return path
+        }
+        let link = URL(filePath: "/").appending(path: String(topName))
+        return link.realPath == prefix + topName ? String(path.dropFirst(privateFolderPath.count)) : path
     }
 }

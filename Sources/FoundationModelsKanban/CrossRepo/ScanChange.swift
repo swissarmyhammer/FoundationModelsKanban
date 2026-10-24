@@ -101,13 +101,7 @@ struct WatchedPlace: Hashable, Sendable {
     /// - Parameter folder: The folder.
     /// - Returns: The real path, or the standardized path when the folder does not exist.
     private static func realPath(of folder: URL) -> String {
-        folder.withUnsafeFileSystemRepresentation { representation in
-            guard let representation, let resolved = realpath(representation, nil) else {
-                return folder.standardizedFileURL.path
-            }
-            defer { free(resolved) }
-            return String(cString: resolved)
-        }
+        folder.realPath ?? folder.standardizedFileURL.path
     }
 }
 
