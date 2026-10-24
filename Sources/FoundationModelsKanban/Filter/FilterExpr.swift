@@ -25,12 +25,7 @@ extension FilterExpr {
     /// - Throws: ``KanbanError/invalidFilter(filter:position:detail:example:)`` when the filter is empty or does not
     ///   parse. The error gives the position of the problem, the problem, and one correct filter.
     init(parsing filter: String) throws(KanbanError) {
-        var input = filter[...]
-        do throws(FilterSyntaxError) {
-            self = try FilterParser.Filter().parse(&input)
-        } catch {
-            throw error.kanbanError(in: filter)
-        }
+        self = try ParsedFilter(parsing: filter).expression
     }
 }
 

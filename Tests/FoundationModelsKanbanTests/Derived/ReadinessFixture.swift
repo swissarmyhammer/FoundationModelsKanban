@@ -64,6 +64,14 @@ struct ReadinessFixture {
         .unresolved(.local(.task(try DependencyMarkersTests.ulid(of: text))))
     }
 
+    /// Gives the edge to a node of a different board, as replay gives it.
+    ///
+    /// - Parameter uri: The URI of the node.
+    /// - Returns: The edge.
+    static func edge(toRemote uri: NodeURI) -> EdgeTarget {
+        .unresolved(.remote(uri))
+    }
+
     /// Gives the body and the time values of a test node.
     ///
     /// - Parameters:
@@ -177,6 +185,7 @@ struct ReadinessFixture {
     ///   - column: The slug of the column of the task, or `nil` for a task with no column.
     ///   - tags: The slugs of the tags that the `tags` edges name.
     ///   - assignees: The slugs of the actors that the `assignees` edges name.
+    ///   - remoteAssignees: The URIs of the actors of other boards that the `assignees` edges name.
     ///   - dependencies: The ULID texts of the tasks of this board that the `dependsOn` edges name.
     ///   - remoteDependencies: The URIs of the tasks of other boards that the `dependsOn` edges name.
     ///   - moves: The moves of the task to a column, in event order.
@@ -191,19 +200,21 @@ struct ReadinessFixture {
         inColumn column: String? = ReadinessFixture.todo,
         taggedWith tags: [String] = [],
         assignedTo assignees: [String] = [],
+        assignedToRemote remoteAssignees: [NodeURI] = [],
         dependingOn dependencies: [String] = [],
         dependingOnRemote remoteDependencies: [NodeURI] = [],
         withMoves moves: [ColumnMove] = [],
         fields: NodeFields = ReadinessFixture.fields()
     ) throws -> Int {
         let localEdges = try dependencies.map(Self.edge(toTask:))
-        let remoteEdges = remoteDependencies.map { uri in EdgeTarget.unresolved(.remote(uri)) }
+        let remoteEdges = remoteDependencies.map(Self.edge(toRemote:))
+        let localAssignees = assignees.map { slug in EdgeTarget.unresolved(.local(.actor(slug: slug))) }
         let task = TaskNode(
             id: try DependencyMarkersTests.ulid(of: text),
             fields: fields,
             title: title,
             column: column.map { slug in .unresolved(.local(.column(slug: slug))) },
-            assignees: assignees.map { slug in .unresolved(.local(.actor(slug: slug))) },
+            assignees: localAssignees + remoteAssignees.map(Self.edge(toRemote:)),
             tags: tags.map { slug in .unresolved(.local(.tag(slug: slug))) },
             dependsOn: localEdges + remoteEdges,
             columnMoves: moves

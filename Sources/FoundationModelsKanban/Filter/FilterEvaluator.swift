@@ -67,16 +67,7 @@ struct FilterEvaluator {
 /// A test of the node in one slot of the graph.
 private typealias NodeTest = (Int) -> Bool
 
-/// What the value of an atom names, after the resolve of a URL.
-private enum AtomTarget {
-    /// A short form in this board: a name, a slug, or a ULID form. A URL with the current key gives its local id.
-    case local(String)
-
-    /// A node of a different board.
-    case remote(NodeURI)
-}
-
-/// Makes the test of each part of a filter for one board.
+/// Makes the test of each part of a filter for one board. The names of the atoms resolve with ``FilterNames``.
 private struct FilterCompiler {
     /// The readiness of the tasks of the board.
     let readiness: Readiness
@@ -92,6 +83,11 @@ private struct FilterCompiler {
     /// The graph of the board.
     private var graph: Graph {
         readiness.graph
+    }
+
+    /// The name resolution of the board.
+    private var names: FilterNames {
+        FilterNames(readiness: readiness, boardKey: boardKey)
     }
 
     /// Makes the test of a filter or of one part of a filter.
@@ -144,32 +140,10 @@ private struct FilterCompiler {
         value: FilterValue,
         makingTestWith makeTest: (String) -> NodeTest
     ) -> NodeTest {
-        guard case .local(let key)? = target(of: value, for: kind) else {
+        guard case .local(let key)? = names.target(of: value, for: kind) else {
             return Self.noMatch
         }
         return makeTest(key)
-    }
-
-    /// Finds what the value of an atom names for the test of a task.
-    ///
-    /// - Parameters:
-    ///   - value: The value of the atom.
-    ///   - kind: The kind of the atom.
-    /// - Returns: The local form or the URI of a different board, or `nil` when the value is a URL of a node type
-    ///   that the task test of the atom does not read, for example a column URL after `^`.
-    private func target(of value: FilterValue, for kind: FilterAtomKind) -> AtomTarget? {
-        switch value {
-        case .name(let name):
-            return .local(name)
-        case .uri(let uri):
-            guard uri.ref.nodeType == kind.bareURLType else {
-                return nil
-            }
-            guard let localID = uri.localRef(inBoard: boardKey)?.localID else {
-                return .remote(uri)
-            }
-            return .local(localID)
-        }
     }
 }
 
@@ -187,20 +161,8 @@ extension FilterCompiler {
         if let virtualTag = VirtualTag(named: name) {
             return { slot in readiness.hasVirtualTag(virtualTag, taskAt: slot) }
         }
-        let tagSlot = liveTagSlot(named: name)
+        let tagSlot = names.liveTagSlot(named: name)
         return { slot in isTagged(taskAt: slot, withTagAt: tagSlot) }
-    }
-
-    /// Finds the live tag that a tag name names, after the rename redirect (``RefResolver``).
-    ///
-    /// - Parameter name: The tag name or the slug.
-    /// - Returns: The slot of the tag at the end of the rename chain, or `nil` when the name names no live tag.
-    private func liveTagSlot(named name: String) -> Int? {
-        let resolver = RefResolver(graph: graph, boardKey: boardKey)
-        guard case .local(let ref)? = try? resolver.storedRef(for: name, ofType: .tag) else {
-            return nil
-        }
-        return graph.slot(for: ref)
     }
 
     /// Tells if a task has a real tag, from an edge or a marker.
@@ -219,19 +181,6 @@ extension FilterCompiler {
 
 // MARK: - Actors and columns
 
-/// The state of a node that a filter atom can name by its slug or by the slug of its name: an actor or a column.
-private protocol SlugNamedState: NodeState {
-    /// The slug of the node: its local id.
-    var slug: String { get }
-
-    /// The name of the node.
-    var name: String { get }
-}
-
-extension ActorNode: SlugNamedState {}
-
-extension ColumnNode: SlugNamedState {}
-
 extension FilterCompiler {
     /// Makes the test of an `@user` atom: a name or a slug, or the URL of an actor of this board or of a different
     /// board.
@@ -239,7 +188,7 @@ extension FilterCompiler {
     /// - Parameter value: The value of the atom.
     /// - Returns: The test, or a test that matches nothing when the value is a URL that is not of an actor.
     private func assigneeAtomTest(for value: FilterValue) -> NodeTest {
-        switch target(of: value, for: .assignee) {
+        switch names.target(of: value, for: .assignee) {
         case .local(let name)?:
             assigneeTest(named: name)
         case .remote(let uri)?:
@@ -252,18 +201,19 @@ extension FilterCompiler {
     /// Makes the test of an `@user` atom whose value names an actor by its slug or by its name.
     ///
     /// A task matches when an actor of this board is its assignee, or when its assignee is the URI of an actor of a
-    /// different board (divergence.md Q21) that has the slug or the name (``isRemoteActor(_:withSlug:)``).
+    /// different board (divergence.md Q21) that has the slug or the name (``FilterNames/isRemoteActor(_:withSlug:)``).
     ///
     /// - Parameter name: The slug or the name of the actor, in any case.
     /// - Returns: The test.
     private func assigneeTest(named name: String) -> NodeTest {
         let key = Slug.normalizedText(of: name)
-        let actorSlots = liveSlots(of: ActorNode.self, named: name)
+        let names = self.names
+        let actorSlots = names.liveSlots(of: ActorNode.self, named: name)
         return { slot in
             assignees(ofTaskAt: slot).contains { edge in
                 switch edge {
                 case .slot(let actorSlot): actorSlots.contains(actorSlot)
-                case .unresolved(let ref): isRemoteActor(ref, withSlug: key)
+                case .unresolved(let ref): names.isRemoteActor(ref, withSlug: key)
                 }
             }
         }
@@ -283,36 +233,8 @@ extension FilterCompiler {
     /// - Parameter name: The slug or the name of the column, in any case.
     /// - Returns: The test.
     private func columnTest(named name: String) -> NodeTest {
-        let columnSlots = liveSlots(of: ColumnNode.self, named: name)
+        let columnSlots = names.liveSlots(of: ColumnNode.self, named: name)
         return { slot in readiness.column(ofTaskAt: slot).map(columnSlots.contains) ?? false }
-    }
-
-    /// Finds the live nodes of one type whose slug, or the slug of whose name, is the slug of a name.
-    ///
-    /// - Parameters:
-    ///   - type: The state type of the nodes, for example `ActorNode.self`.
-    ///   - name: The name as the filter writes it.
-    /// - Returns: The slots of the nodes. A name that gives an empty slug gives no slots.
-    private func liveSlots<State: SlugNamedState>(of type: State.Type, named name: String) -> Set<Int> {
-        let key = Slug.normalizedText(of: name)
-        guard !key.isEmpty else {
-            return []
-        }
-        return Set(
-            graph.allSlots.filter { slot in
-                graph.node(at: slot, as: type).map { node in matches(liveNode: node, withSlug: key) } ?? false
-            }
-        )
-    }
-
-    /// Tells if a node is live, and has a slug, or the slug of a name, that is a key.
-    ///
-    /// - Parameters:
-    ///   - node: The state of the node.
-    ///   - key: The slug to find.
-    /// - Returns: `true` when the node is live and the slug of the node or of its name is the key.
-    private func matches(liveNode node: some SlugNamedState, withSlug key: String) -> Bool {
-        !node.fields.isDeleted && (node.slug == key || Slug.normalizedText(of: node.name) == key)
     }
 
     /// Gives the `assignees` edges of a task.
@@ -321,26 +243,6 @@ extension FilterCompiler {
     /// - Returns: The edges, or no edges when the node is not a task.
     private func assignees(ofTaskAt slot: Int) -> [EdgeTarget] {
         graph.node(at: slot, as: TaskNode.self)?.assignees ?? []
-    }
-
-    /// Tells if an assignee that is not a slot of this board is an actor of a different board with a slug.
-    ///
-    /// When a loaded board has the actor, the actor matches when it is live and its slug, or the slug of its name, is
-    /// the key. When no loaded board has the actor, for example when its board cannot be read, the slug in the URI
-    /// decides, so that the filter keeps working (divergence.md Q7).
-    ///
-    /// - Parameters:
-    ///   - ref: The stored ref of the assignee.
-    ///   - key: The slug to find. An empty key matches nothing.
-    /// - Returns: `true` when the ref is the URI of an actor of a different board with the slug.
-    private func isRemoteActor(_ ref: StoredRef, withSlug key: String) -> Bool {
-        guard !key.isEmpty, case .remote(let uri) = ref, uri.ref.nodeType == .actor else {
-            return false
-        }
-        guard let found = readiness.related.node(for: ref, as: ActorNode.self) else {
-            return uri.ref.localID == key
-        }
-        return matches(liveNode: found.state, withSlug: key)
     }
 }
 
@@ -372,7 +274,7 @@ extension FilterCompiler {
     /// - Parameter value: The value of the atom.
     /// - Returns: The test.
     private func refTest(for value: FilterValue) -> NodeTest {
-        let taskTest = taskRefTest(naming: target(of: value, for: .ref))
+        let taskTest = taskRefTest(naming: names.target(of: value, for: .ref))
         let namedRef = localRef(namedBy: value)
         return { slot in
             guard let ref = graph.node(at: slot)?.ref else {
@@ -387,7 +289,7 @@ extension FilterCompiler {
     /// - Parameter target: What the value of the atom names, or `nil` when it names no task.
     /// - Returns: The test: the task itself or a task that depends on it, by a ULID form in this board, or the tasks
     ///   that depend on a task of a different board.
-    private func taskRefTest(naming target: AtomTarget?) -> NodeTest {
+    private func taskRefTest(naming target: FilterAtomTarget?) -> NodeTest {
         switch target {
         case .local(let reference)?:
             localTaskRefTest(naming: reference)

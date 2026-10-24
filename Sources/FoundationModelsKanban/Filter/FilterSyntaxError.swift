@@ -1,10 +1,12 @@
 import Foundation
 
-/// A failure of the filter parser at one range of the filter (plan.md §6.3).
+/// A failure of the filter parser, or of the name check of the filter agent, at one range of the filter (plan.md §6.3,
+/// divergence.md §17).
 ///
 /// The parser rules throw this error, and not the error of `swift-parsing`, so that the error holds the range of the
-/// problem. ``kanbanError(in:)`` changes it to `INVALID_FILTER` with the tool's own message: the position as
-/// `start..end` in characters, the detail, and one correct filter.
+/// problem. The name check (``FilterNameCheck``) gives it for a name that names nothing. ``kanbanError(in:)`` changes
+/// it to `INVALID_FILTER` with the tool's own message: the position as `start..end` in characters, the detail, and one
+/// correct filter.
 struct FilterSyntaxError: Error, Hashable, Sendable {
     /// The problem that the parser found.
     enum Problem: Hashable, Sendable {
@@ -38,6 +40,11 @@ struct FilterSyntaxError: Error, Hashable, Sendable {
 
         /// A board or a comment URL with no `^` before it. Only the `^` atom accepts such a URL.
         case unusableURL(uri: NodeURI)
+
+        /// A name that names no node of the board (``FilterNameCheck``). The type is the node type that the atom
+        /// names: a tag, an actor, or a column. The nearest name is the close name of the board, or `nil` when no
+        /// name is close. The corrected filter is the filter with a name of the board in place of the atom.
+        case unknownName(type: PatchNodeType, name: String, nearestName: String?, correctedFilter: String)
     }
 
     /// The example of each problem that has no example of its own.
@@ -128,7 +135,25 @@ extension FilterSyntaxError {
             Self.wrongURLTypeExplanation(of: uri, after: sigilKind, acceptedBy: urlKind)
         case .unusableURL(let uri):
             Self.unusableURLExplanation(of: uri)
+        case .unknownName(let type, let name, let nearestName, let correctedFilter):
+            (Self.unknownNameDetail(ofType: type, name: name, nearestName: nearestName), correctedFilter)
         }
+    }
+
+    /// Tells that a name names no node of the board.
+    ///
+    /// - Parameters:
+    ///   - type: The node type that the atom names.
+    ///   - name: The name as the filter writes it.
+    ///   - nearestName: The close name of the board, or `nil` when no name is close.
+    /// - Returns: The detail, for example ``"no tag named `urgnt`; the nearest tag is `urgent`"``.
+    private static func unknownNameDetail(ofType type: PatchNodeType, name: String, nearestName: String?) -> String {
+        let noun = type.pathSegment
+        let problem = "no \(noun) named `\(name)`"
+        guard let nearestName else {
+            return problem
+        }
+        return "\(problem); the nearest \(noun) is `\(nearestName)`"
     }
 
     /// Explains the removed `$project` atom.

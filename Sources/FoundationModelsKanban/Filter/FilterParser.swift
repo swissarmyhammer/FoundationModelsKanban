@@ -77,20 +77,20 @@ extension FilterParser {
         /// Reads a full filter.
         ///
         /// - Parameter input: The full filter. The parse consumes all of it.
-        /// - Returns: The parsed filter.
+        /// - Returns: The parsed filter, with the text of each atom.
         /// - Throws: ``FilterSyntaxError`` at the first problem.
-        func parse(_ input: inout Substring) throws(FilterSyntaxError) -> FilterExpr {
+        func parse(_ input: inout Substring) throws(FilterSyntaxError) -> ParsedFilter {
             let filter = input
             FilterParser.skipWhitespace(in: &input)
             guard !input.isEmpty else {
                 throw FilterSyntaxError(problem: .emptyFilter, at: filter)
             }
-            let expression = try OrExpr().parse(&input)
+            let parsed = try OrExpr().parse(&input)
             // `OrExpr` stops only at the end of the filter or at a `)` that no group opened.
             guard input.isEmpty else {
                 throw FilterSyntaxError(problem: .unmatchedClose, at: input.prefix(1))
             }
-            return expression
+            return parsed
         }
     }
 
@@ -99,15 +99,15 @@ extension FilterParser {
         /// Reads an OR chain. The chain is left-associative.
         ///
         /// - Parameter input: The rest of the filter.
-        /// - Returns: The expression.
+        /// - Returns: The expression, with the text of each atom.
         /// - Throws: ``FilterSyntaxError`` at the first problem.
-        func parse(_ input: inout Substring) throws(FilterSyntaxError) -> FilterExpr {
-            var expression = try AndExpr().parse(&input)
+        func parse(_ input: inout Substring) throws(FilterSyntaxError) -> ParsedFilter {
+            var parsed = try AndExpr().parse(&input)
             while let operatorText = Operator.or.consume(from: &input) {
                 try FilterParser.requireTerm(after: operatorText, in: &input)
-                expression = .or(expression, try AndExpr().parse(&input))
+                parsed = parsed.joined(with: try AndExpr().parse(&input), by: FilterExpr.or)
             }
-            return expression
+            return parsed
         }
     }
 
@@ -116,17 +116,17 @@ extension FilterParser {
         /// Reads an AND chain. Two terms next to each other are an AND. The chain is left-associative.
         ///
         /// - Parameter input: The rest of the filter.
-        /// - Returns: The expression.
+        /// - Returns: The expression, with the text of each atom.
         /// - Throws: ``FilterSyntaxError`` at the first problem.
-        func parse(_ input: inout Substring) throws(FilterSyntaxError) -> FilterExpr {
-            var expression = try NotExpr().parse(&input)
+        func parse(_ input: inout Substring) throws(FilterSyntaxError) -> ParsedFilter {
+            var parsed = try NotExpr().parse(&input)
             while true {
                 if let operatorText = Operator.and.consume(from: &input) {
                     try FilterParser.requireTerm(after: operatorText, in: &input)
                 } else if !FilterParser.canStartTerm(at: input) {
-                    return expression
+                    return parsed
                 }
-                expression = .and(expression, try NotExpr().parse(&input))
+                parsed = parsed.joined(with: try NotExpr().parse(&input), by: FilterExpr.and)
             }
         }
     }
@@ -136,14 +136,14 @@ extension FilterParser {
         /// Reads an atom with its NOT operators.
         ///
         /// - Parameter input: The rest of the filter.
-        /// - Returns: The expression.
+        /// - Returns: The expression, with the text of each atom.
         /// - Throws: ``FilterSyntaxError`` at the first problem.
-        func parse(_ input: inout Substring) throws(FilterSyntaxError) -> FilterExpr {
+        func parse(_ input: inout Substring) throws(FilterSyntaxError) -> ParsedFilter {
             guard let operatorText = Operator.not.consume(from: &input) else {
                 return try Atom().parse(&input)
             }
             try FilterParser.requireTerm(after: operatorText, in: &input)
-            return .not(try NotExpr().parse(&input))
+            return try NotExpr().parse(&input).negated
         }
     }
 
@@ -157,9 +157,9 @@ extension FilterParser {
         /// Reads one atom or one group.
         ///
         /// - Parameter input: The rest of the filter.
-        /// - Returns: The atom, or the expression of the group.
+        /// - Returns: The atom, or the expression of the group, with the text of each atom.
         /// - Throws: ``FilterSyntaxError`` at the first problem.
-        func parse(_ input: inout Substring) throws(FilterSyntaxError) -> FilterExpr {
+        func parse(_ input: inout Substring) throws(FilterSyntaxError) -> ParsedFilter {
             FilterParser.skipWhitespace(in: &input)
             guard let first = input.first else {
                 throw FilterSyntaxError(problem: .notATerm(text: ""), at: input)
@@ -179,19 +179,19 @@ extension FilterParser {
         /// Reads a group: a `(`, an expression, and a `)`.
         ///
         /// - Parameter input: The rest of the filter, at the `(`.
-        /// - Returns: The expression in the group.
+        /// - Returns: The expression in the group, with the text of each atom.
         /// - Throws: ``FilterSyntaxError/Problem/unclosedGroup`` at the `(` when the group has no `)`, or the
         ///   error of the expression.
-        private static func group(in input: inout Substring) throws(FilterSyntaxError) -> FilterExpr {
+        private static func group(in input: inout Substring) throws(FilterSyntaxError) -> ParsedFilter {
             let open = input.prefix(1)
             input.removeFirst()
             try FilterParser.requireTerm(after: open, in: &input)
-            let expression = try OrExpr().parse(&input)
+            let parsed = try OrExpr().parse(&input)
             guard input.first == FilterParser.closeGroup else {
                 throw FilterSyntaxError(problem: .unclosedGroup, at: open)
             }
             input.removeFirst()
-            return expression
+            return parsed
         }
 
         /// Reads the removed `$project` atom, to give its error.
@@ -212,11 +212,11 @@ extension FilterParser {
         /// - Parameters:
         ///   - kind: The kind of the sigil.
         ///   - input: The rest of the filter, at the sigil.
-        /// - Returns: The atom, with a name or a URL as its value.
+        /// - Returns: The atom, with a name or a URL as its value, and with its text from the sigil.
         /// - Throws: ``FilterSyntaxError/Problem/missingBody(kind:)`` when no body follows the sigil, the error of a
         ///   URL body, or the error of a URL that the sigil does not accept (``FilterAtomKind/acceptsURL(of:)``).
         private static func sigilAtom(of kind: FilterAtomKind, in input: inout Substring) throws(FilterSyntaxError)
-            -> FilterExpr
+            -> ParsedFilter
         {
             let start = input
             input.removeFirst()
@@ -227,24 +227,24 @@ extension FilterParser {
             guard let body = Optionally({ FilterParser.Body() }).parse(&input) else {
                 throw FilterSyntaxError(problem: .missingBody(kind: kind), at: start[..<input.startIndex])
             }
-            guard NodeURI.hasScheme(atStartOf: String(body)) else {
-                return .atom(kind, .name(String(body)))
-            }
             let atom = start[..<input.startIndex]
+            guard NodeURI.hasScheme(atStartOf: String(body)) else {
+                return ParsedFilter(atom: kind, value: .name(String(body)), text: atom)
+            }
             let uri = try parsedURL(of: body, at: atom)
             guard kind.acceptsURL(of: uri.ref.nodeType) else {
                 throw FilterSyntaxError(problem: urlProblem(of: uri, after: kind), at: atom)
             }
-            return .atom(kind, .uri(uri))
+            return ParsedFilter(atom: kind, value: .uri(uri), text: atom)
         }
 
         /// Reads a bare `kanban://` URL. Other text cannot start a filter term.
         ///
         /// - Parameter input: The rest of the filter, at a character that is not a sigil and not a `(`.
-        /// - Returns: The atom of the node type of the URL.
+        /// - Returns: The atom of the node type of the URL, with the URL as its text.
         /// - Throws: ``FilterSyntaxError/Problem/notATerm(text:)`` when the text is not a URL, or the error of the
         ///   URL.
-        private static func bareURLAtom(in input: inout Substring) throws(FilterSyntaxError) -> FilterExpr {
+        private static func bareURLAtom(in input: inout Substring) throws(FilterSyntaxError) -> ParsedFilter {
             let start = input
             let body = Optionally { FilterParser.Body() }.parse(&input)
             guard let body, NodeURI.hasScheme(atStartOf: String(body)) else {
@@ -256,7 +256,7 @@ extension FilterParser {
             guard let kind = FilterAtomKind(nodeType: uri.ref.nodeType) else {
                 throw FilterSyntaxError(problem: .unusableURL(uri: uri), at: body)
             }
-            return .atom(kind, .uri(uri))
+            return ParsedFilter(atom: kind, value: .uri(uri), text: body)
         }
 
         /// Reads the URL of a URL atom.

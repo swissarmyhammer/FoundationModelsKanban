@@ -1,6 +1,11 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m5nynhe7fcxek3e5s3x5j64c
+  text: 'Note: `BLOCKING` is removed by divergence.md Q1 and C1. It is not a virtual tag, and `#BLOCKING` is an ordinary tag filter. The description of this card does not name `BLOCKING`, so the description did not change. When the vocabulary names the virtual tags, use `VirtualTag.allCases`.'
+  timestamp: 2026-10-24T03:18:30.599300+00:00
 position_column: todo
 position_ordinal: '8380'
 title: 'Filter agent: add the board vocabulary and the caller actor to each prompt'
