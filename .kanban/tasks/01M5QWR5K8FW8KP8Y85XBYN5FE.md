@@ -23,8 +23,24 @@ comments:
     - evidence: 2 files — Sources/FoundationModelsKanban/CrossRepo/BareBoard.swift (parent standardized), Tests/FoundationModelsKanbanTests/CrossRepo/BareBoardTests.swift (new regression test). RED: filtered test did not stop, killed after 60 s. GREEN: filtered test passed. Full `swift test`: 1873 tests in 163 suites passed, 0 failures; only warning is SwiftPM "missing creator" for mlx-swift_Cmlx.bundle.
     - next: /review
   timestamp: 2026-10-24T21:29:40.832951+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5qx7nkjejassgrwfk7dyr33
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (aa702af). 0 findings, 0 confirmed, 0 refuted. 7 validator runs attempted, 0 failed. 2 files reviewed. 4 .kanban files not reviewed because of .reviewignore.
+    - next: none. The task is in done.
+  timestamp: 2026-10-24T21:31:56.402011+00:00
+- actor: claude-code
+  id: 01m5qx885btptgadahkgnjrkc0
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — BareBoard.swift, BareBoardTests.swift
+    - test: green — swift test, 1873 passed in 163 suites, 0 failed, 0 skipped
+    - commit: aa702af
+    - review: clean — 0 findings
+  timestamp: 2026-10-24T21:32:15.403028+00:00
+position_column: done
+position_ordinal: ffc280
 title: BareBoard.nearestBoardFolder loops forever at the file system root
 ---
 ## Problem
