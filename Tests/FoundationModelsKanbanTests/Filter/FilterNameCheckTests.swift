@@ -14,25 +14,38 @@ struct FilterNameCheckTests {
     /// The slug of an actor of a different board that a task of the board has as its assignee.
     static let remoteActor = "bob"
 
+    /// The slug of a caller actor that is not an actor of the sample board: the caller did not write to the board yet.
+    static let newcomerSlug = "newcomer"
+
+    /// A caller actor that is not an actor of the sample board.
+    static let newcomer = SessionActor(ref: .actor(slug: newcomerSlug), name: "Newcomer")
+
     /// Checks the names of a filter against a board.
     ///
     /// - Parameters:
     ///   - filter: The text of the filter.
     ///   - board: The board.
+    ///   - caller: The caller actor, or `nil` for no caller actor.
     /// - Returns: The parsed filter.
     /// - Throws: ``KanbanError/invalidFilter(filter:position:detail:example:)`` when the filter does not parse or a
     ///   name names nothing.
-    static func check(_ filter: String, in board: ReadinessFixture) throws(KanbanError) -> FilterExpr {
-        try FilterNameCheck(over: board.readiness, inBoard: FilterEvaluatorTests.boardKey).check(filter)
+    static func check(
+        _ filter: String,
+        in board: ReadinessFixture,
+        for caller: SessionActor? = nil
+    ) throws(KanbanError) -> FilterExpr {
+        try FilterNameCheck(over: board.readiness, inBoard: FilterEvaluatorTests.boardKey, for: caller).check(filter)
     }
 
     /// Checks the names of a filter against the sample board.
     ///
-    /// - Parameter filter: The text of the filter.
+    /// - Parameters:
+    ///   - filter: The text of the filter.
+    ///   - caller: The caller actor, or `nil` for no caller actor.
     /// - Returns: The parsed filter.
     /// - Throws: The error of the check, or an error when a test ULID is not valid.
-    static func sampleCheck(_ filter: String) throws -> FilterExpr {
-        try check(filter, in: try FilterEvaluatorTests.sampleBoard())
+    static func sampleCheck(_ filter: String, for caller: SessionActor? = nil) throws -> FilterExpr {
+        try check(filter, in: try FilterEvaluatorTests.sampleBoard(), for: caller)
     }
 
     /// Gives the error of a name that names nothing.
@@ -107,6 +120,20 @@ struct FilterNameCheckTests {
         #expect(try Self.check("@\(Self.remoteActor)", in: board) == .atom(.assignee, .name(Self.remoteActor)))
     }
 
+    /// Each form of the slug of the caller actor ``newcomer``: the slug, the slug in a different case, and the actor
+    /// URL of the board.
+    static let callerForms = [
+        "@\(newcomerSlug)",
+        "@\(newcomerSlug.uppercased())",
+        "@" + FilterEvaluatorTests.url(ofType: .actor, withID: newcomerSlug),
+    ]
+
+    @Test("Each form of the slug of the caller actor passes, also when the caller is not an actor of the board",
+        arguments: callerForms)
+    func callerSlugPasses(_ filter: String) throws {
+        #expect(try Self.sampleCheck(filter, for: Self.newcomer) == FilterExpr(parsing: filter))
+    }
+
     // MARK: - Unknown names
 
     @Test("An unknown tag gives INVALID_FILTER at the tag, with the nearest tag in the message")
@@ -151,12 +178,28 @@ struct FilterNameCheckTests {
         }
     }
 
+    /// The filter of the unknown actor tests: an actor name that is not near an actor of the sample board.
+    static let unknownActorFilter = "!@zed"
+
+    /// The `INVALID_FILTER` error of ``unknownActorFilter`` on the sample board.
+    ///
+    /// - Returns: The error.
+    /// - Throws: An error when the filter does not hold the atom.
+    static func unknownActorError() throws -> KanbanError {
+        try unknownName(in: unknownActorFilter, at: "@zed", detail: "no actor named `zed`", example: "!@will")
+    }
+
     @Test("An unknown actor with no near actor gives no nearest actor, and the example uses the nearest actor")
     func unknownActorWithNoNearActor() throws {
-        let filter = "!@zed"
-        let expected = try Self.unknownName(in: filter, at: "@zed", detail: "no actor named `zed`", example: "!@will")
-        #expect(throws: expected) {
-            try Self.sampleCheck(filter)
+        #expect(throws: try Self.unknownActorError()) {
+            try Self.sampleCheck(Self.unknownActorFilter)
+        }
+    }
+
+    @Test("An unknown actor that is not the caller actor gives the same INVALID_FILTER as with no caller actor")
+    func unknownActorWithCallerGivesSameError() throws {
+        #expect(throws: try Self.unknownActorError()) {
+            try Self.sampleCheck(Self.unknownActorFilter, for: Self.newcomer)
         }
     }
 

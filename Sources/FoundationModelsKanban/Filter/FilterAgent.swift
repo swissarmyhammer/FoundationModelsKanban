@@ -58,7 +58,7 @@ struct FilterAgent: Sendable {
         on view: BoardView,
         for caller: SessionActor
     ) async throws -> FilterTranslation {
-        let check = FilterNameCheck(over: view.readiness, inBoard: view.boardKey)
+        let check = FilterNameCheck(over: view.readiness, inBoard: view.boardKey, for: caller)
         let filterError: KanbanError
         do throws(KanbanError) {
             try check.check(text)

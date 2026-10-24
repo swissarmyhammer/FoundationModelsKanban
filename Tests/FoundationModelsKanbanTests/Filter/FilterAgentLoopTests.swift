@@ -7,9 +7,10 @@ import Testing
 /// the engine parses it and runs the name check, and an `INVALID_FILTER` error goes back to the model in the same
 /// session, for at most ``FilterAgentLoop/attemptLimit`` attempts.
 ///
-/// The board of the tests is the board of ``FilterVocabularyTests``. The caller actor is `alice`. ``SpyLanguageModel``
-/// gives the scripted answers and records each call, so no test needs a real model. Each test compares the full
-/// translation and the full list of the calls.
+/// The board of the tests is the board of ``FilterVocabularyTests``. The caller actor is `alice`, but the "my tasks"
+/// test has a caller actor that is not an actor of the board (``FilterNameCheckTests/newcomer``).
+/// ``SpyLanguageModel`` gives the scripted answers and records each call, so no test needs a real model. Each test
+/// compares the full translation and the full list of the calls.
 @Suite("Filter agent loop")
 struct FilterAgentLoopTests {
     /// The English text of the caller.
@@ -17,6 +18,9 @@ struct FilterAgentLoopTests {
 
     /// A different English text of the caller, for the second call of the session test.
     private static let otherEnglish = "features in todo"
+
+    /// The English text of the caller for the tasks of the caller actor.
+    private static let myTasks = "my tasks"
 
     /// A statement that parses and names only nodes of the board.
     private static let correctStatement = "#bug @alice !#DONE"
@@ -109,23 +113,30 @@ struct FilterAgentLoopTests {
         BoardView(of: try FilterVocabularyTests.board().graph, inBoard: FilterEvaluatorTests.boardKey)
     }
 
-    /// The instructions of each session: the system prompt, a line break, and the vocabulary of the board for `alice`.
+    /// The instructions of each session: the system prompt, a line break, and the vocabulary of the board for a
+    /// caller.
     ///
+    /// - Parameter caller: The caller actor.
     /// - Returns: The instructions.
     /// - Throws: An error when the prompt resource cannot be read.
-    private static func instructions() throws -> String {
+    private static func instructions(for caller: SessionActor) throws -> String {
         let board = try FilterVocabularyTests.board()
-        let vocabulary = FilterVocabularyTests.vocabulary(of: board, for: FilterVocabularyTests.alice)
+        let vocabulary = FilterVocabularyTests.vocabulary(of: board, for: caller)
         return try FilterAgentPrompt.load().text + "\n" + vocabulary
     }
 
     /// The record of one call of a session with the instructions of the board.
     ///
-    /// - Parameter prompts: The prompt entries of the transcript of the call.
+    /// - Parameters:
+    ///   - prompts: The prompt entries of the transcript of the call.
+    ///   - caller: The caller actor of the call.
     /// - Returns: The call.
     /// - Throws: An error when the prompt resource cannot be read.
-    private static func call(prompts: [String]) throws -> SpyModelCall {
-        SpyModelCall(instructions: try instructions(), prompts: prompts)
+    private static func call(
+        prompts: [String],
+        for caller: SessionActor = FilterVocabularyTests.alice
+    ) throws -> SpyModelCall {
+        SpyModelCall(instructions: try instructions(for: caller), prompts: prompts)
     }
 
     /// Runs the filter agent on a text, with a model that plays a script.
@@ -133,13 +144,15 @@ struct FilterAgentLoopTests {
     /// - Parameters:
     ///   - text: The text of the caller.
     ///   - model: The filter model.
+    ///   - caller: The caller actor of the call.
     /// - Returns: The translation.
     /// - Throws: The ``KanbanError`` of the agent, or an error when a test ULID is not valid.
     private static func translate(
         _ text: String = english,
-        with model: SpyLanguageModel
+        with model: SpyLanguageModel,
+        for caller: SessionActor = FilterVocabularyTests.alice
     ) async throws -> FilterTranslation {
-        try await FilterAgent(model: model).translate(text, on: view(), for: FilterVocabularyTests.alice)
+        try await FilterAgent(model: model).translate(text, on: view(), for: caller)
     }
 
     // MARK: - The loop
@@ -196,6 +209,17 @@ struct FilterAgentLoopTests {
             try Self.call(prompts: [Self.english, firstError, secondError]),
         ]
         #expect(model.calls.recorded == expectedCalls)
+    }
+
+    @Test("My tasks of a caller that is not an actor of the board gives the caller atom at once, which selects no task")
+    func myTasksOfCallerThatIsNotAnActor() async throws {
+        let caller = FilterNameCheckTests.newcomer
+        let statement = "@\(FilterNameCheckTests.newcomerSlug)"
+        let model = SpyLanguageModel(answers: [.text(statement)])
+        let translation = try await Self.translate(Self.myTasks, with: model, for: caller)
+        #expect(translation == FilterTranslation(filter: statement, message: nil, attempts: 1))
+        #expect(model.calls.recorded == [try Self.call(prompts: [Self.myTasks], for: caller)])
+        #expect(try FilterEvaluatorTests.matches(of: statement, in: try FilterVocabularyTests.board()) == [])
     }
 
     @Test("Two calls of the agent do not share a session: the second call sees only its own text")

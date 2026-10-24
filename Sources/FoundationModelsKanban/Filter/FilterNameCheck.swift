@@ -5,10 +5,11 @@ import Foundation
 ///
 /// The check reads each `#tag`, `@actor`, and `%column` atom, by name or by a URL of this board, with the name
 /// resolution of the task list (``FilterNames``). A tag passes when it is a virtual tag (``VirtualTag``) or a live tag,
-/// after the rename redirect. An actor passes when it is a live actor of the board, or an actor of a different board
-/// that a task has as its assignee. A column passes when it is a live column. A URL of a different board, a `^id`
-/// atom, and a `~type` atom pass: the check does not read them. The board has no projects, so a `$project` atom
-/// gives the parse error of the removed sigil.
+/// after the rename redirect. An actor passes when it is a live actor of the board, an actor of a different board
+/// that a task has as its assignee, or the slug of the caller actor, also when the caller is not yet an actor of the
+/// board: then "my tasks" is a filter that selects no task. A column passes when it is a live column. A URL of a
+/// different board, a `^id` atom, and a `~type` atom pass: the check does not read them. The board has no projects, so
+/// a `$project` atom gives the parse error of the removed sigil.
 ///
 /// A name that names nothing gives `INVALID_FILTER` at the atom, with the specific message, for example
 /// ``"no tag named `urgnt`; the nearest tag is `urgent`"``, and the filter with a name of the board in place of the
@@ -21,13 +22,20 @@ struct FilterNameCheck {
     /// The name resolution of the board.
     private let names: FilterNames
 
+    /// The slug of the session actor of the call, or `nil` when the call has no caller actor. The vocabulary tells the
+    /// model to write `@<slug>` for "me" (``FilterVocabulary``), so this slug passes also when the caller is not yet an
+    /// actor of the board.
+    private let callerSlug: String?
+
     /// Makes the name check of one board.
     ///
     /// - Parameters:
     ///   - readiness: The readiness of the tasks of the board. It holds the graph.
     ///   - boardKey: The current key of the board. A URL with this key names a node of the board.
-    init(over readiness: Readiness, inBoard boardKey: String) {
+    ///   - caller: The session actor of the call, or `nil` when the call has no caller actor.
+    init(over readiness: Readiness, inBoard boardKey: String, for caller: SessionActor?) {
         names = FilterNames(readiness: readiness, boardKey: boardKey)
+        callerSlug = caller?.ref.localID
     }
 
     /// Parses a filter, and checks that each name in it names a node of the board.
@@ -82,11 +90,20 @@ struct FilterNameCheck {
             VirtualTag(named: name) != nil || names.liveTagSlot(named: name) != nil
         case .assignee:
             !names.liveSlots(of: ActorNode.self, named: name).isEmpty || names.hasRemoteAssignee(named: name)
+                || isCallerSlug(name)
         case .column:
             !names.liveSlots(of: ColumnNode.self, named: name).isEmpty
         case .ref, .type:
             true
         }
+    }
+
+    /// Tells if a name of an `@` atom is the slug of the caller actor.
+    ///
+    /// - Parameter name: The name as the atom writes it, or the local id of its URL, in any case.
+    /// - Returns: `true` when the call has a caller actor and the slug of the name is its slug.
+    private func isCallerSlug(_ name: String) -> Bool {
+        callerSlug == Slug.normalizedText(of: name)
     }
 
     /// Gives the names of the board that an atom of a kind can name, in a stable order.
