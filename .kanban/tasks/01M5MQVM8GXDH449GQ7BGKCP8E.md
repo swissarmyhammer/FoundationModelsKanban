@@ -62,8 +62,24 @@ comments:
     - evidence: `swift build --build-tests` and `swift test`: 1817 tests in 153 suites passed; only the accepted SwiftPM "missing creator" warning. Files: Sources/FoundationModelsKanban/GraphQL/MutationResolvers.swift, Tests/FoundationModelsKanbanTests/GraphQL/FieldUpdateTests.swift (new). Findings 2/2 checked; acceptance criteria 5/5 checked.
     - next: /review
   timestamp: 2026-10-24T02:28:15.758050+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5nvwqp5wqr2sk13d4pjba09
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (a657b22): 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. 2 files reviewed. The 2 earlier findings (MutationResolvers.swift:569 duplication/duplication and reuse/reuse) are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-24T02:30:00.645925+00:00
+- actor: claude-code
+  id: 01m5nvx7pkddb6b4q2041tnpx1
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 2 files, the 2 findings fixed
+    - test: green — swift test, 1817 tests in 153 suites
+    - commit: a657b22
+    - review: clean — 0 findings, 2/2 earlier findings checked
+  timestamp: 2026-10-24T02:30:17.043211+00:00
+position_column: done
+position_ordinal: ffb880
 title: Read the trigger and next of a column from the frontmatter of its body (KANBAN-2)
 ---
 ## What
