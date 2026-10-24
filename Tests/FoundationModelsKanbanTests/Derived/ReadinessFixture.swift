@@ -133,11 +133,20 @@ struct ReadinessFixture {
     ///
     /// - Parameters:
     ///   - slug: The slug of the tag.
+    ///   - name: The name of the tag. The default is the empty name.
+    ///   - body: The body of the tag: its description. The default is the empty body.
     ///   - target: The slug of the tag that a rename made this tag point to, or `nil` for a tag with no rename.
     ///   - isDeleted: `true` when the tag is a tombstone.
-    mutating func addTag(withSlug slug: String, renamedTo target: String? = nil, isDeleted: Bool = false) {
+    mutating func addTag(
+        withSlug slug: String,
+        named name: String = "",
+        describedAs body: String = "",
+        renamedTo target: String? = nil,
+        isDeleted: Bool = false
+    ) {
         let renamedTo = target.map { targetSlug in EdgeTarget.unresolved(.local(.tag(slug: targetSlug))) }
-        let tag = TagNode(slug: slug, fields: Self.fields(isDeleted: isDeleted), renamedTo: renamedTo)
+        let fields = Self.fields(body: body, isDeleted: isDeleted)
+        let tag = TagNode(slug: slug, fields: fields, name: name, renamedTo: renamedTo)
         graph.update(with: .tag(tag))
     }
 
