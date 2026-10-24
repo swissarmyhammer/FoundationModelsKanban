@@ -41,6 +41,9 @@ struct TimelineCursor: Comparable, Sendable {
     /// The character between the transaction and the place in the text of a cursor.
     static let separator: Character = ":"
 
+    /// The number of parts of the text of a cursor: the transaction and the place.
+    private static let partCount = 2
+
     /// The ULID text of the transaction, in uppercase. The ULID text sorts in time order.
     private let txnText: String
 
@@ -66,8 +69,8 @@ struct TimelineCursor: Comparable, Sendable {
     init(parsing text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         let parts = trimmed.split(separator: Self.separator, omittingEmptySubsequences: false)
-        if parts.count == 2, let index = Int(parts[1]) {
-            txnText = String(parts[0])
+        if parts.count == Self.partCount, let txn = parts.first, let place = parts.last, let index = Int(place) {
+            txnText = String(txn)
             self.index = index
         } else {
             txnText = trimmed

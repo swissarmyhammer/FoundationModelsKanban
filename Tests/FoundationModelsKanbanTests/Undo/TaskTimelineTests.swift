@@ -20,7 +20,7 @@ struct TaskTimelineTests {
     /// The selection of each entry in the paging tests: the cursor and the kind.
     private static let pageSelection = "cursor kind"
 
-    /// The page size of the paging tests.
+    /// The page size of the tests that read the two newest entries.
     private static let pageSize = 2
 
     /// The number of tasks that the read test adds beside the fixture task.
@@ -137,18 +137,6 @@ struct TaskTimelineTests {
         return #"{"cursor":"\#(cursor)","kind":"\#(kind.rawValue)"}"#
     }
 
-    /// Makes a `moveTask` field that moves the fixture task to `done`.
-    ///
-    /// - Parameter task: The ULID of the task.
-    /// - Returns: The field.
-    private static func doneMove(of task: ULID) -> String {
-        TaskOperationTests.taskField(
-            MutationName.moveTask,
-            of: task,
-            with: TaskOperationTests.moveInput(to: TaskOperationTests.doneSlug)
-        )
-    }
-
     /// Makes an `updateTask` field that gives the fixture task the title ``ChangeBuilderTests/newTitle``.
     ///
     /// - Parameter task: The ULID of the task.
@@ -168,7 +156,7 @@ struct TaskTimelineTests {
         let fixture = try ColumnActorTests.makeFixtureGraph(in: directory)
         let created = try fixtureTransaction(of: fixture.task, in: directory)
         let renamed = try await write(rename(fixture.task), on: fixture.graph).txn
-        let moved = try await write(doneMove(of: fixture.task), on: fixture.graph).txn
+        let moved = try await write(TaskOperationTests.doneMove(of: fixture.task), on: fixture.graph).txn
         return (fixture.graph, fixture.task, created, renamed, moved)
     }
 
@@ -212,21 +200,27 @@ struct TaskTimelineTests {
     func timelineGivesListMembers() async throws {
         let directory = try TemporaryDirectory()
         let fixture = try ColumnActorTests.makeFixtureGraph(in: directory)
-        let tag = TaskOperationTests.taskField(
-            MutationName.tagTask,
-            of: fixture.task,
-            with: TaskOperationTests.tagsInput(TagMutationTests.bug)
-        )
-        _ = try await Self.write(tag, on: fixture.graph)
+        let input = TaskOperationTests.tagsInput(TagMutationTests.bug)
+        for mutation in [MutationName.tagTask, MutationName.untagTask] {
+            _ = try await Self.write(
+                TaskOperationTests.taskField(mutation, of: fixture.task, with: input),
+                on: fixture.graph
+            )
+        }
         let response = try await Self.timeline(
             of: fixture.task,
-            with: "(first: 1)",
+            with: "(first: \(Self.pageSize))",
             selecting: "kind field { name added removed }",
             on: fixture.graph
         )
-        let tagID = ColumnActorTests.id(of: .tag(slug: TagMutationTests.bug))
-        let field = #"{"added":["\#(tagID)"],"name":"tags","removed":[]}"#
-        #expect(response == Self.timelineResponse([#"{"field":\#(field),"kind":"FIELD"}"#]))
+        let tagList = #"["\#(ColumnActorTests.id(of: .tag(slug: TagMutationTests.bug)))"]"#
+        let removed = #"{"added":[],"name":"\#(PropertyName.tags)","removed":\#(tagList)}"#
+        let added = #"{"added":\#(tagList),"name":"\#(PropertyName.tags)","removed":[]}"#
+        let expected = Self.timelineResponse([
+            #"{"field":\#(removed),"kind":"FIELD"}"#,
+            #"{"field":\#(added),"kind":"FIELD"}"#,
+        ])
+        #expect(response == expected)
     }
 
     @Test("timeline gives the add, the body change with its diff, and the delete of a comment")

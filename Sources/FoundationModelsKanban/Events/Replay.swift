@@ -115,11 +115,8 @@ extension Graph {
 /// The state of one node just before and just after one transaction that changed it (divergence.md §23).
 /// `Task.timeline` compares the two states of each step of a task and of each of its comments.
 struct TransactionStep: Sendable {
-    /// The transaction ULID.
-    let txn: ULID
-
-    /// The events of the transaction on the node, in the order of their ids. The first event gives the time and the
-    /// actor of the step.
+    /// The events of the transaction on the node, in the order of their ids. The first event gives the transaction,
+    /// the time, and the actor of the step.
     let events: [Event]
 
     /// The node just before the transaction, or `nil` when the node did not exist yet.
@@ -140,10 +137,10 @@ struct TransactionStep: Sendable {
     /// - Returns: One step for each transaction of the events, in the order of the transaction ULIDs.
     static func steps(folding events: [Event], for ref: LocalRef) -> [TransactionStep] {
         var fold = TransactionFold(ref: ref)
-        return events.groupedByTransaction().map { txn, transactionEvents in
+        return events.groupedByTransaction().map { _, transactionEvents in
             let before = fold.node
             let applied = fold.apply(transactionEvents)
-            return TransactionStep(txn: txn, events: applied, before: before, after: fold.node)
+            return TransactionStep(events: applied, before: before, after: fold.node)
         }
     }
 }

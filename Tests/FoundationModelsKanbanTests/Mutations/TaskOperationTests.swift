@@ -209,6 +209,14 @@ struct TaskOperationTests {
         #"column: "\#(column)" \#(placement)"#
     }
 
+    /// Makes a `moveTask` field that moves a task to the column ``doneSlug``.
+    ///
+    /// - Parameter task: The ULID of the task.
+    /// - Returns: The field.
+    static func doneMove(of task: ULID) -> String {
+        taskField(MutationName.moveTask, of: task, with: moveInput(to: doneSlug))
+    }
+
     /// Makes a `before` or an `after` part of a `moveTask` input.
     ///
     /// - Parameters:

@@ -42,20 +42,8 @@ struct RejectTaskTests {
         let columns = [doingSlug, reviewSlug, TaskOperationTests.doneSlug].map { slug in
             #"\#(slug): addColumn(input: { name: "\#(slug)" }) { id }"#
         }
-        let move = task.map { task in [doneMove(of: task)] } ?? []
+        let move = task.map { task in [TaskOperationTests.doneMove(of: task)] } ?? []
         return AddUpdateTaskTests.mutation(of: (columns + move).joined(separator: " "))
-    }
-
-    /// Makes a `moveTask` field that moves a task to `done`.
-    ///
-    /// - Parameter task: The ULID of the task.
-    /// - Returns: The field.
-    private static func doneMove(of task: ULID) -> String {
-        TaskOperationTests.taskField(
-            MutationName.moveTask,
-            of: task,
-            with: TaskOperationTests.moveInput(to: TaskOperationTests.doneSlug)
-        )
     }
 
     /// Makes a new engine of the fixture repo, and runs ``columnsSetup(movingToDone:)`` with the fixture task.
@@ -128,7 +116,10 @@ struct RejectTaskTests {
     ) async throws -> (directory: TemporaryDirectory, graph: KanbanGraph, first: ULID, second: ULID, third: ULID) {
         let tasks = try await TaskOperationTests.threeTasks(in: directory)
         _ = try await KanbanGraphTests.execute(
-            AddUpdateTaskTests.mutation(of: AddUpdateTaskTests.doneColumn, doneMove(of: tasks.first)),
+            AddUpdateTaskTests.mutation(
+                of: AddUpdateTaskTests.doneColumn,
+                TaskOperationTests.doneMove(of: tasks.first)
+            ),
             on: tasks.graph
         )
         return tasks
