@@ -66,16 +66,33 @@ comments:
     - evidence: swift build --build-tests complete; swift test — 1790 tests in 149 suites passed, 0 failed, 0 skipped. Only warning: SwiftPM "missing creator" (accepted).
     - next: review
   timestamp: 2026-10-24T01:22:34.481160+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5nr7hs1cpvm45d6nzx0dy7p
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 00a3101). 12 files reviewed. 0 findings, 0 confirmed, 3 refuted, 21 attempted, 0 failed. No prior Review Findings sections.
+    - next: The task moves to done.
+  timestamp: 2026-10-24T01:26:00.737480+00:00
+- actor: claude-code
+  id: 01m5nr8h475c8py6pey62yrm1e
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — moveTasks, deleteTasks, undeleteTasks; divergence.md §20; FoundationModelsExtras fix c79fc55 (number as written wins) and the pin update
+    - test: green — swift test, 1790 tests in 149 suites, 0 failed, 0 skipped
+    - commit: 00a3101
+    - review: clean — 0 findings (3 refuted)
+    - note: acceptance criterion 1 now names moveTasks, by the user decision (divergence.md §20).
+  timestamp: 2026-10-24T01:26:32.839757+00:00
+position_column: done
+position_ordinal: ffb680
 title: Accept a list of task ids in moveTask, deleteTask and undeleteTask
 ---
 ## What
 
 In KanbanViewKit, a drag of many selected cards is one call, and the user can delete or archive many selected tasks (its plan §3.4). Today `moveTask`, `deleteTask` and `undeleteTask` take one task id. (`archive` is an alias of `deleteTask`, `unarchive` of `undeleteTask`.)
 
-- Let `id` in the input of these mutations take one id or a list of ids, in the forgiving style of the other list inputs (very forgiving tool inputs).
-- `moveTask` with a list puts the tasks at the placement in the order of the list, as one block (for example, all before the `before` task).
+- Add `moveTasks`, `deleteTasks` and `undeleteTasks` (KANBAN-8 names). Their `id` takes a list of ids, in the forgiving style of the other list inputs (very forgiving tool inputs). The singular mutations do not change (divergence.md §20).
+- `moveTasks` puts the tasks at the placement in the order of the list, as one block (for example, all before the `before` task).
 - The call is one transaction: one `undoChange` reverses all of it.
 - When one id names nothing, refuse the whole call and write nothing. The error names each bad id.
 - The result gives each changed task.
@@ -84,11 +101,11 @@ In KanbanViewKit, a drag of many selected cards is one call, and the user can de
 
 ## Acceptance criteria
 
-- [ ] `moveTask(input: {id: [a, b, c], column: "doing", before: x})` puts a, b, c before x in that order, in one transaction.
-- [ ] `deleteTask` and `undeleteTask` with a list work in one transaction.
-- [ ] One `undoChange` reverses each of these calls.
-- [ ] A list with an unknown id writes nothing and names the id.
-- [ ] One id (not a list) works as today.
+- [x] `moveTasks(input: {id: [a, b, c], column: "doing", before: x})` puts a, b, c before x in that order, in one transaction. (Changed from `moveTask` by the user decision; see divergence.md §20.)
+- [x] `deleteTasks` and `undeleteTasks` with a list work in one transaction.
+- [x] One `undoChange` reverses each of these calls.
+- [x] A list with an unknown id writes nothing and names the id.
+- [x] One id (not a list) works as today.
 
 ## Tests
 
