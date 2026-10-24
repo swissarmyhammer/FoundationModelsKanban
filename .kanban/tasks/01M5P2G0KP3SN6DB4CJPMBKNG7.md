@@ -1,6 +1,13 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m5pk0ykxt2y4ra9vt1v9178h
+  text: |-
+    ### decision (user, 2026-10-24)
+    Option 2: the name check accepts the slug of the caller actor, also when the caller is not yet an actor of the board. Then "my tasks" is a valid filter that selects no task. Record this in divergence.md §17.
+  timestamp: 2026-10-24T09:14:16.061319+00:00
 depends_on:
 - 01M5MQTKNM12VRRJW516RXDA32
 position_column: todo

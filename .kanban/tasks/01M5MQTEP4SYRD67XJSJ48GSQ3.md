@@ -30,8 +30,24 @@ comments:
     - evidence: `swift test` 1858 tests in 160 suites passed; only the accepted SwiftPM "missing creator" warning. RED seen first (`cannot find 'FilterVocabulary' in scope`), then `swift test --filter FilterVocabularyTests` 4 passed. Files: Sources/FoundationModelsKanban/Filter/FilterVocabulary.swift (new), Tests/FoundationModelsKanbanTests/Filter/FilterVocabularyTests.swift (new), Tests/FoundationModelsKanbanTests/Derived/ReadinessFixture.swift, divergence.md.
     - next: /review. Follow-up task ^pmbkng7 needs a decision by a person.
   timestamp: 2026-10-24T04:25:44.636380+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5p2nnzs5k2pw416w21g7p1c
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 2dd25dd). 0 findings, 0 confirmed, 2 refuted, 7 attempted, 0 failed. The engine reviewed 3 files: FilterVocabulary.swift, FilterVocabularyTests.swift, ReadinessFixture.swift. The .kanban files are not in the scope (.reviewignore). No validator matches divergence.md. The task had no prior Review Findings sections.
+    - next: The task is in done. Card ^6rxda32 can use FilterVocabulary.text(of:for:). Task ^pmbkng7 holds the open "me" question for a caller that is not a board actor.
+  timestamp: 2026-10-24T04:28:29.561368+00:00
+- actor: claude-code
+  id: 01m5pk0xyytp12raq2caq6rxy8
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 4 files, FilterVocabulary.text(of:for:)
+    - test: green — swift test, 1858 tests in 160 suites
+    - commit: 2dd25dd
+    - review: clean — 0 findings (2 refuted)
+  timestamp: 2026-10-24T09:14:15.390878+00:00
+position_column: done
+position_ordinal: ffbd80
 title: 'Filter agent: add the board vocabulary and the caller actor to each prompt'
 ---
 ## What
