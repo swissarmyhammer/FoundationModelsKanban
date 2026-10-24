@@ -31,10 +31,26 @@ comments:
     - evidence: 7 files — IntegrationTests/Tests/FoundationModelsKanbanIntegrationTests/FilterAgentExampleTests.swift (new), IntegrationTests/Tests/FoundationModelsKanbanIntegrationTests/Support/IntegrationHost.swift (new), IntegrationTests/Tests/FoundationModelsKanbanIntegrationTests/BoardSmokeTests.swift, IntegrationTests/Tests/FoundationModelsKanbanIntegrationTests/CrossRepoDependencyTests.swift, IntegrationTests/Tests/FoundationModelsKanbanIntegrationTests/ModelVariablesTests.swift, divergence.md, README.md. `swift test --package-path IntegrationTests`: 4 tests in 4 suites passed (13 of 13 filter example cases, each attempts 1). Root `swift test`: 1871 tests in 161 suites passed. Only the accepted SwiftPM "missing creator" warning in the two runs.
     - next: /review
   timestamp: 2026-10-24T10:13:54.995287+00:00
+- actor: claude-code
+  id: 01m5ppk94xe3swarycaqm3jpar
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (b98bb0d). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed, 0 skipped. 5 files reviewed. README.md and divergence.md have no matching validator. The .kanban files are excluded by .reviewignore.
+    - next: none. The task is in done.
+  timestamp: 2026-10-24T10:16:42.397855+00:00
+- actor: claude-code
+  id: 01m5ppkzt8vrwf5c868y2c20dk
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 7 files, FilterAgentExampleTests and IntegrationHost; 13/13 examples pass with Qwen 3.8 27B, 1 attempt each
+    - test: green — swift test, 1871 tests in 161 suites; swift test --package-path IntegrationTests, 4 tests
+    - commit: b98bb0d
+    - review: clean — 0 findings
+  timestamp: 2026-10-24T10:17:05.608520+00:00
 depends_on:
 - 01M5MQTKNM12VRRJW516RXDA32
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffc080
 title: 'Filter agent: run the prompt examples with a real model in IntegrationTests'
 ---
 ## What
