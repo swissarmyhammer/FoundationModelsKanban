@@ -55,6 +55,8 @@ struct KanbanErrorTests {
         (.invalidOrdinal(ordinal: "zz!"), "INVALID_ORDINAL"),
         (.conflictingPlacement(fields: ["before", "after"]), "CONFLICTING_PLACEMENT"),
         (.staleWrite(task: "^aaaaaaa", givenVersion: staleVersion, currentVersion: currentVersion), "STALE_WRITE"),
+        (.emptyComment, "EMPTY_COMMENT"),
+        (.noPreviousColumn(task: "^aaaaaaa", column: firstColumn), "NO_PREVIOUS_COLUMN"),
         (.boardBusy(attempts: commitAttempts), "BOARD_BUSY"),
         (.incompatibleBoard(directory: rustBoardPath), "INCOMPATIBLE_BOARD"),
     ]
@@ -64,6 +66,9 @@ struct KanbanErrorTests {
 
     /// The current version of the task in the `STALE_WRITE` tests.
     static let currentVersion = "01KTXN0002BBBBBBBBBBBBBBBB"
+
+    /// The slug of the first column in the `NO_PREVIOUS_COLUMN` tests.
+    static let firstColumn = "todo"
 
     /// The task refs that name no task, in the test of `NOT_FOUND` for a list of ids.
     static let missingTaskRefs = ["^zzzzzzz", "^yyyyyyy"]
@@ -88,7 +93,7 @@ struct KanbanErrorTests {
         #expect(error.code == expectedCode)
     }
 
-    @Test("The cases give seventeen different codes")
+    @Test("The cases give nineteen different codes")
     func codesAreDistinct() {
         #expect(Set(Self.codes.map { $0.0.code }).count == Self.codes.count)
     }
@@ -343,6 +348,24 @@ struct KanbanErrorTests {
                 + "is \"01KTXN0002BBBBBBBBBBBBBBBB\", so the call wrote nothing. Read the task again, and then send the "
                 + "call again with ifVersion: \"01KTXN0002BBBBBBBBBBBBBBBB\", or with no ifVersion to write over the "
                 + "change."
+        )
+    }
+
+    @Test("EMPTY_COMMENT tells that nothing changed, and asks for a comment that tells why the task goes back")
+    func emptyCommentMessage() {
+        #expect(
+            KanbanError.emptyComment.message
+                == "The comment is empty, so the call wrote nothing. Give a comment that tells why the task goes back, "
+                + "and then send the call again."
+        )
+    }
+
+    @Test("NO_PREVIOUS_COLUMN names the task and the first column, and asks for the column")
+    func noPreviousColumnMessage() {
+        #expect(
+            KanbanError.noPreviousColumn(task: "^aaaaaaa", column: Self.firstColumn).message
+                == "The task \"^aaaaaaa\" is in the first column \"todo\", so no column comes before it, and the call "
+                + "wrote nothing. Give the column of the task, and then send the call again."
         )
     }
 

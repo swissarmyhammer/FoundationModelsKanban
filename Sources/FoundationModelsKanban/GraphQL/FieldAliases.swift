@@ -106,6 +106,16 @@ enum KanbanFieldAliases {
         .filter { field, _ in field != "board" }
         .merging(taskList) { _, list in list }
 
+    /// The aliases of the comment of `RejectTaskInput` (divergence.md §21). The input has no `body` field, so the
+    /// `body` aliases of ``everywhere`` and ``inEachInput`` do not apply there, and these names name only the comment.
+    private static let rejectComment = ["body", "message", "text", "reason", "feedback", "note", "notes"]
+
+    /// The aliases of the fields of `RejectTaskInput` (divergence.md §21): the aliases of `MoveTaskInput` with no
+    /// `board` field, and the aliases of the comment.
+    private static let taskReject = taskPlacement
+        .filter { field, _ in field != "board" }
+        .merging(["comment": rejectComment]) { _, comment in comment }
+
     /// The aliases of the `boards` argument of `checkLinks` and `repairLinks`: the boards of the links (divergence.md
     /// M9).
     private static let linkBoards = ["board", "ids", "id", "keys", "key", "repos", "repo", "paths", "path"]
@@ -154,7 +164,7 @@ enum KanbanFieldAliases {
         "TaskConnection": ["totalCount": ["count", "total"]],
         "Mutation": [
             "unassignTask": ["removeAssignee"], "assignTask": ["addAssignee"], "undoChange": ["undo"],
-            "redoChange": ["redo"],
+            "redoChange": ["redo"], "rejectTask": ["rejectReview"],
         ],
         "Subscription": ["changes": ["kanbanChanges"]],
         "AddTaskInput": [
@@ -176,6 +186,7 @@ enum KanbanFieldAliases {
         "MoveTasksInput": taskBlockPlacement,
         "DeleteTasksInput": taskList,
         "UndeleteTasksInput": taskList,
+        "RejectTaskInput": taskReject,
         "AddCommentInput": ["task": commentTask, "actor": ["author", "user"]],
         "UpdateCommentInput": commentReference,
         "DeleteCommentInput": commentReference,

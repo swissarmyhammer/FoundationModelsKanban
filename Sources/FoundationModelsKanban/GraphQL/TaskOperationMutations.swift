@@ -404,7 +404,7 @@ extension KanbanContext {
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live task has the id, or the engine did not load
     ///   the board of the task yet, so that the field never gives `null` with no error. The store then records the
     ///   request, and the call runs again after the load. The error of the body.
-    fileprivate func changeTask(
+    func changeTask(
         _ id: NodeID,
         named operation: String,
         _ body: sending (inout WorkingCopy, RefResolver, LocalRef, DateTime) throws -> Void
@@ -490,7 +490,7 @@ extension WorkingCopy {
     ///   - ordinal: The ordinal of the task in the column.
     ///   - time: The time of the change.
     /// - Throws: An ``EventError`` when the patch breaks a rule of the log.
-    fileprivate mutating func move(
+    mutating func move(
         _ task: LocalRef,
         to column: LocalRef,
         placingAt ordinal: Ordinal,

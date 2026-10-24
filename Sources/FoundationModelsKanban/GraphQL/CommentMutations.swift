@@ -115,10 +115,7 @@ extension KanbanResolver {
                 resolvingWith: resolver,
                 at: time
             )
-            let ref = LocalRef.comment(work.mintULID())
-            let values = [PropertyName.task: PatchValue.ref(.local(task)), PropertyName.author: .ref(.local(author))]
-            try work.addNode(ref, setting: values, body: input.body, at: time)
-            return ref
+            return try work.addComment(to: task, by: author, saying: input.body, at: time)
         }
     }
 
@@ -265,6 +262,29 @@ extension WorkingCopy {
         }
         try ref.checkSlugIsNotReserved()
         try apply(PatchInput(node: ref, set: [PropertyName.name: .string(id.text)]), at: time)
+        return ref
+    }
+
+    /// Adds a comment to a task: mints the comment ULID, and writes one comment patch with a `set` of the task and the
+    /// author, and an `edit` diff of the body (plan.md §3.2, §4.2). `addComment` and `rejectTask` write a comment
+    /// with this patch.
+    ///
+    /// - Parameters:
+    ///   - task: The local ref of the live task.
+    ///   - author: The local ref of the author.
+    ///   - body: The Markdown body of the comment: the full text.
+    ///   - time: The time of the change.
+    /// - Returns: The local ref of the new comment.
+    /// - Throws: An ``EventError`` when the patch breaks a rule of the log.
+    mutating func addComment(
+        to task: LocalRef,
+        by author: LocalRef,
+        saying body: String,
+        at time: DateTime
+    ) throws -> LocalRef {
+        let ref = LocalRef.comment(mintULID())
+        let values = [PropertyName.task: PatchValue.ref(.local(task)), PropertyName.author: .ref(.local(author))]
+        try addNode(ref, setting: values, body: body, at: time)
         return ref
     }
 }

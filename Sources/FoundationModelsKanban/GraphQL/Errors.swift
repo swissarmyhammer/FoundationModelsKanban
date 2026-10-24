@@ -94,6 +94,15 @@ enum KanbanError: CodedError, Hashable {
     /// event of the task.
     case staleWrite(task: String, givenVersion: String, currentVersion: String)
 
+    /// `EMPTY_COMMENT`: the comment of a `rejectTask` call is empty or holds only white space, so the call wrote
+    /// nothing (divergence.md §21).
+    case emptyComment
+
+    /// `NO_PREVIOUS_COLUMN`: a `rejectTask` call names no column, and the task shows in the first column, so no column
+    /// comes before it, and the call wrote nothing (divergence.md §21). The task is the task ref as the call wrote it,
+    /// and the column is the slug of the first column.
+    case noPreviousColumn(task: String, column: String)
+
     /// `BOARD_BUSY`: the log of the board changed during each commit attempt (plan.md §5.4).
     case boardBusy(attempts: Int)
 
@@ -143,6 +152,8 @@ extension KanbanError {
         case .invalidOrdinal: "INVALID_ORDINAL"
         case .conflictingPlacement: "CONFLICTING_PLACEMENT"
         case .staleWrite: "STALE_WRITE"
+        case .emptyComment: "EMPTY_COMMENT"
+        case .noPreviousColumn: "NO_PREVIOUS_COLUMN"
         case .boardBusy: "BOARD_BUSY"
         case .unreachableBoard, .unreachableBoards: "UNREACHABLE_BOARD"
         }
@@ -221,6 +232,12 @@ extension KanbanError {
             "The task \"\(task)\" changed after the version \"\(givenVersion)\": its current version is "
                 + "\"\(currentVersion)\", so the call wrote nothing. Read the task again, and then send the call "
                 + "again with ifVersion: \"\(currentVersion)\", or with no ifVersion to write over the change."
+        case .emptyComment:
+            "The comment is empty, so the call wrote nothing. Give a comment that tells why the task goes back, and "
+                + "then send the call again."
+        case .noPreviousColumn(let task, let column):
+            "The task \"\(task)\" is in the first column \"\(column)\", so no column comes before it, and the call "
+                + "wrote nothing. Give the column of the task, and then send the call again."
         case .boardBusy(let attempts):
             "The board changed during each of the \(attempts) commit attempts, so the call wrote nothing. "
                 + "Send the call again."

@@ -43,7 +43,8 @@ public struct KanbanTool: GraphQLEndpointTool {
     /// The short description of the tool: its purpose, the root fields, one example query, one example of the
     /// history filter, the dependencies between repos (divergence.md R17), the ref forms (divergence.md R18, Q25, C3,
     /// E4), the version check of `updateTask` (divergence.md §18), the warnings, the transaction of the response
-    /// (divergence.md §19), and the board place. The description
+    /// (divergence.md §19), the list mutations (divergence.md §20), `rejectTask` (divergence.md §21), and the board
+    /// place. The description
     /// does not hold the schema. The agent learns the schema with introspection (plan.md §12 item 10).
     public let description = """
         Reads and changes the kanban task graph of this repo with GraphQL. Send one GraphQL document in query. \
@@ -70,7 +71,9 @@ public struct KanbanTool: GraphQLEndpointTool {
         ifVersion to updateTask; a different version gives STALE_WRITE with the current version, and the call writes \
         nothing. Read the warnings in extensions.warnings. The response of a call that writes gives its transaction \
         in extensions.txn; give it as txn to undoChange to reverse the call. To change many tasks in one \
-        transaction, give a list of ids as id to moveTasks, deleteTasks, or undeleteTasks. \
+        transaction, give a list of ids as id to moveTasks, deleteTasks, or undeleteTasks. To send a task back with a \
+        comment to the agent, use rejectTask(input: { id, comment }): one transaction adds the comment and moves the \
+        task, by default to the column before its column. \
         The board is in .kanban at the top of a git worktree. \
         Outside git, the board is in the nearest folder up that has a .kanban folder, else in the working directory, \
         and its key is its board ID. The collectBoards mutation combines other .kanban folders, for example a board \

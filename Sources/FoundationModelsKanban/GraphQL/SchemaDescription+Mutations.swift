@@ -172,6 +172,14 @@ extension SchemaDescription {
         Makes each tombstoned task of a list live again. A live task does not change. \(taskListRule)
         """
 
+    /// The `Mutation.rejectTask` field (divergence.md §21).
+    static let rejectTask = """
+        Sends a task back with a comment to the agent: the review verb "reject with a comment". The call adds the \
+        comment to the task, with the session actor as the author, and moves the task, in one transaction, so one \
+        undoChange reverses both. No column moves the task to the column before the column where it shows, for \
+        example from done to review. No place puts the task at the end of the column.
+        """
+
     /// The `Mutation.copyTask` field.
     static let copyTask = """
         Copies a task to a column and to a place in that column, in the same board or in a different board. No board \
@@ -455,6 +463,22 @@ extension SchemaDescription {
     static func taskListInput(of mutation: String) -> String {
         "The tasks of \(mutation)."
     }
+
+    /// The `RejectTaskInput` type (divergence.md §21).
+    static let rejectTaskInput = "The fields of rejectTask. \(placementRule)"
+
+    /// The `comment` field of `RejectTaskInput` (divergence.md §21).
+    static let rejectComment = """
+        The Markdown body of the comment to the agent: why the task goes back. A comment that is empty or holds only \
+        white space gives EMPTY_COMMENT, and the call writes nothing.
+        """
+
+    /// The `column` field of `RejectTaskInput` (divergence.md §21).
+    static let rejectColumn = """
+        The column: a full URI, the slug, or a name. A slug that no column has makes the column. No column gives the \
+        column before the column where the task shows, in board order. For a task in the first column, no column \
+        gives NO_PREVIOUS_COLUMN, and the call writes nothing.
+        """
 
     /// The `tags` field of `TagTaskInput` and `UntagTaskInput`.
     static let tagTaskTags = "The tags to add or to remove. \(tagForms)"

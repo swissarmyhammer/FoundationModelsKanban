@@ -45,8 +45,14 @@ struct AliasTableTests {
     /// The task mutations whose `input` names the task in the field `id`.
     private static let taskOperations = [
         "updateTask", "moveTask", "completeTask", "assignTask", "unassignTask", "tagTask", "untagTask", "deleteTask",
-        "undeleteTask",
+        "undeleteTask", "rejectTask",
     ]
+
+    /// The mutations whose `input` has the place fields of a move: the column and the neighbors.
+    private static let placementOperations = ["moveTask", "rejectTask"]
+
+    /// The names of the agent for the `comment` field of `RejectTaskInput` (divergence.md §21).
+    private static let rejectCommentNames = ["body", "message", "text", "reason", "feedback", "note", "notes"]
 
     /// The mutations whose `input` has a `body` field and no field that `comment` can also name.
     private static let bodyInputs = [
@@ -64,11 +70,12 @@ struct AliasTableTests {
     static let inputRows: [AliasRow] = [
         AliasRow.rows(on: ["assignTask", "unassignTask"], mapping: ["assignee", "actorId", "actor_id", "user", "who"],
                       to: "actor"),
-        AliasRow.rows(on: ["moveTask"], mapping: ["before_id", "beforeId", "beforeTask"], to: "before"),
-        AliasRow.rows(on: ["moveTask"], mapping: ["after_id", "afterId", "afterTask"], to: "after"),
+        AliasRow.rows(on: placementOperations, mapping: ["before_id", "beforeId", "beforeTask"], to: "before"),
+        AliasRow.rows(on: placementOperations, mapping: ["after_id", "afterId", "afterTask"], to: "after"),
         AliasRow.rows(on: taskOperations, mapping: ["task", "ref", "uri", "key", "taskId", "task_id"], to: "id"),
+        AliasRow.rows(on: ["rejectTask"], mapping: rejectCommentNames, to: "comment"),
         AliasRow.rows(
-            on: ["addTask", "moveTask", "updateTask"],
+            on: ["addTask", "updateTask"] + placementOperations,
             mapping: ["state", "status", "lane", "col", "columnId", "column_id", "to", "toColumn"],
             to: "column"
         ),

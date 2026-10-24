@@ -1347,6 +1347,7 @@ struct PublicSchema: API {
                 .addTaskOperationMutations()
                 .addTaskTransferMutations()
                 .addCommentMutations()
+                .addRejectTaskMutation()
                 .addTagMutations()
                 .addUndoMutations()
                 .addRepairLinksMutation()

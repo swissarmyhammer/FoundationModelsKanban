@@ -1335,6 +1335,39 @@ input UndeleteCommentInput {
   task: ID
 }
 
+"""
+The fields of rejectTask. Give at most one of ordinal, before, and after.
+"""
+input RejectTaskInput {
+  """The task: a full URI or a short form."""
+  id: ID!
+
+  """
+  The Markdown body of the comment to the agent: why the task goes back. A comment that is empty or holds only white space gives EMPTY_COMMENT, and the call writes nothing.
+  """
+  comment: String!
+
+  """
+  The column: a full URI, the slug, or a name. A slug that no column has makes the column. No column gives the column before the column where the task shows, in board order. For a task in the first column, no column gives NO_PREVIOUS_COLUMN, and the call writes nothing.
+  """
+  column: ID
+
+  """
+  The place in the column, as a fractional index. No ordinal, before, or after puts the task at the end of the column.
+  """
+  ordinal: String
+
+  """
+  The task to put this task before: a full URI or a short form. A ref that names no live task puts the task at the end of the column, with a warning.
+  """
+  before: ID
+
+  """
+  The task to put this task after: a full URI or a short form. A ref that names no live task puts the task at the end of the column, with a warning.
+  """
+  after: ID
+}
+
 """The fields of addTag. The input gives an id, a name, or both."""
 input AddTagInput {
   """
@@ -1910,6 +1943,16 @@ type Mutation {
     """
     input: UndeleteCommentInput!
   ): Comment
+
+  """
+  Sends a task back with a comment to the agent: the review verb "reject with a comment". The call adds the comment to the task, with the session actor as the author, and moves the task, in one transaction, so one undoChange reverses both. No column moves the task to the column before the column where it shows, for example from done to review. No place puts the task at the end of the column.
+  """
+  rejectTask(
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
+    input: RejectTaskInput!
+  ): Task
 
   """
   Makes a tag. When the board has a tag with the slug, the call writes no name, color, or body: it follows the rename redirect, gives the tag at the end of the rename chain, and makes that tag live again when it is a tombstone.
