@@ -81,8 +81,9 @@ struct LiveGraphApplyTests {
     }
 
     /// Checks that a live graph holds the state of a fresh load of the files of its board: the nodes and their edges,
-    /// the global event list, and the events of the transactions that are not complete. The file signatures can
-    /// differ, for example after a failed commit appended abort records that the live graph did not read yet.
+    /// the global event list, the events of each node (divergence.md §23), and the events of the transactions that
+    /// are not complete. The file signatures can differ, for example after a failed commit appended abort records
+    /// that the live graph did not read yet.
     ///
     /// - Parameters:
     ///   - live: The live graph.
@@ -91,6 +92,7 @@ struct LiveGraphApplyTests {
         let fresh = try await BoardLoader(reading: log).load()
         #expect(canonicalNodes(of: live.graph) == canonicalNodes(of: fresh.graph))
         #expect(live.events == fresh.events)
+        #expect(live.logs == NodeLogs(of: fresh.events))
         #expect(live.heldEvents == fresh.heldEvents)
     }
 

@@ -200,15 +200,7 @@ struct ChangeBuilder: Sendable {
     /// - Returns: `CREATED` when the graph before the batch does not have the node, `DELETED` when the node became a
     ///   tombstone, `RESTORED` when the tombstone went away, else `UPDATED`.
     private func kind(of ref: LocalRef) -> UpdateKind {
-        guard let old = before.graph.node(for: ref) else {
-            return .created
-        }
-        let wasDeleted = old.state.fields.isDeleted
-        switch (wasDeleted, after.graph.node(for: ref)?.state.fields.isDeleted ?? wasDeleted) {
-        case (false, true): return .deleted
-        case (true, false): return .restored
-        default: return .updated
-        }
+        UpdateKind(from: before.graph.node(for: ref), to: after.graph.node(for: ref))
     }
 }
 
@@ -343,7 +335,7 @@ extension FieldChange {
     ///   - after: The value after the transaction.
     /// - Returns: The change, or `nil` when the value did not change. A list with the same members in a different
     ///   order did not change.
-    fileprivate init?(named name: String, from before: TrackedValue?, to after: TrackedValue) {
+    init?(named name: String, from before: TrackedValue?, to after: TrackedValue) {
         switch (before ?? after.emptyValue, after) {
         case (.single(let old), .single(let new)) where old != new:
             let (oldValue, newValue) = (old.nonNullValue, new.nonNullValue)
@@ -486,6 +478,29 @@ extension TaskObject {
             ("started", .single(Map(started?.rfc3339))),
             ("completed", .single(Map(completed?.rfc3339))),
         ])
+    }
+
+    /// The values of the stored fields of the task, as the log of the task sets them (divergence.md §23): `body`,
+    /// `deleted`, `title`, and the full URI of each `assignees`, `tags`, and `dependsOn` edge. `Task.timeline` compares
+    /// them for the states of a fold of the log, so no value reads a node that is not the task. The column is not in
+    /// the values: a timeline entry of its own gives each column move.
+    var storedFields: TrackedFields {
+        nodeFields(adding: [
+            ("title", .single(Map(title))),
+            ("assignees", view.edgeIDs(of: state.assignees)),
+            ("tags", view.edgeIDs(of: state.tags)),
+            ("dependsOn", view.edgeIDs(of: state.dependsOn)),
+        ])
+    }
+}
+
+extension BoardView {
+    /// Gives the list value of the full URI of the target of each of some stored edges.
+    ///
+    /// - Parameter edges: The edges, in the order of the field.
+    /// - Returns: The URI text of each target, in the order of the edges.
+    fileprivate func edgeIDs(of edges: [EdgeTarget]) -> TrackedValue {
+        .list(edges.map { edge in Map(referenceText(of: edge)) })
     }
 }
 

@@ -173,7 +173,10 @@ enum KanbanFieldAliases {
     /// The aliases of each object type and each `input` object type, by its GraphQL name. The alias of a mutation
     /// name can be the bare verb (EXTRAS-9 rule 7): `undo` names `undoChange`.
     private static let byType: [String: [String: [String]]] = [
-        "Task": ["column": ["status", "state", "lane"]],
+        "Task": [
+            "column": ["status", "state", "lane"],
+            "timeline": ["history", "activity", "events", "log", "taskHistory"],
+        ],
         "TaskConnection": ["totalCount": ["count", "total"]],
         "Mutation": [
             "unassignTask": ["removeAssignee"], "assignTask": ["addAssignee"], "undoChange": ["undo"],
@@ -238,6 +241,7 @@ enum KanbanFieldAliases {
         "Board.tasks": ["first": pageSize, "after": ["cursor"]],
         "Board.searchTasks": ["first": pageSize],
         "Board.history": ["first": pageSize],
+        "Task.timeline": ["first": pageSize, "after": ["cursor"]],
     ]
 
     /// The alias tables of the public schema, for the toolkit name rewrite.

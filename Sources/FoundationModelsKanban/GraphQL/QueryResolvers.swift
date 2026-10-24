@@ -276,7 +276,7 @@ extension BoardView {
     ///
     /// - Parameter edge: The stored edge, or `nil` when no patch set the edge.
     /// - Returns: The full URI of the target, or the empty text when there is no edge.
-    private func referenceText(of edge: EdgeTarget?) -> String {
+    func referenceText(of edge: EdgeTarget?) -> String {
         switch edge {
         case .slot(let slot)?:
             graph.node(at: slot).map { node in id(of: node.ref).text } ?? ""
@@ -285,6 +285,21 @@ extension BoardView {
         case nil:
             ""
         }
+    }
+}
+
+extension BoardView {
+    /// Gives the actor of the envelope of an event: the actor of a `Change` or of a timeline entry. A tombstoned actor
+    /// resolves to the tombstone, with `deleted` set (plan.md §5.3, step 5).
+    ///
+    /// - Parameter ref: The local ref of the actor, local to this board.
+    /// - Returns: The actor, live or tombstoned.
+    /// - Throws: ``KanbanError/notFound(type:reference:)`` for the actor when the board does not have the actor.
+    func envelopeActor(for ref: LocalRef) throws(KanbanError) -> ActorObject {
+        guard let state = graph.actor(for: ref), let slot = graph.slot(for: ref) else {
+            throw .notFound(type: .actor, reference: id(of: ref).text)
+        }
+        return ActorObject(view: self, slot: slot, state: state)
     }
 }
 

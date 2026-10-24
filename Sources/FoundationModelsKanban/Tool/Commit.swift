@@ -505,6 +505,7 @@ struct CommitSession: Sendable {
             directory: directory,
             search: search,
             events: live.events,
+            logs: live.logs,
             readiness: live.readiness,
             cursor: changeCursor
         )
@@ -715,8 +716,8 @@ struct CommitSession: Sendable {
     /// A run of `collectBoards` also gives source boards (divergence.md M9). The commit locks them with the other
     /// boards, in the same order. A source whose node files changed after the run read them counts as a changed log,
     /// so the call runs again and reads the source again. After each append succeeds, with the fsync of each of its
-    /// lines, the commit removes the `.kanban/` of each source, while it still holds the locks. Thus a crash before the removal leaves
-    /// each source as it was, and a crash after it leaves each event in the target.
+    /// lines, the commit removes the `.kanban/` of each source, while it still holds the locks. Thus a crash before
+    /// the removal leaves each source as it was, and a crash after it leaves each event in the target.
     ///
     /// - Parameters:
     ///   - work: The working copy of the current board at the end of the run.

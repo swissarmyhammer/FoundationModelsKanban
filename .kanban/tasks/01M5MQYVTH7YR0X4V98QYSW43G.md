@@ -1,8 +1,21 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: 8b80
+comments:
+- actor: claude-code
+  id: 01m5nx254gb4jx31f8k4j86nv3
+  text: 'Research: the live graph kept only a global event list, so a timeline read had to scan or replay it. Decision (recorded in divergence.md §23): LiveGraph keeps NodeLogs (events by node + undo targets). A load groups once, a commit merges its new events, a reload groups again. Task.timeline reads only the logs of the task and of its comments through NodeLogReading (a test counts the reads). The fold runs one transaction at a time (TransactionStep in Replay.swift) and folds again in id order only when a merge interleaves events. Values are the stored fields (TaskObject.storedFields, reuses FieldChange); the column is a MOVE entry with from/to Column. The undone state comes from the undo targets, so it is the same as Change.undone. after takes a cursor `<txn>:<place>` or a bare txn (forgiving, like history(since:)).'
+  timestamp: 2026-10-24T02:50:26.832631+00:00
+- actor: claude-code
+  id: 01m5nxgjz5kc153403n4bbcpvn
+  text: |-
+    ### implement — changed
+    - evidence: swift test: 1829 tests in 155 suites passed, 0 failed; only the accepted SwiftPM "missing creator" warning. 26 files: new Events/NodeLogs.swift, Undo/TaskTimeline.swift, GraphQL/SchemaDescription+Timeline.swift, Tests Undo/TaskTimelineTests.swift, Events/NodeLogsTests.swift; changed LiveGraph, RelatedBoards (BoardSource.logs), Commit, Replay (TransactionStep), UndoneState, ChangeBuilder (storedFields, UpdateKind init), Change (shared actor resolve), QueryResolvers, BrokenMergeDisplay (allComments), Schema, FieldAliases, KanbanTool (timeline example), divergence.md §23, kanban.graphql golden, and test helpers.
+    - criteria: moves, field changes, comments with actor (timelineGivesMovesFieldsAndComments, ListMembers, CommentChanges); paging first/after (PagesWithFirstAndAfter, AfterTakesTransaction, NegativeFirst); reads only task + comment logs (timelineReadsOnlyLogsOfTaskAndComments with a counting reader on a board of 11 tasks); undone (MarksUndoneTransaction).
+    - next: /review
+  timestamp: 2026-10-24T02:58:19.749384+00:00
+position_column: doing
+position_ordinal: '80'
 title: 'Add Task.timeline: the history of one task with no full replay (KANBAN-13)'
 ---
 ## What

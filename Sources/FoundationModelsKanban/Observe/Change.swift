@@ -66,6 +66,26 @@ enum UpdateKind: String, Codable, Sendable, CaseIterable {
     case restored = "RESTORED"
 }
 
+extension UpdateKind {
+    /// Tells how a node changed from one state to a later state (plan.md §6.7, Kind).
+    ///
+    /// - Parameters:
+    ///   - old: The node in the earlier state, or `nil` when the earlier state does not have the node.
+    ///   - new: The node in the later state, or `nil` when the later state does not have the node.
+    init(from old: Node?, to new: Node?) {
+        guard let old else {
+            self = .created
+            return
+        }
+        let wasDeleted = old.state.fields.isDeleted
+        switch (wasDeleted, new?.state.fields.isDeleted ?? wasDeleted) {
+        case (false, true): self = .deleted
+        case (true, false): self = .restored
+        default: self = .updated
+        }
+    }
+}
+
 extension NodeType: DescribedGraphQLEnum {
     /// The description of the `NodeType` enum.
     static let typeDescription = "The type of a node."
@@ -289,11 +309,7 @@ struct Change: Sendable {
     /// - Throws: An error of ``KanbanContext/view(ofBoardOfChange:)``. ``KanbanError/notFound(type:reference:)`` for
     ///   the actor when the board does not have the actor.
     func actor(context: KanbanContext, arguments _: NoArguments) async throws(KanbanError) -> ActorObject {
-        let view = try await context.view(ofBoardOfChange: boards[boards.startIndex])
-        guard let state = view.graph.actor(for: actorRef), let slot = view.graph.slot(for: actorRef) else {
-            throw .notFound(type: .actor, reference: view.id(of: actorRef).text)
-        }
-        return ActorObject(view: view, slot: slot, state: state)
+        try await context.view(ofBoardOfChange: boards[boards.startIndex]).envelopeActor(for: actorRef)
     }
 
     /// Resolves `Change.updates`: the updates whose node matches the filter (``ChangeFilter``).

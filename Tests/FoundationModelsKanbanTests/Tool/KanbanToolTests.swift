@@ -243,6 +243,19 @@ struct KanbanToolTests {
         #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"updateColumn":\#(column)}}"#)
     }
 
+    @Test("The timeline example of the description runs, and gives the move and the title of the add of the task")
+    func timelineExampleRuns() async throws {
+        let description = try Self.makeTool(inRepoAt: TemporaryDirectory().url).description
+        #expect(description.contains(KanbanTool.timelineExample))
+        let response = try await Self.call(query: KanbanTool.timelineExample, variables: nil)
+        let at = KanbanGraphTests.time.rfc3339
+        let todo = #"{"name":"\#(KanbanGraphTests.todoName)"}"#
+        let move = #"{"at":"\#(at)","field":null,"from":null,"kind":"MOVE","to":\#(todo)}"#
+        let title = #"{"after":"\#(KanbanGraphTests.taskTitle)","before":null,"name":"title"}"#
+        let field = #"{"at":"\#(at)","field":\#(title),"from":null,"kind":"FIELD","to":null}"#
+        #expect(response == #"{"data":{"board":{"tasks":{"nodes":[{"timeline":[\#(move),\#(field)]}]}}}}"#)
+    }
+
     @Test("The history example of the description runs, and its filter keeps only the task updates")
     func historyExampleRuns() async throws {
         #expect(try Self.makeTool(inRepoAt: TemporaryDirectory().url).description.contains(KanbanTool.historyExample))

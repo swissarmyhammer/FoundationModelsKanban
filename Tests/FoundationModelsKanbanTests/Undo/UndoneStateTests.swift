@@ -41,17 +41,19 @@ struct UndoneStateTests {
         case branchRedo
     }
 
-    /// Makes the one event of a transaction: a patch that changes the name of the board.
+    /// Makes the one event of a transaction: by default, a patch that changes the name of the board.
     ///
     /// - Parameters:
     ///   - step: The step of the transaction. A larger step gives a later transaction ULID and a later event id.
     ///   - actor: The local ref of the actor of the transaction. The default is the test actor.
     ///   - target: The transaction that this transaction reverses, or `nil` for an original transaction.
+    ///   - patch: The patch of the event, or `nil` for a patch that changes the name of the board.
     /// - Returns: The event.
     static func transaction(
         atStep step: Int,
         by actor: LocalRef = ReplayTests.actor,
-        undoing target: ULID? = nil
+        undoing target: ULID? = nil,
+        patching patch: PatchInput? = nil
     ) throws -> Event {
         let date = ReplayTests.date(atStep: step)
         var ids = FixedULIDSource(at: date)
@@ -64,7 +66,7 @@ struct UndoneStateTests {
             at: DateTime(date),
             actor: actor,
             undoes: target,
-            patch: try PatchInput(node: .board, set: ["name": .json(.string(name))])
+            patch: try patch ?? PatchInput(node: .board, set: ["name": .json(.string(name))])
         )
     }
 

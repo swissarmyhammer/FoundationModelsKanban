@@ -19,16 +19,31 @@ struct UndoneState: Sendable {
     /// - Parameter events: The events of the board, in any order. All patches of one transaction have the same
     ///   `undoes`.
     init(of events: [Event]) {
-        let targets = Dictionary(
-            events.compactMap { event in event.undoes.map { target in (event.txn, target) } },
-            uniquingKeysWith: { first, _ in first }
-        )
+        self.init(reversing: Self.targets(of: events))
+    }
+
+    /// Derives the undone state from the target of each undo and redo transaction of a board (``targets(of:)``).
+    ///
+    /// - Parameter targets: The transaction that each undo or redo transaction reverses, by the transaction ULID of
+    ///   the undo or the redo.
+    init(reversing targets: [ULID: ULID]) {
         undone = targets.keys.sorted(by: >).reduce(into: []) { undone, txn in
             guard !undone.contains(txn), let target = targets[txn], target < txn else {
                 return
             }
             undone.insert(target)
         }
+    }
+
+    /// Gives the transaction that each undo or redo transaction of some events reverses.
+    ///
+    /// - Parameter events: Events of a board, in any order. All patches of one transaction have the same `undoes`.
+    /// - Returns: The `undoes` of each transaction that has one, by its transaction ULID.
+    static func targets(of events: some Sequence<Event>) -> [ULID: ULID] {
+        Dictionary(
+            events.compactMap { event in event.undoes.map { target in (event.txn, target) } },
+            uniquingKeysWith: { first, _ in first }
+        )
     }
 
     /// Tells if a transaction is undone.

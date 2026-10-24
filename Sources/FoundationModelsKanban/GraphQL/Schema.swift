@@ -992,6 +992,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             .addBoardTypes()
             .addTaskTypes()
             .addChangeTypes()
+            .addTimelineTypes()
             .addLinkCheckTypes()
             .addQuery {
                 Field("board", at: KanbanResolver.board) {
@@ -1144,6 +1145,12 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 Field("comments", at: \.comments).description(SchemaDescription.taskComments)
                 Field("started", at: \.started).description(SchemaDescription.taskStarted)
                 Field("completed", at: \.completed).description(SchemaDescription.taskCompleted)
+                Field("timeline", at: TaskObject.timeline) {
+                    Argument("first", at: \.first).defaultValue(TimelineArguments.defaultPageSize)
+                        .description(SchemaDescription.timelineFirst)
+                    Argument("after", at: \.after).description(SchemaDescription.timelineAfter)
+                }
+                .description(SchemaDescription.taskTimeline)
             }
             Self.nodeType(CommentObject.self, as: GraphQLTypeName.comment, description: SchemaDescription.comment) {
                 Field("shortId", at: \.shortID).description(SchemaDescription.shortID)

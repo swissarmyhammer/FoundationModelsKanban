@@ -110,6 +110,87 @@ extension Graph {
     }
 }
 
+// MARK: - Transaction steps
+
+/// The state of one node just before and just after one transaction that changed it (divergence.md §23).
+/// `Task.timeline` compares the two states of each step of a task and of each of its comments.
+struct TransactionStep: Sendable {
+    /// The transaction ULID.
+    let txn: ULID
+
+    /// The events of the transaction on the node, in the order of their ids. The first event gives the time and the
+    /// actor of the step.
+    let events: [Event]
+
+    /// The node just before the transaction, or `nil` when the node did not exist yet.
+    let before: Node?
+
+    /// The node just after the transaction.
+    let after: Node?
+
+    /// Folds the events of one node one transaction at a time, in the order of the transaction ULIDs: the time order
+    /// of the calls. The fold reads only these events, and it folds each event one time when the transactions come in
+    /// the order of their event ids. A transaction whose events come before an event that the fold already applied,
+    /// for example after a union merge of two branches, folds the events so far again in the order of their ids, the
+    /// same as replay.
+    ///
+    /// - Parameters:
+    ///   - events: The events of the node, in any order.
+    ///   - ref: The local ref of the node.
+    /// - Returns: One step for each transaction of the events, in the order of the transaction ULIDs.
+    static func steps(folding events: [Event], for ref: LocalRef) -> [TransactionStep] {
+        var fold = TransactionFold(ref: ref)
+        return events.groupedByTransaction().map { txn, transactionEvents in
+            let before = fold.node
+            let applied = fold.apply(transactionEvents)
+            return TransactionStep(txn: txn, events: applied, before: before, after: fold.node)
+        }
+    }
+}
+
+/// The fold of one node while ``TransactionStep/steps(folding:for:)`` applies its transactions.
+private struct TransactionFold {
+    /// The local ref of the node.
+    let ref: LocalRef
+
+    /// The events that the fold applied, in the order of their ids.
+    private var folded: [Event] = []
+
+    /// The folded state, or `nil` before the first event.
+    private var state: NodeFold?
+
+    /// Makes the empty fold of a node.
+    ///
+    /// - Parameter ref: The local ref of the node.
+    init(ref: LocalRef) {
+        self.ref = ref
+    }
+
+    /// The node after the events so far, or `nil` before the first event.
+    var node: Node? {
+        state?.node
+    }
+
+    /// Applies the events of one transaction. When each new event comes after each applied event, the fold applies
+    /// only the new events. Else it folds all events so far again in the order of their ids.
+    ///
+    /// - Parameter events: The events of the transaction, in any order.
+    /// - Returns: The events of the transaction, in the order of their ids.
+    mutating func apply(_ events: [Event]) -> [Event] {
+        let added = events.sorted { lhs, rhs in lhs.id < rhs.id }
+        guard state != nil, let last = folded.last, let first = added.first, last.id < first.id else {
+            folded = (folded + added).sorted { lhs, rhs in lhs.id < rhs.id }
+            state = NodeFold(folding: folded, for: ref)
+            return added
+        }
+        for event in added {
+            state?.update(with: event)
+        }
+        folded += added
+        return added
+    }
+}
+
 // MARK: - Parse
 
 /// One line of a node log that holds an event of the node.

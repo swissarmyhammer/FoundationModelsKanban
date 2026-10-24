@@ -25,6 +25,13 @@ public struct KanbanTool: GraphQLEndpointTool {
         { board { history(filter: "~task", first: 5) { txn ops updates { id type kind } } } }
         """
 
+    /// The timeline example of the description (divergence.md §23): the newest entries of the history of one task,
+    /// with the columns of each move and the change of each field. A test runs it.
+    static let timelineExample = """
+        { board { tasks(first: 1) { nodes { timeline(first: 5) { kind at from { name } to { name } \
+        field { name before after } } } } } }
+        """
+
     /// The example of the stored local ref form `<type>/<id>` in the description (divergence.md R18). The log stores
     /// each ref to a node of the same board in this form, and the resolver accepts it as a ref.
     static let storedLocalRefExample = "column/todo"
@@ -50,10 +57,10 @@ public struct KanbanTool: GraphQLEndpointTool {
     public let name = "kanban"
 
     /// The short description of the tool: its purpose, the root fields, one example query, one example of the
-    /// history filter, the dependencies between repos (divergence.md R17), the ref forms (divergence.md R18, Q25, C3,
-    /// E4), the version check of `updateTask` (divergence.md §18), the warnings, the transaction of the response
-    /// (divergence.md §19), the list mutations (divergence.md §20), `rejectTask` (divergence.md §21), the column
-    /// trigger (divergence.md §22), and the board place. The description
+    /// history filter, the timeline of one task (divergence.md §23), the dependencies between repos (divergence.md
+    /// R17), the ref forms (divergence.md R18, Q25, C3, E4), the version check of `updateTask` (divergence.md §18),
+    /// the warnings, the transaction of the response (divergence.md §19), the list mutations (divergence.md §20),
+    /// `rejectTask` (divergence.md §21), the column trigger (divergence.md §22), and the board place. The description
     /// does not hold the schema. The agent learns the schema with introspection (plan.md §12 item 10).
     public let description = """
         Reads and changes the kanban task graph of this repo with GraphQL. Send one GraphQL document in query. \
@@ -64,6 +71,9 @@ public struct KanbanTool: GraphQLEndpointTool {
         \(KanbanTool.exampleQuery) \
         To see the changes, query board history. Its filter keeps the updates whose node matches: ~task for a node \
         type, ^id for one node. Example: \(KanbanTool.historyExample) \
+        To see the history of one task, query Task.timeline: each column move, field change, and comment change, \
+        newest first, with the actor and the txn. Page with first and after. Example: \
+        \(KanbanTool.timelineExample) \
         A task can depend on a task in a different repo: put the full \(SchemaDescription.taskURIForm) URI in \
         dependsOn, or put that task URL in the body. A short ref, for example ^short, or the stored form type/id, \
         for example \(KanbanTool.storedLocalRefExample) or task/^short, names a node of the board that the call \

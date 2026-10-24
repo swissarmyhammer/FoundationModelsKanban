@@ -143,7 +143,7 @@ extension SchemaDescription {
     ///
     /// - Parameter items: The items of the list in the plural, for example `tasks`.
     /// - Returns: The description.
-    private static func pageSize(of items: String) -> String {
+    static func pageSize(of items: String) -> String {
         "The largest number of \(items) in the list. A negative value gives no \(items)."
     }
 

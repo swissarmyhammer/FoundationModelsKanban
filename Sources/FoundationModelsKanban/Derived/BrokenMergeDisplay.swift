@@ -17,11 +17,19 @@ extension Graph {
         guard isLiveTask(at: slot) else {
             return []
         }
+        return allComments(ofTaskAt: slot).filter { commentSlot in
+            node(at: commentSlot, as: CommentNode.self)?.fields.isDeleted == false
+        }
+    }
+
+    /// Gives each comment of a task, live or tombstoned, for a task that is live or tombstoned: the comments that
+    /// `Task.timeline` reads (divergence.md §23).
+    ///
+    /// - Parameter slot: The slot of the task.
+    /// - Returns: The slots of the comments whose task edge is the slot, in the order of their ULIDs.
+    func allComments(ofTaskAt slot: Int) -> [Int] {
         let comments = allSlots.compactMap { commentSlot -> (slot: Int, comment: CommentNode)? in
-            guard let comment = node(at: commentSlot, as: CommentNode.self),
-                !comment.fields.isDeleted,
-                comment.task == .slot(slot)
-            else {
+            guard let comment = node(at: commentSlot, as: CommentNode.self), comment.task == .slot(slot) else {
                 return nil
             }
             return (commentSlot, comment)

@@ -69,6 +69,9 @@ struct BoardSource: Sendable {
     /// The events of the board, in the order of their ids: the source of `Board.history`.
     let events: [Event]
 
+    /// The events of the board by node: the source of `Task.timeline` (divergence.md §23).
+    let logs: NodeLogs
+
     /// The readiness cache of the board, which its live graph keeps (divergence.md §16 Gap 3).
     let readiness: ReadinessCache
 
@@ -81,7 +84,14 @@ struct BoardSource: Sendable {
     /// - Parameter cursor: The cursor of the change log at the read, or `nil` for no cursor.
     /// - Returns: The source with the cursor.
     func reading(atCursor cursor: String?) -> BoardSource {
-        BoardSource(directory: directory, search: search, events: events, readiness: readiness, cursor: cursor)
+        BoardSource(
+            directory: directory,
+            search: search,
+            events: events,
+            logs: logs,
+            readiness: readiness,
+            cursor: cursor
+        )
     }
 }
 

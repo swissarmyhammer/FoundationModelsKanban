@@ -99,6 +99,7 @@ struct ChangeFeedTests {
                 directory: FileManager.default.temporaryDirectory,
                 search: TaskSearch(embeddingWith: nil),
                 events: [],
+                logs: NodeLogs(of: []),
                 readiness: ReadinessCache(),
                 cursor: nil
             ),
