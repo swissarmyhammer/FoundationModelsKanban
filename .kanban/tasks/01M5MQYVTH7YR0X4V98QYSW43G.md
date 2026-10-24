@@ -41,8 +41,24 @@ comments:
     - evidence: swift build --build-tests: exit 0, only the accepted SwiftPM "missing creator" warning. swift test: 1829 tests in 155 suites passed, 0 failed. 5 files: Sources/FoundationModelsKanban/Events/Replay.swift, Sources/FoundationModelsKanban/Undo/TaskTimeline.swift, Tests/FoundationModelsKanbanTests/Mutations/TaskOperationTests.swift, Tests/FoundationModelsKanbanTests/Mutations/RejectTaskTests.swift, Tests/FoundationModelsKanbanTests/Undo/TaskTimelineTests.swift. 4 of 4 findings checked; 4 of 4 acceptance criteria checked.
     - next: /review
   timestamp: 2026-10-24T03:09:58.643687+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5ny9hswzca4eqkvppz4yb5x
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (b56b9c3): 0 findings, 0 confirmed, 0 refuted. 5 files reviewed. 2 files in .kanban/ not reviewed (ignore rule). All 4 items of the 2026-10-23 21:59 Review Findings section are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-24T03:11:57.756385+00:00
+- actor: claude-code
+  id: 01m5nya00r30m43m4c4zf7bmss
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 5 files, the 4 findings fixed
+    - test: green — swift test, 1829 tests in 155 suites
+    - commit: b56b9c3
+    - review: clean — 0 findings, 4/4 earlier findings checked
+  timestamp: 2026-10-24T03:12:12.312285+00:00
+position_column: done
+position_ordinal: ffb980
 title: 'Add Task.timeline: the history of one task with no full replay (KANBAN-13)'
 ---
 ## What
