@@ -31,8 +31,24 @@ comments:
     - evidence: Extras 59b1dc974bb464ae55cedb52f8108ff98a541d3e pushed to origin/main; Extras `swift test` 1565 passed; Kanban `swift test` 1879 tests in 163 suites passed, only the "missing creator" warning. Files: Package.resolved, Sources/FoundationModelsKanban/GraphQL/Errors.swift, Tests/FoundationModelsKanbanTests/GraphQL/KanbanErrorTests.swift, Tests/FoundationModelsKanbanTests/GraphQL/ErrorCoverageTests.swift, Tests/FoundationModelsKanbanTests/Filter/TranslateFilterTests.swift, divergence.md
     - next: /review
   timestamp: 2026-10-24T23:41:16.163499+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5r4wq4asb40qrbr1jd533em
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (1d9174f). 0 findings, 0 confirmed, 0 refuted. 7 pairs attempted, 0 failed. No validator matched Package.resolved, IntegrationTests/Package.resolved, and divergence.md. The .reviewignore rule excluded the .kanban files.
+    - next: none. The task moved to done.
+  timestamp: 2026-10-24T23:45:46.122730+00:00
+- actor: claude-code
+  id: 01m5r4x5p44veh4cr0tv23xwb9
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — FoundationModelsExtras 59b1dc9 (pushed); Errors.swift, 3 test files, divergence.md §24, both Package.resolved pins
+    - test: green — swift test, 1879 passed in 163 suites, 0 failed, 0 skipped; IntegrationTests build complete
+    - commit: 1d9174f
+    - review: clean — 0 findings
+  timestamp: 2026-10-24T23:46:01.028562+00:00
+position_column: done
+position_ordinal: ffc380
 title: Put the span of an INVALID_FILTER error in extensions
 ---
 ## Request
