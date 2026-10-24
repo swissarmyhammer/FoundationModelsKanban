@@ -52,12 +52,12 @@ struct FilterAgent: Sendable {
     ///   the board, else the translation of the loop.
     /// - Throws: ``KanbanError/filterModelMissing(filterError:)`` when the text is not a filter of the board and the
     ///   agent has no filter model. ``KanbanError/filterAgentFailed(reason:)`` when the loop stops before the model
-    ///   writes a statement.
+    ///   writes a statement. A `CancellationError`, unchanged, when the task of the call is cancelled.
     func translate(
         _ text: String,
         on view: BoardView,
         for caller: SessionActor
-    ) async throws(KanbanError) -> FilterTranslation {
+    ) async throws -> FilterTranslation {
         let check = FilterNameCheck(over: view.readiness, inBoard: view.boardKey)
         let filterError: KanbanError
         do throws(KanbanError) {
@@ -67,7 +67,7 @@ struct FilterAgent: Sendable {
             filterError = error
         }
         guard let model else {
-            throw .filterModelMissing(filterError: filterError)
+            throw KanbanError.filterModelMissing(filterError: filterError)
         }
         return try await FilterAgentLoop(model: model, check: check).translate(text, on: view, for: caller)
     }

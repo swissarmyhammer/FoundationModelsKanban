@@ -37,15 +37,27 @@ struct FilterAgentLoopTests {
     private static let unknownColumnAnswer = "%todoo"
 
     /// The answers that the forgiving read of an answer gives as ``correctStatement``: white space around it, the
-    /// filter label of the prompt examples, a code span, a code fence with and with no language, and a code fence that
-    /// the answer does not close.
+    /// filter label of the prompt examples, a code span, a code span of two backticks, a code span around the label, a
+    /// code fence on one line, a code fence with and with no language, a code fence of four backticks, and a code fence
+    /// that the answer does not close.
     static let wrappedAnswers = [
         "  \(correctStatement) \n",
         "\(FilterAgentPrompt.filterLabel)\(correctStatement)",
         "`\(correctStatement)`",
+        "``\(correctStatement)``",
+        "`\(FilterAgentPrompt.filterLabel)\(correctStatement)`",
+        "```\(correctStatement)```",
         "```\n\(correctStatement)\n```",
         "```text\n\(correctStatement)\n```",
+        "````\n\(correctStatement)\n````",
         "```\n\(correctStatement)",
+    ]
+
+    /// Answers that start and end with a backtick, but are not one code span: two code spans, and a code span whose
+    /// two ends have a different number of backticks. The forgiving read does not change them.
+    static let answersThatAreNotOneCodeSpan = [
+        "`#bug` || `#feature`",
+        "``#bug`",
     ]
 
     // MARK: - Helpers
@@ -197,12 +209,18 @@ struct FilterAgentLoopTests {
         #expect(model.calls.recorded == expectedCalls)
     }
 
-    @Test("An answer with white space, the filter label, a code span, or a code fence gives the statement in it",
+    @Test("An answer in white space, the filter label, code spans or code fences, in each order, gives the statement",
         arguments: wrappedAnswers)
     func wrappedAnswerGivesStatement(answer: String) async throws {
         let model = SpyLanguageModel(answers: [.text(answer)])
         let translation = try await Self.translate(with: model)
         #expect(translation == FilterTranslation(filter: Self.correctStatement, message: nil, attempts: 1))
+    }
+
+    @Test("An answer that starts and ends with a backtick but is not one code span does not change",
+        arguments: answersThatAreNotOneCodeSpan)
+    func answerThatIsNotOneCodeSpanDoesNotChange(answer: String) {
+        #expect(FilterAgentLoop.statement(in: answer) == answer)
     }
 
     // MARK: - An error of the model
@@ -213,6 +231,19 @@ struct FilterAgentLoopTests {
         let reason = String(describing: SpyModelError.scriptedFailure)
         await #expect(throws: KanbanError.filterAgentFailed(reason: reason)) {
             try await Self.translate(with: model)
+        }
+        #expect(model.calls.recorded == [try Self.call(prompts: [Self.english])])
+    }
+
+    @Test("A cancel of the call gives the CancellationError, not FILTER_AGENT_FAILED, also when the model then fails")
+    func cancelledCallGivesCancellation() async throws {
+        let model = SpyLanguageModel(answers: [.failure])
+        let call = Task {
+            withUnsafeCurrentTask { task in task?.cancel() }
+            return try await Self.translate(with: model)
+        }
+        await #expect(throws: CancellationError.self) {
+            try await call.value
         }
         #expect(model.calls.recorded == [try Self.call(prompts: [Self.english])])
     }

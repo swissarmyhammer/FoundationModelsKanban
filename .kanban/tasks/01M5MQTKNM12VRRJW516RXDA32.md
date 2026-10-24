@@ -33,6 +33,46 @@ comments:
     - evidence: `swift test` — 1866 tests in 161 suites passed; only the accepted SwiftPM "missing creator" warning. 10 files — Sources/FoundationModelsKanban/Filter/FilterAgent.swift, Sources/FoundationModelsKanban/Filter/FilterAgentLoop.swift (new), Sources/FoundationModelsKanban/GraphQL/Errors.swift, Sources/FoundationModelsKanban/GraphQL/SchemaDescription+FilterAgent.swift, Tests/Fixtures/kanban.graphql, Tests/FoundationModelsKanbanTests/Filter/SpyLanguageModel.swift, Tests/FoundationModelsKanbanTests/Filter/FilterAgentLoopTests.swift (new), Tests/FoundationModelsKanbanTests/Filter/TranslateFilterTests.swift, Tests/FoundationModelsKanbanTests/GraphQL/KanbanErrorTests.swift, divergence.md
     - next: /review
   timestamp: 2026-10-24T09:26:40.091530+00:00
+- actor: claude-code
+  id: 01m5pky525g4w7ayg4grmeb1rn
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (46b3a58). 2 findings — Sources/FoundationModelsKanban/Filter/FilterAgentLoop.swift:85, Sources/FoundationModelsKanban/Filter/FilterAgentLoop.swift:144
+    - next: Correct the 2 open items in the "Review Findings (2026-10-24 04:28)" section. Then do the review again. The task stays in review.
+  timestamp: 2026-10-24T09:30:12.933302+00:00
+- actor: claude-code
+  id: 01m5pkywqte4q5y58pvc4hqykt
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 10 files, FilterAgentLoop, FILTER_AGENT_FAILED
+    - test: green — swift test, 1866 tests in 161 suites
+    - commit: 46b3a58
+    - review: findings — Sources/FoundationModelsKanban/Filter/FilterAgentLoop.swift:85, Sources/FoundationModelsKanban/Filter/FilterAgentLoop.swift:144
+  timestamp: 2026-10-24T09:30:37.178172+00:00
+- actor: claude-code
+  id: 01m5pm66my26r5nfnfs7mx67ka
+  text: |-
+    Picked up again for the 2 review findings. Research:
+    - The resolver chain is `throws(KanbanError)`, but many resolvers of the schema use untyped `async throws` (for example `addTask`, `searchTasks`). So `translateFilter`, `FilterAgent.translate` and `FilterAgentLoop.translate` can throw untyped, and a `CancellationError` goes to the GraphQL executor unchanged.
+    - The GraphQL executor catches each resolver error into the `errors` list of the response. The toolkit (`GraphQLError.codedAsResultError`) gives a non-coded error the code `INTERNAL`. Thus a cancellation cannot leave `KanbanGraph.execute` as a throw. The nearest correct way: the agent and the resolver give the cancellation unchanged; the response then has `INTERNAL`, not `FILTER_AGENT_FAILED`. To record in divergence.md §17.
+    - The toolkit pattern (FoundationModelsExtras `ToolCallResult`): a call stops only for its own cancel (`Task.isCancelled`).
+    - Plan for the forgiving read: repeat the steps until the text does not change; a code span is a run of n backticks at each end with no run of exactly n inside; a code fence closes only with a run of at least as many backticks as the opening fence.
+  timestamp: 2026-10-24T09:34:36.702139+00:00
+- actor: claude-code
+  id: 01m5pme4wb936bvc3e2sybb92p
+  text: |-
+    Both findings corrected with TDD (RED seen first: the cancel test got `.filterAgentFailed(reason: "CancellationError()")`; the new wrapped answers got the "more calls than its 1 scripted answers" error; the not-one-span answers lost one backtick at each end).
+    - Finding 1: `stoppingTheAgent` gives the `CancellationError` unchanged (or a new one when the model gives a different error) when `Task.isCancelled`; else `FILTER_AGENT_FAILED`. `FilterAgentLoop.translate`, `FilterAgent.translate` and the `translateFilter` resolver now throw untyped. Discovery: with the task cancelled before the call, the SDK still calls the executor one time (the call is recorded), and the error that comes back is `CancellationError()`, not the scripted failure.
+    - Finding 2: `statement(in:)` runs the steps again until a full round does not change the text. `withoutCodeSpan` removes only one real code span (same run of n backticks at each end, no run of exactly n in the content). The same cause in `withoutCodeFence`: the closing fence must have at least as many backticks as the opening fence. New test cases: a span around the label, a fence on one line, a span of two backticks, a fence of four backticks, and two answers that are not one code span.
+    - divergence.md §17 records the cancel decision (the GraphQL executor catches resolver errors, so a cancelled call gives `INTERNAL` in the response, not `FILTER_AGENT_FAILED`) and the new read rules.
+  timestamp: 2026-10-24T09:38:57.035075+00:00
+- actor: claude-code
+  id: 01m5pme59nnpa315bcrqbg5bzn
+  text: |-
+    ### implement — changed
+    - evidence: `swift build --build-tests` clean; `swift test` — 1868 tests in 161 suites passed; only the accepted SwiftPM "missing creator" warning. 5 files — Sources/FoundationModelsKanban/Filter/FilterAgentLoop.swift, Sources/FoundationModelsKanban/Filter/FilterAgent.swift, Sources/FoundationModelsKanban/GraphQL/TranslateFilterField.swift, Tests/FoundationModelsKanbanTests/Filter/FilterAgentLoopTests.swift, divergence.md
+    - next: /review
+  timestamp: 2026-10-24T09:38:57.461067+00:00
 depends_on:
 - 01M5MQS3GXPJ1ZDMZ9V9HQJWT8
 - 01M5MQSGQF8VVFY28RNK1S3550
@@ -64,3 +104,17 @@ Fill the translator seam of `translateFilter` with the loop of the filter agent 
 
 - Unit tests in `T/` with a scripted `LanguageModel` that gives a fixed list of answers and records each prompt.
 - `swift test` passes with no new warnings. #kanbanviewkit #filter-agent
+
+## Review Findings (2026-10-24 04:28)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 8 file(s) reviewed, 4 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 2 file(s) not reviewed — no validator matched:
+> - `Tests/Fixtures/kanban.graphql` — no validator matches this file
+> - `divergence.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsKanban/Filter/FilterAgentLoop.swift:85` `completeness/public-output-contract` — stoppingTheAgent converts every error from the model into KanbanError.filterAgentFailed, including CancellationError. When the caller cancels the call, the error that reaches the caller is a user-facing FILTER_AGENT_FAILED message that tells the caller to send the call again, not a cancellation. The cancelled call is then reported as a model failure, which hides the cancellation from the caller. Rethrow CancellationError unchanged, or check Task.isCancelled in the catch block, so that only real model and prompt-resource failures become FILTER_AGENT_FAILED. Add a test that cancels the call and checks that the error is not FILTER_AGENT_FAILED.
+- [x] `Sources/FoundationModelsKanban/Filter/FilterAgentLoop.swift:144` `completeness/invariant-propagation` — withoutCodeSpan removes the first and last backtick of any text that starts and ends with a backtick. It does not check that the text is a code span. A text that is a code fence with no line break, or a span that wraps a label, loses one mark at each end and still fails the parse. The docstring says the forgiving read handles a code span, but a span that wraps a label ('`Filter: #bug`') is not handled, because the label step runs before the span step. Strip the span before the label, or repeat all the steps until nothing changes. Add one test case for a span that wraps a label, and one for a single-line fenced statement.

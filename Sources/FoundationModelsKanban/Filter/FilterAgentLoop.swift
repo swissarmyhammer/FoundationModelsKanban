@@ -13,7 +13,8 @@ import FoundationModels
 /// message is the last error.
 ///
 /// The read of an answer is forgiving: white space around the statement, a code fence, the filter label of the prompt
-/// examples, and a code span go away before the check.
+/// examples, and a code span go away before the check, in each order. A cancel of the task of the call stops the call
+/// with the cancel, not with an error of the agent.
 struct FilterAgentLoop {
     /// The largest number of statements that the filter model writes for one call.
     static let attemptLimit = 3
@@ -47,12 +48,13 @@ struct FilterAgentLoop {
     /// - Returns: The first statement that passes the check with the number of its attempt, or no filter with the last
     ///   error as the message and ``attemptLimit`` attempts.
     /// - Throws: ``KanbanError/filterAgentFailed(reason:)`` when the prompt resource cannot be read or the model gives
-    ///   an error. The error counts no attempt.
+    ///   an error. The error counts no attempt. A `CancellationError`, unchanged, when the task of the call is
+    ///   cancelled: a cancel is not an error of the model.
     func translate(
         _ text: String,
         on view: BoardView,
         for caller: SessionActor
-    ) async throws(KanbanError) -> FilterTranslation {
+    ) async throws -> FilterTranslation {
         let systemPrompt = try await Self.stoppingTheAgent { try FilterAgentPrompt.load() }
         let vocabulary = FilterVocabulary.text(of: view, for: caller)
         let instructions = systemPrompt.text + Self.instructionsSeparator + vocabulary
@@ -73,16 +75,22 @@ struct FilterAgentLoop {
 
     /// Runs one step of the agent that is not a check of a statement, and gives its error as the error of the agent.
     ///
+    /// The call stops only for the cancel of its own task. When the task is cancelled, the error of the step is the
+    /// cancel, also when the model gives a different error for it.
+    ///
     /// - Parameter step: The step, for example the read of the prompt resource or one answer of the model.
     /// - Returns: The result of the step.
-    /// - Throws: ``KanbanError/filterAgentFailed(reason:)`` with the text of the error of the step.
+    /// - Throws: The `CancellationError` of the step, unchanged, or a new `CancellationError`, when the task is
+    ///   cancelled. Else ``KanbanError/filterAgentFailed(reason:)`` with the text of the error of the step.
     private static func stoppingTheAgent<Value>(
         _ step: () async throws -> Value
-    ) async throws(KanbanError) -> Value {
+    ) async throws -> Value {
         do {
             return try await step()
+        } catch let error where Task.isCancelled {
+            throw error as? CancellationError ?? CancellationError()
         } catch {
-            throw .filterAgentFailed(reason: String(describing: error))
+            throw KanbanError.filterAgentFailed(reason: String(describing: error))
         }
     }
 }
@@ -90,39 +98,51 @@ struct FilterAgentLoop {
 // MARK: - The answer
 
 extension FilterAgentLoop {
-    /// The fence of a Markdown code block.
-    private static let codeFence = "```"
+    /// The mark of a Markdown code span and of a Markdown code fence: a backtick.
+    private static let codeMark: Character = "`"
 
-    /// The mark at the two ends of a Markdown code span.
-    private static let codeSpanMark: Character = "`"
+    /// The smallest number of marks of a Markdown code fence.
+    private static let fenceMarkMinimum = 3
 
     /// The filter label of the prompt examples, with no space after it.
     private static let filterLabel = FilterAgentPrompt.filterLabel.trimmingCharacters(in: .whitespaces)
 
-    /// The steps of the forgiving read of an answer, in order. Each step trims the white space that it leaves.
+    /// The steps of the forgiving read of an answer, in order. Each step trims the white space that it leaves. The
+    /// fence step is before the span step, so that the language of a fence does not stay as a part of the statement.
     private static let answerSteps: [@Sendable (String) -> String] = [
         withoutCodeFence, withoutFilterLabel, withoutCodeSpan,
     ]
 
     /// Gives the statement in an answer of the model.
     ///
+    /// The steps run again until a full round of the steps does not change the text. Thus the wraps can be in each
+    /// order, for example a code span around the filter label.
+    ///
     /// - Parameter answer: The answer, for example ``"Filter: `#bug`"``.
     /// - Returns: The statement, for example `#bug`, with no white space around it.
     static func statement(in answer: String) -> String {
-        answerSteps.reduce(trimmed(answer)) { text, step in step(text) }
+        let text = trimmed(answer)
+        let read = answerSteps.reduce(text) { text, step in step(text) }
+        return read == text ? read : statement(in: read)
     }
 
     /// Removes a code fence around a text.
     ///
+    /// A fence starts with a line of ``fenceMarkMinimum`` or more marks, which can name a language. The fence closes
+    /// with a run of at least as many marks at the end of the text. A text with no closing fence keeps all of its
+    /// lines after the opening line.
+    ///
     /// - Parameter text: The trimmed text.
-    /// - Returns: The lines between the opening fence line, which can name a language, and the closing fence, or the
-    ///   text itself when it does not start with a fence.
+    /// - Returns: The lines between the opening fence line and the closing fence, or the text itself when it does not
+    ///   start with a fence line.
     private static func withoutCodeFence(_ text: String) -> String {
-        guard text.hasPrefix(codeFence), let firstLineEnd = text.firstIndex(where: \.isNewline) else {
+        let fenceMarkCount = leadingMarkCount(of: text)
+        guard fenceMarkCount >= fenceMarkMinimum, let firstLineEnd = text.firstIndex(where: \.isNewline) else {
             return text
         }
-        let body = text[text.index(after: firstLineEnd)...]
-        return trimmed(body.hasSuffix(codeFence) ? body.dropLast(codeFence.count) : body)
+        let body = trimmed(text[text.index(after: firstLineEnd)...])
+        let closingMarkCount = trailingMarkCount(of: body)
+        return closingMarkCount >= fenceMarkCount ? trimmed(body.dropLast(closingMarkCount)) : body
     }
 
     /// Removes the filter label at the start of a text.
@@ -138,13 +158,38 @@ extension FilterAgentLoop {
 
     /// Removes a code span around a text.
     ///
+    /// A code span starts and ends with a run of the same number of marks, and its content has no run of that number
+    /// of marks. Thus a text of two code spans, for example ``"`#bug` || `#feature`"``, is not one code span.
+    ///
     /// - Parameter text: The trimmed text.
-    /// - Returns: The text between the two marks, or the text itself when it is not a code span.
+    /// - Returns: The content between the two runs of marks, or the text itself when it is not one code span.
     private static func withoutCodeSpan(_ text: String) -> String {
-        guard text.count > 1, text.first == codeSpanMark, text.last == codeSpanMark else {
+        let spanMarkCount = leadingMarkCount(of: text)
+        guard spanMarkCount > 0, trailingMarkCount(of: text) == spanMarkCount else {
             return text
         }
-        return trimmed(text.dropFirst().dropLast())
+        let content = text.dropFirst(spanMarkCount).dropLast(spanMarkCount)
+        let markRuns = content.split { character in character != codeMark }
+        guard !content.isEmpty, !markRuns.contains(where: { run in run.count == spanMarkCount }) else {
+            return text
+        }
+        return trimmed(content)
+    }
+
+    /// Counts the marks at the start of a text.
+    ///
+    /// - Parameter text: The text.
+    /// - Returns: The number of marks before the first character that is not a mark.
+    private static func leadingMarkCount(of text: some StringProtocol) -> Int {
+        text.prefix { character in character == codeMark }.count
+    }
+
+    /// Counts the marks at the end of a text.
+    ///
+    /// - Parameter text: The text.
+    /// - Returns: The number of marks after the last character that is not a mark.
+    private static func trailingMarkCount(of text: some StringProtocol) -> Int {
+        text.reversed().prefix { character in character == codeMark }.count
     }
 
     /// Removes the white space and the line breaks at the two ends of a text.

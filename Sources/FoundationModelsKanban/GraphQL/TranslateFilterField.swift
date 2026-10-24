@@ -19,11 +19,12 @@ extension KanbanResolver {
     ///   - arguments: The board and the text.
     /// - Returns: The translation.
     /// - Throws: An error of ``BoardStore/loadedView(ofBoard:)``. An error of ``FilterAgent/translate(_:on:for:)``, for
-    ///   example ``KanbanError/filterModelMissing(filterError:)``.
+    ///   example ``KanbanError/filterModelMissing(filterError:)``, or the `CancellationError` of a cancelled call,
+    ///   unchanged (divergence.md §17, "The loop").
     func translateFilter(
         context: KanbanContext,
         arguments: TranslateFilterArguments
-    ) async throws(KanbanError) -> FilterTranslation {
+    ) async throws -> FilterTranslation {
         let view = try await context.store.loadedView(ofBoard: arguments.board?.text)
         return try await context.filterAgent.translate(arguments.text, on: view, for: context.store.sessionActor)
     }
