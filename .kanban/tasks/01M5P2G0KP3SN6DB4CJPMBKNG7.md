@@ -28,10 +28,26 @@ comments:
     - evidence: `swift test` 1871 tests in 161 suites passed, 0 failures; only the accepted SwiftPM "missing creator" warning. 5 files: Sources/FoundationModelsKanban/Filter/FilterNameCheck.swift, Sources/FoundationModelsKanban/Filter/FilterAgent.swift, Tests/FoundationModelsKanbanTests/Filter/FilterNameCheckTests.swift, Tests/FoundationModelsKanbanTests/Filter/FilterAgentLoopTests.swift, divergence.md
     - next: /review (task stays in doing)
   timestamp: 2026-10-24T09:53:12.922087+00:00
+- actor: claude-code
+  id: 01m5pnc194rmc84qjxztn4wfke
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 7534485). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. 4 files reviewed. Not reviewed: 2 files in .kanban/ (ignore rule), divergence.md (no validator matches it).
+    - next: none. The task is in done.
+  timestamp: 2026-10-24T09:55:16.388217+00:00
+- actor: claude-code
+  id: 01m5pncm80jwfwy6e4ntxzx3cq
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 5 files, FilterNameCheck takes the caller (option 2)
+    - test: green — swift test, 1871 tests in 161 suites
+    - commit: 7534485
+    - review: clean — 0 findings
+  timestamp: 2026-10-24T09:55:35.808056+00:00
 depends_on:
 - 01M5MQTKNM12VRRJW516RXDA32
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffbf80
 title: 'Filter agent: decide "me" when the caller actor is not an actor of the board'
 ---
 ## What
