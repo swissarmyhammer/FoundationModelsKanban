@@ -30,6 +30,38 @@ comments:
     - evidence: `swift test` 1816 tests in 152 suites passed, only the accepted SwiftPM "missing creator" warning. Files: Sources/FoundationModelsKanban/Body/ColumnTrigger.swift (new), Sources/FoundationModelsKanban/Body/FrontmatterLines.swift (new), GraphQL/ColumnActorMutations.swift, GraphQL/FieldAliases.swift, GraphQL/MutationResolvers.swift, GraphQL/QueryResolvers.swift, GraphQL/Schema.swift, GraphQL/SchemaDescription+Changes.swift, GraphQL/SchemaDescription+Mutations.swift, GraphQL/SchemaDescription+Types.swift, Observe/ChangeBuilder.swift, Tool/KanbanTool.swift, Tests/Fixtures/kanban.graphql, Tests/.../Body/ColumnTriggerTests.swift (new), Tests/.../Mutations/ColumnTriggerMutationTests.swift (new), Tests/.../Mutations/TaskOperationTests.swift (jsonText now internal), Tests/.../Tool/KanbanToolTests.swift, divergence.md §22.
     - next: /review
   timestamp: 2026-10-24T02:18:56.246411+00:00
+- actor: claude-code
+  id: 01m5nvj64ff25y314b9c98p38y
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (8f23671): 2 findings (2 confirmed, 6 refuted) — Sources/FoundationModelsKanban/GraphQL/MutationResolvers.swift:569 (duplication/duplication), Sources/FoundationModelsKanban/GraphQL/MutationResolvers.swift:569 (reuse/reuse)
+    - next: implement the two open findings in the Review Findings (2026-10-23 21:20) section. Then do a new review.
+  timestamp: 2026-10-24T02:24:14.991657+00:00
+- actor: claude-code
+  id: 01m5nvk4hq37yavsytag3prsay
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 18 files, Column.trigger and Column.next, divergence.md §22
+    - test: green — swift test, 1816 tests in 152 suites
+    - commit: 8f23671
+    - review: findings — Sources/FoundationModelsKanban/GraphQL/MutationResolvers.swift:569 (2)
+  timestamp: 2026-10-24T02:24:46.135646+00:00
+- actor: claude-code
+  id: 01m5nvsgtec1jrnytvjxgn42ns
+  text: |-
+    Fixed the two findings in MutationResolvers.swift. Cause: `isCleared` and `isUnchanged` each had a `guard case ... else { return false }; return true` copy. The getter `value` had a third copy of the same guard-case-return pattern (`guard case .changed(let value) = self else { return nil }`).
+    - New private `FieldUpdate.Kind` (the case without the value) and a private `kind` that reads the case with one `switch self`. `isCleared` is now `kind == .cleared`, and `isUnchanged` is now `kind == .unchanged`.
+    - `value` is now a `switch self` expression, the same form as `map` and `value(clearingTo:)`. The file has no more `guard case` lines.
+    - New test Tests/FoundationModelsKanbanTests/GraphQL/FieldUpdateTests.swift holds the behavior of `isCleared`, `isUnchanged`, and `value` for each case. This is a refactor, so the test passed before and after the change.
+    - Acceptance criteria: all 5 are checked. Each has a passing test in ColumnTriggerMutationTests.swift (no frontmatter read, body write, bad YAML warning, updateColumn trigger write, changes event, undoChange) and divergence.md §22 records the rule.
+  timestamp: 2026-10-24T02:28:15.310461+00:00
+- actor: claude-code
+  id: 01m5nvsh8epfp56x77xs429w8t
+  text: |-
+    ### implement — changed
+    - evidence: `swift build --build-tests` and `swift test`: 1817 tests in 153 suites passed; only the accepted SwiftPM "missing creator" warning. Files: Sources/FoundationModelsKanban/GraphQL/MutationResolvers.swift, Tests/FoundationModelsKanbanTests/GraphQL/FieldUpdateTests.swift (new). Findings 2/2 checked; acceptance criteria 5/5 checked.
+    - next: /review
+  timestamp: 2026-10-24T02:28:15.758050+00:00
 position_column: doing
 position_ordinal: '80'
 title: Read the trigger and next of a column from the frontmatter of its body (KANBAN-2)
@@ -54,13 +86,27 @@ KanbanViewKit has the command "Set Column Trigger…" (its plan §3.2, §3.4). T
 
 ## Acceptance criteria
 
-- [ ] `updateColumn(input: {id, trigger: "do"})` writes `trigger: do` into the frontmatter of the body, and keeps the rest of the body.
-- [ ] `Column.trigger` and `Column.next` read the frontmatter. With no frontmatter: `null` and `true`.
-- [ ] A body with bad YAML gives `null` and `true` and a warning.
-- [ ] A `changes` event gives the new body and the new typed fields. One `undoChange` reverses the write.
-- [ ] `divergence.md` records the rule.
+- [x] `updateColumn(input: {id, trigger: "do"})` writes `trigger: do` into the frontmatter of the body, and keeps the rest of the body.
+- [x] `Column.trigger` and `Column.next` read the frontmatter. With no frontmatter: `null` and `true`.
+- [x] A body with bad YAML gives `null` and `true` and a warning.
+- [x] A `changes` event gives the new body and the new typed fields. One `undoChange` reverses the write.
+- [x] `divergence.md` records the rule.
 
 ## Tests
 
 - Unit tests in `T/` for each criterion.
 - `swift test` passes with no new warnings.
+
+## Review Findings (2026-10-23 21:20)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 16 file(s) reviewed, 4 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 2 file(s) not reviewed — no validator matched:
+> - `Tests/Fixtures/kanban.graphql` — no validator matches this file
+> - `divergence.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsKanban/GraphQL/MutationResolvers.swift:569` `duplication/duplication` — `FieldUpdate.isUnchanged` (lines 568-574) is a copy of the existing `isCleared` (lines 560-566) with only the enum case name changed. Two copies of one guard-case-return pattern can drift apart. Add one private helper on `FieldUpdate`, for example `isCase(_ test: (FieldUpdate) -> Bool)`, or write both properties as `switch self` expressions that share one shape. Keep the two public properties as one-line delegations. If the team judges this two-line guard too small to matter, drop this finding.
+- [x] `Sources/FoundationModelsKanban/GraphQL/MutationResolvers.swift:569` `reuse/reuse` — `FieldUpdate.isUnchanged` is a copy of the existing `isCleared` pattern (line 561) with a different case. Each new case adds another copy of the same guard. Add one helper on FieldUpdate that tests for a given case, or derive the checks from a single switch, and express `isCleared` and `isUnchanged` through it.

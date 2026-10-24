@@ -38,10 +38,10 @@ enum FieldUpdate<Value> {
     /// The new value, or `nil` when the input does not give a value. The schema reads the type of this property, so
     /// that the GraphQL `input` field gets the nullable type of the value.
     var value: Value? {
-        guard case .changed(let value) = self else {
-            return nil
+        switch self {
+        case .unchanged, .cleared: nil
+        case .changed(let value): value
         }
-        return value
     }
 
     /// Changes the new value, and keeps a missing or a cleared field as it is.
@@ -557,21 +557,33 @@ extension PatchInput {
 }
 
 extension FieldUpdate {
-    /// `true` when the input gives `null`, so that the field is cleared.
-    var isCleared: Bool {
-        guard case .cleared = self else {
-            return false
-        }
-        return true
+    /// The case of an update without its new value. Each case test compares this value, so that one `switch` reads
+    /// the case for all the tests.
+    private enum Kind {
+        /// The case ``FieldUpdate/unchanged``.
+        case unchanged
+
+        /// The case ``FieldUpdate/cleared``.
+        case cleared
+
+        /// The case ``FieldUpdate/changed(_:)``.
+        case changed
     }
 
-    /// `true` when the input does not have the field, so that the field does not change.
-    var isUnchanged: Bool {
-        guard case .unchanged = self else {
-            return false
+    /// The case of this update without its new value.
+    private var kind: Kind {
+        switch self {
+        case .unchanged: .unchanged
+        case .cleared: .cleared
+        case .changed: .changed
         }
-        return true
     }
+
+    /// `true` when the input gives `null`, so that the field is cleared.
+    var isCleared: Bool { kind == .cleared }
+
+    /// `true` when the input does not have the field, so that the field does not change.
+    var isUnchanged: Bool { kind == .unchanged }
 }
 
 extension Graph {
