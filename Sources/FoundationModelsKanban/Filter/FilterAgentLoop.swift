@@ -136,12 +136,12 @@ extension FilterAgentLoop {
     /// - Returns: The lines between the opening fence line and the closing fence, or the text itself when it does not
     ///   start with a fence line.
     private static func withoutCodeFence(_ text: String) -> String {
-        let fenceMarkCount = leadingMarkCount(of: text)
+        let fenceMarkCount = markCount(of: text, fromEnd: false)
         guard fenceMarkCount >= fenceMarkMinimum, let firstLineEnd = text.firstIndex(where: \.isNewline) else {
             return text
         }
         let body = trimmed(text[text.index(after: firstLineEnd)...])
-        let closingMarkCount = trailingMarkCount(of: body)
+        let closingMarkCount = markCount(of: body, fromEnd: true)
         return closingMarkCount >= fenceMarkCount ? trimmed(body.dropLast(closingMarkCount)) : body
     }
 
@@ -164,8 +164,8 @@ extension FilterAgentLoop {
     /// - Parameter text: The trimmed text.
     /// - Returns: The content between the two runs of marks, or the text itself when it is not one code span.
     private static func withoutCodeSpan(_ text: String) -> String {
-        let spanMarkCount = leadingMarkCount(of: text)
-        guard spanMarkCount > 0, trailingMarkCount(of: text) == spanMarkCount else {
+        let spanMarkCount = markCount(of: text, fromEnd: false)
+        guard spanMarkCount > 0, markCount(of: text, fromEnd: true) == spanMarkCount else {
             return text
         }
         let content = text.dropFirst(spanMarkCount).dropLast(spanMarkCount)
@@ -176,20 +176,15 @@ extension FilterAgentLoop {
         return trimmed(content)
     }
 
-    /// Counts the marks at the start of a text.
+    /// Counts the marks at one end of a text.
     ///
-    /// - Parameter text: The text.
-    /// - Returns: The number of marks before the first character that is not a mark.
-    private static func leadingMarkCount(of text: some StringProtocol) -> Int {
-        text.prefix { character in character == codeMark }.count
-    }
-
-    /// Counts the marks at the end of a text.
-    ///
-    /// - Parameter text: The text.
-    /// - Returns: The number of marks after the last character that is not a mark.
-    private static func trailingMarkCount(of text: some StringProtocol) -> Int {
-        text.reversed().prefix { character in character == codeMark }.count
+    /// - Parameters:
+    ///   - text: The text.
+    ///   - fromEnd: `true` to count the marks at the end of the text, `false` to count the marks at the start.
+    /// - Returns: The number of marks in the run of marks at that end of the text.
+    private static func markCount(of text: some StringProtocol, fromEnd: Bool) -> Int {
+        let isMark = { (character: Character) in character == codeMark }
+        return fromEnd ? text.reversed().prefix(while: isMark).count : text.prefix(while: isMark).count
     }
 
     /// Removes the white space and the line breaks at the two ends of a text.

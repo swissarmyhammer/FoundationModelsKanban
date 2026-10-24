@@ -73,6 +73,29 @@ comments:
     - evidence: `swift build --build-tests` clean; `swift test` — 1868 tests in 161 suites passed; only the accepted SwiftPM "missing creator" warning. 5 files — Sources/FoundationModelsKanban/Filter/FilterAgentLoop.swift, Sources/FoundationModelsKanban/Filter/FilterAgent.swift, Sources/FoundationModelsKanban/GraphQL/TranslateFilterField.swift, Tests/FoundationModelsKanbanTests/Filter/FilterAgentLoopTests.swift, divergence.md
     - next: /review
   timestamp: 2026-10-24T09:38:57.461067+00:00
+- actor: claude-code
+  id: 01m5pmkkkpn2azq2nasfy0qn7y
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (f24a59d). 1 finding (1 confirmed, 4 refuted). Sources/FoundationModelsKanban/Filter/FilterAgentLoop.swift:192. The 2 earlier findings are checked.
+    - next: Correct the duplication finding in FilterAgentLoop.swift (leadingMarkCount and trailingMarkCount). Then do the review again.
+  timestamp: 2026-10-24T09:41:55.958623+00:00
+- actor: claude-code
+  id: 01m5pmm75d1q0cb9c4f80d96ce
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 5 files, the 2 findings fixed
+    - test: green — swift test, 1868 tests in 161 suites
+    - commit: f24a59d
+    - review: findings — Sources/FoundationModelsKanban/Filter/FilterAgentLoop.swift:192
+  timestamp: 2026-10-24T09:42:15.981097+00:00
+- actor: claude-code
+  id: 01m5pmsjtpkwjpdhf8014pvj6d
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Sources/FoundationModelsKanban/Filter/FilterAgentLoop.swift. leadingMarkCount and trailingMarkCount are now one function, markCount(of:fromEnd:), and the four callers use it. The file has no other copy of this pattern. `swift build --build-tests`: only the accepted "missing creator" warning. The first full `swift test` run stopped with a fatal error in KanbanGraph ("The view holds the engine of the board ... and has no session of it"). That code is not part of this change. The second full run passed: 1868 tests in 161 suites, with only the accepted warning. The intermittent crash is recorded as a new task.
+    - next: /review
+  timestamp: 2026-10-24T09:45:11.766870+00:00
 depends_on:
 - 01M5MQS3GXPJ1ZDMZ9V9HQJWT8
 - 01M5MQSGQF8VVFY28RNK1S3550
@@ -118,3 +141,15 @@ Fill the translator seam of `translateFilter` with the loop of the filter agent 
 
 - [x] `Sources/FoundationModelsKanban/Filter/FilterAgentLoop.swift:85` `completeness/public-output-contract` — stoppingTheAgent converts every error from the model into KanbanError.filterAgentFailed, including CancellationError. When the caller cancels the call, the error that reaches the caller is a user-facing FILTER_AGENT_FAILED message that tells the caller to send the call again, not a cancellation. The cancelled call is then reported as a model failure, which hides the cancellation from the caller. Rethrow CancellationError unchanged, or check Task.isCancelled in the catch block, so that only real model and prompt-resource failures become FILTER_AGENT_FAILED. Add a test that cancels the call and checks that the error is not FILTER_AGENT_FAILED.
 - [x] `Sources/FoundationModelsKanban/Filter/FilterAgentLoop.swift:144` `completeness/invariant-propagation` — withoutCodeSpan removes the first and last backtick of any text that starts and ends with a backtick. It does not check that the text is a code span. A text that is a code fence with no line break, or a span that wraps a label, loses one mark at each end and still fails the parse. The docstring says the forgiving read handles a code span, but a span that wraps a label ('`Filter: #bug`') is not handled, because the label step runs before the span step. Strip the span before the label, or repeat all the steps until nothing changes. Add one test case for a span that wraps a label, and one for a single-line fenced statement.
+
+## Review Findings (2026-10-24 04:40)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 3 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `divergence.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsKanban/Filter/FilterAgentLoop.swift:192` `duplication/duplication` — trailingMarkCount repeats the body of leadingMarkCount (line 184). The two differ only by reversed(). Both count the same mark character, so the logic can drift apart. Replace both helpers with one function that takes a direction, for example `markCount(of text: some StringProtocol, fromEnd: Bool) -> Int`. Or keep both names as one-line calls to that function. Do not add the parameter if the two helpers stay as the only callers and the reader gains nothing.
