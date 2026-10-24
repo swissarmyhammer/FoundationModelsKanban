@@ -7,10 +7,11 @@ import Testing
 /// the engine.
 ///
 /// A text that is a filter of the board comes back with `attempts: 0`, and the filter model gets no call. A text that
-/// is not a filter of the board needs the filter model. With no model, the query gives `FILTER_MODEL_MISSING`. The
-/// query writes nothing: no event, so also no undo entry, because the undo log reads only the events. Each test uses
-/// the fixture logs of ``KanbanGraphTests``: the board, the column `todo`, and one task in `todo`. No test needs a real
-/// model: ``SpyLanguageModel`` records each call.
+/// is not a filter of the board goes to the loop of the filter model (``FilterAgentLoopTests`` tests the loop). With no
+/// model, the query gives `FILTER_MODEL_MISSING`. The query writes nothing: no event, so also no undo entry, because
+/// the undo log reads only the events. Each test uses the fixture logs of ``KanbanGraphTests``: the board, the column
+/// `todo`, and one task in `todo`. No test needs a real model: ``SpyLanguageModel`` gives the scripted answers and
+/// records each call.
 @Suite("translateFilter: the engine part of the filter agent", .watcherBudget)
 struct TranslateFilterTests {
     /// A filter of the fixture board: the tasks in `todo` that are not done.
@@ -24,9 +25,6 @@ struct TranslateFilterTests {
 
     /// A column atom with a name one letter from the column `todo` of the fixture board.
     private static let misspelledColumn = "%todoo"
-
-    /// The code of the error of a text that needs the filter model when the engine has none.
-    private static let modelMissingCode = "FILTER_MODEL_MISSING"
 
     // MARK: - Helpers
 
@@ -82,17 +80,17 @@ struct TranslateFilterTests {
         #expect(error == .filterModelMissing(filterError: nameError))
     }
 
-    @Test("With a filter model, a text that is not a filter goes to the translator, which has no loop yet")
-    func englishWithModelGoesToTranslator() async throws {
+    @Test("With a filter model, English text gives the statement of the model with attempts 1, and writes nothing")
+    func englishWithModelGivesStatementOfModel() async throws {
         let directory = try TemporaryDirectory()
-        let model = SpyLanguageModel()
+        let model = SpyLanguageModel(answers: [.text(Self.fixtureFilter)])
         let response = try await ColumnActorTests.respondWritingNothing(
             to: Self.translation(of: Self.englishText),
             filteringWith: model,
             in: directory
         )
-        let errors = try NameRewriteTests.errors(of: response)
-        #expect(errors.map(ErrorCoverageTests.code(of:)) == [Self.modelMissingCode], "\(response)")
-        #expect(model.calls.count == 0)
+        let translation = #"{"attempts":1,"filter":"\#(Self.fixtureFilter)","message":null}"#
+        #expect(response == #"{"data":{"translateFilter":\#(translation)}}"#)
+        #expect(model.calls.recorded.map(\.prompts) == [[Self.englishText]])
     }
 }

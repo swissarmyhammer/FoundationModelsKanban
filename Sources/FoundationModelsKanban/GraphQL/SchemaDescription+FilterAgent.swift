@@ -7,8 +7,11 @@ extension SchemaDescription {
     static let queryTranslateFilter = """
         Gives a filter statement of the board for a text. A text that is already a filter of the board comes back \
         with attempts \(FilterTranslation.attemptsOfFilter), and the filter model gets no call. Each other text, for \
-        example English, goes to the filter model of the host. With no filter model, the call gives \
-        FILTER_MODEL_MISSING. The call writes nothing.
+        example English, goes to the filter model of the host. The engine checks each statement of the model and \
+        sends each error back to the model, for at most \(FilterAgentLoop.attemptLimit) attempts. After \
+        \(FilterAgentLoop.attemptLimit) failed attempts, filter is null and message gives the last error. With no \
+        filter model, the call gives FILTER_MODEL_MISSING. An error of the filter model gives FILTER_AGENT_FAILED. \
+        The call writes nothing.
         """
 
     /// The `text` argument of `Query.translateFilter`.

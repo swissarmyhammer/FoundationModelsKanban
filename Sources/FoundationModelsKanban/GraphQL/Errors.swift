@@ -67,6 +67,11 @@ enum KanbanError: CodedError, Hashable {
     /// the parse error, or the first name that names nothing.
     indirect case filterModelMissing(filterError: KanbanError)
 
+    /// `FILTER_AGENT_FAILED`: the filter agent stopped before it wrote a filter, for example because the filter model
+    /// is not available (divergence.md §17, "The loop"). The error counts no attempt. The reason is the text of the
+    /// error that stopped the agent.
+    case filterAgentFailed(reason: String)
+
     /// `INVALID_TAG_NAME`: the tag name gives an empty slug.
     case invalidTagName(name: String)
 
@@ -153,6 +158,7 @@ extension KanbanError {
         case .undoConflict: "UNDO_CONFLICT"
         case .invalidFilter: "INVALID_FILTER"
         case .filterModelMissing: "FILTER_MODEL_MISSING"
+        case .filterAgentFailed: "FILTER_AGENT_FAILED"
         case .invalidTagName, .reservedTagName, .virtualTagName: "INVALID_TAG_NAME"
         case .invalidSlug, .reservedSlug: "INVALID_SLUG"
         case .invalidOrdinal: "INVALID_ORDINAL"
@@ -218,6 +224,9 @@ extension KanbanError {
         case .filterModelMissing(let filterError):
             "The engine has no filter model, so it cannot write a filter from English text. Send the text in the "
                 + "filter language. \(filterError.message)"
+        case .filterAgentFailed(let reason):
+            "The filter agent stopped before it wrote a filter: \(reason) No attempt counts. Send the call again, or "
+                + "send the text in the filter language."
         case .invalidTagName(let name):
             "The tag name \"\(name)\" gives an empty slug. \(Self.emptySlugCorrection)"
         case .reservedTagName:

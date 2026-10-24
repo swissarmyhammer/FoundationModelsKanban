@@ -38,6 +38,9 @@ struct KanbanErrorTests {
         example: "#bug && @alice"
     )
 
+    /// The reason of the `FILTER_AGENT_FAILED` tests: the text of an error of the filter model.
+    static let filterAgentFailure = "The model is not available."
+
     /// One error of each case, with the code that the case must give.
     static let codes: [(KanbanError, String)] = [
         (.notFound(type: .task, reference: "^zzzzzzz"), "NOT_FOUND"),
@@ -51,6 +54,7 @@ struct KanbanErrorTests {
         (.undoConflict(transaction: "01KTXN0001", laterTransactions: ["01KTXN0002"]), "UNDO_CONFLICT"),
         (filterError, "INVALID_FILTER"),
         (.filterModelMissing(filterError: filterError), "FILTER_MODEL_MISSING"),
+        (.filterAgentFailed(reason: filterAgentFailure), "FILTER_AGENT_FAILED"),
         (.invalidTagName(name: "!!!"), "INVALID_TAG_NAME"),
         (.invalidSlug(name: "---"), "INVALID_SLUG"),
         (.invalidOrdinal(ordinal: "zz!"), "INVALID_ORDINAL"),
@@ -94,7 +98,7 @@ struct KanbanErrorTests {
         #expect(error.code == expectedCode)
     }
 
-    @Test("The cases give twenty different codes")
+    @Test("Each case of the code table gives a different code")
     func codesAreDistinct() {
         #expect(Set(Self.codes.map { $0.0.code }).count == Self.codes.count)
     }
@@ -377,6 +381,15 @@ struct KanbanErrorTests {
                 == "The engine has no filter model, so it cannot write a filter from English text. Send the text in "
                 + "the filter language. The filter \"#bug &&\" is not valid at 5..7: an operand must follow &&. "
                 + "Correct the filter, for example: #bug && @alice"
+        )
+    }
+
+    @Test("FILTER_AGENT_FAILED gives the error, tells that no attempt counts, and tells how to continue")
+    func filterAgentFailedMessage() {
+        #expect(
+            KanbanError.filterAgentFailed(reason: Self.filterAgentFailure).message
+                == "The filter agent stopped before it wrote a filter: The model is not available. No attempt counts. "
+                + "Send the call again, or send the text in the filter language."
         )
     }
 
