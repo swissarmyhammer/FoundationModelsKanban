@@ -74,8 +74,24 @@ comments:
     - evidence: `swift build --build-tests` exit 0; `swift test`: 1803 tests in 150 suites passed, 0 failed. The only warning is the accepted SwiftPM "missing creator" warning. 5 files: Sources/FoundationModelsKanban/GraphQL/FieldAliases.swift, Tests/FoundationModelsKanbanTests/Tool/KanbanGraphTests.swift, Tests/FoundationModelsKanbanTests/Mutations/RejectTaskTests.swift, Tests/FoundationModelsKanbanTests/Mutations/TaskListMutationTests.swift, Tests/FoundationModelsKanbanTests/Mutations/TaskOperationTests.swift. 4 of 4 review findings are marked [x].
     - next: /review
   timestamp: 2026-10-24T01:53:20.162339+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5nsymjt96p9yas4841e59t1
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (24bf938): 0 findings, 0 confirmed, 0 refuted; 5 files reviewed. All 4 items in the 2026-10-23 20:45 Review Findings section are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-24T01:56:05.850489+00:00
+- actor: claude-code
+  id: 01m5nsz3tv622rv7rhqj08fy28
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 5 files, the 4 findings fixed
+    - test: green — swift test, 1803 tests in 150 suites
+    - commit: 24bf938
+    - review: clean — 0 findings, 4/4 earlier findings checked
+  timestamp: 2026-10-24T01:56:21.467629+00:00
+position_column: done
+position_ordinal: ffb780
 title: 'Add rejectTask: move a task back with a comment, in one transaction'
 ---
 ## What
