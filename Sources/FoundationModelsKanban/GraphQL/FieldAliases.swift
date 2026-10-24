@@ -100,11 +100,20 @@ enum KanbanFieldAliases {
     /// The aliases of the fields of `DeleteTasksInput` and `UndeleteTasksInput` (divergence.md §20).
     private static let taskList = ["id": taskListID]
 
+    /// Gives the aliases of `MoveTaskInput` with no `board` field, together with more aliases. Each input that moves
+    /// tasks only in their own board, for example `MoveTasksInput` and `RejectTaskInput`, uses this table.
+    ///
+    /// - Parameter extra: The aliases to add. An alias list of `extra` replaces the placement list of the same field.
+    /// - Returns: The alias table.
+    private static func taskPlacementWithoutBoard(merging extra: [String: [String]]) -> [String: [String]] {
+        taskPlacement
+            .filter { field, _ in field != "board" }
+            .merging(extra) { _, value in value }
+    }
+
     /// The aliases of the fields of `MoveTasksInput` (divergence.md §20): the aliases of `MoveTaskInput` with no
     /// `board` field, and the aliases of a list of tasks.
-    private static let taskBlockPlacement = taskPlacement
-        .filter { field, _ in field != "board" }
-        .merging(taskList) { _, list in list }
+    private static let taskBlockPlacement = taskPlacementWithoutBoard(merging: taskList)
 
     /// The aliases of the comment of `RejectTaskInput` (divergence.md §21). The input has no `body` field, so the
     /// `body` aliases of ``everywhere`` and ``inEachInput`` do not apply there, and these names name only the comment.
@@ -112,9 +121,7 @@ enum KanbanFieldAliases {
 
     /// The aliases of the fields of `RejectTaskInput` (divergence.md §21): the aliases of `MoveTaskInput` with no
     /// `board` field, and the aliases of the comment.
-    private static let taskReject = taskPlacement
-        .filter { field, _ in field != "board" }
-        .merging(["comment": rejectComment]) { _, comment in comment }
+    private static let taskReject = taskPlacementWithoutBoard(merging: ["comment": rejectComment])
 
     /// The aliases of the `boards` argument of `checkLinks` and `repairLinks`: the boards of the links (divergence.md
     /// M9).

@@ -799,7 +799,7 @@ struct TaskOperationTests {
         let input = Self.tagsInput(marker)
         let untag = Self.taskField("untagTask", of: fixture.task, with: input, selecting: Self.tagsSelection)
         #expect(
-            KanbanGraphTests.withoutTransaction(try await CommentTests.run(untag, on: fixture.graph))
+            try await KanbanGraphTests.runWithoutTransaction(untag, on: fixture.graph)
                 == Self.tagsResponse(of: "untagTask")
         )
     }

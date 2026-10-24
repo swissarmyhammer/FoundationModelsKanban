@@ -41,6 +41,39 @@ comments:
     - evidence: swift build --build-tests and swift test. Swift Testing: 1801 tests in 150 suites passed, 0 failed, 0 skipped. XCTest: 0 tests, 0 failures. The only warning is the SwiftPM "missing creator" warning, which is accepted.
     - next: review
   timestamp: 2026-10-24T01:45:05.110789+00:00
+- actor: claude-code
+  id: 01m5nsga6s065jvhrt3zzwezkg
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (52e6e4a); 4 findings, 4 confirmed, 0 refuted — Sources/FoundationModelsKanban/GraphQL/FieldAliases.swift:116 (duplication/duplication), Sources/FoundationModelsKanban/GraphQL/FieldAliases.swift:116 (reuse/reuse), Tests/FoundationModelsKanbanTests/Mutations/RejectTaskTests.swift:115 (reuse/reuse), Tests/FoundationModelsKanbanTests/Mutations/RejectTaskTests.swift:139 (completeness/invariant-propagation)
+    - next: implement the 4 open items in the "Review Findings (2026-10-23 20:45)" section. The task stays in review.
+  timestamp: 2026-10-24T01:48:16.473078+00:00
+- actor: claude-code
+  id: 01m5nsh2sd3kvy3qmsjrx4zwt7
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 13 files, rejectTask with alias rejectReview, divergence.md §21
+    - test: green — swift test, 1801 tests in 150 suites
+    - commit: 52e6e4a
+    - review: findings — Sources/FoundationModelsKanban/GraphQL/FieldAliases.swift:116 (2), Tests/FoundationModelsKanbanTests/Mutations/RejectTaskTests.swift:115, Tests/FoundationModelsKanbanTests/Mutations/RejectTaskTests.swift:139
+  timestamp: 2026-10-24T01:48:41.645463+00:00
+- actor: claude-code
+  id: 01m5nssjbwzf23j7gvknf1522r
+  text: |-
+    Review findings fixed (not committed). The task stays in doing.
+    - FieldAliases.swift: new private static func `taskPlacementWithoutBoard(merging:)`. `taskBlockPlacement` and `taskReject` both call it. No other copy of the board-removal step is in the file.
+    - New shared test helper `KanbanGraphTests.runWithoutTransaction(_:on:)`, next to `withoutTransaction(_:)`. The private `run(_:on:)` copies in RejectTaskTests and TaskListMutationTests are removed. The one inline copy of the same expression, in TaskOperationTests (the untagTask test), now calls the shared helper. A search found no other copy of the helper in Tests/.
+    - RejectTaskTests: new tests `rejectTaskPlacesTaskAfterNeighbor` (after the second task gives the order second, first, third; an append would give second, third, first) and `beforeAndAfterGiveConflictingPlacement` (expects `.conflictingPlacement(fields: ["before", "after"])` and no write, through `ColumnActorTests.failure`). The before test now also compares the full response. New helpers `rejectedResponse(of:inColumn:)` and `threeTasksWithFirstInDone(in:)`.
+    - TDD note: the two new tests cover behavior that already exists, so they passed on their first run. A RED run was not possible.
+    - Tool note: the `replace_all` option of the files edit op replaced only one match for each call. The Self.run call sites were changed with one perl substitution.
+  timestamp: 2026-10-24T01:53:19.740744+00:00
+- actor: claude-code
+  id: 01m5nssjs2z7b61a691shf5rbc
+  text: |-
+    ### implement — changed
+    - evidence: `swift build --build-tests` exit 0; `swift test`: 1803 tests in 150 suites passed, 0 failed. The only warning is the accepted SwiftPM "missing creator" warning. 5 files: Sources/FoundationModelsKanban/GraphQL/FieldAliases.swift, Tests/FoundationModelsKanbanTests/Tool/KanbanGraphTests.swift, Tests/FoundationModelsKanbanTests/Mutations/RejectTaskTests.swift, Tests/FoundationModelsKanbanTests/Mutations/TaskListMutationTests.swift, Tests/FoundationModelsKanbanTests/Mutations/TaskOperationTests.swift. 4 of 4 review findings are marked [x].
+    - next: /review
+  timestamp: 2026-10-24T01:53:20.162339+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'Add rejectTask: move a task back with a comment, in one transaction'
@@ -72,3 +105,19 @@ Today the client must send `moveTask` and `addComment` as two mutations.
 
 - Unit tests in `T/` for each criterion.
 - `swift test` passes with no new warnings.
+
+## Review Findings (2026-10-23 20:45)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 11 file(s) reviewed, 4 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 2 file(s) not reviewed — no validator matched:
+> - `Tests/Fixtures/kanban.graphql` — no validator matches this file
+> - `divergence.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsKanban/GraphQL/FieldAliases.swift:116` `duplication/duplication` — The new `taskReject` repeats the expression of the existing `taskBlockPlacement` (lines 106-107): `taskPlacement.filter { field != "board" }` followed by a `.merging(...)` of one extra alias table. The two blocks differ only by the merged value, so the shared step (drop the `board` alias from the placement aliases) is copied rather than named. The copies can drift: a change to how the `board` field is excluded must now be made in two places. Extract one helper, for example `private static func placementWithoutBoard(merging extra: [String: [String]]) -> [String: [String]] { taskPlacement.filter { field, _ in field != "board" }.merging(extra) { _, value in value } }`, and define `taskBlockPlacement` and `taskReject` as calls to it. Severity is low: the duplicated part is two short lines, so this is a judgment call. The `CodingKeys` pair flagged by the probe (RejectTaskMutation.swift:19 and TaskTransferMutations.swift:11) is a required key enum with different cases, so it is not reported.
+- [x] `Sources/FoundationModelsKanban/GraphQL/FieldAliases.swift:116` `reuse/reuse` — The new taskReject alias table repeats the board-removal step of taskBlockPlacement. Both build taskPlacement.filter { field != "board" } and then merge one more entry. The same rule now exists in two places. A change to the placement aliases must be made in both, or the two tables can drift apart. Move the board-free placement aliases into one private static helper, for example taskPlacementWithoutBoard. Build taskBlockPlacement and taskReject from that helper, and merge the list or comment aliases into each.
+- [x] `Tests/FoundationModelsKanbanTests/Mutations/RejectTaskTests.swift:115` `reuse/reuse` — The private helper `run(_:on:)` reimplements a wrapper that already exists. Its body, `KanbanGraphTests.withoutTransaction(try await CommentTests.run(field, on: graph))`, is the same as the `run(_:on:)` helper in TaskListMutationTests. Two copies of one wrapper will drift apart when the response shape changes. Move the wrapper to one shared place, for example a static helper on `CommentTests` or `KanbanGraphTests` next to `withoutTransaction`, and have RejectTaskTests and TaskListMutationTests both call it. Remove the two private copies.
+- [x] `Tests/FoundationModelsKanbanTests/Mutations/RejectTaskTests.swift:139` `completeness/invariant-propagation` — The change makes rejectTask accept the same placement fields as moveTask (before, after, and column). Only the `before` path is tested. The `after` path and the CONFLICTING_PLACEMENT path (both before and after given) are not tested for rejectTask, so a broken sibling path would pass this suite. Add one rejectTask test that places the task after a neighbor, and one that passes both before and after and expects CONFLICTING_PLACEMENT with no write. This matches how moveTask is tested in TaskOperationTests.

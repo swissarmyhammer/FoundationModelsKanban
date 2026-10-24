@@ -348,6 +348,17 @@ struct KanbanGraphTests {
         return String(head.dropLast()) + extensions.dropFirst(empty.count)
     }
 
+    /// Runs a mutation document with one field on an engine, and gives the response with no `extensions.txn`
+    /// (``withoutTransaction(_:)``).
+    ///
+    /// - Parameters:
+    ///   - field: The mutation field, with its selection.
+    ///   - graph: The engine.
+    /// - Returns: The response JSON text.
+    static func runWithoutTransaction(_ field: String, on graph: KanbanGraph) async throws -> String {
+        withoutTransaction(try await CommentTests.run(field, on: graph))
+    }
+
     // MARK: - Tests
 
     /// The `txn` key of a sample `extensions` object, with a valid ULID text.

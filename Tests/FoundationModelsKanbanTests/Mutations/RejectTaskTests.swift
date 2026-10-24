@@ -106,14 +106,32 @@ struct RejectTaskTests {
         return #"{"column":\#(column),"comments":\#(comments),"id":"\#(ColumnActorTests.id(of: .task(task)))"}"#
     }
 
-    /// Runs a document with one `rejectTask` field on an engine, and gives the response with no `extensions.txn`.
+    /// Gives the response of a document with one `rejectTask` field that selects ``resultSelection``: the task is in a
+    /// column, and it has the one comment of the reject.
     ///
     /// - Parameters:
-    ///   - field: The mutation field, with its selection.
-    ///   - graph: The engine.
-    /// - Returns: The response JSON text.
-    private static func run(_ field: String, on graph: KanbanGraph) async throws -> String {
-        KanbanGraphTests.withoutTransaction(try await CommentTests.run(field, on: graph))
+    ///   - task: The ULID of the task.
+    ///   - slug: The slug of the column of the task.
+    /// - Returns: The response JSON text, with no `extensions.txn`.
+    private static func rejectedResponse(of task: ULID, inColumn slug: String) -> String {
+        TaskOperationTests.dataResponse(of: #""rejectTask":\#(rejectedJSON(of: task, inColumn: slug))"#)
+    }
+
+    /// Makes the three tasks of ``TaskOperationTests/threeTasks(in:)`` in `todo`, adds the column `done` after `todo`,
+    /// and moves the first task to `done`. Then `todo` is the column before `done`, and it holds the second task and
+    /// the third task, in this order.
+    ///
+    /// - Parameter directory: The temporary repo directory.
+    /// - Returns: The directory, the engine, and the ULIDs of the three tasks.
+    private static func threeTasksWithFirstInDone(
+        in directory: TemporaryDirectory
+    ) async throws -> (directory: TemporaryDirectory, graph: KanbanGraph, first: ULID, second: ULID, third: ULID) {
+        let tasks = try await TaskOperationTests.threeTasks(in: directory)
+        _ = try await KanbanGraphTests.execute(
+            AddUpdateTaskTests.mutation(of: AddUpdateTaskTests.doneColumn, doneMove(of: tasks.first)),
+            on: tasks.graph
+        )
+        return tasks
     }
 
     // MARK: - The move and the comment
@@ -121,29 +139,39 @@ struct RejectTaskTests {
     @Test("rejectTask with no column adds the comment and moves a task in done to the column before done")
     func rejectTaskMovesToColumnBeforeDone() async throws {
         let fixture = try await Self.taskInDone(in: try TemporaryDirectory())
-        let response = try await Self.run(Self.rejectField(of: fixture.task), on: fixture.graph)
-        let json = Self.rejectedJSON(of: fixture.task, inColumn: Self.reviewSlug)
-        #expect(response == TaskOperationTests.dataResponse(of: #""rejectTask":\#(json)"#))
+        let response = try await KanbanGraphTests.runWithoutTransaction(
+            Self.rejectField(of: fixture.task),
+            on: fixture.graph
+        )
+        #expect(response == Self.rejectedResponse(of: fixture.task, inColumn: Self.reviewSlug))
     }
 
     @Test("rejectTask with the column doing adds the comment and moves the task to doing")
     func rejectTaskMovesToNamedColumn() async throws {
         let fixture = try await Self.taskInDone(in: try TemporaryDirectory())
         let input = TaskOperationTests.moveInput(to: Self.doingSlug)
-        let response = try await Self.run(Self.rejectField(of: fixture.task, with: input), on: fixture.graph)
-        let json = Self.rejectedJSON(of: fixture.task, inColumn: Self.doingSlug)
-        #expect(response == TaskOperationTests.dataResponse(of: #""rejectTask":\#(json)"#))
+        let response = try await KanbanGraphTests.runWithoutTransaction(
+            Self.rejectField(of: fixture.task, with: input),
+            on: fixture.graph
+        )
+        #expect(response == Self.rejectedResponse(of: fixture.task, inColumn: Self.doingSlug))
     }
 
     @Test("rejectTask with no column and before puts the task before the neighbor in the column before done")
     func rejectTaskPlacesTaskBeforeNeighbor() async throws {
-        let tasks = try await TaskOperationTests.threeTasks(in: try TemporaryDirectory())
-        _ = try await KanbanGraphTests.execute(
-            AddUpdateTaskTests.mutation(of: AddUpdateTaskTests.doneColumn, Self.doneMove(of: tasks.first)),
-            on: tasks.graph
-        )
+        let tasks = try await Self.threeTasksWithFirstInDone(in: try TemporaryDirectory())
         let reject = Self.rejectField(of: tasks.first, with: TaskOperationTests.neighbor("before", of: tasks.third))
-        _ = try await CommentTests.run(reject, on: tasks.graph)
+        let response = try await KanbanGraphTests.runWithoutTransaction(reject, on: tasks.graph)
+        #expect(response == Self.rejectedResponse(of: tasks.first, inColumn: TaskOperationTests.todoSlug))
+        #expect(try await TaskOperationTests.listedTasks(on: tasks.graph) == [tasks.second, tasks.first, tasks.third])
+    }
+
+    @Test("rejectTask with no column and after puts the task after the neighbor in the column before done")
+    func rejectTaskPlacesTaskAfterNeighbor() async throws {
+        let tasks = try await Self.threeTasksWithFirstInDone(in: try TemporaryDirectory())
+        let reject = Self.rejectField(of: tasks.first, with: TaskOperationTests.neighbor("after", of: tasks.second))
+        let response = try await KanbanGraphTests.runWithoutTransaction(reject, on: tasks.graph)
+        #expect(response == Self.rejectedResponse(of: tasks.first, inColumn: TaskOperationTests.todoSlug))
         #expect(try await TaskOperationTests.listedTasks(on: tasks.graph) == [tasks.second, tasks.first, tasks.third])
     }
 
@@ -156,7 +184,7 @@ struct RejectTaskTests {
             with: #"comment: "\#(Self.comment)""#,
             selecting: Self.resultSelection
         )
-        let response = try await Self.run(field, on: fixture.graph)
+        let response = try await KanbanGraphTests.runWithoutTransaction(field, on: fixture.graph)
         let data = #""rejectReview":\#(Self.rejectedJSON(of: fixture.task, inColumn: Self.reviewSlug))"#
         let rewrite = #"{"from":"rejectReview","path":["rejectReview"],"to":"rejectTask"}"#
         #expect(response == #"{"data":{\#(data)},"extensions":{"rewrites":[\#(rewrite)]}}"#)
@@ -259,5 +287,20 @@ struct RejectTaskTests {
             column: TaskOperationTests.todoSlug
         )
         #expect(error == expected)
+    }
+
+    @Test("rejectTask with before and after gives CONFLICTING_PLACEMENT with the two fields and writes nothing")
+    func beforeAndAfterGiveConflictingPlacement() async throws {
+        let task = try AddUpdateTaskTests.fixtureTask()
+        let placement = [
+            TaskOperationTests.neighbor("before", of: task),
+            TaskOperationTests.neighbor("after", of: task),
+        ]
+        let error = try await ColumnActorTests.failure(
+            of: AddUpdateTaskTests.mutation(of: Self.rejectField(of: task, with: placement.joined(separator: " "))),
+            after: Self.columnsSetup(movingToDone: task),
+            in: try TemporaryDirectory()
+        )
+        #expect(error == .conflictingPlacement(fields: ["before", "after"]))
     }
 }

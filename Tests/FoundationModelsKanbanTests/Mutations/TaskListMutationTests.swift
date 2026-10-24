@@ -95,16 +95,6 @@ struct TaskListMutationTests {
         TaskOperationTests.dataResponse(of: #""\#(field)":\#(idsJSON(of: tasks))"#)
     }
 
-    /// Runs a document with one list mutation field on an engine, and gives the response with no `extensions.txn`.
-    ///
-    /// - Parameters:
-    ///   - field: The mutation field, with its selection.
-    ///   - graph: The engine.
-    /// - Returns: The response JSON text.
-    private static func run(_ field: String, on graph: KanbanGraph) async throws -> String {
-        KanbanGraphTests.withoutTransaction(try await CommentTests.run(field, on: graph))
-    }
-
     // MARK: - moveTasks
 
     @Test("moveTasks puts the tasks before the neighbor in a different column, in the order of the list")
@@ -124,7 +114,7 @@ struct TaskListMutationTests {
             placing: TaskOperationTests.neighbor("before", of: tasks.third)
         )
         let move = Self.field("moveTasks", naming: [tasks.second, tasks.first], with: input)
-        let response = try await Self.run(move, on: tasks.graph)
+        let response = try await KanbanGraphTests.runWithoutTransaction(move, on: tasks.graph)
         #expect(response == Self.response(of: "moveTasks", giving: [tasks.second, tasks.first]))
         #expect(try await TaskOperationTests.listedTasks(on: tasks.graph) == [tasks.second, tasks.first, tasks.third])
     }
@@ -134,7 +124,7 @@ struct TaskListMutationTests {
         let tasks = try await TaskOperationTests.threeTasks(in: try TemporaryDirectory())
         let input = TaskOperationTests.neighbor("before", of: tasks.second)
         let move = Self.field("moveTasks", naming: [tasks.third, tasks.first], with: input)
-        let response = try await Self.run(move, on: tasks.graph)
+        let response = try await KanbanGraphTests.runWithoutTransaction(move, on: tasks.graph)
         #expect(response == Self.response(of: "moveTasks", giving: [tasks.third, tasks.first]))
         #expect(try await TaskOperationTests.listedTasks(on: tasks.graph) == [tasks.third, tasks.first, tasks.second])
     }
@@ -143,7 +133,7 @@ struct TaskListMutationTests {
     func moveTasksWithNoPlaceAppendsBlock() async throws {
         let tasks = try await TaskOperationTests.threeTasks(in: try TemporaryDirectory())
         let move = Self.field("moveTasks", naming: [tasks.second, tasks.first], with: TaskOperationTests.moveInput())
-        let response = try await Self.run(move, on: tasks.graph)
+        let response = try await KanbanGraphTests.runWithoutTransaction(move, on: tasks.graph)
         #expect(response == Self.response(of: "moveTasks", giving: [tasks.second, tasks.first]))
         #expect(try await TaskOperationTests.listedTasks(on: tasks.graph) == [tasks.third, tasks.second, tasks.first])
     }
@@ -152,7 +142,7 @@ struct TaskListMutationTests {
     func moveTasksTakesOneRef() async throws {
         let tasks = try await TaskOperationTests.threeTasks(in: try TemporaryDirectory())
         let move = TaskOperationTests.taskField("moveTasks", of: tasks.first, with: TaskOperationTests.moveInput())
-        let response = try await Self.run(move, on: tasks.graph)
+        let response = try await KanbanGraphTests.runWithoutTransaction(move, on: tasks.graph)
         #expect(response == Self.response(of: "moveTasks", giving: [tasks.first]))
         #expect(try await TaskOperationTests.listedTasks(on: tasks.graph) == [tasks.second, tasks.third, tasks.first])
     }
@@ -162,7 +152,7 @@ struct TaskListMutationTests {
         let tasks = try await TaskOperationTests.threeTasks(in: try TemporaryDirectory())
         let refs = [tasks.second, tasks.first, tasks.second]
         let move = Self.field("moveTasks", naming: refs, with: TaskOperationTests.moveInput())
-        let response = try await Self.run(move, on: tasks.graph)
+        let response = try await KanbanGraphTests.runWithoutTransaction(move, on: tasks.graph)
         #expect(response == Self.response(of: "moveTasks", giving: [tasks.second, tasks.first]))
         #expect(try await TaskOperationTests.listedTasks(on: tasks.graph) == [tasks.third, tasks.second, tasks.first])
     }
@@ -173,7 +163,7 @@ struct TaskListMutationTests {
     func deleteTasksMakesTombstones() async throws {
         let tasks = try await TaskOperationTests.threeTasks(in: try TemporaryDirectory())
         let delete = Self.field("deleteTasks", naming: [tasks.third, tasks.first])
-        let response = try await Self.run(delete, on: tasks.graph)
+        let response = try await KanbanGraphTests.runWithoutTransaction(delete, on: tasks.graph)
         #expect(response == Self.response(of: "deleteTasks", giving: [tasks.third, tasks.first]))
         #expect(try await TaskOperationTests.listedTasks(on: tasks.graph) == [tasks.second])
     }
@@ -183,7 +173,7 @@ struct TaskListMutationTests {
         let tasks = try await TaskOperationTests.threeTasks(in: try TemporaryDirectory())
         _ = try await CommentTests.run(Self.field("deleteTasks", naming: [tasks.first, tasks.third]), on: tasks.graph)
         let undelete = Self.field("undeleteTasks", naming: [tasks.third, tasks.first])
-        let response = try await Self.run(undelete, on: tasks.graph)
+        let response = try await KanbanGraphTests.runWithoutTransaction(undelete, on: tasks.graph)
         #expect(response == Self.response(of: "undeleteTasks", giving: [tasks.third, tasks.first]))
         #expect(try await TaskOperationTests.listedTasks(on: tasks.graph) == [tasks.first, tasks.second, tasks.third])
     }
@@ -195,7 +185,7 @@ struct TaskListMutationTests {
         let array = String(decoding: try JSONEncoder().encode(refs), as: UTF8.self)
         let text = try KanbanArgumentsTests.jsonLiteral(of: array)
         let delete = #"deleteTasks(input: { id: \#(text) }) \#(AddUpdateTaskTests.idSelection)"#
-        let response = try await Self.run(delete, on: tasks.graph)
+        let response = try await KanbanGraphTests.runWithoutTransaction(delete, on: tasks.graph)
         #expect(response == Self.response(of: "deleteTasks", giving: [tasks.first, tasks.second]))
         #expect(try await TaskOperationTests.listedTasks(on: tasks.graph) == [tasks.third])
     }
@@ -214,7 +204,7 @@ struct TaskListMutationTests {
         let tasks = try await TaskOperationTests.threeTasks(in: try TemporaryDirectory())
         let refs = AddUpdateTaskTests.list(of: [tasks.first, tasks.second].map(AddUpdateTaskTests.sigilRef(of:)))
         let archive = #"archiveTasks(input: { ids: \#(refs) }) \#(AddUpdateTaskTests.idSelection)"#
-        let response = try await Self.run(archive, on: tasks.graph)
+        let response = try await KanbanGraphTests.runWithoutTransaction(archive, on: tasks.graph)
         let rewrites = [
             #"{"from":"archiveTasks","path":["archiveTasks"],"to":"deleteTasks"}"#,
             #"{"from":"ids","path":["archiveTasks","input","ids"],"to":"id"}"#,
