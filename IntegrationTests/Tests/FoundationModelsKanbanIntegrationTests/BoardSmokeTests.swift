@@ -24,7 +24,7 @@ struct BoardSmokeTests {
     @Test("{ board { name } } gives the name of the repo directory")
     func boardNameIsTheRepoDirectoryName() async throws {
         let response = try await TemporaryGitRepo.withRepo(named: Self.repoName) { root in
-            let graph = try await KanbanHost.shared.session(workingDirectory: root, actor: Self.actorName)
+            let graph = try await IntegrationHost.session(workingDirectory: root, actor: Self.actorName)
             let response = try await graph.execute(query: Self.nameQuery, variables: [:], operationName: nil)
             await graph.close()
             return response

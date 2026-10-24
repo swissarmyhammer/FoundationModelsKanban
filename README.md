@@ -345,10 +345,13 @@ A package boundary separates the two test suites:
   network.
 - `swift test --package-path IntegrationTests` runs the integration suite in
   the nested [`IntegrationTests`](IntegrationTests) package. These tests use
-  real external systems, for example a real git repo. The model test uses
-  Qwen 3.8 (`mlx-community/Qwen3.8-27B-mxfp4`), which MLX runs. It needs a
-  Mac with a Metal device, and it downloads the model (about 14 GB) into the
-  Hugging Face cache when the cache does not have it.
+  real external systems, for example a real git repo. The model tests use
+  Qwen 3.8 (`mlx-community/Qwen3.8-27B-mxfp4`), which MLX runs: the `kanban`
+  tool test, and the test of each example of the filter agent prompt with
+  `translateFilter`. They need a Mac with a Metal device, and they download
+  the model (about 14 GB) into the Hugging Face cache when the cache does not
+  have it. Add `--attachments-path <folder>` to keep the translation and the
+  attempts of each filter example in that folder.
 
 The package structure selects the suite. No environment variable changes it.
 The root `Package.swift` declares one test target, the unit suite, so a root

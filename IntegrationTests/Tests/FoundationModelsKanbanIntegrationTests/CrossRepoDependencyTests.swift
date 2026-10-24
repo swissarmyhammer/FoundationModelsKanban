@@ -73,8 +73,8 @@ struct CrossRepoDependencyTests {
     @Test("A task that depends on a task of the repo beside it becomes ready when that task is done")
     func dependencyOnRepoBesideIt() async throws {
         let readiness = try await TemporaryGitRepo.withRepos(named: [Self.appName, Self.libName]) { roots in
-            let app = try await KanbanHost.shared.session(workingDirectory: roots[0], actor: Self.actorName)
-            let lib = try await KanbanHost.shared.session(workingDirectory: roots[1], actor: Self.actorName)
+            let app = try await IntegrationHost.session(workingDirectory: roots[0], actor: Self.actorName)
+            let lib = try await IntegrationHost.session(workingDirectory: roots[1], actor: Self.actorName)
             let target = try await Self.addTask(with: "", on: lib)
             let task = try await Self.addTask(with: #", dependsOn: ["\#(target)"]"#, on: app)
             let before = try await Self.isReady(task, on: app)

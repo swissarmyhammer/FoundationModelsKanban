@@ -1,8 +1,6 @@
 import Foundation
 import FoundationModels
-import FoundationModelsExtras
 import FoundationModelsKanban
-import Metal
 import Testing
 
 /// Tests that Qwen 3.8 sends the values of the variables when it calls the `kanban` tool with a GraphQL document that
@@ -14,20 +12,11 @@ import Testing
 /// `SystemLanguageModel`, guided generation sent `"variables": {}` in 3 of 3 runs, thus the user chose Qwen 3.8 for
 /// this test.
 ///
-/// The model is `mlx-community/Qwen3.8-27B-mxfp4`, the standard model of the sibling packages. `PooledModel` of
-/// FoundationModelsExtras gives it to a `LanguageModelSession` as a FoundationModels `LanguageModel`. The first
-/// generation call loads it with `MLXModelLoader` from the Hugging Face cache, and downloads it (about 14 GB) when the
-/// cache does not hold it. The test uses a real model, so it is in this package and not in the unit target of the root
-/// package.
-///
-/// As in the sibling packages, the test does not skip: a machine with no Metal device fails it. A skip gives a green
-/// run that measured nothing.
+/// The model is ``IntegrationHost/model``, which gives Qwen 3.8 to a `LanguageModelSession`. The test uses a real
+/// model, so it is in this package and not in the unit target of the root package. It does not skip: a machine with no
+/// Metal device fails it (``IntegrationHost/requireMetalDevice()``).
 @Suite("Qwen 3.8: the kanban tool gets the values of the variables")
 struct ModelVariablesTests {
-    /// The real model: Qwen 3.8 27B in the `mxfp4` quantization, the same reference as the Qwen 3.8 tests of
-    /// FoundationModelsRouter and FoundationModelsMultitool.
-    private static let model: ModelRef = "mlx-community/Qwen3.8-27B-mxfp4"
-
     /// The most tokens of one model answer. Qwen 3.8 writes its reasoning before the tool call, and the reasoning
     /// counts in this limit.
     private static let maximumResponseTokens = 4096
@@ -99,11 +88,11 @@ struct ModelVariablesTests {
 
     @Test("Qwen 3.8 sends variables that hold the value, and the task is added")
     func modelSendsTheValuesOfTheVariables() async throws {
-        try #require(MTLCreateSystemDefaultDevice() != nil, "This machine has no Metal device, thus MLX cannot run.")
+        try IntegrationHost.requireMetalDevice()
         let turn = try await TemporaryGitRepo.withRepo(named: Self.repoName) { root in
-            let graph = try await KanbanHost.shared.session(workingDirectory: root, actor: Self.actorName)
+            let graph = try await IntegrationHost.session(workingDirectory: root, actor: Self.actorName)
             let tool = KanbanTool(graph: graph)
-            let session = LanguageModelSession(model: PooledModel(ref: Self.model, pool: ModelPool()), tools: [tool])
+            let session = LanguageModelSession(model: IntegrationHost.model, tools: [tool])
             let options = GenerationOptions(samplingMode: .greedy, maximumResponseTokens: Self.maximumResponseTokens)
             let response = try await session.respond(to: Self.prompt, options: options)
             let board = try await graph.execute(query: Self.nextTaskQuery, variables: [:], operationName: nil)
