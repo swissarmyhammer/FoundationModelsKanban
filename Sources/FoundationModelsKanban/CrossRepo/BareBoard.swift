@@ -31,7 +31,9 @@ enum BareBoard {
             if BoardWatcher.existingBoardDirectory(ofBoardAt: candidate) != nil {
                 return candidate
             }
-            let parent = candidate.deletingLastPathComponent()
+            // The parent of `file:///` is `file:///../` for some URLs. The standardized form of that parent is `/`,
+            // thus the search stops at the root of the file system.
+            let parent = candidate.deletingLastPathComponent().standardizedFileURL
             guard parent.path != candidate.path else {
                 return nil
             }
