@@ -23,10 +23,26 @@ comments:
     - evidence: `swift build --build-tests` has no warning except the accepted mlx Metal and SwiftPM "missing creator" warnings; `swift test`: 1847 tests in 158 suites passed, 0 failed. SDL golden recorded with GRAPHQL_GOLDEN_RECORD=1. 20 files: new Sources/FoundationModelsKanban/Filter/FilterAgent.swift, Sources/FoundationModelsKanban/GraphQL/TranslateFilterField.swift, Sources/FoundationModelsKanban/GraphQL/SchemaDescription+FilterAgent.swift, Tests/FoundationModelsKanbanTests/Filter/SpyLanguageModel.swift, Tests/FoundationModelsKanbanTests/Filter/TranslateFilterTests.swift; changed Errors.swift, Schema.swift, SchemaDescription.swift, ChangeCursor.swift, BoardEngine.swift, KanbanGraph.swift, KanbanHost.swift, Tests/Fixtures/kanban.graphql, KanbanErrorTests.swift, ColumnActorTests.swift, KanbanGraphTests.swift, README.md, divergence.md (§17 "The engine part"), and the card files.
     - next: /review
   timestamp: 2026-10-24T03:53:55.631167+00:00
+- actor: claude-code
+  id: 01m5p0xc79wz151928jebr00dw
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 8e6efd4). 0 findings, 0 confirmed, 1 refuted, 21 attempts, 0 failed. The engine reviewed 15 files. It did not review 5 files: 2 files in .kanban/ (ignore rule), and README.md, Tests/Fixtures/kanban.graphql and divergence.md (no validator matches these files).
+    - next: The task is in done. Card ^6rxda32 (the translator loop) can start.
+  timestamp: 2026-10-24T03:57:44.553862+00:00
+- actor: claude-code
+  id: 01m5p0y0nzs3we5asvnqw52mmr
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 18 files, filterModel through KanbanHost.configure, translateFilter query, FilterTranslator seam
+    - test: green — swift test, 1847 tests in 158 suites
+    - commit: 8e6efd4
+    - review: clean — 0 findings (1 refuted)
+  timestamp: 2026-10-24T03:58:05.503821+00:00
 depends_on:
 - 01M5MQSBS3E7J746F17Z794J91
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffbb80
 title: 'Filter agent: add filterModel to the engine and the translateFilter query'
 ---
 ## What
