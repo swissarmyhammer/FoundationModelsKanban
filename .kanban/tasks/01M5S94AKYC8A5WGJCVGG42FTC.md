@@ -79,8 +79,24 @@ comments:
     - evidence: `swift test` — 1896 tests in 164 suites passed, 0 failures. The only warning is the allowed SwiftPM "missing creator" warning. 4 files: Tests/FoundationModelsKanbanTests/Mutations/MoveColumnTests.swift, TaskOperationTests.swift, ColumnActorTests.swift, RejectTaskTests.swift. The finding is `- [x]`. No commit.
     - next: /review
   timestamp: 2026-10-25T10:52:54.647236+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5sb6sxkp3zm0d8jjjrdhm7m
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (99d9738): 0 findings, 0 confirmed, 0 refuted; 7 validator pairs attempted, 0 failed. The one earlier finding is checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-25T10:55:22.547229+00:00
+- actor: claude-code
+  id: 01m5sb7574m0hz139mf5e2k5nm
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — MoveColumnTests.swift, TaskOperationTests.swift, ColumnActorTests.swift, RejectTaskTests.swift (shared helpers, no copies)
+    - test: green — swift test, 1896 passed in 164 suites, 0 failed, 0 skipped
+    - commit: 99d9738
+    - review: clean — 0 findings; MoveColumnTests.swift:111 is checked
+  timestamp: 2026-10-25T10:55:34.116348+00:00
+position_column: done
+position_ordinal: ffc480
 title: Add moveColumn to put a column between two neighbours in one write
 ---
 ## Request
