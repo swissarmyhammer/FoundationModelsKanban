@@ -217,14 +217,14 @@ struct TaskOperationTests {
         taskField(MutationName.moveTask, of: task, with: moveInput(to: doneSlug))
     }
 
-    /// Makes a `before` or an `after` part of a `moveTask` input.
+    /// Makes a `before` or an `after` part of a `moveTask` or a `moveColumn` input.
     ///
     /// - Parameters:
     ///   - side: `before` or `after`.
-    ///   - task: The neighbor task ref as the input writes it.
+    ///   - reference: The neighbor ref as the input writes it: a task ref or a column ref.
     /// - Returns: The `input` field.
-    private static func neighbor(_ side: String, naming task: String) -> String {
-        #"\#(side): "\#(task)""#
+    static func neighbor(_ side: String, naming reference: String) -> String {
+        #"\#(side): "\#(reference)""#
     }
 
     /// Makes a `before` or an `after` part of a `moveTask` input that names a task by `^` and the short id.

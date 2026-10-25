@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import ULID
 
 @testable import FoundationModelsKanban
 
@@ -71,9 +72,7 @@ struct MoveColumnTests {
     /// - Parameter columns: The slug and the order of each column.
     /// - Returns: The mutation document.
     private static func setup(adding columns: [(String, Int)]) -> String {
-        let fields = columns.map { slug, order in
-            #"\#(slug): addColumn(input: { name: "\#(slug)", order: \#(order) }) { id }"#
-        }
+        let fields = columns.map { slug, order in ColumnActorTests.addColumnField(named: slug, order: order) }
         return AddUpdateTaskTests.mutation(of: fields.joined(separator: " "))
     }
 
@@ -102,16 +101,6 @@ struct MoveColumnTests {
         CommentTests.nodeField(MutationName.moveColumn, naming: slug, with: place, selecting: "{ id order }")
     }
 
-    /// Makes a `before` or an `after` place field.
-    ///
-    /// - Parameters:
-    ///   - side: `before` or `after`.
-    ///   - slug: The neighbor column as the input writes it.
-    /// - Returns: The `input` field.
-    private static func neighbor(_ side: String, _ slug: String) -> String {
-        #"\#(side): "\#(slug)""#
-    }
-
     /// Gives the JSON object of a column with the selection `{ id order }`.
     ///
     /// - Parameters:
@@ -138,7 +127,7 @@ struct MoveColumnTests {
     /// - Returns: The response JSON text.
     private static func columnsResponse(_ columns: [(String, Int)]) -> String {
         let objects = columns.map { slug, order in columnJSON(slug, order: order) }
-        return #"{"data":{"board":{"columns":[\#(objects.joined(separator: ","))]}}}"#
+        return TaskOperationTests.dataResponse(of: #""board":{"columns":[\#(objects.joined(separator: ","))]}"#)
     }
 
     /// Runs ``columnsQuery`` on an engine.
@@ -156,7 +145,7 @@ struct MoveColumnTests {
         let directory = try TemporaryDirectory()
         let graph = try await Self.board(in: directory)
         let response = try await KanbanGraphTests.runWithoutTransaction(
-            Self.move(Self.done, placing: Self.neighbor("before", Self.review)),
+            Self.move(Self.done, placing: TaskOperationTests.neighbor("before", naming: Self.review)),
             on: graph
         )
         #expect(response == Self.movedResponse(Self.done, order: Self.doneOrder))
@@ -172,7 +161,7 @@ struct MoveColumnTests {
         let directory = try TemporaryDirectory()
         let graph = try await Self.board(in: directory)
         let response = try await KanbanGraphTests.runWithoutTransaction(
-            Self.move(Self.doing, placing: Self.neighbor("after", Self.review)),
+            Self.move(Self.doing, placing: TaskOperationTests.neighbor("after", naming: Self.review)),
             on: graph
         )
         #expect(response == Self.movedResponse(Self.doing, order: Self.reviewDoneGapOrder))
@@ -188,7 +177,7 @@ struct MoveColumnTests {
         let directory = try TemporaryDirectory()
         let graph = try await Self.board(in: directory)
         let response = try await KanbanGraphTests.runWithoutTransaction(
-            Self.move(Self.todo, placing: Self.neighbor("after", Self.done)),
+            Self.move(Self.todo, placing: TaskOperationTests.neighbor("after", naming: Self.done)),
             on: graph
         )
         #expect(response == Self.movedResponse(Self.todo, order: Self.afterDoneOrder))
@@ -204,7 +193,7 @@ struct MoveColumnTests {
         let directory = try TemporaryDirectory()
         let graph = try await Self.board(in: directory)
         let response = try await KanbanGraphTests.runWithoutTransaction(
-            Self.move(Self.done, placing: Self.neighbor("before", Self.todo)),
+            Self.move(Self.done, placing: TaskOperationTests.neighbor("before", naming: Self.todo)),
             on: graph
         )
         #expect(response == Self.movedResponse(Self.done, order: Self.beforeTodoOrder))
@@ -219,7 +208,8 @@ struct MoveColumnTests {
     func moveBetweenBothNeighbors() async throws {
         let directory = try TemporaryDirectory()
         let graph = try await Self.board(in: directory)
-        let place = Self.neighbor("after", Self.doing) + " " + Self.neighbor("before", Self.review)
+        let place = TaskOperationTests.neighbor("after", naming: Self.doing) + " "
+            + TaskOperationTests.neighbor("before", naming: Self.review)
         let response = try await KanbanGraphTests.runWithoutTransaction(
             Self.move(Self.done, placing: place),
             on: graph
@@ -239,7 +229,7 @@ struct MoveColumnTests {
         let directory = try TemporaryDirectory()
         let graph = try await Self.board(adding: Self.tiedColumns, in: directory)
         let response = try await KanbanGraphTests.runWithoutTransaction(
-            Self.move(Self.done, placing: Self.neighbor("after", Self.doing)),
+            Self.move(Self.done, placing: TaskOperationTests.neighbor("after", naming: Self.doing)),
             on: graph
         )
         #expect(response == Self.movedResponse(Self.done, order: Self.doneOrder))
@@ -255,7 +245,7 @@ struct MoveColumnTests {
         let directory = try TemporaryDirectory()
         let graph = try await Self.board(adding: Self.tiedColumns, in: directory)
         let response = try await KanbanGraphTests.runWithoutTransaction(
-            Self.move(Self.review, placing: Self.neighbor("before", Self.doing)),
+            Self.move(Self.review, placing: TaskOperationTests.neighbor("before", naming: Self.doing)),
             on: graph
         )
         #expect(response == Self.movedResponse(Self.review, order: Self.todoDoingGapOrder))
@@ -273,12 +263,16 @@ struct MoveColumnTests {
         let directory = try TemporaryDirectory()
         let graph = try await Self.board(adding: Self.tiedColumns, in: directory)
         let before = try await Self.columns(on: graph)
-        let move = AddUpdateTaskTests.mutation(of: Self.move(Self.todo, placing: Self.neighbor("after", Self.review)))
+        let place = TaskOperationTests.neighbor("after", naming: Self.review)
+        let move = AddUpdateTaskTests.mutation(of: Self.move(Self.todo, placing: place))
         let call = try await ResponseTransactionTests.run(move, on: graph, in: directory)
         let txn = try ResponseTransactionTests.transaction(of: call.response)
         #expect(call.written == [txn], "\(call.response)")
         #expect(try await Self.columns(on: graph) != before)
-        let undo = UndoTests.reverseField(MutationName.undoChange, with: #"txn: "\#(txn)""#)
+        let undo = UndoTests.reverseField(
+            MutationName.undoChange,
+            with: UndoTests.txnInput(try #require(ULID(ulidString: txn)))
+        )
         _ = try await CommentTests.run(undo, on: graph)
         #expect(try await Self.columns(on: graph) == before)
     }
@@ -288,8 +282,18 @@ struct MoveColumnTests {
     @Test(
         "moveColumn with one ref that names no column uses the other ref, with a NEIGHBOR_NOT_FOUND warning",
         arguments: [
-            (neighbor("after", review) + " " + neighbor("before", unknownColumn), "before", "after"),
-            (neighbor("after", unknownColumn) + " " + neighbor("before", done), "after", "before"),
+            (
+                TaskOperationTests.neighbor("after", naming: review) + " "
+                    + TaskOperationTests.neighbor("before", naming: unknownColumn),
+                "before",
+                "after"
+            ),
+            (
+                TaskOperationTests.neighbor("after", naming: unknownColumn) + " "
+                    + TaskOperationTests.neighbor("before", naming: done),
+                "after",
+                "before"
+            ),
         ]
     )
     func unknownNeighborUsesOtherRef(place: String, unknownSide: String, usedSide: String) async throws {
@@ -314,7 +318,10 @@ struct MoveColumnTests {
     @Test(
         "moveColumn to the place where the column is, or next to itself, writes nothing",
         arguments: [
-            neighbor("after", todo), neighbor("before", review), neighbor("after", doing), neighbor("before", doing),
+            TaskOperationTests.neighbor("after", naming: todo),
+            TaskOperationTests.neighbor("before", naming: review),
+            TaskOperationTests.neighbor("after", naming: doing),
+            TaskOperationTests.neighbor("before", naming: doing),
         ]
     )
     func moveToSamePlaceWritesNothing(place: String) async throws {
@@ -367,7 +374,7 @@ struct MoveColumnTests {
     )
     func onlyUnknownNeighborGivesNotFound(side: String) async throws {
         try await Self.expectFailure(
-            of: Self.move(Self.doing, placing: Self.neighbor(side, Self.unknownColumn)),
+            of: Self.move(Self.doing, placing: TaskOperationTests.neighbor(side, naming: Self.unknownColumn)),
             giving: .notFound(type: .column, reference: Self.unknownColumn),
             coded: "NOT_FOUND"
         )
@@ -375,8 +382,8 @@ struct MoveColumnTests {
 
     @Test("moveColumn with two refs that name no column gives NOT_FOUND with each ref and writes nothing")
     func twoUnknownNeighborsGiveNotFound() async throws {
-        let place = Self.neighbor("after", Self.unknownColumn) + " "
-            + Self.neighbor("before", Self.secondUnknownColumn)
+        let place = TaskOperationTests.neighbor("after", naming: Self.unknownColumn) + " "
+            + TaskOperationTests.neighbor("before", naming: Self.secondUnknownColumn)
         try await Self.expectFailure(
             of: Self.move(Self.doing, placing: place),
             giving: .nodesNotFound(type: .column, references: [Self.unknownColumn, Self.secondUnknownColumn]),
@@ -386,7 +393,8 @@ struct MoveColumnTests {
 
     @Test("moveColumn with before and after that are not neighbors gives CONFLICTING_PLACEMENT and writes nothing")
     func distantNeighborsGiveConflictingPlacement() async throws {
-        let place = Self.neighbor("after", Self.todo) + " " + Self.neighbor("before", Self.done)
+        let place = TaskOperationTests.neighbor("after", naming: Self.todo) + " "
+            + TaskOperationTests.neighbor("before", naming: Self.done)
         try await Self.expectFailure(
             of: Self.move(Self.review, placing: place),
             giving: .conflictingColumnPlacement(after: Self.todo, before: Self.done),
@@ -397,7 +405,7 @@ struct MoveColumnTests {
     @Test("moveColumn with an id that names no column gives NOT_FOUND and writes nothing")
     func unknownColumnGivesNotFound() async throws {
         try await Self.expectFailure(
-            of: Self.move(Self.unknownColumn, placing: Self.neighbor("after", Self.todo)),
+            of: Self.move(Self.unknownColumn, placing: TaskOperationTests.neighbor("after", naming: Self.todo)),
             giving: .notFound(type: .column, reference: Self.unknownColumn),
             coded: "NOT_FOUND"
         )

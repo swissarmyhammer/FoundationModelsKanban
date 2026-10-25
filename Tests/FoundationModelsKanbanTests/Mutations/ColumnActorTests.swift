@@ -117,6 +117,18 @@ struct ColumnActorTests {
         NodeURI(boardKey: KanbanGraphTests.boardKey.description, ref: ref).description
     }
 
+    /// Makes an `addColumn` field that adds a column with its slug as its name. The alias of the field is the slug, so
+    /// that one document can add more than one column.
+    ///
+    /// - Parameters:
+    ///   - slug: The slug of the column. The field gives it as the alias and as the name.
+    ///   - order: The order of the column, or `nil` for no order: then `addColumn` puts the column at the end.
+    /// - Returns: The field, with the selection `{ id }`.
+    static func addColumnField(named slug: String, order: Int? = nil) -> String {
+        let orderField = order.map { order in ", order: \(order)" } ?? ""
+        return #"\#(slug): addColumn(input: { name: "\#(slug)"\#(orderField) }) { id }"#
+    }
+
     /// Writes the fixture logs to a temporary repo, and makes a new engine for the repo.
     ///
     /// - Parameters:

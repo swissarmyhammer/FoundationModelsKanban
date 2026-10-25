@@ -45,6 +45,40 @@ comments:
 
     Evidence: full `swift test` passed 1896 tests in 164 suites. The only warning is the SwiftPM "missing creator" warning. The golden SDL is up to date. The task stays in doing, with no commit.
   timestamp: 2026-10-25T10:42:50.408840+00:00
+- actor: claude-code
+  id: 01m5sas8tppcgpe6zs9fzk84ye
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (1f8349b); 1 finding, 1 confirmed, 0 refuted — Tests/FoundationModelsKanbanTests/Mutations/MoveColumnTests.swift:111 reuse/reuse
+    - next: Do the item in the "Review Findings (2026-10-25 05:44)" section. The task stays in review.
+  timestamp: 2026-10-25T10:47:59.062307+00:00
+- actor: claude-code
+  id: 01m5sat1ydfhze4mt47spdpzpy
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — MoveColumnMutation.swift (new), Errors.swift, TaskOperationMutations.swift, SchemaDescription+Mutations.swift, FieldAliases.swift, Schema.swift, kanban.graphql, MoveColumnTests.swift (new), KanbanErrorTests.swift, AliasTableTests.swift, divergence.md §25; the safety correction (MISSING_PLACEMENT, NOT_FOUND when no ref resolves) is included
+    - test: green — swift test, 1896 passed in 164 suites, 0 failed, 0 skipped; IntegrationTests build complete
+    - commit: 1f8349b
+    - review: findings — Tests/FoundationModelsKanbanTests/Mutations/MoveColumnTests.swift:111
+  timestamp: 2026-10-25T10:48:24.781470+00:00
+- actor: claude-code
+  id: 01m5sb291674jv7qwc8vzfwaf2
+  text: |-
+    Review finding fixed (reuse/reuse, MoveColumnTests.swift neighbor helper). The copy is gone. Each test helper now has one shared source.
+    - `TaskOperationTests.neighbor(_:naming:)` is now internal (it was private), like `doneMove(of:)`. Its doc tells that it makes a place field of a `moveTask` or a `moveColumn` input. MoveColumnTests calls it, and its private `neighbor(_:_:)` copy is deleted.
+    - The same cause in other places of MoveColumnTests.swift, also removed:
+      - `setup(adding:)` wrote the aliased `addColumn` field by hand, the same text as `RejectTaskTests.columnsSetup`. The new `ColumnActorTests.addColumnField(named:order:)` makes this field. MoveColumnTests (with an order) and RejectTaskTests (no order) both call it.
+      - `columnsResponse` wrote the `{"data":{...}}` wrapper by hand. It now calls `TaskOperationTests.dataResponse(of:)`.
+      - `moveIsOneTransaction` wrote `txn: "..."` by hand. It now calls `UndoTests.txnInput(_:)` (with `ULID(ulidString:)`, so the file imports ULID).
+    - Not changed: the `{data, extensions.warnings}` response in `unknownNeighborUsesOtherRef`. No shared helper makes that shape.
+  timestamp: 2026-10-25T10:52:54.182210+00:00
+- actor: claude-code
+  id: 01m5sb29fqdnxdhadcbf9784sh
+  text: |-
+    ### implement — changed
+    - evidence: `swift test` — 1896 tests in 164 suites passed, 0 failures. The only warning is the allowed SwiftPM "missing creator" warning. 4 files: Tests/FoundationModelsKanbanTests/Mutations/MoveColumnTests.swift, TaskOperationTests.swift, ColumnActorTests.swift, RejectTaskTests.swift. The finding is `- [x]`. No commit.
+    - next: /review
+  timestamp: 2026-10-25T10:52:54.647236+00:00
 position_column: doing
 position_ordinal: '80'
 title: Add moveColumn to put a column between two neighbours in one write
@@ -94,3 +128,16 @@ moveColumn(input: { id: ID!, before: ID, after: ID }): Column
 - `updateColumn(order:)` works as before.
 - The full test suite is green, with no new warnings.
 #kanbanviewkit
+
+## Review Findings (2026-10-25 05:44)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 9 file(s) reviewed, 4 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 2 file(s) not reviewed — no validator matched:
+> - `Tests/Fixtures/kanban.graphql` — no validator matches this file
+> - `divergence.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsKanbanTests/Mutations/MoveColumnTests.swift:111` `reuse/reuse` — The new `neighbor(_:_:)` helper rebuilds the `before`/`after` place field with the same body as the existing `TaskOperationTests.neighbor(_:naming:)`. The copy would diverge if the place-field syntax changes in one file only. Move the place-field helper to a shared test location, or widen `TaskOperationTests.neighbor(_:naming:)` to internal and call it from here. If the helper stays private, keep the copy and note the reason, since it is a one-line format string.

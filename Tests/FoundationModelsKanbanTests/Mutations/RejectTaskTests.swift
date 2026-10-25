@@ -40,7 +40,7 @@ struct RejectTaskTests {
     /// - Returns: The document.
     private static func columnsSetup(movingToDone task: ULID? = nil) -> String {
         let columns = [doingSlug, reviewSlug, TaskOperationTests.doneSlug].map { slug in
-            #"\#(slug): addColumn(input: { name: "\#(slug)" }) { id }"#
+            ColumnActorTests.addColumnField(named: slug)
         }
         let move = task.map { task in [TaskOperationTests.doneMove(of: task)] } ?? []
         return AddUpdateTaskTests.mutation(of: (columns + move).joined(separator: " "))
