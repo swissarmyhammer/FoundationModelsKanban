@@ -1148,6 +1148,26 @@ input UndeleteActorInput {
   id: ID!
 }
 
+"""
+The fields of moveColumn. Give before, after, or both. Before and after together must name two columns that are next to each other, else the call gives CONFLICTING_PLACEMENT and writes nothing. No before and no after gives MISSING_PLACEMENT, and the call writes nothing.
+"""
+input MoveColumnInput {
+  """
+  The column: a full URI, the stored form column/<slug>, the slug, or a name that gives the slug.
+  """
+  id: ID!
+
+  """
+  The column to put this column before: a full URI, the stored form column/<slug>, the slug, or a name that gives the slug. When this ref names no live column, the call uses the other ref, with a warning. When no given ref names a live column, the call gives NOT_FOUND and writes nothing.
+  """
+  before: ID
+
+  """
+  The column to put this column after: a full URI, the stored form column/<slug>, the slug, or a name that gives the slug. When this ref names no live column, the call uses the other ref, with a warning. When no given ref names a live column, the call gives NOT_FOUND and writes nothing.
+  """
+  after: ID
+}
+
 """The fields of addTask."""
 input AddTaskInput {
   """The title of the task."""
@@ -1935,6 +1955,16 @@ type Mutation {
     """
     input: UndeleteActorInput!
   ): Actor
+
+  """
+  Moves a column to a place in the board order, in one transaction, so one undoChange reverses it. When an integer is between the orders of the new neighbors, only the order of the moved column changes. Else the call changes the orders of as few columns as possible, and each other column keeps its place in the board order. After the move, no two live columns have the same order. The terminal column is the column with the highest order, and a task in it is done. The terminal column changes only when the call puts a column after the terminal column, or when the call moves the terminal column. A place where the column is now, or a ref to the column itself, writes nothing.
+  """
+  moveColumn(
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
+    input: MoveColumnInput!
+  ): Column
 
   """
   Makes a task. The task goes to the end of its column, unless a priority moves it to the top. An ordinal gives the place when the priority makes no move. A priority that moves the task wins over the ordinal.

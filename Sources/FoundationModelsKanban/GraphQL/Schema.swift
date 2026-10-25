@@ -1377,6 +1377,7 @@ struct PublicSchema: API {
             let builder = SchemaBuilder.makeKanbanBuilder()
                 .addBoardMutations()
                 .addColumnActorMutations()
+                .addMoveColumnMutation()
                 .addTaskMutations()
                 .addTaskOperationMutations()
                 .addTaskTransferMutations()

@@ -40,8 +40,16 @@ extension SchemaDescription {
     /// - Parameter type: The node type.
     /// - Returns: The description.
     private static func slugReferenceText(of type: PatchNodeType) -> String {
-        let name = noun(of: type)
-        return "The \(name): a full URI, the stored form \(name)/<slug>, the slug, or a name that gives the slug."
+        "The \(noun(of: type)): \(slugForms(of: type))."
+    }
+
+    /// Gives the forms of a ref to a column or an actor that the board has (``RefResolver``).
+    ///
+    /// - Parameter type: The node type.
+    /// - Returns: The forms, for example "a full URI, the stored form column/<slug>, the slug, or a name that gives
+    ///   the slug".
+    private static func slugForms(of type: PatchNodeType) -> String {
+        "a full URI, the stored form \(noun(of: type))/<slug>, the slug, or a name that gives the slug"
     }
 
     /// The forms of a list of refs to actors (``RefResolver``), for the `assignees` field of a task input.
@@ -93,6 +101,17 @@ extension SchemaDescription {
     static let updateColumn = """
         Changes the name, the order, the body, or the trigger of a column. A trigger or next goes into the frontmatter \
         of the body, and the other lines of the body do not change.
+        """
+
+    /// The `Mutation.moveColumn` field (divergence.md §25).
+    static let moveColumn = """
+        Moves a column to a place in the board order, in one transaction, so one undoChange reverses it. When an \
+        integer is between the orders of the new neighbors, only the order of the moved column changes. Else the call \
+        changes the orders of as few columns as possible, and each other column keeps its place in the board order. \
+        After the move, no two live columns have the same order. The terminal column is the column with the highest \
+        order, and a task in it is done. The terminal column changes only when the call puts a column after the \
+        terminal column, or when the call moves the terminal column. A place where the column is now, or a ref to the \
+        column itself, writes nothing.
         """
 
     /// The `Mutation.deleteColumn` field.
@@ -323,6 +342,33 @@ extension SchemaDescription {
 
     /// The `order` field of `UpdateColumnInput`.
     static let changedColumnOrder = "The new sort key of the column."
+
+    /// The `MoveColumnInput` type (divergence.md §25).
+    static let moveColumnInput = """
+        The fields of moveColumn. Give before, after, or both. Before and after together must name two columns that \
+        are next to each other, else the call gives CONFLICTING_PLACEMENT and writes nothing. No before and no after \
+        gives MISSING_PLACEMENT, and the call writes nothing.
+        """
+
+    /// The rule of a `before` or `after` ref of `MoveColumnInput` that names no live column (divergence.md P1, §25).
+    static let missingColumnNeighbor = """
+        When this ref names no live column, the call uses the other ref, with a warning. When no given ref names a \
+        live column, the call gives NOT_FOUND and writes nothing.
+        """
+
+    /// Gives the description of the `before` or the `after` field of `MoveColumnInput` (divergence.md §25).
+    ///
+    /// - Parameter side: The place field.
+    /// - Returns: The description, for example "The column to put this column before: …".
+    private static func columnNeighborText(on side: NeighborSide) -> String {
+        "The column to put this column \(side.rawValue): \(slugForms(of: .column)). \(missingColumnNeighbor)"
+    }
+
+    /// The `before` field of `MoveColumnInput` (divergence.md §25).
+    static let columnBefore = columnNeighborText(on: .before)
+
+    /// The `after` field of `MoveColumnInput` (divergence.md §25).
+    static let columnAfter = columnNeighborText(on: .after)
 
     /// The `trigger` field of `AddColumnInput` and `UpdateColumnInput` (divergence.md §22).
     static let columnTrigger = """

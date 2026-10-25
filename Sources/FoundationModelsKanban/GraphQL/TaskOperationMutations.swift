@@ -119,8 +119,9 @@ private enum UndeleteTaskMutation: SharedInputMutation {
     static let name = MutationName.undeleteTask
 }
 
-/// The side of a neighbor task where a moved task goes. The raw value is the name of the place field of the input.
-private enum NeighborSide: String {
+/// The side of a neighbor where a moved task or a moved column goes. The raw value is the name of the place field of
+/// the input.
+enum NeighborSide: String {
     /// Before the neighbor.
     case before
 
@@ -132,8 +133,8 @@ private enum NeighborSide: String {
 /// (plan.md §4.2, §6, "moveTask"). A value holds one place, so an input with more than one place field cannot make a
 /// value.
 enum Placement: Decodable, Sendable {
-    /// The code of the warning for a `before` or `after` ref that names no task, in `extensions.warnings`
-    /// (divergence.md P1).
+    /// The code of the warning for a `before` or `after` ref that names no task, or no column for `moveColumn`, in
+    /// `extensions.warnings` (divergence.md P1, §25).
     static let neighborNotFoundWarningCode = "NEIGHBOR_NOT_FOUND"
 
     /// The keys of the place fields of the input.
@@ -162,16 +163,27 @@ enum Placement: Decodable, Sendable {
     /// also puts the task at the end, with a warning (divergence.md P1).
     case after(NodeID)
 
-    /// Gives the warning for a `before` or `after` ref that names no task: the call put the task at the end of the
-    /// column (divergence.md P1).
+    /// What the call did with a task when its `before` or `after` ref names no task (divergence.md P1).
+    static let taskAtEndOutcome = "The call put the task at the end of the column. Send the id of a task in the "
+        + "column to put the task next to that task."
+
+    /// Gives the warning for a `before` or `after` ref that names no node of the type of the moved node. A task goes
+    /// to the end of its column (divergence.md P1). A column goes to the place of its other ref (divergence.md §25).
     ///
     /// - Parameters:
     ///   - neighbor: The neighbor ref as the input writes it. The warning quotes it.
     ///   - side: The place field of the ref.
+    ///   - type: The node type of the moved node and of its neighbors: ``PatchNodeType/task`` or
+    ///     ``PatchNodeType/column``.
+    ///   - outcome: The text that tells what the call did, for example ``taskAtEndOutcome``.
     /// - Returns: The warning, for example "The before ref `zzzzzzz` names no task. …".
-    fileprivate static func neighborNotFoundWarning(for neighbor: NodeID, on side: NeighborSide) -> ResponseWarning {
-        let message = "The \(side.rawValue) ref `\(neighbor.text)` names no task. The call put the task at the end of "
-            + "the column. Send the id of a task in the column to put the task next to that task."
+    static func neighborNotFoundWarning(
+        for neighbor: NodeID,
+        on side: NeighborSide,
+        moving type: PatchNodeType,
+        outcome: String
+    ) -> ResponseWarning {
+        let message = "The \(side.rawValue) ref `\(neighbor.text)` names no \(type.pathSegment). \(outcome)"
         return ResponseWarning(message: message, code: neighborNotFoundWarningCode)
     }
 
@@ -606,7 +618,9 @@ extension Graph {
             let ref = try resolver.nodeRef(for: neighbor, ofType: .task)
             return ordinal(beside: ref, on: side, inColumn: column, moving: task)
         } catch .notFound {
-            ResolverWarnings.current?.add(Placement.neighborNotFoundWarning(for: neighbor, on: side))
+            let outcome = Placement.taskAtEndOutcome
+            let warning = Placement.neighborNotFoundWarning(for: neighbor, on: side, moving: .task, outcome: outcome)
+            ResolverWarnings.current?.add(warning)
             return nextOrdinal(inColumn: column, excluding: task)
         }
     }

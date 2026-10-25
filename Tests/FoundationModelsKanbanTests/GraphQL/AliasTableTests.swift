@@ -79,8 +79,10 @@ struct AliasTableTests {
             mapping: ["state", "status", "lane", "col", "columnId", "column_id", "to", "toColumn"],
             to: "column"
         ),
-        AliasRow.rows(on: ["updateColumn", "deleteColumn", "undeleteColumn"],
+        AliasRow.rows(on: ["updateColumn", "deleteColumn", "undeleteColumn", "moveColumn"],
                       mapping: ["column", "columnId", "column_id", "ref", "uri", "key"], to: "id"),
+        AliasRow.rows(on: ["moveColumn"], mapping: ["before_id", "beforeId", "beforeColumn"], to: "before"),
+        AliasRow.rows(on: ["moveColumn"], mapping: ["after_id", "afterId", "afterColumn"], to: "after"),
         AliasRow.rows(on: ["updateActor", "deleteActor", "undeleteActor"],
                       mapping: ["actor", "actorId", "actor_id", "ref", "uri", "key"], to: "id"),
         AliasRow.rows(on: ["updateTag", "deleteTag", "undeleteTag"],

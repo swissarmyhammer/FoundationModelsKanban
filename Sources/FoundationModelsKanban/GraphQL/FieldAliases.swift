@@ -129,6 +129,12 @@ enum KanbanFieldAliases {
     /// `board` field, and the aliases of the comment.
     private static let taskReject = taskPlacementWithoutBoard(merging: ["comment": rejectComment])
 
+    /// The aliases of the fields of `MoveColumnInput` (divergence.md §25): the aliases of a column ref, and of the
+    /// neighbor columns.
+    private static let columnPlacement = nodeReference(ofType: "column").merging([
+        "before": ["beforeId", "beforeColumn"], "after": ["afterId", "afterColumn"],
+    ]) { reference, _ in reference }
+
     /// The aliases of the `boards` argument of `checkLinks` and `repairLinks`: the boards of the links (divergence.md
     /// M9).
     private static let linkBoards = ["board", "ids", "id", "keys", "key", "repos", "repo", "paths", "path"]
@@ -212,6 +218,7 @@ enum KanbanFieldAliases {
         "UpdateColumnInput": nodeReference(ofType: "column").merging(columnTrigger) { reference, _ in reference },
         "DeleteColumnInput": nodeReference(ofType: "column"),
         "UndeleteColumnInput": nodeReference(ofType: "column"),
+        "MoveColumnInput": columnPlacement,
         "AddActorInput": ["avatar": avatar],
         "UpdateActorInput": ["id": refAliases(ofType: "actor"), "avatar": avatar],
         "DeleteActorInput": nodeReference(ofType: "actor"),

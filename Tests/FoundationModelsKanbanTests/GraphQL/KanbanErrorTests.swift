@@ -60,6 +60,7 @@ struct KanbanErrorTests {
         (.invalidSlug(name: "---"), "INVALID_SLUG"),
         (.invalidOrdinal(ordinal: "zz!"), "INVALID_ORDINAL"),
         (.conflictingPlacement(fields: ["before", "after"]), "CONFLICTING_PLACEMENT"),
+        (.missingColumnPlacement(column: firstColumn), "MISSING_PLACEMENT"),
         (.staleWrite(task: "^aaaaaaa", givenVersion: staleVersion, currentVersion: currentVersion), "STALE_WRITE"),
         (.emptyComment, "EMPTY_COMMENT"),
         (.noPreviousColumn(task: "^aaaaaaa", column: firstColumn), "NO_PREVIOUS_COLUMN"),
@@ -92,9 +93,18 @@ struct KanbanErrorTests {
         (.virtualTagName(tag: .done), "INVALID_TAG_NAME"),
     ]
 
+    /// The error of a `moveColumn` call whose `after` and `before` columns are not neighbors (divergence.md §25). It
+    /// has the code of the task placement error in ``codes``, so the test of distinct codes does not read it.
+    static let columnPlacementCodes: [(KanbanError, String)] = [
+        (.conflictingColumnPlacement(after: firstColumn, before: lastColumn), "CONFLICTING_PLACEMENT"),
+    ]
+
+    /// The slug of the terminal column in the `CONFLICTING_PLACEMENT` test of `moveColumn`.
+    static let lastColumn = "done"
+
     // MARK: - Codes
 
-    @Test("Each case gives its exact code", arguments: codes + reservedSlugCodes)
+    @Test("Each case gives its exact code", arguments: codes + reservedSlugCodes + columnPlacementCodes)
     func caseGivesItsCode(error: KanbanError, expectedCode: String) {
         #expect(error.code == expectedCode)
     }
@@ -127,7 +137,9 @@ struct KanbanErrorTests {
 
     @Test(
         "An error with no filter error gives no extension field",
-        arguments: (codes + reservedSlugCodes).map(\.0).filter { error in !spanCodes.contains(error.code) }
+        arguments: (codes + reservedSlugCodes + columnPlacementCodes).map(\.0).filter { error in
+            !spanCodes.contains(error.code)
+        }
     )
     func errorWithNoSpanGivesNoExtensionField(error: KanbanError) {
         #expect(error.extensionFields == [:])
@@ -401,6 +413,26 @@ struct KanbanErrorTests {
             KanbanError.noPreviousColumn(task: "^aaaaaaa", column: Self.firstColumn).message
                 == "The task \"^aaaaaaa\" is in the first column \"todo\", so no column comes before it, and the call "
                 + "wrote nothing. Give the column of the task, and then send the call again."
+        )
+    }
+
+    @Test("CONFLICTING_PLACEMENT of moveColumn names the two columns, and asks for one ref or for two neighbors")
+    func conflictingColumnPlacementMessage() {
+        #expect(
+            KanbanError.conflictingColumnPlacement(after: Self.firstColumn, before: Self.lastColumn).message
+                == "The after column \"todo\" and the before column \"done\" are not next to each other, so the place "
+                + "of the column is not clear, and the call wrote nothing. Give only one of before and after, or give "
+                + "two columns that are next to each other, and then send the call again."
+        )
+    }
+
+    @Test("MISSING_PLACEMENT names the column, and asks for after or before")
+    func missingColumnPlacementMessage() {
+        #expect(
+            KanbanError.missingColumnPlacement(column: Self.firstColumn).message
+                == "The call gives no place for the column \"todo\", so the call wrote nothing. Give after with the "
+                + "column to put this column after, or before with the column to put this column before, and then "
+                + "send the call again."
         )
     }
 

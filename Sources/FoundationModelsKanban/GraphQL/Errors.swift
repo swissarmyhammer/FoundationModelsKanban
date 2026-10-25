@@ -102,6 +102,15 @@ enum KanbanError: CodedError, Hashable {
     /// these place fields, in the order of the input type.
     case conflictingPlacement(fields: [String])
 
+    /// `CONFLICTING_PLACEMENT`: the `after` column and the `before` column of a `moveColumn` call are not neighbors in
+    /// the board order, so the place of the column is not clear, and the call wrote nothing (divergence.md §25). The
+    /// two columns are the refs as the call wrote them.
+    case conflictingColumnPlacement(after: String, before: String)
+
+    /// `MISSING_PLACEMENT`: a `moveColumn` call gives no `before` and no `after`, so the call does not know the place
+    /// of the column, and it wrote nothing (divergence.md §25). The column is the column ref as the call wrote it.
+    case missingColumnPlacement(column: String)
+
     /// `STALE_WRITE`: the `ifVersion` of an `updateTask` call is not the current version of the task, so a different
     /// change came first, and the call wrote nothing (divergence.md §18). The task is the task ref as the call wrote
     /// it, the given version is the `ifVersion` as the call wrote it, and the current version is the ULID of the last
@@ -166,7 +175,8 @@ extension KanbanError {
         case .invalidTagName, .reservedTagName, .virtualTagName: "INVALID_TAG_NAME"
         case .invalidSlug, .reservedSlug: "INVALID_SLUG"
         case .invalidOrdinal: "INVALID_ORDINAL"
-        case .conflictingPlacement: "CONFLICTING_PLACEMENT"
+        case .conflictingPlacement, .conflictingColumnPlacement: "CONFLICTING_PLACEMENT"
+        case .missingColumnPlacement: "MISSING_PLACEMENT"
         case .staleWrite: "STALE_WRITE"
         case .emptyComment: "EMPTY_COMMENT"
         case .noPreviousColumn: "NO_PREVIOUS_COLUMN"
@@ -250,6 +260,14 @@ extension KanbanError {
             "The input gives more than one place field: \(fields.joined(separator: Self.listSeparator)). "
                 + "Give only one of ordinal, before, and after, or give none of them to put the task at the end of "
                 + "the column."
+        case .conflictingColumnPlacement(let after, let before):
+            "The after column \"\(after)\" and the before column \"\(before)\" are not next to each other, so the "
+                + "place of the column is not clear, and the call wrote nothing. Give only one of before and after, or "
+                + "give two columns that are next to each other, and then send the call again."
+        case .missingColumnPlacement(let column):
+            "The call gives no place for the column \"\(column)\", so the call wrote nothing. Give after with the "
+                + "column to put this column after, or before with the column to put this column before, and then "
+                + "send the call again."
         case .staleWrite(let task, let givenVersion, let currentVersion):
             "The task \"\(task)\" changed after the version \"\(givenVersion)\": its current version is "
                 + "\"\(currentVersion)\", so the call wrote nothing. Read the task again, and then send the call "
@@ -323,8 +341,8 @@ extension KanbanError {
         case .notFound, .nodesNotFound, .boardNotFound, .transactionBoardNotLoaded, .incompatibleBoard, .ambiguousID,
             .actorNotFound, .duplicateID, .columnNotEmpty, .dependencyCycle, .tagRenameCycle, .nothingToUndo,
             .undoConflict, .filterAgentFailed, .invalidTagName, .reservedTagName, .virtualTagName, .invalidSlug,
-            .reservedSlug, .invalidOrdinal, .conflictingPlacement, .staleWrite, .emptyComment, .noPreviousColumn,
-            .boardBusy, .unreachableBoard, .unreachableBoards:
+            .reservedSlug, .invalidOrdinal, .conflictingPlacement, .conflictingColumnPlacement, .missingColumnPlacement,
+            .staleWrite, .emptyComment, .noPreviousColumn, .boardBusy, .unreachableBoard, .unreachableBoards:
             [:]
         }
     }
