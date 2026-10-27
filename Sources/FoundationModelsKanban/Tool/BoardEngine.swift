@@ -311,6 +311,13 @@ actor BoardEngine {
         }
     }
 
+    /// Tells whether the derived fields of the board can read another board: its graph names a board of a
+    /// cross-board dependency or of an assignee. A board that names no other board and did not change has no change
+    /// in a round, so its log need not restart when no session view logged the round.
+    var readsOtherBoards: Bool {
+        !RelatedBoards.loadable.crossBoardRequests(of: session.live.graph, inBoard: key.description).isEmpty
+    }
+
     /// Records that an operation of the board put the changes that it took into the change log, or that no session
     /// view could log them and the log restarted. A read that does not hold ``gate`` then gets the session of the
     /// operation, with the cursor of the newest change of the log. The caller must hold ``gate``.

@@ -1009,23 +1009,47 @@ public actor KanbanHost {
     /// Puts the changes of some boards into the change log of each loaded board one time (plan.md §6.7, KANBAN-7). The
     /// caller holds the serial gate of each board that changed.
     ///
-    /// Each session view logs the changes of the boards that it loaded and that no view before it logged. An engine
-    /// whose changes no view logged gets a new change log, so a cursor of the old log gives `RESYNC_REQUIRED` and no
-    /// client misses those changes with no word.
+    /// Each session view logs the changes of the boards that it loaded and that no view before it logged. Other
+    /// publishes run at each wait, and a view can register during the round: the round goes to each view that is
+    /// registered when the round ends, also a view that registered after the round started.
+    ///
+    /// An engine whose changes no view logged gets a new change log, so a cursor of the old log gives
+    /// `RESYNC_REQUIRED` and no client misses those changes with no word. An engine has changes in the round only when
+    /// its board changed, or when its derived fields can read a board that changed (``BoardEngine/readsOtherBoards``).
+    /// The log of a board that did not change and that names no other board stays, so its cursors stay valid.
     ///
     /// - Parameter changed: The changes of each board that changed, by the canonical path of its repo directory.
     func publish(_ changed: [String: BoardChanges]) async {
         guard !changed.isEmpty else {
             return
         }
-        views.removeGoneObjects()
+        let changedEngines = Set(changed.values.map(\.identity))
+        var published: Set<ObjectIdentifier> = []
         var logged: Set<FolderIdentity> = []
-        for view in views.values.compactMap(\.object) {
+        while let (id, view) = nextView(notIn: published) {
+            published.insert(id)
             logged.formUnion(await view.publish(changed, skipping: logged))
         }
         for engine in loadedEngines where !logged.contains(engine.identity) {
-            await engine.restartLog()
+            let hasChanges = changedEngines.contains(engine.identity) ? true : await engine.readsOtherBoards
+            if hasChanges {
+                await engine.restartLog()
+            }
         }
+    }
+
+    /// Gives a registered session view that is still alive and that did not get the round yet.
+    ///
+    /// - Parameter published: The views that got the round.
+    /// - Returns: The view and its key in ``views``, or `nil` when each view got the round.
+    private func nextView(notIn published: Set<ObjectIdentifier>) -> (ObjectIdentifier, KanbanGraph)? {
+        views.removeGoneObjects()
+        for (id, view) in views where !published.contains(id) {
+            if let object = view.object {
+                return (id, object)
+            }
+        }
+        return nil
     }
 
     // MARK: - Close
