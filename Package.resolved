@@ -1,5 +1,5 @@
 {
-  "originHash" : "bbfb94cfbe17cbf86f363a9a935129df8fc4bbab41b1c8c20b693c67d57746c5",
+  "originHash" : "12c650f1458d95ce6239c2e5c72c4d5981a33ed196e6f3ee4a3f1cca2c928b1f",
   "pins" : [
     {
       "identity" : "eventsource",
@@ -25,7 +25,7 @@
       "location" : "git@github.com:swissarmyhammer/FoundationModelsExtras.git",
       "state" : {
         "branch" : "main",
-        "revision" : "59b1dc974bb464ae55cedb52f8108ff98a541d3e"
+        "revision" : "dbbd53e43022452daf7733afe49e5ce79f1dfcf9"
       }
     },
     {
@@ -96,8 +96,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/ml-explore/mlx-swift",
       "state" : {
-        "revision" : "19601207e9a0de51e03ee6ec0c3c5f3784275075",
-        "version" : "0.32.3"
+        "revision" : "7ede4fd6d05f63305c1c0ebf4f8c1909a637c574",
+        "version" : "0.33.0"
       }
     },
     {
@@ -106,7 +106,7 @@
       "location" : "https://github.com/swissarmyhammer/mlx-swift-lm",
       "state" : {
         "branch" : "stable",
-        "revision" : "408f907bbd17232424e6083a4c513fbfe4446e27"
+        "revision" : "021b93416d522d223dc931d26b6362a2fe9aa6c7"
       }
     },
     {

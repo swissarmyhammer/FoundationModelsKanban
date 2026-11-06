@@ -609,7 +609,8 @@ struct CommitSession: Sendable {
     ///
     /// - Parameters:
     ///   - related: The related boards of the run. The loop gives the related boards of the last run back.
-    ///   - actor: The session actor: the actor of each event of the call.
+    ///   - actor: The write actor of the call. Each run writes as the actor node of the actor in the graph of the
+    ///     board (``SessionActor/resolved(in:)``): the actor of each event of the call.
     ///   - reach: The boards that the call can read and change.
     ///   - load: Loads the related boards of some requests.
     ///   - call: Runs the call against the store of the working copy, and gives the response.
@@ -624,6 +625,7 @@ struct CommitSession: Sendable {
         _ call: @Sendable (BoardStore) async throws -> Response
     ) async throws -> (response: Response, work: WorkingCopy, relatedWork: [RelatedWork]) {
         while true {
+            let actor = actor.resolved(in: displayGraph)
             let store = BoardStore(
                 working: makeWorkingCopy(stampedBy: makeStamp(actingAs: actor)),
                 boardKey: key.description,

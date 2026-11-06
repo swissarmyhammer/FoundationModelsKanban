@@ -1014,6 +1014,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
             .addTimelineTypes()
             .addLinkCheckTypes()
             .addFilterTranslationTypes()
+            .addViewerTypes()
             .addQuery {
                 Field("board", at: KanbanResolver.board) {
                     Argument("id", at: \.id).description(SchemaDescription.boardToRead)
@@ -1044,6 +1045,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                     Argument("text", at: \.text).description(SchemaDescription.translationText)
                 }
                 .description(SchemaDescription.queryTranslateFilter)
+                Field("viewer", at: KanbanResolver.viewer).description(SchemaDescription.queryViewer)
             }
     }
 
@@ -1121,6 +1123,7 @@ extension SchemaBuilder where Resolver == KanbanResolver, Context == KanbanConte
                 // The explicit `return` turns off the result builder, so the closure gives the array as it is.
                 return Self.labelFields() + [
                     Field("avatar", at: \.avatar).description(SchemaDescription.actorAvatar),
+                    Field("aliases", at: \.aliases).description(SchemaDescription.actorAliases),
                 ]
             }
             Self.nodeType(
@@ -1331,6 +1334,9 @@ enum GraphQLTypeName {
 
     /// The name of the checklist progress type of a task.
     static let progress = "Progress"
+
+    /// The name of the type of the caller of a call: `Query.viewer` (divergence.md §26).
+    static let viewer = "Viewer"
 }
 
 /// A step that adds fields to the builder of the public schema before the build, and gives the builder back. A test

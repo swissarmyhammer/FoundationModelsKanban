@@ -83,19 +83,24 @@ struct UndoLog: Sendable {
     ///
     /// - Parameters:
     ///   - direction: `undo` or `redo`.
-    ///   - text: The `txn` of the call, in any case, or `nil` for the newest target of the session actor.
-    ///   - actor: The session actor.
+    ///   - text: The `txn` of the call, in any case, or `nil` for the newest target of the write actor.
+    ///   - actors: The refs of the write actor of the call in the board (``SessionActor/ownRefs(in:)``): a call with
+    ///     no `txn` takes only a transaction of one of these actors.
     /// - Returns: The transaction ULID.
     /// - Throws: ``KanbanError/nothingToUndo`` when the log has no such transaction, when the call names a transaction
     ///   of `collectBoards` (divergence.md M9: collect is final), when `undo` names a transaction that is already
     ///   undone, and when `redo` names a transaction that is not undone. `force` does not change this. A call with no
     ///   `txn` takes only a transaction after the newest transaction of `collectBoards`, so that it never reverses a
     ///   transaction that the collect brought from a source board.
-    func target(of direction: ReverseDirection, named text: String?, by actor: LocalRef) throws(KanbanError) -> ULID {
+    func target(
+        of direction: ReverseDirection,
+        named text: String?,
+        by actors: Set<LocalRef>
+    ) throws(KanbanError) -> ULID {
         guard let text else {
             let barrier = transactions.last(where: \.isFinal)?.txn
             let candidate = transactions.last { transaction in
-                transaction.actor == actor && !undoneState.isUndone(txn: transaction.txn)
+                transaction.actor.map(actors.contains) == true && !undoneState.isUndone(txn: transaction.txn)
                     && barrier.map { final in transaction.txn > final } ?? true
                     && isCandidate(transaction, of: direction)
             }

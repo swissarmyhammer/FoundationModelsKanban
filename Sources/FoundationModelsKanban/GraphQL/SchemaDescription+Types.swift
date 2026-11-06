@@ -179,8 +179,10 @@ extension SchemaDescription {
     /// The `tasks` field of `Column`, `Actor`, and `Tag`.
     static let nodeTasks = "The tasks of this node that match the filter, in board order."
 
-    /// The `Actor` type.
-    static let actor = "A person or an agent: an assignee of tasks, and the author of comments."
+    /// The `Actor` type. Its `id`, `name`, and `aliases` fields have the same form as the `Actor` type of
+    /// FoundationModelsExtras (`SchemaBuilder.addActorType()`), so that `viewer { actor { id name aliases } }` has one
+    /// form in each endpoint (divergence.md §26).
+    static let actor = "A person or an agent: an assignee of tasks, the author of comments, and the actor of changes."
 
     /// The `Tag` type.
     static let tag = "A label of tasks. A task gets a tag from a tag edge or from a #tag marker in its body."

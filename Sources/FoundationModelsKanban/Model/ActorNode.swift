@@ -18,6 +18,11 @@ struct ActorNode: NodeState {
     /// Q19).
     var avatar: String?
 
+    /// The ids of the person that this actor records, for example `local/wballard` and the iCloud user record id, in
+    /// sort order. A call of a client writes them (``SessionActor``). The list is empty for an actor that no client
+    /// wrote, for example the agent of the session.
+    var aliases: [String] = []
+
     /// The local ref of the actor.
     var ref: LocalRef {
         .actor(slug: slug)

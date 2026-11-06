@@ -283,7 +283,7 @@ type Column implements Node {
 }
 
 """
-A person or an agent: an assignee of tasks, and the author of comments.
+A person or an agent: an assignee of tasks, the author of comments, and the actor of changes.
 """
 type Actor implements Node {
   """The full kanban:// URI of the node."""
@@ -328,6 +328,11 @@ type Actor implements Node {
   The avatar of the actor as text, for example a URL or an emoji. Null when the actor has no avatar.
   """
   avatar: String
+
+  """
+  The ids of the person that this actor records, for example local/<user name> and the iCloud user record id, in sort order. Empty for an actor that no client of a person wrote, for example an agent.
+  """
+  aliases: [String!]!
 }
 
 """
@@ -953,6 +958,14 @@ type FilterTranslation {
   The number of statements that the filter model wrote. 0 when the text is already a filter of the board.
   """
   attempts: Int!
+}
+
+"""The caller of a call."""
+type Viewer {
+  """
+  The actor that the changes of this call reference: the person of the client, or the agent of the session when the client gives no person. Its id, name, and aliases have the same form as the Actor of other endpoints.
+  """
+  actor: Actor!
 }
 
 """
@@ -1865,6 +1878,11 @@ type Query {
     """
     text: String!
   ): FilterTranslation!
+
+  """
+  The caller of this call. Compare viewer.actor.id with the actor.id of a Change to find the changes of the caller.
+  """
+  viewer: Viewer!
 }
 
 type Mutation {

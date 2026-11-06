@@ -163,7 +163,7 @@ extension BoardStore {
     ///
     /// - Parameters:
     ///   - direction: `undo` or `redo`.
-    ///   - text: The `txn` of the input, or `nil` for the newest target of the session actor.
+    ///   - text: The `txn` of the input, or `nil` for the newest target of the write actor of the call.
     ///   - boards: The boards to search.
     /// - Returns: The transaction, and a board whose log has it.
     /// - Throws: ``KanbanError/nothingToUndo`` when no board has a target. Each other error of
@@ -186,7 +186,7 @@ extension BoardStore {
     ///
     /// - Parameters:
     ///   - direction: `undo` or `redo`.
-    ///   - text: The `txn` of the input, or `nil` for the newest target of the session actor.
+    ///   - text: The `txn` of the input, or `nil` for the newest target of the write actor of the call.
     ///   - board: The board to search.
     /// - Returns: The transaction, or `nil` when the log of the board has no target. A board with no target is not an
     ///   error: the search goes on in the next board.
@@ -196,9 +196,10 @@ extension BoardStore {
         named text: String?,
         in board: MutationTarget
     ) throws(KanbanError) -> ULID? {
-        let log = UndoLog(of: workingCopy(of: board).liveEvents)
+        let work = workingCopy(of: board)
+        let log = UndoLog(of: work.liveEvents)
         do throws(KanbanError) {
-            return try log.target(of: direction, named: text, by: sessionActor.ref)
+            return try log.target(of: direction, named: text, by: sessionActor.ownRefs(in: work.graph))
         } catch .nothingToUndo {
             return nil
         }

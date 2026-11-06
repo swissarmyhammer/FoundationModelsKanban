@@ -390,7 +390,8 @@ extension NodeFold {
                 fields: fields,
                 name: properties.removeName(),
                 color: properties.removeText(forKey: PropertyName.color),
-                avatar: properties.removeText(forKey: PropertyName.avatar)
+                avatar: properties.removeText(forKey: PropertyName.avatar),
+                aliases: properties.removeTextList(forKey: PropertyName.aliases)
             )
         case .tag(let slug):
             TagNode(
@@ -538,6 +539,9 @@ enum PropertyName {
     /// The avatar of an actor.
     static let avatar = "avatar"
 
+    /// The ids of the person that an actor records (``ActorNode/aliases``).
+    static let aliases = "aliases"
+
     /// The model of the board.
     static let model = "model"
 
@@ -616,6 +620,14 @@ extension PropertyBag {
     /// - Returns: The text, or `nil` when the property has no value or a value that is not text.
     mutating func removeText(forKey name: String) -> String? {
         removeValue(forKey: name, readingWith: \.text)
+    }
+
+    /// Removes a property, and gives its list of texts.
+    ///
+    /// - Parameter name: The name of the property.
+    /// - Returns: The texts, or the empty list when the property has no value or a value that is not a list of texts.
+    mutating func removeTextList(forKey name: String) -> [String] {
+        removeValue(forKey: name, readingWith: \.textList) ?? []
     }
 
     /// Removes a property, and gives its whole number.
@@ -716,6 +728,21 @@ extension PatchValue {
             return nil
         }
         return text
+    }
+
+    /// The texts of a JSON array of strings, or `nil` for a different value or an array with an item that is not text.
+    var textList: [String]? {
+        guard case .json(.array(let items)) = self else {
+            return nil
+        }
+        var texts: [String] = []
+        for item in items {
+            guard case .string(let text) = item else {
+                return nil
+            }
+            texts.append(text)
+        }
+        return texts
     }
 
     /// The whole number of a JSON number, or `nil` for a different value or a number with a fraction.

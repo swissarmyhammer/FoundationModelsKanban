@@ -39,7 +39,8 @@ public actor KanbanGraph: GraphQLEndpoint {
     /// `true` for a view that a test made with its own host: ``close()`` then closes the host too.
     private let ownsHost: Bool
 
-    /// The session actor: the actor of each event that a call writes.
+    /// The session actor: the actor of each event that a call with no person writes, for example a model tool call
+    /// (``writeActor(of:)``).
     private let sessionActor: SessionActor
 
     /// Finds the related boards (plan.md §6.6).
@@ -179,6 +180,19 @@ public actor KanbanGraph: GraphQLEndpoint {
         return SessionActor(ref: ref, name: actorName)
     }
 
+    /// Gives the write actor of a call: the person of the viewer, else the session actor of the view (divergence.md
+    /// §26). A model tool call and the direct caller have no viewer, so they write as the session actor.
+    ///
+    /// - Parameter viewer: The client that makes the call, or `nil`.
+    /// - Returns: The write actor, or the error of a person whose id gives no actor ref
+    ///   (``SessionActor/init(person:)``).
+    private func writeActor(of viewer: GraphQLViewer?) -> Result<SessionActor, KanbanError> {
+        guard let person = viewer?.actor else {
+            return .success(sessionActor)
+        }
+        return Result { () throws(KanbanError) in try SessionActor(person: person) }
+    }
+
     /// The file watcher of the board of the working directory while it runs, or `nil` before the board loads and
     /// after the host closes. A test reads it to prove which directory the engine watches, and that a close stopped
     /// the watcher.
@@ -279,7 +293,7 @@ public actor KanbanGraph: GraphQLEndpoint {
         viewer: GraphQLViewer?,
         postingPlansTo context: ToolContext?
     ) async throws -> String {
-        let reach = BoardReach(viewer: viewer)
+        let (reach, actor) = (BoardReach(viewer: viewer), writeActor(of: viewer))
         return try await runningOnBoard(postingPlansTo: context) { board, held in
             try await self.respond(
                 to: query,
@@ -287,7 +301,8 @@ public actor KanbanGraph: GraphQLEndpoint {
                 operationName: operationName,
                 on: board,
                 holding: held,
-                reaching: reach
+                reaching: reach,
+                actingAs: actor
             )
         }
     }
@@ -339,7 +354,7 @@ public actor KanbanGraph: GraphQLEndpoint {
         operationName: String?,
         viewer: GraphQLViewer?
     ) async throws -> AsyncThrowingStream<String, Error> {
-        let reach = BoardReach(viewer: viewer)
+        let (reach, actor) = (BoardReach(viewer: viewer), writeActor(of: viewer))
         await host.register(self)
         return try await runningOnBoard(postingPlansTo: nil) { board, held in
             try await self.startSubscription(
@@ -348,7 +363,8 @@ public actor KanbanGraph: GraphQLEndpoint {
                 operationName: operationName,
                 on: board,
                 holding: held,
-                reaching: reach
+                reaching: reach,
+                actingAs: actor
             )
         }
     }
@@ -594,6 +610,7 @@ public actor KanbanGraph: GraphQLEndpoint {
     ///   - board: The board of the working directory, or the error that stops each call.
     ///   - held: The gates that the call holds.
     ///   - reach: The boards that the call can read and change.
+    ///   - actor: The write actor of the call, or the error of a person whose id gives no actor ref.
     /// - Returns: The result of the call. Its value is the response as JSON text with sorted keys.
     /// - Throws: A ``BoardKeyError``, a ``BoardWatcherError``, or an ``EventLogError`` when a board cannot load or a
     ///   commit cannot write. ``GateShortfall`` when the call needs one more gate.
@@ -603,12 +620,13 @@ public actor KanbanGraph: GraphQLEndpoint {
         operationName: String?,
         on board: Result<BoardEngine, any Error>,
         holding held: HeldGates,
-        reaching reach: BoardReach
+        reaching reach: BoardReach,
+        actingAs actor: Result<SessionActor, KanbanError>
     ) async throws -> CallResult<String> {
         let answer: (KanbanError, [ResponseWarning]) throws -> String = { failure, warnings in
             try failure.responseJSON(warnings: warnings)
         }
-        let run = SchemaRun(board: board, held: held, reach: reach)
+        let run = SchemaRun(board: board, held: held, reach: reach, actor: actor)
         return try await runSchemaCall(run, answeringFailureWith: answer) { schema, context in
             try await schema.respond(
                 to: query,
@@ -630,6 +648,8 @@ public actor KanbanGraph: GraphQLEndpoint {
     ///   - board: The board of the working directory, or the error that stops each call.
     ///   - held: The gates that the call holds.
     ///   - reach: The boards that the subscription can read.
+    ///   - actor: The write actor of the subscription, or the error of a person whose id gives no actor ref. Each
+    ///     event of the subscription reads the store of the start, so the subscription keeps this actor.
     /// - Returns: The result of the start. Its value is the response of each event as JSON text with sorted keys. A
     ///   subscription that cannot start gives a stream with one response with the error.
     /// - Throws: A ``BoardKeyError``, a ``BoardWatcherError``, or an ``EventLogError`` when a board cannot load.
@@ -639,7 +659,8 @@ public actor KanbanGraph: GraphQLEndpoint {
         operationName: String?,
         on board: Result<BoardEngine, any Error>,
         holding held: HeldGates,
-        reaching reach: BoardReach
+        reaching reach: BoardReach,
+        actingAs actor: Result<SessionActor, KanbanError>
     ) async throws -> CallResult<AsyncThrowingStream<String, Error>> {
         // The warnings list of plan.md §4.4 is for a call: a response of a subscription has no warnings.
         let answer: (KanbanError, [ResponseWarning]) throws -> AsyncThrowingStream<String, Error> = { failure, _ in
@@ -649,7 +670,7 @@ public actor KanbanGraph: GraphQLEndpoint {
                 continuation.finish()
             }
         }
-        let run = SchemaRun(board: board, held: held, reach: reach)
+        let run = SchemaRun(board: board, held: held, reach: reach, actor: actor)
         return try await runSchemaCall(run, answeringFailureWith: answer) { schema, context in
             try await schema.subscribe(
                 to: query,
@@ -722,6 +743,7 @@ public actor KanbanGraph: GraphQLEndpoint {
     ) async throws -> Response {
         let (held, reach) = (run.held, run.reach)
         let engine = try run.board.get()
+        let actor = try run.actor.get()
         guard held.holds(engine) else {
             throw GateShortfall(engines: [engine])
         }
@@ -734,7 +756,7 @@ public actor KanbanGraph: GraphQLEndpoint {
         let subfolderBoard = subfolderBoard
         do {
             let response = try await session.run(
-                actingAs: sessionActor,
+                actingAs: actor,
                 reaching: reach,
                 readingRelatedBoardsWith: { related, requests in
                     guard reach.readsRelatedBoards else {
@@ -1460,7 +1482,7 @@ extension Dictionary where Key: Sendable, Value: Sendable {
 // MARK: - Schema run
 
 /// The inputs of one run of the public schema inside the serial gates: the board of the working directory, the
-/// gates that the call holds, and the reach of the call.
+/// gates that the call holds, the reach of the call, and the write actor of the call.
 private struct SchemaRun: Sendable {
     /// The board of the working directory, or the error that stops each call.
     let board: Result<BoardEngine, any Error>
@@ -1470,6 +1492,9 @@ private struct SchemaRun: Sendable {
 
     /// The boards that the call can read and change (EXTRAS-9 rule 4).
     let reach: BoardReach
+
+    /// The write actor of the call, or the error of a person whose id gives no actor ref (divergence.md §26).
+    let actor: Result<SessionActor, KanbanError>
 }
 
 // MARK: - Call result
@@ -1517,20 +1542,6 @@ actor LastRunWarnings {
             await collector?.list ?? []
         }
     }
-}
-
-// MARK: - Session actor
-
-/// The session actor of a session view: the actor of each event that a call of the view writes (plan.md §6).
-///
-/// A call that writes to a board makes sure that the actor exists in that board. When the actor is new, the call
-/// writes an actor `set` patch with ``name``.
-struct SessionActor: Equatable, Sendable {
-    /// The local ref of the actor, for example `actor/claude-code`.
-    let ref: LocalRef
-
-    /// The name of the actor, for example `Claude Code`.
-    let name: String
 }
 
 // MARK: - Serial gate

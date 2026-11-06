@@ -602,6 +602,11 @@ extension ActorObject {
         state.avatar
     }
 
+    /// The ids of the person that the actor records, in sort order (``ActorNode/aliases``).
+    var aliases: [String] {
+        state.aliases
+    }
+
     /// The `@` atom names the assignee of a task.
     static let scopeKind = FilterAtomKind.assignee
 }

@@ -205,6 +205,29 @@ enum SchemaDescription {
 
     // MARK: - Actor and progress fields
 
+    /// The `Actor.aliases` field (divergence.md §26). With `id` and `name`, the `Actor` type has the fields of the
+    /// `Actor` type of FoundationModelsExtras (`SchemaBuilder.addActorType()`), in the same form.
+    static let actorAliases = """
+        The ids of the person that this actor records, for example local/<user name> and the iCloud user record id, \
+        in sort order. Empty for an actor that no client of a person wrote, for example an agent.
+        """
+
+    /// The `Query.viewer` field (divergence.md §26).
+    static let queryViewer = """
+        The caller of this call. Compare viewer.actor.id with the actor.id of a Change to find the changes of the \
+        caller.
+        """
+
+    /// The `Viewer` type (divergence.md §26).
+    static let viewer = "The caller of a call."
+
+    /// The `Viewer.actor` field (divergence.md §26).
+    static let viewerActor = """
+        The actor that the changes of this call reference: the person of the client, or the agent of the session \
+        when the client gives no person. Its id, name, and aliases have the same form as the Actor of other \
+        endpoints.
+        """
+
     /// The `Actor.avatar` field and the `avatar` field of `AddActorInput` and `UpdateActorInput` (divergence.md Q19).
     static let actorAvatar = """
         The avatar of the actor as text, for example a URL or an emoji. Null when the actor has no avatar.

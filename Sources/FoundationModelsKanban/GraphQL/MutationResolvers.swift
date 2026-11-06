@@ -433,18 +433,34 @@ extension WorkingCopy {
         try apply(PatchInput(node: .board, set: [PropertyName.name: .json(.string(name))]), at: time)
     }
 
-    /// Makes sure that the session actor exists in the board: writes an actor `set name` patch when the graph has no
-    /// node of the actor (plan.md §6, "Session actor").
+    /// Makes sure that the write actor exists in the board (plan.md §6, "Session actor", divergence.md §26).
+    ///
+    /// When the graph has no node of the actor, the call writes an actor `set` patch with the name, and for a person
+    /// also with the ids (``ActorNode/aliases``). For a person whose node exists, the patch sets only the name and the
+    /// ids that changed, and the call writes no patch when nothing changed. The node of the session actor of a view
+    /// does not change, so that a name that `updateActor` wrote stays.
     ///
     /// - Parameters:
-    ///   - actor: The session actor.
+    ///   - actor: The write actor of the call.
     ///   - time: The time of the change.
     /// - Throws: An ``EventError`` when the patch breaks a rule of the log.
     fileprivate mutating func addActor(_ actor: SessionActor, at time: DateTime) throws(EventError) {
-        guard !graph.hasNode(actor.ref) else {
+        let node = graph.actor(for: actor.ref)
+        guard node == nil || actor.isPerson else {
             return
         }
-        try apply(PatchInput(node: actor.ref, set: [PropertyName.name: .json(.string(actor.name))]), at: time)
+        var values: [String: PatchValue] = [:]
+        if node?.name != actor.name {
+            values[PropertyName.name] = .json(.string(actor.name))
+        }
+        let aliases = actor.aliases(merging: node)
+        if actor.isPerson, node?.aliases != aliases {
+            values[PropertyName.aliases] = .json(.array(aliases.map(Map.string)))
+        }
+        guard !values.isEmpty else {
+            return
+        }
+        try apply(PatchInput(node: actor.ref, set: values), at: time)
     }
 
     /// Records the names of the board in one board patch (divergence.md M9). The patch adds a new board ID when the
