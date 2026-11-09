@@ -137,6 +137,25 @@ struct BoardMutationTests {
         #expect(try Self.storedRefs(inRepoAt: root) == Self.initializedRefs)
     }
 
+    @Test("A query in an empty repo shows the 4 default columns that the first mutation writes, and writes no file")
+    func queryInEmptyRepoShowsDefaultColumns() async throws {
+        let directory = try TemporaryDirectory()
+        let query = "{ board { name columns { name order } } }"
+        let (root, response) = try await Self.execute(query, onEmptyRepoIn: directory)
+        let board = #"{"columns":\#(Self.defaultColumnsJSON),"name":"\#(KanbanGraphTests.emptyRepoName)"}"#
+        #expect(response == #"{"data":{"board":\#(board)}}"#)
+        #expect(try Self.storedRefs(inRepoAt: root).isEmpty)
+    }
+
+    @Test("A task that the first mutation adds to the column todo of an empty repo lands in that column")
+    func firstAddTaskInEmptyRepoUsesDefaultColumn() async throws {
+        let directory = try TemporaryDirectory()
+        let mutation = #"mutation { addTask(input: { title: "First", column: "todo" }) { title column { name } } }"#
+        let (_, response) = try await Self.execute(mutation, onEmptyRepoIn: directory)
+        let task = #"{"column":{"name":"To Do"},"title":"First"}"#
+        #expect(KanbanGraphTests.withoutTransaction(response) == #"{"data":{"addTask":\#(task)}}"#)
+    }
+
     @Test("A new engine reads the board, the columns, and the actor that the auto-init wrote")
     func autoInitIsWrittenToTheLog() async throws {
         let directory = try TemporaryDirectory()

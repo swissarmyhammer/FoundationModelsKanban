@@ -1077,18 +1077,23 @@ extension Graph {
     }
 
     /// Gives the graph with a board node. A graph that has no board node (a repo with no `.kanban/`, or no
-    /// `board.jsonl`) gets an empty board in memory only. No file is written.
+    /// `board.jsonl`) gets an empty board in memory only, with the default columns that the auto-init of the first
+    /// mutation writes. Thus a read shows the columns that a task can go to. No file is written.
     ///
     /// - Parameters:
     ///   - name: The name of the empty board: the name of the repo directory.
-    ///   - time: The `created` and `updated` time of the empty board.
+    ///   - time: The `created` and `updated` time of the empty board and its columns.
     /// - Returns: This graph when it has a board node, else this graph with the empty board.
     fileprivate func withBoard(named name: String, at time: DateTime) -> Graph {
         guard boardNode == nil else {
             return self
         }
         var graph = self
-        graph.update(with: .board(BoardNode(fields: NodeFields(created: time, updated: time), name: name)))
+        let fields = NodeFields(created: time, updated: time)
+        graph.update(with: .board(BoardNode(fields: fields, name: name)))
+        for (order, column) in DefaultColumn.all.enumerated() where graph.slot(for: .column(slug: column.slug)) == nil {
+            graph.update(with: .column(ColumnNode(slug: column.slug, fields: fields, name: column.name, order: order)))
+        }
         return graph
     }
 }
