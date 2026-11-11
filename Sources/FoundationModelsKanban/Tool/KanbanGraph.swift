@@ -1140,7 +1140,7 @@ public actor KanbanGraph: GraphQLEndpoint {
     ///     ``relatedSessions(holding:)`` tells.
     /// - Returns: The related boards with an answer for each request, and with each loaded related board. A board that
     ///   cannot load is ``BoardResolution/unreadable(_:)`` (divergence.md Q7).
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during a scan or a load.
+    /// - Throws: ``BoardKeyError/cancelled`` when the task is cancelled during a scan or a load.
     private func relatedBoards(
         updating related: RelatedBoards,
         toAnswer requests: Set<BoardRequest>,
@@ -1225,7 +1225,7 @@ public actor KanbanGraph: GraphQLEndpoint {
     ///   - request: The request.
     ///   - current: The copy of the current board: the top folder of its worktree and its current key.
     /// - Returns: The answer, for the related boards of the next run.
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the scan or a load.
+    /// - Throws: ``BoardKeyError/cancelled`` when the task is cancelled during the scan or a load.
     private func answer(_ request: BoardRequest, current: BoardCopy) async throws -> BoardAnswer {
         switch request {
         case .board(let reference):
@@ -1256,7 +1256,7 @@ public actor KanbanGraph: GraphQLEndpoint {
     ///   - reference: The board ref.
     ///   - current: The copy of the current board: the top folder of its worktree and its current key.
     /// - Returns: The board. A board that cannot load is ``BoardResolution/unreadable(_:)``.
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the scan or the load.
+    /// - Throws: ``BoardKeyError/cancelled`` when the task is cancelled during the scan or the load.
     private func loadBoard(named reference: String, current: BoardCopy) async throws -> BoardResolution {
         let resolution = try await resolution(of: reference, current: current)
         guard case .copy(let copy) = resolution else {
@@ -1279,7 +1279,7 @@ public actor KanbanGraph: GraphQLEndpoint {
     ///   - current: The copy of the current board: the top folder of its worktree and its current key.
     /// - Returns: The board (for a path to a folder outside git, the board outside git of that folder), or `nil` when
     ///   no copy of the index, no folder, and no board that a call reached by a path has the ref.
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the scan or during a
+    /// - Throws: ``BoardKeyError/cancelled`` when the task is cancelled during the scan or during a
     ///   read of git for a folder. Each other ``BoardKeyError`` of the read of the top folder of a folder.
     private func resolution(
         of reference: String,
@@ -1310,7 +1310,7 @@ public actor KanbanGraph: GraphQLEndpoint {
     ///
     /// - Parameter root: The top folder of the worktree of the current board.
     /// - Returns: The copies, in scan order. A copy whose board cannot load is ``BoardResolution/unreadable(_:)``.
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the scan or a load.
+    /// - Throws: ``BoardKeyError/cancelled`` when the task is cancelled during the scan or a load.
     private func loadEachCopy(around root: URL) async throws -> [ListedCopy] {
         let index = try await host.currentScanIndex(around: root)
         return try await index.copies.concurrentMap { copy in

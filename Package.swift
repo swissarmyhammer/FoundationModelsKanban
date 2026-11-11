@@ -72,6 +72,20 @@ let extrasPackage = "FoundationModelsExtras"
 // test target links this package. The library does not depend on it.
 let multitoolPackage = "FoundationModelsMultitool"
 
+// The libgit2 package. The board key reads the git state of a folder with the
+// libgit2 C API in the process, and starts no `git` program. Thus the read
+// works in the App Sandbox and on a Mac with no developer tools (D128).
+// FoundationModelsExtras and FoundationModelsMultitool declare the same URL with
+// the same exact version, and two exact versions that are not equal do not
+// resolve. Thus a change of the version here needs the same change in those two
+// packages. The package compiles libgit2 from C source, so there is no binary
+// artifact and no host setup.
+let libgit2Package = "swift-libgit2"
+
+// The exact version of `libgit2Package`: the version that FoundationModelsExtras
+// and FoundationModelsMultitool declare.
+let libgit2Version: Version = "1.9.7"
+
 // The URL base of the sibling packages of the swissarmyhammer family. The same
 // base as FoundationModelsCodeContext uses.
 let swissArmyHammerOrg = "git@github.com:swissarmyhammer/"
@@ -103,6 +117,7 @@ let package = Package(
         .package(url: "https://github.com/apple/\(collectionsPackage).git", from: "1.0.0"),
         .package(url: "https://github.com/yaslab/\(ulidPackage).git", from: "1.3.1"),
         .package(url: "https://github.com/pointfreeco/\(parsingPackage).git", from: "0.15.2", traits: []),
+        .package(url: "https://github.com/danielctull-forks/\(libgit2Package).git", exact: libgit2Version),
         .package(url: "\(swissArmyHammerOrg)\(metadataRegistryPackage).git", branch: "main"),
         .package(url: "\(swissArmyHammerOrg)\(extrasPackage).git", branch: "main"),
         .package(url: "\(swissArmyHammerOrg)\(multitoolPackage).git", branch: "main"),
@@ -120,6 +135,8 @@ let package = Package(
                 .product(name: "Parsing", package: parsingPackage),
                 .product(name: metadataRegistryPackage, package: metadataRegistryPackage),
                 .product(name: extrasPackage, package: extrasPackage),
+                // The C API of libgit2, for the read of the board key.
+                .product(name: "libgit2", package: libgit2Package),
             ],
             path: "Sources/\(packageName)",
             // The system prompt of the filter agent (divergence.md §17, "A smart

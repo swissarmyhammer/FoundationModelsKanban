@@ -389,9 +389,6 @@ struct HeldScanFixture {
 /// The reader can hold the key reads of one repo at a ``TestGate``: each key read of that repo records its arrival,
 /// and waits until the test releases the gate.
 final class ScanKeyReader: Sendable {
-    /// The exit status of the failed git read of a repo with no origin in the table.
-    private static let failureStatus: Int32 = 128
-
     /// The `origin` of each repo, by the name of its folder, behind a lock, because the scan reads from different
     /// threads.
     private let origins = Mutex([
@@ -459,7 +456,7 @@ final class ScanKeyReader: Sendable {
                 try await self.waitAtHold()
             }
             guard let origin = self.origins.withLock({ origins in origins[name] }) else {
-                throw .gitFailed(arguments: [], status: Self.failureStatus, message: "no origin for \(name)")
+                throw .gitFailed(message: "no origin for \(name)")
             }
             return try BoardKey(remoteURL: origin)
         }
@@ -467,14 +464,14 @@ final class ScanKeyReader: Sendable {
 
     /// Records the arrival of a held key read, and waits until the test releases the gate.
     ///
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled before the release, the same
-    ///   as a git command that a cancel stops.
+    /// - Throws: ``BoardKeyError/cancelled`` when the task is cancelled before the release, the same
+    ///   as a read in a cancelled task.
     private func waitAtHold() async throws(BoardKeyError) {
         hold.recordArrival()
         do {
             try await hold.waitUntilReleased()
         } catch {
-            throw .gitCancelled(arguments: [])
+            throw .cancelled
         }
     }
 

@@ -113,7 +113,7 @@ struct BoardLocatorTests {
     ///   - earlier: The index of the earlier scan, or `nil` for the first scan.
     ///   - keyReader: Reads the key of a repo that the earlier scan did not find. The default reads the key from git.
     /// - Returns: The index.
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the test is cancelled during the scan.
+    /// - Throws: ``BoardKeyError/cancelled`` when the test is cancelled during the scan.
     static func scan(
         around root: URL,
         with locator: BoardLocator = .default,
@@ -196,7 +196,7 @@ struct BoardLocatorTests {
     ///   - reference: The board ref.
     ///   - root: The root directory of the current repo.
     /// - Returns: The resolution, or `nil` when the ref is not a path to a folder.
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the test is cancelled during a git read.
+    /// - Throws: ``BoardKeyError/cancelled`` when the test is cancelled during a git read.
     static func resolveFolder(_ reference: String, around root: URL) async throws(BoardKeyError) -> BoardResolution? {
         guard let folder = BoardLocator.folder(namedBy: reference, currentRoot: root) else {
             return nil
@@ -498,8 +498,8 @@ struct BoardLocatorTests {
 /// A key reader that reads the key from git and counts its reads.
 ///
 /// The reader can block the first read of one repo. The blocked read waits until the task of the read is cancelled,
-/// with no time limit. The blocked read then throws ``BoardKeyError/gitCancelled(arguments:)``, the same as a git
-/// command that a cancel stops.
+/// with no time limit. The blocked read then throws ``BoardKeyError/cancelled``, the same as a read in a
+/// cancelled task.
 final class CountingKeyReader: Sendable {
     /// The number of reads of each repo, by the canonical path of the repo, behind a lock, because a scan can read
     /// from a different thread.
@@ -548,7 +548,7 @@ final class CountingKeyReader: Sendable {
     ///
     /// - Parameter root: The root directory of the repo.
     /// - Returns: The key.
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the blocked read. A
+    /// - Throws: ``BoardKeyError/cancelled`` when the task is cancelled during the blocked read. A
     ///   ``BoardKeyError`` when git fails.
     func key(ofRepoAt root: URL) async throws(BoardKeyError) -> BoardKey {
         let path = root.canonicalPath
@@ -565,10 +565,10 @@ final class CountingKeyReader: Sendable {
     /// Waits until the task is cancelled. The wait has no time limit. The gate gets no release, so its wait ends only
     /// with the `CancellationError` of the cancel.
     ///
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled.
+    /// - Throws: ``BoardKeyError/cancelled`` when the task is cancelled.
     private func waitForCancel() async throws(BoardKeyError) {
         blockedRead.recordArrival()
         try? await blockedRead.waitUntilReleased()
-        throw .gitCancelled(arguments: [])
+        throw .cancelled
     }
 }

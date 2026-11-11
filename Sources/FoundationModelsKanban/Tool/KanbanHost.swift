@@ -130,7 +130,7 @@ public actor KanbanHost {
     /// Gap 2).
     ///
     /// The board of the session is the `.kanban/` directory of the top folder of the worktree of the working
-    /// directory (`git rev-parse --show-toplevel`). The host finds the engine of that board, or makes it and loads the
+    /// directory (``BoardKey/worktreeTop(of:)``). The host finds the engine of that board, or makes it and loads the
     /// board: the key of the repo (with a first commit when the repo has no commit), the file watcher, and the log
     /// files, at the same time. A second session on the same board waits for the same load. Outside git, the board is
     /// in the nearest folder, from the working directory up, that has a `.kanban/`, else in the working directory, and
@@ -479,7 +479,7 @@ public actor KanbanHost {
     ///
     /// - Parameter root: The top folder of the worktree of the current board of a session.
     /// - Returns: The current index.
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during a scan, or during the
+    /// - Throws: ``BoardKeyError/cancelled`` when the task is cancelled during a scan, or during the
     ///   wait for a running scan. Then the host keeps the earlier index.
     func currentScanIndex(around root: URL) async throws(BoardKeyError) -> BoardIndex {
         let places = locator.places(around: root)
@@ -503,7 +503,7 @@ public actor KanbanHost {
     ///   - running: The scan that runs now.
     ///   - places: The places of the scan, in scan order.
     /// - Returns: The index of the scan, or `nil` when the scan gave no index.
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the wait. The scan goes
+    /// - Throws: ``BoardKeyError/cancelled`` when the task is cancelled during the wait. The scan goes
     ///   on for the other calls.
     private func index(of running: RunningScan, inPlaces places: [URL]) async throws(BoardKeyError) -> BoardIndex? {
         configuration.scanObserver?.scanWaitDidStart(inPlaces: places)
@@ -511,7 +511,7 @@ public actor KanbanHost {
             return index
         }
         guard !Task.isCancelled else {
-            throw .gitCancelled(arguments: [])
+            throw .cancelled
         }
         return nil
     }
@@ -523,7 +523,7 @@ public actor KanbanHost {
     ///   - root: The top folder of the worktree of the current board of a session.
     ///   - places: The places of the scan, in scan order.
     /// - Returns: The new index.
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the scan. Then the host
+    /// - Throws: ``BoardKeyError/cancelled`` when the task is cancelled during the scan. Then the host
     ///   keeps the earlier index.
     private func rescan(around root: URL, inPlaces places: [URL]) async throws(BoardKeyError) -> BoardIndex {
         let key = Self.placesKey(of: places)
@@ -541,7 +541,7 @@ public actor KanbanHost {
     /// - Parameters:
     ///   - root: The top folder of the worktree of the current board of a session.
     ///   - places: The places of the scan, in scan order.
-    /// - Returns: The new index, or ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the
+    /// - Returns: The new index, or ``BoardKeyError/cancelled`` when the task is cancelled during the
     ///   scan. Then the cache keeps the earlier index.
     private func scanOutcome(around root: URL, inPlaces places: [URL]) async -> Result<BoardIndex, BoardKeyError> {
         let key = Self.placesKey(of: places)
@@ -670,7 +670,7 @@ public actor KanbanHost {
     /// - Parameter folder: The folder, from ``BoardLocator/folder(namedBy:currentRoot:)``.
     /// - Returns: The board of the folder (a board in a git repo, or a board outside git), or
     ///   ``FolderBoard/unreadableKey(top:)``.
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during a read of git. Each
+    /// - Throws: ``BoardKeyError/cancelled`` when the task is cancelled during a read of git. Each
     ///   other ``BoardKeyError`` of the read of the top folder. The host records no result then.
     func board(ofFolderAt folder: URL) async throws(BoardKeyError) -> FolderBoard {
         if let known = knownFolders[folder.canonicalPath] {
@@ -728,7 +728,7 @@ public actor KanbanHost {
                 watch.watcher.compareEachFile()
             } catch {
                 Self.logWatchFailure(
-                    "The host cannot watch a folder that a path ref named, so each call with the path ref runs git",
+                    "The host cannot watch a folder that a path ref named, so each call with the path ref reads git",
                     path: repo.path,
                     error: error
                 )

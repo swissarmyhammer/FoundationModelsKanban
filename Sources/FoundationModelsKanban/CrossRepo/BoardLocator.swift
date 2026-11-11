@@ -53,7 +53,7 @@ public struct BoardLocator: Sendable {
     ///     scan reads the key only of a new repo (plan.md §6.6, index life; divergence.md §16, Gap 1).
     ///   - keyReader: Reads the key of a repo that the earlier scan did not find.
     /// - Returns: The index of the repos, in scan order.
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled before the scan reads each
+    /// - Throws: ``BoardKeyError/cancelled`` when the task is cancelled before the scan reads each
     ///   key. Then the scan gives no index: an index without the keys that the cancel stopped is not complete.
     func scan(
         around root: URL,
@@ -108,7 +108,7 @@ public struct BoardLocator: Sendable {
     ///   - topReader: Reads the top folder of the worktree of the folder.
     /// - Returns: The copy of the board of the folder, or ``FolderBoard/unreadableKey(top:)`` when the key of the
     ///   board cannot be read.
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during a read of git. Each
+    /// - Throws: ``BoardKeyError/cancelled`` when the task is cancelled during a read of git. Each
     ///   other ``BoardKeyError`` of the read of the top folder.
     static func board(
         ofFolderAt directory: URL,
@@ -191,7 +191,7 @@ public struct BoardLocator: Sendable {
     ///   - knownKeys: The keys that the earlier scan read, by the canonical path of the repo directory.
     ///   - keyReader: Reads the key of a new repo.
     /// - Returns: The key of each repo whose key is known or can be read, by the canonical path of the repo directory.
-    /// - Throws: ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled before each key is read.
+    /// - Throws: ``BoardKeyError/cancelled`` when the task is cancelled before each key is read.
     private static func keys(
         ofReposAt directories: [URL],
         knowing knownKeys: [String: BoardKey],
@@ -223,7 +223,7 @@ public struct BoardLocator: Sendable {
     ///   - knownKey: The key that the earlier scan read, or `nil` for a new repo.
     ///   - keyReader: Reads the key of a new repo.
     /// - Returns: The key, `nil` when the key of a new repo cannot be read, or
-    ///   ``BoardKeyError/gitCancelled(arguments:)`` when the task is cancelled during the read. A cancel is not a
+    ///   ``BoardKeyError/cancelled`` when the task is cancelled during the read. A cancel is not a
     ///   repo that the scan skips: it stops the scan.
     private static func key(
         ofRepoAt directory: URL,
@@ -235,8 +235,8 @@ public struct BoardLocator: Sendable {
         }
         do {
             return .success(try await keyReader(directory))
-        } catch BoardKeyError.gitCancelled(let arguments) {
-            return .failure(.gitCancelled(arguments: arguments))
+        } catch .cancelled {
+            return .failure(.cancelled)
         } catch {
             Log.kanban.warning(
                 "The scan for related boards cannot read the key of a repo",

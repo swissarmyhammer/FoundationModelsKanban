@@ -55,12 +55,6 @@ struct BoardKeyTests {
     /// The text of a git config file that git cannot read: one line that is not a section and not a key.
     static let brokenConfigText = "not a config line\n"
 
-    /// The standard error of git in a repo whose config file is ``brokenConfigText``.
-    static let brokenConfigMessage = "fatal: bad config line 1 in file .git/config\n"
-
-    /// The exit status of git after a fatal error.
-    static let gitFatalStatus: Int32 = 128
-
     /// The SHA of a commit, for the test of the text of a root commit key.
     static let sampleCommit = "c83fae4e58ced3b4cddb5c4bf9f151b0df1d379b"
 
@@ -70,11 +64,12 @@ struct BoardKeyTests {
     /// The text of the file that a test stages in a repo with no commit.
     static let stagedText = "staged, not committed\n"
 
-    /// The text in the standard error of git when git has no identity for a commit.
-    static let unknownIdentityMessage = "Author identity unknown"
+    /// The local config of a repo whose identity for a commit is empty: an empty name and an empty email. The
+    /// local config wins over the config of the user, so the repo has no usable identity on each machine.
+    static let emptyIdentityConfig = [("user.name", ""), ("user.email", "")]
 
-    /// The command of git that makes the first commit of a repo with no commit.
-    static let firstCommitCommand = "commit-tree"
+    /// The time of the first commits in the test of two first commits at the same time.
+    static let fixedFirstCommitTime = Date(timeIntervalSince1970: 1_767_225_600)
 
     /// The branch that a root-commit test makes with `git checkout --orphan`.
     static let orphanBranch = "other-history"
@@ -192,9 +187,8 @@ struct BoardKeyTests {
         let sandbox = try GitSandbox()
         let firstRepo = try await sandbox.makeEmptyRepo(named: "first-new-repo")
         let secondRepo = try await sandbox.makeEmptyRepo(named: "second-new-repo")
-        let environment = GitSandbox.fixedDateEnvironment
-        async let firstKey = BoardKey.read(fromRepoAt: firstRepo, gitEnvironment: environment)
-        async let secondKey = BoardKey.read(fromRepoAt: secondRepo, gitEnvironment: environment)
+        async let firstKey = BoardKey.read(fromRepoAt: firstRepo, firstCommitTime: Self.fixedFirstCommitTime)
+        async let secondKey = BoardKey.read(fromRepoAt: secondRepo, firstCommitTime: Self.fixedFirstCommitTime)
         #expect(try await firstKey != secondKey)
     }
 
@@ -222,29 +216,40 @@ struct BoardKeyTests {
         #expect(try await GitSandbox.output(ofGit: ["rev-list", "--count", "--all"], in: repo) == "1")
     }
 
-    @Test("A repo with no commit and no git identity gives an error with the reason from git, and gets no commit")
+    @Test("A repo with no commit and no usable git identity gives gitFailed with the reason, and gets no commit")
     func firstCommitWithoutIdentityThrows() async throws {
         let sandbox = try GitSandbox()
         let repo = try await sandbox.makeEmptyRepo(named: "anonymous-repo", withIdentity: false)
-        let environment = try sandbox.makeEnvironmentWithoutIdentity()
-        let error = try await #require(throws: BoardKeyError.self) {
-            try await BoardKey.read(fromRepoAt: repo, gitEnvironment: environment)
+        for (key, value) in Self.emptyIdentityConfig {
+            try await GitSandbox.runGit(withArguments: ["config", key, value], in: repo)
         }
-        let failure = try #require(Self.gitFailure(of: error))
-        #expect(failure.command == Self.firstCommitCommand)
-        #expect(failure.message.contains(Self.unknownIdentityMessage))
+        let error = try await #require(throws: BoardKeyError.self) {
+            try await BoardKey.read(fromRepoAt: repo)
+        }
+        #expect(Self.gitFailureMessage(of: error)?.isEmpty == false)
         #expect(try await GitSandbox.output(ofGit: ["rev-list", "--all"], in: repo) == "")
     }
 
-    /// Gives the command and the message of a ``BoardKeyError/gitFailed(arguments:status:message:)`` error.
+    /// Gives the message of a ``BoardKeyError/gitFailed(message:)`` error.
     ///
     /// - Parameter error: The error.
-    /// - Returns: The first argument of git and the standard error of git, or `nil` for each other error.
-    static func gitFailure(of error: BoardKeyError) -> (command: String?, message: String)? {
+    /// - Returns: The reason of the failure, or `nil` for each other error.
+    static func gitFailureMessage(of error: BoardKeyError) -> String? {
         switch error {
-        case .gitFailed(let arguments, _, let message): (arguments.first, message)
-        case .invalidRemoteURL, .notARepo, .gitUnavailable, .gitTimedOut, .gitCancelled: nil
+        case .gitFailed(let message): message
+        case .invalidRemoteURL, .notARepo, .cancelled: nil
         }
+    }
+
+    @Test("A read in a cancelled task throws cancelled")
+    func readInCancelledTaskThrowsCancelled() async throws {
+        let sandbox = try GitSandbox()
+        let repo = try await sandbox.makeRepo(named: "cancelled-read")
+        let read = Task {
+            withUnsafeCurrentTask { task in task?.cancel() }
+            return try await BoardKey.read(fromRepoAt: repo)
+        }
+        await #expect(throws: BoardKeyError.cancelled) { try await read.value }
     }
 
     @Test("A repo with an SSH origin and a repo with an HTTPS origin give the same key")
@@ -301,18 +306,13 @@ struct BoardKeyTests {
         }
     }
 
-    @Test("A git failure in a repo throws gitFailed, and does not give a local key")
-    func gitFailureInRepoThrows() async throws {
+    @Test("A repo whose git state cannot be read gets the key of a folder outside git: the read throws notARepo")
+    func unreadableRepoThrowsNotARepo() async throws {
         let sandbox = try GitSandbox()
         let repo = try await sandbox.makeRepo(named: "broken-repo")
         let configFile = repo.appending(path: BoardKey.gitDirectoryName).appending(path: Self.gitConfigFileName)
         try Self.brokenConfigText.write(to: configFile, atomically: true, encoding: .utf8)
-        let expected = BoardKeyError.gitFailed(
-            arguments: BoardKey.repoPathsArguments,
-            status: Self.gitFatalStatus,
-            message: Self.brokenConfigMessage
-        )
-        await #expect(throws: expected) { try await BoardKey.read(fromRepoAt: repo) }
+        await #expect(throws: BoardKeyError.notARepo(path: repo.path)) { try await BoardKey.read(fromRepoAt: repo) }
     }
 
     @Test("An origin with a host but no path gives local/<root commit>")
@@ -409,192 +409,36 @@ struct BoardKeyTests {
         try await RepoBoardTests.respond(to: KanbanGraphTests.keyQuery, inWorkingDirectory: directory)
     }
 
-    // MARK: - Git process
+    // MARK: - No git program
 
-    /// The number of bytes that the flood command writes to the standard error. This is more than the buffer of a
-    /// pipe, so a writer that nobody reads stops until a reader empties the pipe.
-    static let floodSize = 200_000
+    /// The soft limit of the number of processes of the user in the child process of the test with no git program.
+    /// With this limit, each start of a new process fails, so a read that starts `git` cannot read the key.
+    static let noNewProcessLimit: rlim_t = 0
 
-    /// The word that the flood command writes to the standard output, on one line, after it writes the standard
-    /// error.
-    static let floodWord = "done"
-
-    /// The arguments of a git alias that writes ``floodSize`` bytes to the standard error, and then ``floodWord`` to
-    /// the standard output.
-    static let floodArguments = ["-c", "alias.flood=!head -c \(floodSize) /dev/zero >&2; echo \(floodWord)", "flood"]
-
-    /// The time that the slow command runs. This is much longer than ``shortGitLimit``.
-    static let slowCommandDuration = Duration.seconds(slowCommandSeconds)
-
-    /// The number of seconds in ``slowCommandDuration``.
-    private static let slowCommandSeconds = 5
-
-    /// The arguments of a git alias that runs for ``slowCommandDuration``.
-    static let slowArguments = ["-c", "alias.slow=!sleep \(slowCommandDuration.components.seconds)", "slow"]
-
-    /// The time limit of the slow command.
-    static let shortGitLimit = Duration.milliseconds(shortGitLimitMilliseconds)
-
-    /// The number of milliseconds in ``shortGitLimit``.
-    private static let shortGitLimitMilliseconds = 300
-
-    /// The number of git commands for each processor in the tests that run many git commands at the same time. A
-    /// command that blocked the thread of its task would thus block each thread of Swift concurrency.
-    static let commandsPerProcessor = 4
-
-    /// The arguments of a git command that ends at once and writes to the standard output.
-    static let versionArguments = ["--version"]
-
-    /// The number of git commands in the tests that run many git commands at the same time.
-    static var parallelCommandCount: Int {
-        ProcessInfo.processInfo.activeProcessorCount * commandsPerProcessor
-    }
-
-    /// The time that a short sleep waits while many slow git commands run. It is much shorter than
-    /// ``slowCommandDuration``.
-    static let shortSleep = Duration.milliseconds(shortSleepMilliseconds)
-
-    /// The number of milliseconds in ``shortSleep``.
-    private static let shortSleepMilliseconds = 100
-
-    /// The name of the file where the slow command writes the process id of git.
-    static let pidFileName = "git.pid"
-
-    /// Gives the arguments of a git alias that writes the process id of git to a file, and then runs for
-    /// ``slowCommandDuration``.
-    ///
-    /// The alias runs in a shell whose parent process is git, so `$PPID` in the shell is the process id of git.
-    ///
-    /// - Parameter file: The file that gets the process id.
-    /// - Returns: The arguments after `git`.
-    static func slowArguments(recordingPIDIn file: URL) -> [String] {
-        let seconds = slowCommandDuration.components.seconds
-        return ["-c", "alias.slowchild=!echo $PPID > '\(file.path)'; sleep \(seconds)", "slowchild"]
-    }
-
-    /// Reads the process id that the slow command wrote.
-    ///
-    /// - Parameter file: The file of the process id.
-    /// - Returns: The process id, or `nil` when the file does not hold a process id yet.
-    static func recordedPID(in file: URL) -> pid_t? {
-        FileManager.default.contents(atPath: file.path).flatMap { bytes in
-            pid_t(String(decoding: bytes, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
+    @Test(
+        "The key of a repo is read in a process that cannot start a child process, so the read runs no git program",
+        arguments: subfolderOrigins
+    )
+    func keyIsReadWithNoGitProgram(origin: String?) async throws {
+        let sandbox = try GitSandbox()
+        let repo = try await sandbox.makeRepo(named: "no-git-program", origin: origin)
+        let headKey = try await sandbox.headKey(of: repo)
+        let expected = try origin.map(BoardKey.init(remoteURL:)) ?? headKey
+        await #expect(processExitsWith: .success) {
+            [repo = repo as URL, expected = expected.description as String] in
+            BoardKeyTests.stopNewProcesses()
+            let key = try? await BoardKey.read(fromRepoAt: repo)
+            exit(key?.description == expected ? EXIT_SUCCESS : EXIT_FAILURE)
         }
     }
 
-    /// Tells if a process ended and its parent collected its exit status, so no process has the id.
-    ///
-    /// - Parameter pid: The process id.
-    /// - Returns: `true` when no process has the id.
-    static func isGone(_ pid: pid_t) -> Bool {
-        kill(pid, 0) == -1 && errno == ESRCH
-    }
-
-    /// Runs one git command ``parallelCommandCount`` times, all at the same time, and runs a body while the
-    /// commands run.
-    ///
-    /// - Parameters:
-    ///   - arguments: The arguments after `git`.
-    ///   - directory: The directory where git runs.
-    ///   - limit: The time limit of each command.
-    ///   - body: The work that runs while the commands run.
-    /// - Returns: The value of the body, and the exit status of each command.
-    /// - Throws: A ``BoardKeyError`` when a command cannot start or does not end, or the error of the body.
-    static func runningGitInParallel<Value: Sendable>(
-        withArguments arguments: [String],
-        inDirectory directory: URL,
-        timeLimit limit: Duration,
-        while body: () async throws -> Value
-    ) async throws -> (value: Value, statuses: [Int32]) {
-        try await withThrowingTaskGroup(of: Int32.self) { group in
-            for _ in 0..<parallelCommandCount {
-                group.addTask {
-                    try await Git.run(withArguments: arguments, inDirectory: directory, timeLimit: limit).status
-                }
-            }
-            let value = try await body()
-            let statuses = try await group.reduce(into: []) { statuses, status in statuses.append(status) }
-            return (value, statuses)
-        }
-    }
-
-    @Test("A large standard error of git does not block the read of the standard output")
-    func largeErrorOutputDoesNotBlock() async throws {
-        let sandbox = try GitSandbox()
-        let result = try await Git.run(withArguments: Self.floodArguments, inDirectory: sandbox.root)
-        #expect(result.status == Git.successStatus)
-        #expect(result.output == "\(Self.floodWord)\n")
-        #expect(result.errorOutput.utf8.count == Self.floodSize)
-    }
-
-    @Test("A git command that runs longer than its time limit stops with a time-out error")
-    func slowCommandTimesOut() async throws {
-        let sandbox = try GitSandbox()
-        let clock = ContinuousClock()
-        let start = clock.now
-        await #expect(throws: BoardKeyError.gitTimedOut(arguments: Self.slowArguments)) {
-            try await Git.run(
-                withArguments: Self.slowArguments,
-                inDirectory: sandbox.root,
-                timeLimit: Self.shortGitLimit
-            )
-        }
-        #expect(start.duration(to: clock.now) < Self.slowCommandDuration)
-    }
-
-    @Test("Git commands in more tasks than processors all end")
-    func parallelCommandsAllEnd() async throws {
-        let sandbox = try GitSandbox()
-        let (_, statuses) = try await Self.runningGitInParallel(
-            withArguments: Self.versionArguments,
-            inDirectory: sandbox.root,
-            timeLimit: Git.defaultTimeLimit
-        ) {}
-        #expect(statuses == Array(repeating: Git.successStatus, count: Self.parallelCommandCount))
-    }
-
-    @Test("A short sleep wakes near its deadline while many slow git commands run")
-    func sleepWakesWhileGitRuns() async throws {
-        let sandbox = try GitSandbox()
-        let clock = ContinuousClock()
-        let (waited, statuses) = try await Self.runningGitInParallel(
-            withArguments: Self.slowArguments,
-            inDirectory: sandbox.root,
-            timeLimit: Git.defaultTimeLimit
-        ) {
-            let start = clock.now
-            try await Task.sleep(for: Self.shortSleep)
-            return start.duration(to: clock.now)
-        }
-        #expect(waited < Self.slowCommandDuration, "The sleep must not wait for the end of a git command")
-        #expect(statuses == Array(repeating: Git.successStatus, count: Self.parallelCommandCount))
-    }
-
-    @Test("A cancelled git command ends at once, and its git process is gone")
-    func cancelledCommandStopsGit() async throws {
-        let sandbox = try GitSandbox()
-        let directory = sandbox.root
-        let pidFile = directory.appending(path: Self.pidFileName)
-        let arguments = Self.slowArguments(recordingPIDIn: pidFile)
-        let clock = ContinuousClock()
-        let start = clock.now
-        let outcome = try await withThrowingTaskGroup(of: Result<Git.Output, BoardKeyError>.self) { group in
-            group.addTask {
-                do throws(BoardKeyError) {
-                    return .success(try await Git.run(withArguments: arguments, inDirectory: directory))
-                } catch {
-                    return .failure(error)
-                }
-            }
-            try await EventLogTests.waitUntil { Self.recordedPID(in: pidFile) != nil }
-            group.cancelAll()
-            return try await group.next()
-        }
-        #expect(start.duration(to: clock.now) < Self.slowCommandDuration)
-        let result = try #require(outcome)
-        #expect(throws: BoardKeyError.gitCancelled(arguments: arguments)) { try result.get() }
-        let pid = try #require(Self.recordedPID(in: pidFile))
-        try await EventLogTests.waitUntil { Self.isGone(pid) }
+    /// Sets the soft limit of the number of processes of the user to ``noNewProcessLimit``. After this call, each
+    /// start of a new process in this process fails. The call is for the child process of an exit test only.
+    static func stopNewProcesses() {
+        var limit = rlimit()
+        getrlimit(RLIMIT_NPROC, &limit)
+        limit.rlim_cur = noNewProcessLimit
+        setrlimit(RLIMIT_NPROC, &limit)
     }
 }
 
@@ -627,23 +471,6 @@ final class GitSandbox {
 
     /// The variables that give each commit the time ``fixedCommitDate``.
     static let fixedDateVariables = ["GIT_AUTHOR_DATE": fixedCommitDate, "GIT_COMMITTER_DATE": fixedCommitDate]
-
-    /// The name of the home folder of git in the environment of ``makeEnvironmentWithoutIdentity()``.
-    static let homeFolderName = "home"
-
-    /// The name of the global git config file in the home folder of ``makeEnvironmentWithoutIdentity()``.
-    static let globalConfigFileName = ".gitconfig"
-
-    /// The global git config of ``makeEnvironmentWithoutIdentity()``. Git uses only the identity of its config, and
-    /// does not make an identity from the name of the user and of the host.
-    static let configOnlyIdentityText = "[user]\n\tuseConfigOnly = true\n"
-
-    /// The prefix of the names of the environment variables of git. ``makeEnvironmentWithoutIdentity()`` removes
-    /// each one, for example `GIT_AUTHOR_NAME`.
-    static let gitVariablePrefix = "GIT_"
-
-    /// The environment variable that git reads as the email of a commit when the config has none.
-    static let emailVariable = "EMAIL"
 
     /// The temporary directory of the sandbox.
     let root: URL
@@ -710,7 +537,7 @@ final class GitSandbox {
     /// - Parameters:
     ///   - arguments: The arguments after `git`.
     ///   - directory: The directory where git runs.
-    /// - Throws: A ``BoardKeyError`` when git cannot start. An `ExpectationFailedError` when git exits with a failure
+    /// - Throws: A ``GitProcessError`` when git cannot start. An `ExpectationFailedError` when git exits with a failure
     ///   status.
     static func runGit(withArguments arguments: [String], in directory: URL) async throws {
         _ = try await output(ofGit: arguments, in: directory)
@@ -723,15 +550,15 @@ final class GitSandbox {
     ///   - directory: The directory where git runs.
     ///   - environment: The environment of git, or `nil` for the environment of the test process.
     /// - Returns: The standard output of git, with no white space at the start and at the end.
-    /// - Throws: A ``BoardKeyError`` when git cannot start. An `ExpectationFailedError` when git exits with a failure
+    /// - Throws: A ``GitProcessError`` when git cannot start. An `ExpectationFailedError` when git exits with a failure
     ///   status.
     static func output(
         ofGit arguments: [String],
         in directory: URL,
         environment: [String: String]? = nil
     ) async throws -> String {
-        let result = try await Git.run(withArguments: arguments, inDirectory: directory, environment: environment)
-        try #require(result.status == Git.successStatus, "git \(arguments) failed: \(result.errorOutput)")
+        let result = try await GitProcess.run(withArguments: arguments, inDirectory: directory, environment: environment)
+        try #require(result.status == GitProcess.successStatus, "git \(arguments) failed: \(result.errorOutput)")
         return result.output.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -755,7 +582,7 @@ final class GitSandbox {
     ///   - folder: The folder that becomes the repo. The folder must exist.
     ///   - hasIdentity: `true` puts ``identityConfig`` in the config of the repo, so git can make a commit with no
     ///     global config. `false` gives a repo with no config of its own.
-    /// - Throws: A ``BoardKeyError`` when git cannot start, or an `ExpectationFailedError` when git fails.
+    /// - Throws: A ``GitProcessError`` when git cannot start, or an `ExpectationFailedError` when git fails.
     static func initializeRepo(at folder: URL, withIdentity hasIdentity: Bool = true) async throws {
         try await runGit(withArguments: ["init", "--quiet"], in: folder)
         for (key, value) in identityConfig where hasIdentity {
@@ -768,7 +595,7 @@ final class GitSandbox {
     /// - Parameters:
     ///   - message: The message of the commit.
     ///   - repo: The repo directory. Its config has ``identityConfig``.
-    /// - Throws: A ``BoardKeyError`` when git cannot start, or an `ExpectationFailedError` when git fails.
+    /// - Throws: A ``GitProcessError`` when git cannot start, or an `ExpectationFailedError` when git fails.
     func commit(message: String, in repo: URL) async throws {
         let arguments = ["commit", "--quiet", "--allow-empty", "-m", message]
         _ = try await Self.output(ofGit: arguments, in: repo, environment: Self.fixedDateEnvironment)
@@ -779,7 +606,7 @@ final class GitSandbox {
     /// - Parameters:
     ///   - branch: The branch to merge.
     ///   - repo: The repo directory. Its config has ``identityConfig``.
-    /// - Throws: A ``BoardKeyError`` when git cannot start, or an `ExpectationFailedError` when git fails.
+    /// - Throws: A ``GitProcessError`` when git cannot start, or an `ExpectationFailedError` when git fails.
     func merge(_ branch: String, in repo: URL) async throws {
         let arguments = ["merge", "--quiet", "--no-edit", "--allow-unrelated-histories", branch]
         _ = try await Self.output(ofGit: arguments, in: repo, environment: Self.fixedDateEnvironment)
@@ -796,7 +623,7 @@ final class GitSandbox {
     ///   - repo: The repo to clone.
     ///   - name: The name of the directory of the clone.
     /// - Returns: The directory of the clone.
-    /// - Throws: A ``BoardKeyError`` when git cannot start, or an `ExpectationFailedError` when git fails.
+    /// - Throws: A ``GitProcessError`` when git cannot start, or an `ExpectationFailedError` when git fails.
     func cloneRepo(_ repo: URL, named name: String) async throws -> URL {
         let clone = root.appending(path: name, directoryHint: .isDirectory)
         try await Self.runGit(withArguments: ["clone", "--quiet", repo.path, clone.path], in: root)
@@ -807,7 +634,7 @@ final class GitSandbox {
     ///
     /// - Parameter repo: The repo directory.
     /// - Returns: The key `local/<first 12 hex digits of HEAD>`.
-    /// - Throws: A ``BoardKeyError`` when git cannot start, or an `ExpectationFailedError` when git fails.
+    /// - Throws: A ``GitProcessError`` when git cannot start, or an `ExpectationFailedError` when git fails.
     func headKey(of repo: URL) async throws -> BoardKey {
         BoardKey(rootCommit: try await Self.headSHA(of: repo))
     }
@@ -816,24 +643,8 @@ final class GitSandbox {
     ///
     /// - Parameter repo: The repo directory.
     /// - Returns: The full SHA of the commit that `HEAD` names.
-    /// - Throws: A ``BoardKeyError`` when git cannot start, or an `ExpectationFailedError` when git fails.
+    /// - Throws: A ``GitProcessError`` when git cannot start, or an `ExpectationFailedError` when git fails.
     static func headSHA(of repo: URL) async throws -> String {
         try await output(ofGit: ["rev-parse", "HEAD"], in: repo)
-    }
-
-    /// Makes an environment where git has no identity: the home folder and the global config are in the sandbox,
-    /// git reads no system config, and no environment variable gives a name or an email.
-    ///
-    /// - Returns: The environment of git.
-    /// - Throws: An error from `FileManager` when the home folder or the config file cannot be made.
-    func makeEnvironmentWithoutIdentity() throws -> [String: String] {
-        let home = try Self.makeFolder(named: Self.homeFolderName, in: root)
-        let config = home.appending(path: Self.globalConfigFileName)
-        try Self.configOnlyIdentityText.write(to: config, atomically: true, encoding: .utf8)
-        let inherited = ProcessInfo.processInfo.environment.filter { name, _ in
-            !name.hasPrefix(Self.gitVariablePrefix) && name != Self.emailVariable
-        }
-        let isolated = ["HOME": home.path, "GIT_CONFIG_GLOBAL": config.path, "GIT_CONFIG_NOSYSTEM": "1"]
-        return inherited.merging(isolated) { _, isolatedValue in isolatedValue }
     }
 }

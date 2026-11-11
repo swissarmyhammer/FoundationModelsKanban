@@ -69,6 +69,10 @@ let graph = try await KanbanHost.shared.session(
   commit on its current branch when the engine reads the key. This commit does
   not take your staged files. Git must have a `user.name` and a `user.email`
   for this commit.
+- The package reads git with libgit2 in the process. It starts no `git`
+  program, so it works in the App Sandbox and on a Mac with no developer
+  tools. A folder whose git state cannot be read gets the key of a folder
+  outside git.
 - `actor` is the name of the actor of your changes. `nil` uses the name of the
   user of the operating system. Give each session its own actor, so that
   `undoChange(input: {})` with no `txn` stays in its session.
