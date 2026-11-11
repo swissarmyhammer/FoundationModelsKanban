@@ -205,8 +205,9 @@ extension BoardKey {
     /// - Returns: The key of the board.
     /// - Throws: ``BoardKeyError/notARepo(path:)`` when the folder is not in a git repo, or when its git state cannot
     ///   be read. ``BoardKeyError/cancelled`` when the task is cancelled before the read.
-    ///   ``BoardKeyError/gitFailed(message:)`` when the empty first commit cannot be made, for example because no
-    ///   `user.name` or `user.email` is set.
+    ///   ``BoardKeyError/gitFailed(message:)`` when the empty first commit cannot be made, for example because the
+    ///   branch cannot be set. A missing `user.name` or `user.email` does not stop the commit: the commit then gets
+    ///   a fallback identity from the macOS user.
     static func read(fromRepoAt directory: URL, firstCommitTime time: Date) async throws(BoardKeyError) -> BoardKey {
         let repo = try openRepo(at: directory)
         if try !repo.hasHeadCommit {
@@ -315,7 +316,7 @@ enum BoardKeyError: Error, Hashable, Sendable {
     case notARepo(path: String)
 
     /// The empty first commit of a repo with no commit cannot be made. The message gives the reason, for example a
-    /// git config with no `user.name`.
+    /// branch that cannot be set.
     case gitFailed(message: String)
 
     /// The task that needed the key or the worktree top was cancelled.

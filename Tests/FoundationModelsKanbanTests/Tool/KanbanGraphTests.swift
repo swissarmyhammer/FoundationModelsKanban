@@ -577,7 +577,7 @@ final class CallRecorder: KanbanCallObserver {
 /// A fake key reader whose first read fails, as when git cannot make the first commit. Each later read gives the key.
 final class FailOnceKeyReader: Sendable {
     /// The error of the first read.
-    static let failure = BoardKeyError.gitFailed(message: "the git config has no user.name")
+    static let failure = BoardKeyError.gitFailed(message: "the branch cannot be set")
 
     /// The key of each read after the first.
     private let key: BoardKey

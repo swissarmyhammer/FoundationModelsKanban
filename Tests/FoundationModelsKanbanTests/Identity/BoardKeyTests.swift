@@ -216,29 +216,75 @@ struct BoardKeyTests {
         #expect(try await GitSandbox.output(ofGit: ["rev-list", "--count", "--all"], in: repo) == "1")
     }
 
-    @Test("A repo with no commit and no usable git identity gives gitFailed with the reason, and gets no commit")
-    func firstCommitWithoutIdentityThrows() async throws {
+    @Test("A repo with an empty identity in its config makes the first commit with the fallback identity")
+    func firstCommitWithEmptyIdentityUsesFallback() async throws {
         let sandbox = try GitSandbox()
         let repo = try await sandbox.makeEmptyRepo(named: "anonymous-repo", withIdentity: false)
         for (key, value) in Self.emptyIdentityConfig {
             try await GitSandbox.runGit(withArguments: ["config", key, value], in: repo)
         }
-        let error = try await #require(throws: BoardKeyError.self) {
-            try await BoardKey.read(fromRepoAt: repo)
-        }
-        #expect(Self.gitFailureMessage(of: error)?.isEmpty == false)
-        #expect(try await GitSandbox.output(ofGit: ["rev-list", "--all"], in: repo) == "")
+        _ = try await BoardKey.read(fromRepoAt: repo)
+        #expect(try await Self.authorOfHead(in: repo) == Self.fallbackAuthor)
     }
 
-    /// Gives the message of a ``BoardKeyError/gitFailed(message:)`` error.
-    ///
-    /// - Parameter error: The error.
-    /// - Returns: The reason of the failure, or `nil` for each other error.
-    static func gitFailureMessage(of error: BoardKeyError) -> String? {
-        switch error {
-        case .gitFailed(let message): message
-        case .invalidRemoteURL, .notARepo, .cancelled: nil
+    @Test("A repo with no commit and no git identity in each config gets the first commit with the fallback identity")
+    func firstCommitWithNoIdentityAnywhereUsesFallback() async throws {
+        let sandbox = try GitSandbox()
+        let repo = try await sandbox.makeEmptyRepo(named: "no-identity-repo", withIdentity: false)
+        let home = try GitSandbox.makeFolder(named: Self.emptyHomeName, in: sandbox.root)
+        await #expect(processExitsWith: .success) { [repo = repo as URL, home = home as URL] in
+            BoardKeyTests.hideConfigOfUser(behind: home)
+            let key = try? await BoardKey.read(fromRepoAt: repo)
+            exit(key == nil ? EXIT_FAILURE : EXIT_SUCCESS)
         }
+        #expect(try await Self.authorOfHead(in: repo) == Self.fallbackAuthor)
+        #expect(try await BoardKey.read(fromRepoAt: repo) == sandbox.headKey(of: repo))
+    }
+
+    @Test("A repo with an identity in its config makes the first commit with that identity")
+    func firstCommitUsesIdentityOfRepo() async throws {
+        let sandbox = try GitSandbox()
+        let repo = try await sandbox.makeEmptyRepo(named: "identity-repo")
+        _ = try await BoardKey.read(fromRepoAt: repo)
+        #expect(try await Self.authorOfHead(in: repo) == "\(GitSandbox.userName) <\(GitSandbox.userEmail)>")
+    }
+
+    /// The name of the empty folder that is the home folder of the child process of the test with no git identity.
+    static let emptyHomeName = "empty-home"
+
+    /// The variables of the environment where libgit2 finds the config of the user: the home folder (`~/.gitconfig`)
+    /// and the XDG config folder (`~/.config/git/config`).
+    static let configOfUserVariables = ["HOME", "XDG_CONFIG_HOME"]
+
+    /// The `overwrite` value of `setenv` that replaces a variable that exists.
+    static let replaceVariable: Int32 = 1
+
+    /// The author that the first commit has when no git config gives an identity: the full name of the macOS user
+    /// (or the short name when the full name is empty), and an email from the short name.
+    static var fallbackAuthor: String {
+        let fullName = NSFullUserName()
+        let name = fullName.isEmpty ? NSUserName() : fullName
+        return "\(name) <\(NSUserName())@users.noreply.testudo.group>"
+    }
+
+    /// Points the config of the user for libgit2 to an empty folder, so libgit2 finds no global and no XDG config.
+    /// The call is for the child process of an exit test only, before the first libgit2 call: libgit2 reads the
+    /// variables one time, when it starts.
+    ///
+    /// - Parameter home: The empty folder.
+    static func hideConfigOfUser(behind home: URL) {
+        for variable in configOfUserVariables {
+            setenv(variable, home.path, replaceVariable)
+        }
+    }
+
+    /// Gives the author of the `HEAD` commit of a repo.
+    ///
+    /// - Parameter repo: The repo directory.
+    /// - Returns: The author as `Name <email>`.
+    /// - Throws: A ``GitProcessError`` when git cannot start, or an `ExpectationFailedError` when git fails.
+    static func authorOfHead(in repo: URL) async throws -> String {
+        try await GitSandbox.output(ofGit: ["log", "-1", "--format=%an <%ae>"], in: repo)
     }
 
     @Test("A read in a cancelled task throws cancelled")

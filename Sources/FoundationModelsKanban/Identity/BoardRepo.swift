@@ -49,6 +49,9 @@ final class BoardRepo {
     /// The git config key of the email of the author of a commit.
     private static let userEmailKey = "user.email"
 
+    /// The domain of the fallback email of a commit: `<short user name>@` and this domain.
+    private static let fallbackEmailDomain = "users.noreply.testudo.group"
+
     /// The number of seconds in one minute. libgit2 gives the time zone of a signature in minutes.
     private static let secondsPerMinute = 60
 
@@ -174,8 +177,10 @@ final class BoardRepo {
 
     /// Makes one empty first commit on the current branch, and sets the branch to it (divergence.md §16, M8).
     ///
-    /// The commit has the empty tree and no parent. The author and the committer are `user.name` and `user.email`
-    /// of the git config. The index and the working files do not change. The branch must not exist yet. When a
+    /// The commit has the empty tree and no parent. The author and the committer are the identity of
+    /// ``commitIdentity()``: `user.name` and `user.email` of the git config, or a fallback identity from the macOS user
+    /// when the config has no identity. Thus a missing identity does not stop the commit, also in the App Sandbox,
+    /// where libgit2 usually cannot read `~/.gitconfig`. The index and the working files do not change. The branch must not exist yet. When a
     /// different read made the first commit at the same time, the set of the branch fails, and the commit of the
     /// other read stays.
     ///
@@ -183,7 +188,7 @@ final class BoardRepo {
     ///   - message: The message of the commit.
     ///   - time: The time of the author and of the committer.
     /// - Throws: ``BoardKeyError/gitFailed(message:)`` with the reason when the commit cannot be made, for example
-    ///   when the git config has no `user.name` or `user.email`, or when the branch cannot be set.
+    ///   when libgit2 refuses the identity of the config, or when the branch cannot be set.
     func makeFirstCommit(message: String, at time: Date) throws(BoardKeyError) {
         let signature = try makeSignature(at: time)
         defer { git_signature_free(signature) }
@@ -195,35 +200,65 @@ final class BoardRepo {
         try setCurrentBranch(to: &commitID)
     }
 
-    /// Makes the signature of the first commit from the identity of the git config.
+    /// Makes the signature of the first commit from the identity of ``commitIdentity()``.
     ///
     /// - Parameter time: The time of the signature.
     /// - Returns: The signature. The caller frees it.
-    /// - Throws: ``BoardKeyError/gitFailed(message:)`` when the config has no name or no email, or when libgit2
-    ///   refuses them (for example an empty name). ``BoardKeyError/notARepo(path:)`` when the config cannot be read.
+    /// - Throws: ``BoardKeyError/gitFailed(message:)`` when libgit2 refuses the identity (for example a name with an
+    ///   angle bracket).
     private func makeSignature(at time: Date) throws(BoardKeyError) -> UnsafeMutablePointer<git_signature> {
-        let name = try identityValue(named: Self.userNameKey)
-        let email = try identityValue(named: Self.userEmailKey)
+        let identity = commitIdentity()
         let offset = Int32(TimeZone.current.secondsFromGMT(for: time) / Self.secondsPerMinute)
         var signature: UnsafeMutablePointer<git_signature>?
-        let status = git_signature_new(&signature, name, email, git_time_t(time.timeIntervalSince1970), offset)
+        let timestamp = git_time_t(time.timeIntervalSince1970)
+        let status = git_signature_new(&signature, identity.name, identity.email, timestamp, offset)
         guard status == GIT_OK.rawValue, let signature else {
             throw failure(of: status, in: .write)
         }
         return signature
     }
 
+    /// Gives the identity of the author and the committer of the first commit. Each value comes from the first
+    /// source that has it:
+    ///
+    /// 1. The git config of the repo, then the global and the XDG config, when libgit2 can read them
+    ///    (``configValue(named:)`` reads each level, and the repo level wins). This is the identity that
+    ///    `git_signature_default` gives.
+    /// 2. The macOS user: the full name (or the short name when the full name is empty), and the email
+    ///    `<short user name>@` ``fallbackEmailDomain``.
+    ///
+    /// - Returns: The name and the email.
+    private func commitIdentity() -> (name: String, email: String) {
+        let name = identityValue(named: Self.userNameKey) ?? Self.fallbackName
+        let email = identityValue(named: Self.userEmailKey) ?? Self.fallbackEmail
+        return (name, email)
+    }
+
     /// Reads one value of the identity of a commit from the git config.
     ///
+    /// A value with only white space is missing: libgit2 refuses an empty name and an empty email. A config that
+    /// cannot be read is also missing, because the first commit must not fail only for a missing identity.
+    /// ``configValue(named:)`` logs the reason of a config that cannot be read.
+    ///
     /// - Parameter key: ``userNameKey`` or ``userEmailKey``.
-    /// - Returns: The value.
-    /// - Throws: ``BoardKeyError/gitFailed(message:)`` when the config does not have the key.
-    ///   ``BoardKeyError/notARepo(path:)`` when the config cannot be read.
-    private func identityValue(named key: String) throws(BoardKeyError) -> String {
-        guard let value = try configValue(named: key) else {
-            throw .gitFailed(message: "Author identity unknown: the git config has no \(key)")
+    /// - Returns: The value, or `nil` when the config does not give a usable value.
+    private func identityValue(named key: String) -> String? {
+        guard let value = try? configValue(named: key), !value.trimmingCharacters(in: .whitespaces).isEmpty else {
+            return nil
         }
         return value
+    }
+
+    /// The fallback name of a commit: the full name of the macOS user, or the short name when the full name is
+    /// empty.
+    private static var fallbackName: String {
+        let fullName = NSFullUserName()
+        return fullName.isEmpty ? NSUserName() : fullName
+    }
+
+    /// The fallback email of a commit: the short name of the macOS user at ``fallbackEmailDomain``.
+    private static var fallbackEmail: String {
+        "\(NSUserName())@\(fallbackEmailDomain)"
     }
 
     /// Writes the empty tree to the object database of the repo.

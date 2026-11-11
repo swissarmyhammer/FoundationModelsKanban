@@ -67,8 +67,10 @@ let graph = try await KanbanHost.shared.session(
   repo, for example `local/c83fae4e58ce`. The key does not change when you move
   the folder or give it a new name. A repo with no commit gets one empty first
   commit on its current branch when the engine reads the key. This commit does
-  not take your staged files. Git must have a `user.name` and a `user.email`
-  for this commit.
+  not take your staged files. The author is the `user.name` and the
+  `user.email` of the git config. When the config has no identity (for example
+  in the App Sandbox, where `~/.gitconfig` is usually not visible), the author
+  is the macOS user, with the email `<short user name>@users.noreply.testudo.group`.
 - The package reads git with libgit2 in the process. It starts no `git`
   program, so it works in the App Sandbox and on a Mac with no developer
   tools. A folder whose git state cannot be read gets the key of a folder
