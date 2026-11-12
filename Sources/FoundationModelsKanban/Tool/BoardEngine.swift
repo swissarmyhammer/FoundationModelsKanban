@@ -435,6 +435,7 @@ actor BoardEngine {
     ///
     /// - Parameter paths: The changed paths of the batch.
     private func receive(_ paths: [URL]) async {
+        await resolveConflicts(in: paths)
         do {
             try await gate.run {
                 try await self.applyPublishing(paths)
@@ -442,6 +443,25 @@ actor BoardEngine {
         } catch {
             Log.kanban.error(
                 "The file watcher cannot apply a batch of changed files",
+                metadata: ["paths": "\(paths.map(\.path))", "error": "\(error)"]
+            )
+        }
+    }
+
+    /// Merges the iCloud conflict versions of the changed files of one batch, before the apply (TestudoApp D179). A
+    /// person must never resolve a conflict of a board in iCloud Drive. The merge runs outside the serial gate: it gets
+    /// only the board lock, the same as a commit, so it waits for no gate while it holds the lock. The write of a merge
+    /// gives a new batch, and that batch applies the merged log. A merge that fails is recorded with swift-log, and the
+    /// next batch of the file tries again.
+    ///
+    /// - Parameter paths: The changed paths of the batch.
+    private func resolveConflicts(in paths: [URL]) async {
+        let log = session.live.log
+        do {
+            _ = try await log.resolveConflicts(ofFilesAt: paths, with: ICloudFileVersions())
+        } catch {
+            Log.kanban.error(
+                "A conflict of a board file in iCloud Drive cannot be resolved",
                 metadata: ["paths": "\(paths.map(\.path))", "error": "\(error)"]
             )
         }
