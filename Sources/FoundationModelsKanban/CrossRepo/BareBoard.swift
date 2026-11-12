@@ -17,7 +17,11 @@ enum BareBoard {
         nearestBoardFolder(from: folder, below: nil) ?? folder
     }
 
-    /// Finds the nearest folder, from a folder up, that has a `.kanban/`.
+    /// Finds the nearest folder, from a folder up, that has a `.kanban/` that the process can read.
+    ///
+    /// A `.kanban/` that the process cannot read is not the board of the folder, and the search goes on up. In the
+    /// App Sandbox the search from a folder in the container goes through the home folder of the user, and the
+    /// sandbox refuses to read `~/.kanban/` there. Before, the open of that board failed, and the app did not start.
     ///
     /// - Parameters:
     ///   - folder: The first folder to look in.
@@ -28,7 +32,9 @@ enum BareBoard {
         let stop = top?.canonicalPath
         var candidate = folder.standardizedFileURL
         while candidate.canonicalPath != stop {
-            if BoardWatcher.existingBoardDirectory(ofBoardAt: candidate) != nil {
+            if let boardDirectory = BoardWatcher.existingBoardDirectory(ofBoardAt: candidate),
+                isReadable(boardDirectory)
+            {
                 return candidate
             }
             // The parent of `file:///` is `file:///../` for some URLs. The standardized form of that parent is `/`,
@@ -40,6 +46,14 @@ enum BareBoard {
             candidate = parent
         }
         return nil
+    }
+
+    /// Tells if the process can read the items of a directory.
+    ///
+    /// - Parameter directory: The directory.
+    /// - Returns: `true` when the read of the items of the directory succeeds.
+    private static func isReadable(_ directory: URL) -> Bool {
+        (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) != nil
     }
 }
 
