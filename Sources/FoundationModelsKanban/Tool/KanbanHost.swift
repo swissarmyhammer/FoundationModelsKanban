@@ -302,9 +302,9 @@ public actor KanbanHost {
     ///
     /// - Parameter engine: The engine of the folder that is now at the path.
     private func retireEngines(replacedBy engine: BoardEngine) async {
-        let path = engine.root.canonicalPath
+        let path = engine.canonicalRoot
         let replaced = loadedEngines.filter { other in
-            other.identity != engine.identity && other.root.canonicalPath == path && !other.isAtRoot
+            other.identity != engine.identity && other.canonicalRoot == path && !other.isAtRoot
         }
         for other in replaced {
             await retire(other)

@@ -447,7 +447,7 @@ public actor KanbanGraph: GraphQLEndpoint {
             subfolderBoard = nil
         }
         let engine = try await host.engine(ofSessionBoardAt: root)
-        await feeds.replace(engine.feed, forBoardAt: engine.root.canonicalPath)
+        await feeds.replace(engine.feed, forBoardAt: engine.canonicalRoot)
         await host.register(self)
         boardState = .resolved(engine, subfolderBoard: subfolderBoard)
         return engine
@@ -510,7 +510,7 @@ public actor KanbanGraph: GraphQLEndpoint {
         let folder = URL(filePath: path, directoryHint: .isDirectory)
         guard
             let engine = try? await host.relatedEngine(ofBoardAt: folder, knownKey: nil),
-            engine.root.canonicalPath == path,
+            engine.canonicalRoot == path,
             !isCurrentBoard(engine)
         else {
             forgetRelatedBoard(at: path)
@@ -525,7 +525,7 @@ public actor KanbanGraph: GraphQLEndpoint {
     /// - Parameter path: The canonical path of the repo directory of the related board.
     private func forgetRelatedBoard(at path: String) {
         relatedBoards[path] = nil
-        if case .resolved(let current, _) = boardState, current.root.canonicalPath == path {
+        if case .resolved(let current, _) = boardState, current.canonicalRoot == path {
             return
         }
         feeds.remove(forBoardAt: path)
@@ -871,7 +871,7 @@ public actor KanbanGraph: GraphQLEndpoint {
     ///   ``GateShortfall`` with the engines whose gates the call does not hold.
     private func admit(_ paths: Set<String>, holding held: HeldGates, current: BoardEngine) throws {
         let engines = paths.sorted().compactMap { (path: String) -> BoardEngine? in
-            guard let engine = path == current.root.canonicalPath ? current : relatedBoards[path] else {
+            guard let engine = path == current.canonicalRoot ? current : relatedBoards[path] else {
                 assertionFailure("A commit names the board at \(path), and the view did not load it")
                 Log.kanban.error("A commit names a board that the view did not load", metadata: ["path": "\(path)"])
                 return nil
@@ -934,7 +934,7 @@ public actor KanbanGraph: GraphQLEndpoint {
     @discardableResult
     private func logLiveChanges(of held: HeldGates) async -> [String: BoardChanges] {
         let taken = await held.engines.concurrentMap { engine in
-            await engine.takeLiveChanges().map { changes in (engine.root.canonicalPath, changes) }
+            await engine.takeLiveChanges().map { changes in (engine.canonicalRoot, changes) }
         }
         let changed = Dictionary(taken.compactMap { entry in entry }, uniquingKeysWith: { _, later in later })
         await host.publish(changed)
@@ -943,6 +943,11 @@ public actor KanbanGraph: GraphQLEndpoint {
         }
         return changed
     }
+
+    /// The number of change rounds that the view ran: each call of ``publish(_:skipping:)`` that made the changes of
+    /// the boards of the view. A test reads it to prove that a write runs no round in a view that did not load the
+    /// written board.
+    private(set) var changeRoundCount = 0
 
     /// Puts the changes of some boards into the change log of each board that the view loaded and that no view before
     /// it logged in this round (plan.md §6.7, KANBAN-7). The host calls it after each operation of each session and
@@ -955,8 +960,15 @@ public actor KanbanGraph: GraphQLEndpoint {
     /// the changes of the boards that load go into their logs. Only a cancel of the task is recorded with swift-log,
     /// and the view then logs no change.
     ///
-    /// First the view follows each board whose folder moved away from its path (divergence.md §16, Gap 6), so that a
-    /// subscriber from before a new repo replaced its repo gets the changes of the new repo.
+    /// A view that loaded no board at a path of `changed` runs no round: no board of the view changed, so the round
+    /// gives no change, and the derived fields of its boards read only the boards that it loaded. The check reads only
+    /// memory, with no call of the file system, so a write in a host with many boards and views costs a round only in
+    /// the views of the written board. The view tells that it logged each engine that it loaded, the same as a round
+    /// with no change, so that the host does not start a new change log for them.
+    ///
+    /// In a round, the view first follows each board whose folder moved away from its path (divergence.md §16, Gap 6),
+    /// so that a subscriber from before a new repo replaced its repo gets the changes of the new repo. The new repo has
+    /// the same path, so its first write runs a round in the view.
     ///
     /// - Parameters:
     ///   - changed: The changes of each board that changed, by the canonical path of its repo directory.
@@ -964,10 +976,18 @@ public actor KanbanGraph: GraphQLEndpoint {
     /// - Returns: The identities of the engines whose changes this view logged: each engine that it loaded and that
     ///   `logged` does not hold. No identity when the view did not find its board or could not make the changes.
     func publish(_ changed: [String: BoardChanges], skipping logged: Set<FolderIdentity>) async -> Set<FolderIdentity> {
-        await followMovedBoards()
-        guard !changed.isEmpty, case .resolved(let current, _) = boardState else {
+        guard !changed.isEmpty, case .resolved(let unrouted, _) = boardState else {
             return []
         }
+        let loaded = loadedEngines(current: unrouted)
+        guard loaded.keys.contains(where: { path in changed[path] != nil }) else {
+            return Set(loaded.values.map(\.identity)).subtracting(logged)
+        }
+        await followMovedBoards()
+        guard case .resolved(let current, _) = boardState else {
+            return []
+        }
+        changeRoundCount += 1
         let currentSession = await current.session
         let copy = currentSession.copy(at: current.root)
         let related: RelatedBoards
@@ -991,10 +1011,11 @@ public actor KanbanGraph: GraphQLEndpoint {
         }
         let engines = loadedEngines(current: current).filter { _, engine in !logged.contains(engine.identity) }
         let sessions = await loadedSessions(current: current)
+        let currentPath = copy.directory.canonicalPath
         let round = ChangeRound(
             of: changesOfLoadedEngines(in: changed, amongBoards: sessions, current: current),
             amongBoards: sessions,
-            currentPath: copy.directory.canonicalPath,
+            currentPath: currentPath,
             reading: related
         )
         for (path, engine) in engines.sorted(by: { lhs, rhs in lhs.key < rhs.key }) {
@@ -1008,7 +1029,7 @@ public actor KanbanGraph: GraphQLEndpoint {
                 readingNodesOf: round.view(of: session),
                 resolvingIn: eventBoard(
                     of: session,
-                    reading: eventRelatedBoards(ofBoardAt: path, in: round, current: copy)
+                    reading: eventRelatedBoards(ofBoardAt: path, in: round, current: copy, atPath: currentPath)
                 )
             )
         }
@@ -1033,7 +1054,7 @@ public actor KanbanGraph: GraphQLEndpoint {
     /// - Returns: The engines.
     private func loadedEngines(current: BoardEngine) -> [String: BoardEngine] {
         var engines = relatedBoards
-        engines[current.root.canonicalPath] = current
+        engines[current.canonicalRoot] = current
         return engines
     }
 
@@ -1088,13 +1109,16 @@ public actor KanbanGraph: GraphQLEndpoint {
     ///   - path: The canonical path of the repo directory of the board of the events.
     ///   - round: The changes of the operation.
     ///   - current: The copy of the current board: the top folder of its worktree and its current key.
+    ///   - currentPath: The canonical path of the directory of `current`. The caller calculates it one time for all the
+    ///     boards of a round, because each calculation is a call of the file system.
     /// - Returns: The other boards.
     private func eventRelatedBoards(
         ofBoardAt path: String,
         in round: ChangeRound,
-        current: BoardCopy
+        current: BoardCopy,
+        atPath currentPath: String
     ) -> RelatedBoards {
-        guard path != current.directory.canonicalPath else {
+        guard path != currentPath else {
             return round.after
         }
         return round.after.centered(onBoardAt: path, movingCurrentTo: current)
@@ -1383,7 +1407,7 @@ public actor KanbanGraph: GraphQLEndpoint {
     ///
     /// - Parameter engine: The engine of the related board.
     private func record(_ engine: BoardEngine) async {
-        let path = engine.root.canonicalPath
+        let path = engine.canonicalRoot
         guard let old = relatedBoards[path] else {
             relatedBoards[path] = engine
             feeds.add(engine.feed, forBoardAt: path)

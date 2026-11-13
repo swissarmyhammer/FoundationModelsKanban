@@ -79,6 +79,12 @@ actor BoardEngine {
     /// The root directory of the repo of the board, as the first load found it.
     nonisolated let root: URL
 
+    /// The canonical path of ``root`` (`URL.canonicalPath`): the key of the board in the change rounds and in the
+    /// session views. The engine calculates it one time, at its start, because each calculation is a `realpath(3)` call
+    /// of the file system, and each write of each board reads the key of each engine that a session view holds. The
+    /// path does not change when the folder is removed, so the stored value stays correct.
+    nonisolated let canonicalRoot: String
+
     /// The gate that lets one operation of the board run at a time: a call of a session view, or a batch of the
     /// watcher.
     nonisolated let gate = SerialGate()
@@ -146,6 +152,7 @@ actor BoardEngine {
         let cursor = await feed.cursor
         self.identity = identity
         self.root = root
+        canonicalRoot = root.canonicalPath
         self.session = session
         self.feed = feed
         self.filterModel = filterModel
@@ -497,7 +504,7 @@ actor BoardEngine {
         guard let changes = takeLiveChanges() else {
             return
         }
-        await publish([root.canonicalPath: changes])
+        await publish([canonicalRoot: changes])
         finishLogging()
     }
 

@@ -491,7 +491,43 @@ struct KanbanHostTests {
         await host.close()
     }
 
+    @Test("With many boards, a write runs a change round only in the session views that loaded the written board")
+    func writeRunsRoundOnlyInViewsOfItsBoard() async throws {
+        let directories = try (0..<Self.manyBoardCount).map { _ in try TemporaryDirectory() }
+        for directory in directories {
+            _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
+        }
+        let host = HostFixture.makeHost()
+        var sessions: [KanbanGraph] = []
+        for directory in directories {
+            sessions.append(try await host.session(workingDirectory: directory.url, actor: Self.firstActor))
+        }
+        let second = try await host.session(workingDirectory: directories[0].url, actor: Self.secondActor)
+        let before = await Self.changeRoundCounts(of: sessions + [second])
+        _ = try await CrossRepoFixture.addTask(with: "", on: sessions[0])
+        let after = await Self.changeRoundCounts(of: sessions + [second])
+        let rounds = zip(after, before).map { after, before in after - before }
+        #expect(rounds == [1] + Array(repeating: 0, count: Self.manyBoardCount - 1) + [1])
+        #expect(try await KanbanGraphTests.execute(Self.countQuery, on: second) == Self.countResponse(of: 2))
+        await host.close()
+    }
+
     // MARK: - Helpers
+
+    /// The number of boards of the test of a host with many boards.
+    static let manyBoardCount = 8
+
+    /// Gives the number of change rounds of each session view.
+    ///
+    /// - Parameter sessions: The session views.
+    /// - Returns: The count of each view, in the order of the views.
+    static func changeRoundCounts(of sessions: [KanbanGraph]) async -> [Int] {
+        var counts: [Int] = []
+        for session in sessions {
+            counts.append(await session.changeRoundCount)
+        }
+        return counts
+    }
 
     /// The number of boards that the stream test loads.
     static let streamTestBoardCount = 3
