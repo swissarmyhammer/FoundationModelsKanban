@@ -212,6 +212,31 @@ struct LogVersionMergeTests {
         #expect(resolved.map(\.canonicalPath) == [file.canonicalPath])
         #expect(try log.readLog(of: ref).events.map(\.id) == [first.id, second.id])
     }
+
+    @Test("With no board scan, a batch that holds the board directory checks no file of the board")
+    func boardDirectoryWithoutScanChecksNoFile() async throws {
+        let directory = try TemporaryDirectory()
+        let log = EventLog(repositoryAt: directory.url)
+        let first = try EventLogTests.titleEvent(atStep: 1, setting: "first")
+        let second = try EventLogTests.titleEvent(atStep: 2, setting: "second")
+        let ref = first.patch.node
+        try log.append(contentsOf: [first], toLogOf: ref)
+        let file = log.fileURL(for: ref)
+        let version = directory.url.appending(path: "conflict.jsonl", directoryHint: .notDirectory)
+        try Self.file([try second.encodedLine()]).write(to: version)
+        let source = FakeFileVersionSource(conflicts: [file.canonicalPath: [version]])
+
+        let resolved = try await log.resolveConflicts(
+            ofFilesAt: [log.directory],
+            scanningBoardDirectory: false,
+            with: source
+        )
+
+        #expect(resolved.isEmpty)
+        #expect(try log.readLog(of: ref).events.map(\.id) == [first.id])
+        #expect(log.holdsBoardDirectory([directory.url, log.directory]))
+        #expect(!log.holdsBoardDirectory([directory.url, file]))
+    }
 }
 
 /// A ``FileVersionSource`` that a test controls: it gives fixed conflict version files, and records each resolve.

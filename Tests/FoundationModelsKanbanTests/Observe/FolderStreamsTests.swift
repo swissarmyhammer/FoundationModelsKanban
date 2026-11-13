@@ -23,6 +23,12 @@ struct FolderStreamsTests {
     /// The id of the third event that a router test gives.
     static let thirdEventID: FSEventStreamEventId = 3
 
+    /// The number of folders of the test of many adds: one folder for each board of a host with many boards.
+    static let manyFolderCount = 20
+
+    /// A compare wait that no test reaches: the test gives the compare batches with ``FolderStreams/compareNow()``.
+    static let longCompareDelay = Duration.seconds(3600)
+
     /// The name of the file that a stream test writes into a watched folder.
     static let markerName = "marker.txt"
 
@@ -130,10 +136,11 @@ struct FolderStreamsTests {
 
     @Test("After the add of a second folder, the folder that the old stream watched gets a batch with its directory")
     func addReportsLostEventsToEachOtherFolder() async throws {
-        let streams = FolderStreams(service: QuietFolderEvents())
+        let streams = FolderStreams(service: QuietFolderEvents(), comparingAfter: Self.longCompareDelay)
         let (first, second) = (RouterSink(named: "first"), RouterSink(named: "second"))
         try await first.add(to: streams)
         try await second.add(to: streams)
+        await streams.compareNow()
         #expect(await first.finishedBatches() == [[first.folder]])
         #expect(await second.finishedBatches().isEmpty)
     }
@@ -141,11 +148,12 @@ struct FolderStreamsTests {
     @Test("The remove of a folder makes no new stream, and the folder that stays gets no compare batch")
     func removeMakesNoNewStream() async throws {
         let service = QuietFolderEvents()
-        let streams = FolderStreams(service: service)
+        let streams = FolderStreams(service: service, comparingAfter: Self.longCompareDelay)
         let (first, second) = (RouterSink(named: "first"), RouterSink(named: "second"))
         try await first.add(to: streams)
         try await second.add(to: streams)
         await second.remove(from: streams)
+        await streams.compareNow()
         #expect(service.startCount == 2)
         #expect(await streams.streamCount == 1)
         #expect(streams.folderCount == 1)
@@ -180,17 +188,44 @@ struct FolderStreamsTests {
     @Test("A new stream watches only the folders that stay, and each folder of the old stream gets a compare batch")
     func switchAfterRemoveLosesNoChange() async throws {
         let service = QuietFolderEvents()
-        let streams = FolderStreams(service: service)
+        let streams = FolderStreams(service: service, comparingAfter: Self.longCompareDelay)
         let (first, second) = (RouterSink(named: "first"), RouterSink(named: "second"))
         let third = RouterSink(named: "third")
         try await first.add(to: streams)
         try await second.add(to: streams)
+        await streams.compareNow()
         await second.remove(from: streams)
         try await third.add(to: streams)
+        await streams.compareNow()
         let expected = [first.folder, third.folder].map(FolderStreams.eventPath(of:)).sorted()
         #expect(service.startedPaths.last == expected)
         #expect(await first.finishedBatches() == [[first.folder], [first.folder]])
         #expect(await third.finishedBatches().isEmpty)
+    }
+
+    @Test("Many adds in one compare wait give each folder of an old stream one compare batch, not one for each add")
+    func manyAddsGiveOneCompareForEachFolder() async throws {
+        let service = QuietFolderEvents()
+        let streams = FolderStreams(service: service, comparingAfter: Self.longCompareDelay)
+        let sinks = (0..<Self.manyFolderCount).map { index in RouterSink(named: "board-\(index)") }
+        for sink in sinks {
+            try await sink.add(to: streams)
+        }
+        await streams.compareNow()
+        #expect(service.startCount == Self.manyFolderCount)
+        for sink in sinks.dropLast() {
+            #expect(await sink.finishedBatches() == [[sink.folder]])
+        }
+        #expect(await sinks.last?.finishedBatches() == [])
+    }
+
+    @Test("The compare batches of a stream change come by themselves after the compare wait")
+    func compareComesAfterWait() async throws {
+        let streams = FolderStreams(service: QuietFolderEvents(), comparingAfter: .milliseconds(10))
+        let (first, second) = (RouterSink(named: "first"), RouterSink(named: "second"))
+        try await first.add(to: streams)
+        try await second.add(to: streams)
+        #expect(await first.nextBatch() == [first.folder])
     }
 
     @Test("The adds that wait while a stream starts share one new stream")
@@ -393,6 +428,14 @@ private struct RouterSink {
     /// - Parameter streams: The streams.
     func remove(from streams: FolderStreams) async {
         await streams.remove(sink)
+    }
+
+    /// Waits for the next batch of the sink.
+    ///
+    /// - Returns: The batch, or `nil` when the batches ended.
+    func nextBatch() async -> [URL]? {
+        var iterator = batches.makeAsyncIterator()
+        return await iterator.next()
     }
 
     /// Ends the batches of the sink, and gives each batch that the router gave it.

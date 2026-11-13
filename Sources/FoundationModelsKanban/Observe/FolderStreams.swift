@@ -29,6 +29,11 @@ import Synchronization
 /// does not get that event. Thus after each change of the stream, each folder that the old stream watched gets one
 /// batch with the folder itself, the same as a batch of lost events, and its receiver compares each file of the folder.
 ///
+/// The compare batches of a change wait for a short time (``defaultCompareDelay``), and the changes in that time share
+/// one compare batch for each folder (``compareNow()``). A host with many boards adds many folders in a short time, for
+/// example at its start. With one compare of each folder for each add, the cost grows as the square of the number of
+/// boards. The compare then still comes after each change of the stream, so it finds each lost event.
+///
 /// Each FSEvents call is a synchronous message to fseventsd, and fseventsd can be slow to answer. Thus the actor runs
 /// on its own serial queue, not on the Swift cooperative pool: each change of the set of folders, and each FSEvents
 /// call of the change, runs on that queue. An async caller waits for the change with no blocked thread of the pool,
@@ -50,11 +55,36 @@ actor FolderStreams {
     /// The running stream and its folders.
     private var state = StreamState()
 
+    /// The time that the compare batches of a change of the stream wait, so that the changes in that time share them.
+    static let defaultCompareDelay = Duration.milliseconds(500)
+
+    /// The time that the compare batches of a change of the stream wait.
+    private let compareDelay: Duration
+
+    /// The paths of the folders of the old streams whose compare batches wait.
+    private var pendingCompare: Set<String> = []
+
+    /// The task that gives the compare batches that wait, after ``compareDelay``, or `nil` when no compare waits.
+    private var compareTask: Task<Void, Never>?
+
     /// Makes the streams of a host.
     ///
-    /// - Parameter service: The FSEvents calls. A test gives a fake.
-    init(service: any FolderEventService = SystemFolderEvents()) {
+    /// - Parameters:
+    ///   - service: The FSEvents calls. A test gives a fake.
+    ///   - compareDelay: The time that the compare batches of a change of the stream wait. The default is
+    ///     ``defaultCompareDelay``. A test gives a long time, and then gives the batches with ``compareNow()``.
+    init(
+        service: any FolderEventService = SystemFolderEvents(),
+        comparingAfter compareDelay: Duration = defaultCompareDelay
+    ) {
         self.service = service
+        self.compareDelay = compareDelay
+    }
+
+    /// Gives the compare batches that wait now, with no more wait. A test calls it to get the batches of its changes.
+    func compareNow() {
+        compareTask?.cancel()
+        reportPendingCompare()
     }
 
     /// The executor of the actor: the serial queue ``changes``, so that no FSEvents call runs on the cooperative pool.
@@ -162,7 +192,8 @@ actor FolderStreams {
     /// gets one batch with the folder itself, the same as a batch of lost events
     /// (``EventRouter/reportLostEvents(inFoldersOf:)``). Its receiver then compares each file of the folder, and finds
     /// the change of the lost event: that change occurred before the start of the new stream. A folder that the old
-    /// stream did not watch gets no such batch: no event of the old stream is an event of it.
+    /// stream did not watch gets no such batch: no event of the old stream is an event of it. The batch waits for
+    /// ``compareDelay``, and each change in that time shares it (``scheduleCompare(ofFoldersOf:)``).
     ///
     /// - Parameter directory: The added folder. The error names it.
     /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when FSEvents cannot make or start the new stream. Then
@@ -177,7 +208,42 @@ actor FolderStreams {
         let old = state
         old.stream?.end()
         state = next
-        router.reportLostEvents(inFoldersOf: old.paths)
+        scheduleCompare(ofFoldersOf: old.paths)
+    }
+
+    /// Adds folders to the compare that waits, and starts the wait when no compare waits. The batches come after
+    /// ``compareDelay`` from the first change that waits. A change in that time adds its folders to the same batches,
+    /// so each folder gets one compare batch for all the changes of the wait. The wait does not start again for a
+    /// later change, so a host that adds folders all the time still gets its compares.
+    ///
+    /// - Parameter paths: The paths of the folders of the old stream.
+    private func scheduleCompare(ofFoldersOf paths: [String]) {
+        pendingCompare.formUnion(paths)
+        guard compareTask == nil else {
+            return
+        }
+        let delay = compareDelay
+        // The task holds the streams until the wait ends, so that the batches come also when the owner of the streams
+        // let go of them during the wait. A sink that a watcher removed gets no batch.
+        compareTask = Task {
+            do {
+                try await Task.sleep(for: delay)
+            } catch {
+                return
+            }
+            self.reportPendingCompare()
+        }
+    }
+
+    /// Gives each folder of the compare that waits one batch with the folder itself, and ends the wait.
+    private func reportPendingCompare() {
+        compareTask = nil
+        let paths = pendingCompare.sorted()
+        pendingCompare.removeAll()
+        guard !paths.isEmpty else {
+            return
+        }
+        router.reportLostEvents(inFoldersOf: paths)
     }
 
     /// Makes and starts an FSEvents stream of some folders, at "now". The stream gives its events on ``queue``.

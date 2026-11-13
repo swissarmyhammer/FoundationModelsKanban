@@ -437,14 +437,30 @@ actor BoardEngine {
         await engine.receive(paths)
     }
 
+    /// `true` after a conflict check read each file of the board one time without an error: the check of the first
+    /// batch that holds the board directory, after the start of the watcher. A later batch that holds the board
+    /// directory, for example after a change of the FSEvents stream of the host, checks only the files that its
+    /// compare found changed. With many boards, a check of each file of each board for each such batch is too slow.
+    private var checkedEachFileForConflicts = false
+
     /// Gives one batch of the watcher to the serial gate (plan.md §5.6, batch). A batch that cannot apply is recorded
     /// with swift-log. The live graph then does not change, and the commit check still finds the change.
     ///
+    /// Before the apply, the engine merges the iCloud conflict versions of the changed files of the batch
+    /// (``resolveConflicts(in:scanningBoardDirectory:)``). A batch that holds the board directory checks each file of
+    /// the board only one time. After that, such a batch checks the files that its apply read again.
+    ///
     /// - Parameter paths: The changed paths of the batch.
     private func receive(_ paths: [URL]) async {
-        await resolveConflicts(in: paths)
+        let holdsBoard = session.live.log.holdsBoardDirectory(paths)
+        let scansBoard = holdsBoard && !checkedEachFileForConflicts
+        let checked = await resolveConflicts(in: paths, scanningBoardDirectory: scansBoard)
+        if scansBoard && checked {
+            checkedEachFileForConflicts = true
+        }
+        let applied: [URL]
         do {
-            try await gate.run {
+            applied = try await gate.run {
                 try await self.applyPublishing(paths)
             }
         } catch {
@@ -452,6 +468,10 @@ actor BoardEngine {
                 "The file watcher cannot apply a batch of changed files",
                 metadata: ["paths": "\(paths.map(\.path))", "error": "\(error)"]
             )
+            return
+        }
+        if holdsBoard && !scansBoard && !applied.isEmpty {
+            await resolveConflicts(in: applied, scanningBoardDirectory: false)
         }
     }
 
@@ -461,16 +481,26 @@ actor BoardEngine {
     /// gives a new batch, and that batch applies the merged log. A merge that fails is recorded with swift-log, and the
     /// next batch of the file tries again.
     ///
-    /// - Parameter paths: The changed paths of the batch.
-    private func resolveConflicts(in paths: [URL]) async {
+    /// - Parameters:
+    ///   - paths: The changed paths of the batch.
+    ///   - scansBoard: `true` when the board directory checks each file of the board.
+    /// - Returns: `true` when the check ended with no error.
+    @discardableResult
+    private func resolveConflicts(in paths: [URL], scanningBoardDirectory scansBoard: Bool) async -> Bool {
         let log = session.live.log
         do {
-            _ = try await log.resolveConflicts(ofFilesAt: paths, with: ICloudFileVersions())
+            _ = try await log.resolveConflicts(
+                ofFilesAt: paths,
+                scanningBoardDirectory: scansBoard,
+                with: ICloudFileVersions()
+            )
+            return true
         } catch {
             Log.kanban.error(
                 "A conflict of a board file in iCloud Drive cannot be resolved",
                 metadata: ["paths": "\(paths.map(\.path))", "error": "\(error)"]
             )
+            return false
         }
     }
 
@@ -481,9 +511,11 @@ actor BoardEngine {
     /// hold the gate (``readSession()``) then sees the batch.
     ///
     /// - Parameter paths: The changed paths of the batch.
+    /// - Returns: The node files that the apply read again (``apply(_:)``).
     /// - Throws: A ``BoardWatcherError`` when the watcher cannot move, or an ``EventLogError`` when a file cannot be
     ///   read.
-    private func applyPublishing(_ paths: [URL]) async throws {
+    @discardableResult
+    private func applyPublishing(_ paths: [URL]) async throws -> [URL] {
         let applied: [URL]
         do {
             applied = try await apply(paths)
@@ -493,9 +525,10 @@ actor BoardEngine {
         }
         await publishChanges()
         guard !applied.isEmpty else {
-            return
+            return []
         }
         batchObserver?.didApply(changedPaths: applied)
+        return applied
     }
 
     /// Sends the changes of the live graph since the last take to the session views, which put them into the change

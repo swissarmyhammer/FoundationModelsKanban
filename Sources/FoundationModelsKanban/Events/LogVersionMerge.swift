@@ -232,15 +232,17 @@ extension EventLog {
     ///
     /// A log file (`.jsonl`) gets the merge of its current version and each conflict version
     /// (``LogVersionMerge/merge(versionsAt:intoLogAt:)``). A different file of the board keeps its current version.
-    /// When a path is the board directory, the call checks each file of the board, for example after FSEvents lost
-    /// events, or after the start of a watcher. A path outside the board directory, and the lock file, are not
-    /// checked.
+    /// When a path is the board directory and `scansBoard` is `true`, the call checks each file of the board, for
+    /// example after the start of a watcher. When `scansBoard` is `false`, the board directory checks no file: a caller
+    /// that already checked each file one time then checks only the files that a compare found changed. A path outside
+    /// the board directory, and the lock file, are not checked.
     ///
     /// The call gets the board lock only when a file has a conflict version, so a board with no conflict pays only for
     /// the version queries.
     ///
     /// - Parameters:
     ///   - paths: The changed paths.
+    ///   - scansBoard: `true` when the board directory checks each file of the board. The default is `true`.
     ///   - source: The version store.
     /// - Returns: The files whose conflict versions were resolved, in the order of the paths.
     /// - Throws: ``EventLogError/lockFailed(path:code:)`` when the lock cannot be got,
@@ -248,9 +250,10 @@ extension EventLog {
     ///   cannot resolve a version.
     func resolveConflicts(
         ofFilesAt paths: [URL],
+        scanningBoardDirectory scansBoard: Bool = true,
         with source: some FileVersionSource
     ) async throws(EventLogError) -> [URL] {
-        let candidates = checkedFiles(among: paths)
+        let candidates = checkedFiles(among: paths, scanningBoardDirectory: scansBoard)
         guard candidates.contains(where: { file in !source.conflictVersions(of: file).isEmpty }) else {
             return []
         }
@@ -292,19 +295,32 @@ extension EventLog {
         return resolved
     }
 
-    /// Gives the files that a conflict check reads for some changed paths: each path in the board directory that is
-    /// not the lock file, and each file of the board for the board directory itself. Each file is in the list one
-    /// time.
+    /// Tells whether some changed paths hold the board directory itself: a batch of lost events, or the first compare
+    /// after the start of a watcher.
     ///
     /// - Parameter paths: The changed paths.
+    /// - Returns: `true` when a path is the board directory.
+    func holdsBoardDirectory(_ paths: [URL]) -> Bool {
+        let boardPath = directory.canonicalPath
+        return paths.contains { path in path.canonicalPath == boardPath }
+    }
+
+    /// Gives the files that a conflict check reads for some changed paths: each path in the board directory that is
+    /// not the lock file, and each file of the board for the board directory itself when `scansBoard` is `true`. Each
+    /// file is in the list one time.
+    ///
+    /// - Parameters:
+    ///   - paths: The changed paths.
+    ///   - scansBoard: `true` when the board directory gives each file of the board.
     /// - Returns: The files, in the order of the paths.
-    private func checkedFiles(among paths: [URL]) -> [URL] {
+    private func checkedFiles(among paths: [URL], scanningBoardDirectory scansBoard: Bool) -> [URL] {
         let boardPath = directory.canonicalPath
         var seen: Set<String> = []
         var files: [URL] = []
         for path in paths {
             let canonical = path.canonicalPath
-            let found = canonical == boardPath ? allFiles() : (canonical.hasPrefix(boardPath + "/") ? [path] : [])
+            let isBoard = canonical == boardPath
+            let found = isBoard ? (scansBoard ? allFiles() : []) : (canonical.hasPrefix(boardPath + "/") ? [path] : [])
             for file in found where file.lastPathComponent != Self.lockFileName {
                 if seen.insert(file.canonicalPath).inserted {
                     files.append(file)
