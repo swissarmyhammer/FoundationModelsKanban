@@ -55,15 +55,23 @@ struct GitProcessTests {
     /// The name of the file where the slow command writes the process id of git.
     static let pidFileName = "git.pid"
 
+    /// The time that the command of the cancel test runs when no cancel stops it. It is much longer than
+    /// ``slowCommandDuration``. The test measures from before the start of git, and a start of git on a loaded CI
+    /// runner can take some seconds. A cancel that does not stop git still fails the test.
+    static let cancelledCommandDuration = Duration.seconds(cancelledCommandSeconds)
+
+    /// The number of seconds in ``cancelledCommandDuration``.
+    private static let cancelledCommandSeconds = 60
+
     /// Gives the arguments of a git alias that writes the process id of git to a file, and then runs for
-    /// ``slowCommandDuration``.
+    /// ``cancelledCommandDuration``.
     ///
     /// The alias runs in a shell whose parent process is git, so `$PPID` in the shell is the process id of git.
     ///
     /// - Parameter file: The file that gets the process id.
     /// - Returns: The arguments after `git`.
     static func slowArguments(recordingPIDIn file: URL) -> [String] {
-        let seconds = slowCommandDuration.components.seconds
+        let seconds = cancelledCommandDuration.components.seconds
         return ["-c", "alias.slowchild=!echo $PPID > '\(file.path)'; sleep \(seconds)", "slowchild"]
     }
 
@@ -185,7 +193,7 @@ struct GitProcessTests {
             group.cancelAll()
             return try await group.next()
         }
-        #expect(start.duration(to: clock.now) < Self.slowCommandDuration)
+        #expect(start.duration(to: clock.now) < Self.cancelledCommandDuration)
         let result = try #require(outcome)
         #expect(throws: GitProcessError.cancelled(arguments: arguments)) { try result.get() }
         let pid = try #require(Self.recordedPID(in: pidFile))
