@@ -61,7 +61,7 @@
       "location" : "git@github.com:swissarmyhammer/FoundationModelsMetadataRegistry.git",
       "state" : {
         "branch" : "main",
-        "revision" : "71115e703a005d996502a73343b90a7774120d58"
+        "revision" : "60451d08e3098beaed984e2ea59e8dc7c7428357"
       }
     },
     {
@@ -70,7 +70,7 @@
       "location" : "git@github.com:swissarmyhammer/FoundationModelsMultitool.git",
       "state" : {
         "branch" : "main",
-        "revision" : "f3284dc4eece494171a2ef02c204ef5e2add55fa"
+        "revision" : "8ab15aad9c2d412ad27ff41e2c983ed59a098ecb"
       }
     },
     {
@@ -88,7 +88,7 @@
       "location" : "git@github.com:swissarmyhammer/FoundationModelsRouter.git",
       "state" : {
         "branch" : "main",
-        "revision" : "aa7052d9568057729bf0df6a222f90cdf4031a8e"
+        "revision" : "d643950a9e824254727b4c23a4ee58a478f17658"
       }
     },
     {
@@ -142,7 +142,7 @@
       "location" : "https://github.com/swissarmyhammer/mlx-swift-lm",
       "state" : {
         "branch" : "stable",
-        "revision" : "021b93416d522d223dc931d26b6362a2fe9aa6c7"
+        "revision" : "e7e3ed8407ed78341b8fad9d1d39d9cd83e75a1d"
       }
     },
     {
