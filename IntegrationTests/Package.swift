@@ -68,3 +68,10 @@ let package = Package(
     // Swift 6 language mode, the same as the root package. It turns on the complete strict concurrency checks.
     swiftLanguageModes: [.v6]
 )
+
+// The root package builds each target with C++ interoperability, because its tests reach the llama.cpp C++ modules of
+// FoundationModelsRouter. A Swift module that imports a module with C++ interoperability must also build with C++
+// interoperability. Thus each target here takes the mode too.
+for target in package.targets where target.type != .plugin {
+    target.swiftSettings = (target.swiftSettings ?? []) + [.interoperabilityMode(.Cxx)]
+}
