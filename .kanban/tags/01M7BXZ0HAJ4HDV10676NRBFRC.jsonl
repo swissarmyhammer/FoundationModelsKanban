@@ -1,0 +1,1 @@
+{"id":"01M7BXZ0HBEG78ZAN7N3NME37Y","timestamp":"2026-11-14T02:25:11.723110Z","op":"create","item_id":"01M7BXZ0HAJ4HDV10676NRBFRC","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: 0e8a16\n+tag_name: build\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: 0e8a16\n-tag_name: build\n","transaction_id":null}

@@ -59,7 +59,7 @@ struct CodeModeTests {
     ///   - tool: The one tool of the `runCode` tool, for example a tool that wraps the `kanban` tool.
     /// - Returns: The rendered result of `runCode`.
     static func run(_ code: String, with tool: some Tool) async throws -> String {
-        let registry = try MultiTool.Builder()
+        let registry = try MultiTool.Builder(mode: .open)
             .addTool(tool)
             .buildRegistry()
         return try await MultiTool(registry: registry).call(arguments: RunCodeArguments(code: code))

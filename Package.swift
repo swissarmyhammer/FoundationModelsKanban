@@ -173,3 +173,12 @@ let package = Package(
     // checks for each target.
     swiftLanguageModes: [.v6]
 )
+
+// The test target links FoundationModelsMultitool, which reaches
+// FoundationModelsRouter and its llama.cpp C++ modules. A Swift module that
+// imports a module that has C++ interoperability must also build with C++
+// interoperability. Thus each target here takes the mode, the same as the
+// sibling packages do.
+for target in package.targets where target.type != .plugin {
+    target.swiftSettings = (target.swiftSettings ?? []) + [.interoperabilityMode(.Cxx)]
+}

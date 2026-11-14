@@ -86,9 +86,20 @@ struct EndpointConventionTests {
         GraphQLRemovedParameter.warningCode,
     ]
 
+    /// The code of the warning of the toolkit when it reads a raw line break in a quoted string as `\n`. The toolkit
+    /// does not make its own constant public, so this test names the code.
+    static let rawNewlineWarningCode = "RAW_NEWLINE_IN_STRING"
+
     /// Each code of the toolkit that the endpoint can give: `RESYNC_REQUIRED` ends a `changes` subscription that
-    /// cannot resume after its cursor.
-    static let toolkitCodes = [GraphQLToolkitError.resyncRequired(reason: "").code]
+    /// cannot resume after its cursor. The rewrite of a document gives a warning when it takes out the definition of
+    /// a variable that the operation never reads, when it changes the type of a variable between `String` and `ID`,
+    /// and when it reads a raw line break in a quoted string as `\n` (divergence.md §14).
+    static let toolkitCodes = [
+        GraphQLToolkitError.resyncRequired(reason: "").code,
+        DocumentRewriter.unreadVariableWarningCode,
+        DocumentRewriter.coercedVariableTypeWarningCode,
+        rawNewlineWarningCode,
+    ]
 
     /// Each error code and each warning code that the endpoint can give, for rule 8, with no repeat.
     static var codes: [String] {

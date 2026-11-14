@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsExtras
 import GraphQL
 import Testing
 
@@ -339,11 +340,15 @@ struct RemovedParameterTests {
         #expect(try NameRewriteTests.rewritten(from: removed.document).text == removed.rewrittenText)
     }
 
-    @Test("A variable that the caller does not read, and that no removed Rust parameter reads, keeps its definition")
-    func unreadVariableKeepsDefinition() throws {
+    /// The GraphQL toolkit of FoundationModelsExtras takes out the definition of a variable that the operation never
+    /// reads, with an `UNUSED_VARIABLE` warning (divergence.md §14). Thus validation does not fail the call.
+    @Test("A variable that the caller does not read, and that no removed Rust parameter reads, goes out with a warning")
+    func unreadVariableGoesOutWithWarning() throws {
         let document = #"mutation ($u: String) { addTask(input: { title: "x", due: "y" }) { title } }"#
-        let text = #"mutation ($u: String) { addTask(input: { title: "x",  }) { title } }"#
-        #expect(try NameRewriteTests.rewritten(from: document).text == text)
+        let text = #"mutation  { addTask(input: { title: "x",  }) { title } }"#
+        let rewritten = try NameRewriteTests.rewritten(from: document)
+        #expect(rewritten.text == text)
+        #expect(rewritten.warnings.map(\.code).contains(DocumentRewriter.unreadVariableWarningCode))
     }
 
     // MARK: - Failed calls
