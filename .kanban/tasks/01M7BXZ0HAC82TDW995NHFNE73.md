@@ -30,8 +30,24 @@ comments:
     - evidence: swift test — Test run with 1933 tests in 168 suites passed; 0 failures, 0 issues, 0 skipped; XCTest executed 0 tests. The only warning is the allowed SwiftPM "missing creator" warning.
     - next: review
   timestamp: 2026-11-14T02:55:28.048978+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m7bzradw3ckbv1kfs8d0h360
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (7f8f4ae): 0 findings, 0 confirmed, 0 refuted; 7 validator pairs attempted, 0 failed. Package.resolved and divergence.md have no validator; .kanban/ is ignored.
+    - next: none. The task is in done.
+  timestamp: 2026-11-14T02:56:29.628670+00:00
+- actor: claude-code
+  id: 01m7bzrkymx4qy6we99mazbvdy
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 6 files
+    - test: green — swift test, 1933 tests in 168 suites passed
+    - commit: 7f8f4ae
+    - review: clean — 0 findings
+  timestamp: 2026-11-14T02:56:39.380394+00:00
+position_column: done
+position_ordinal: ffcb80
 title: Build and pass swift test on the current package mains
 ---
 TestudoApp card ^wkn3fsa. FoundationModelsKanban must build and pass `swift test` on the current mains of the sibling packages. CI uses the tracked `Package.resolved`, so commit the updated pins.
