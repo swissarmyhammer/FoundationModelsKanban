@@ -69,9 +69,6 @@ let package = Package(
     swiftLanguageModes: [.v6]
 )
 
-// The root package builds each target with C++ interoperability, because its tests reach the llama.cpp C++ modules of
-// FoundationModelsRouter. A Swift module that imports a module with C++ interoperability must also build with C++
-// interoperability. Thus each target here takes the mode too.
-for target in package.targets where target.type != .plugin {
-    target.swiftSettings = (target.swiftSettings ?? []) + [.interoperabilityMode(.Cxx)]
-}
+// No target here takes C++ interoperability. The library product of the root package has none, and this package
+// links no llama.cpp module. Thus this package is a Swift-only consumer of the library, and its build in CI proves
+// that a consumer needs no C++ interoperability to import `FoundationModelsKanban`.

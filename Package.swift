@@ -177,8 +177,10 @@ let package = Package(
 // The test target links FoundationModelsMultitool, which reaches
 // FoundationModelsRouter and its llama.cpp C++ modules. A Swift module that
 // imports a module that has C++ interoperability must also build with C++
-// interoperability. Thus each target here takes the mode, the same as the
-// sibling packages do.
-for target in package.targets where target.type != .plugin {
+// interoperability. Thus only the test target takes the mode. The library
+// target stays Swift and C only (libgit2 is a C API), so a consumer of the
+// library needs no C++ interoperability. `ManifestTests` pins this, and the
+// nested `IntegrationTests/` package is a Swift-only consumer that CI builds.
+for target in package.targets where target.type == .test {
     target.swiftSettings = (target.swiftSettings ?? []) + [.interoperabilityMode(.Cxx)]
 }
