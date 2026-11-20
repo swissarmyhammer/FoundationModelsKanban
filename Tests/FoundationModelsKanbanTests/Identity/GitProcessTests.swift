@@ -45,6 +45,16 @@ struct GitProcessTests {
         ProcessInfo.processInfo.activeProcessorCount * commandsPerProcessor
     }
 
+    /// The time limit of each command in the tests that run many git commands at the same time. The limit starts
+    /// before git starts, so it also counts the wait for a thread and the start of the process. On a loaded CI runner
+    /// with many processors, the start of ``parallelCommandCount`` commands while the other suites run took more than
+    /// ``GitProcess/defaultTimeLimit`` (CI run 44343306842). These tests do not check the limit, so it is long. A
+    /// command that never ends still fails the test.
+    static let parallelGitLimit = Duration.seconds(parallelGitLimitSeconds)
+
+    /// The number of seconds in ``parallelGitLimit``.
+    private static let parallelGitLimitSeconds = 180
+
     /// The time that a short sleep waits while many slow git commands run. It is much shorter than
     /// ``slowCommandDuration``.
     static let shortSleep = Duration.milliseconds(shortSleepMilliseconds)
@@ -151,7 +161,7 @@ struct GitProcessTests {
         let (_, statuses) = try await Self.runningGitInParallel(
             withArguments: Self.versionArguments,
             inDirectory: sandbox.root,
-            timeLimit: GitProcess.defaultTimeLimit
+            timeLimit: Self.parallelGitLimit
         ) {}
         #expect(statuses == Array(repeating: GitProcess.successStatus, count: Self.parallelCommandCount))
     }
@@ -163,7 +173,7 @@ struct GitProcessTests {
         let (waited, statuses) = try await Self.runningGitInParallel(
             withArguments: Self.slowArguments,
             inDirectory: sandbox.root,
-            timeLimit: GitProcess.defaultTimeLimit
+            timeLimit: Self.parallelGitLimit
         ) {
             let start = clock.now
             try await Task.sleep(for: Self.shortSleep)
