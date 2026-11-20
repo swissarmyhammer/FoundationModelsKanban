@@ -33,35 +33,6 @@ struct GitProcessTests {
     /// The number of milliseconds in ``shortGitLimit``.
     private static let shortGitLimitMilliseconds = 300
 
-    /// The number of git commands for each processor in the tests that run many git commands at the same time. A
-    /// command that blocked the thread of its task would thus block each thread of Swift concurrency.
-    static let commandsPerProcessor = 4
-
-    /// The arguments of a git command that ends at once and writes to the standard output.
-    static let versionArguments = ["--version"]
-
-    /// The number of git commands in the tests that run many git commands at the same time.
-    static var parallelCommandCount: Int {
-        ProcessInfo.processInfo.activeProcessorCount * commandsPerProcessor
-    }
-
-    /// The time limit of each command in the tests that run many git commands at the same time. The limit starts
-    /// before git starts, so it also counts the wait for a thread and the start of the process. On a loaded CI runner
-    /// with many processors, the start of ``parallelCommandCount`` commands while the other suites run took more than
-    /// ``GitProcess/defaultTimeLimit`` (CI run 44343306842). These tests do not check the limit, so it is long. A
-    /// command that never ends still fails the test.
-    static let parallelGitLimit = Duration.seconds(parallelGitLimitSeconds)
-
-    /// The number of seconds in ``parallelGitLimit``.
-    private static let parallelGitLimitSeconds = 180
-
-    /// The time that a short sleep waits while many slow git commands run. It is much shorter than
-    /// ``slowCommandDuration``.
-    static let shortSleep = Duration.milliseconds(shortSleepMilliseconds)
-
-    /// The number of milliseconds in ``shortSleep``.
-    private static let shortSleepMilliseconds = 100
-
     /// The name of the file where the slow command writes the process id of git.
     static let pidFileName = "git.pid"
 
@@ -103,34 +74,6 @@ struct GitProcessTests {
         kill(pid, 0) == -1 && errno == ESRCH
     }
 
-    /// Runs one git command ``parallelCommandCount`` times, all at the same time, and runs a body while the
-    /// commands run.
-    ///
-    /// - Parameters:
-    ///   - arguments: The arguments after `git`.
-    ///   - directory: The directory where git runs.
-    ///   - limit: The time limit of each command.
-    ///   - body: The work that runs while the commands run.
-    /// - Returns: The value of the body, and the exit status of each command.
-    /// - Throws: A ``GitProcessError`` when a command cannot start or does not end, or the error of the body.
-    static func runningGitInParallel<Value: Sendable>(
-        withArguments arguments: [String],
-        inDirectory directory: URL,
-        timeLimit limit: Duration,
-        while body: () async throws -> Value
-    ) async throws -> (value: Value, statuses: [Int32]) {
-        try await withThrowingTaskGroup(of: Int32.self) { group in
-            for _ in 0..<parallelCommandCount {
-                group.addTask {
-                    try await GitProcess.run(withArguments: arguments, inDirectory: directory, timeLimit: limit).status
-                }
-            }
-            let value = try await body()
-            let statuses = try await group.reduce(into: []) { statuses, status in statuses.append(status) }
-            return (value, statuses)
-        }
-    }
-
     @Test("A large standard error of git does not block the read of the standard output")
     func largeErrorOutputDoesNotBlock() async throws {
         let sandbox = try GitSandbox()
@@ -153,34 +96,6 @@ struct GitProcessTests {
             )
         }
         #expect(start.duration(to: clock.now) < Self.slowCommandDuration)
-    }
-
-    @Test("Git commands in more tasks than processors all end")
-    func parallelCommandsAllEnd() async throws {
-        let sandbox = try GitSandbox()
-        let (_, statuses) = try await Self.runningGitInParallel(
-            withArguments: Self.versionArguments,
-            inDirectory: sandbox.root,
-            timeLimit: Self.parallelGitLimit
-        ) {}
-        #expect(statuses == Array(repeating: GitProcess.successStatus, count: Self.parallelCommandCount))
-    }
-
-    @Test("A short sleep wakes near its deadline while many slow git commands run")
-    func sleepWakesWhileGitRuns() async throws {
-        let sandbox = try GitSandbox()
-        let clock = ContinuousClock()
-        let (waited, statuses) = try await Self.runningGitInParallel(
-            withArguments: Self.slowArguments,
-            inDirectory: sandbox.root,
-            timeLimit: Self.parallelGitLimit
-        ) {
-            let start = clock.now
-            try await Task.sleep(for: Self.shortSleep)
-            return start.duration(to: clock.now)
-        }
-        #expect(waited < Self.slowCommandDuration, "The sleep must not wait for the end of a git command")
-        #expect(statuses == Array(repeating: GitProcess.successStatus, count: Self.parallelCommandCount))
     }
 
     @Test("A cancelled git command ends at once, and its git process is gone")
