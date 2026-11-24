@@ -136,8 +136,24 @@ comments:
     - evidence: one commit holds the KeyedBoard.make change and the kanban task files
     - next: review
   timestamp: 2026-11-24T14:26:55.133673+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: wballard
+  id: 01m86zb4qfzjww3ct8aq669r9y
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (7c6783f..6424a76), 5 files reviewed, 2 .kanban/ files ignored. counts: findings 0, confirmed 0, refuted 0, attempted 7, failed 0. All items of the 2026-11-24 08:03 and 08:17 sections are checked.
+    - next: done. Send the public API names and the commit to the FoundationModelsACPAgent and TestudoApp sessions (card note).
+  timestamp: 2026-11-24T14:28:47.471997+00:00
+- actor: wballard
+  id: 01m86zbryf5c9syzmb8yangjjg
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — 5 files, KeyedBoard.make(key:graph:source:), private init
+    - test: green — swift test, 1949 passed
+    - commit: 6424a76
+    - review: clean — 0 findings
+  timestamp: 2026-11-24T14:29:08.175134+00:00
+position_column: done
+position_ordinal: ffce80
 title: Add a read of the board of a folder that opens no session
 ---
 ## Problem
