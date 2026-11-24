@@ -70,10 +70,26 @@ comments:
     - evidence: One commit holds the fix of the 4 findings of the 2026-11-24 09:26 review. EventLog.resolveConflicts is the one merge step. BoardEngine and the folder stream call it. The merge test asserts .tasksChanged([taskID]). makeHost and makeGraph use a fake version store by default. KanbanGraph.init(root:...) takes readingVersionsWith. No behavior change.
     - next: review
   timestamp: 2026-11-24T15:39:37.163112+00:00
+- actor: wballard
+  id: 01m873hmdq4apb1ydx0szqh728
+  text: |-
+    ### review — clean
+    - evidence: review sha d4a1950~1..d4a1950 (FMK commit d4a1950); 0 findings (0 confirmed, 1 refuted, 14 attempted); 8 files reviewed, 2 .kanban files not reviewed (ignore rule). All 4 items of the 2026-11-24 09:26 review are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-11-24T15:42:14.455803+00:00
+- actor: wballard
+  id: 01m873jcdzkyme7qbwq7tc9rtv
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 8 files, one shared EventLog.resolveConflicts(ofFilesAt:...), fake version store default in tests; 4 prior findings checked
+    - test: green — swift test, 1985 passed
+    - commit: d4a1950
+    - review: clean — 0 findings
+  timestamp: 2026-11-24T15:42:39.039194+00:00
 depends_on:
 - 01M86WENX96J2YGHMBMKPXEWM2
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffd180
 title: Merge the iCloud conflict versions in the change stream of a folder
 ---
 ## Problem
