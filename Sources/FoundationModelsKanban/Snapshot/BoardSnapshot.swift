@@ -21,6 +21,11 @@ public struct BoardSnapshot: Sendable, Hashable, Codable {
     /// ordinal, then by ULID.
     public let tasks: [Task]
 
+    /// The stamp of the board (``KanbanHost/boardStamp(ofFolder:)``), read before the log files. A write during the
+    /// read gives a different stamp at the next check, so that no change is lost. When nothing changed after the
+    /// read, the stamp is equal to the stamp that ``KanbanHost/boardStamp(ofFolder:)`` gives now.
+    public let stamp: BoardStamp
+
     /// One live column of the board.
     public struct Column: Sendable, Hashable, Codable {
         /// The slug of the column, for example `todo`.
@@ -119,29 +124,23 @@ extension BoardRead {
     /// its log files (divergence.md Q23). Thus a read while a session writes the same board gives the state of the
     /// board before that write.
     ///
+    /// The read takes the stamp of the board (``BoardSnapshot/stamp``) before it reads the log files, the same as a
+    /// session reads the file signatures first. Thus a write during the read changes the stamp at the next check.
+    ///
     /// - Parameters:
     ///   - folder: The folder that holds `.kanban/`. The read does not go up to a parent folder.
     ///   - observer: Gets a call when each worker of the loader reads a file, or `nil` for no calls.
     /// - Throws: ``EventLogError/incompatibleBoard(directory:)`` when the `.kanban/` folder is a board of the old Rust
     ///   kanban. ``EventLogError/fileSystem(path:detail:)`` when a folder or a file is there and cannot be read.
     init(readingFolder folder: URL, reportingTo observer: (any LoaderWorkerObserver)?) async throws(EventLogError) {
-        guard let directory = BoardWatcher.existingBoardDirectory(ofBoardAt: folder), Self.isFolder(directory) else {
+        guard let stamp = BoardStamp(ofBoardAt: folder) else {
             self = .noBoard
             return
         }
         let log = EventLog(repositoryAt: folder)
         try log.checkCompatibility()
         let joined = try await BoardLoader(reading: log, reportingTo: observer).join()
-        self = .board(BoardSnapshot(of: joined.graph))
-    }
-
-    /// Tells if an item is a folder. A regular file with the name `.kanban` is not a board.
-    ///
-    /// - Parameter item: The item.
-    /// - Returns: `true` when the item is there and is a folder.
-    private static func isFolder(_ item: URL) -> Bool {
-        var isDirectory: ObjCBool = false
-        return FileManager.default.fileExists(atPath: item.path, isDirectory: &isDirectory) && isDirectory.boolValue
+        self = .board(BoardSnapshot(of: joined.graph, stamp: stamp))
     }
 }
 
@@ -157,8 +156,11 @@ extension BoardSnapshot {
     /// The key of the board is the key that the board log recorded at the last write: the git key, else the primary
     /// board ID. A dependency marker with this key resolves in the board. The read does not ask git for the key.
     ///
-    /// - Parameter graph: The graph of the board.
-    init(of graph: Graph) {
+    /// - Parameters:
+    ///   - graph: The graph of the board.
+    ///   - stamp: The stamp of the board, read before the log files of the graph.
+    init(of graph: Graph, stamp: BoardStamp) {
+        self.stamp = stamp
         let readiness = Readiness(of: graph, inBoard: Self.recordedKey(of: graph))
         columns = readiness.columnOrder.slots.compactMap { slot in
             graph.node(at: slot, as: ColumnNode.self).map(Column.init(of:))

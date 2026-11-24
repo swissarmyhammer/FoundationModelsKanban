@@ -172,6 +172,9 @@ public actor KanbanHost {
     /// is the key that the board log recorded at the last write, not the key that git gives now
     /// (``BoardSnapshot/Task/dependsOn``).
     ///
+    /// The snapshot holds the stamp of the board at the start of the read (``BoardSnapshot/stamp``). Compare it with
+    /// ``boardStamp(ofFolder:)`` to know if the board changed after the read.
+    ///
     /// - Parameter folder: The folder that holds `.kanban/`. The read does not go up to a parent folder, and it does
     ///   not ask git for the top folder of the worktree.
     /// - Returns: ``BoardRead/noBoard`` when the folder has no `.kanban/` folder, else the snapshot of the board.
@@ -181,6 +184,20 @@ public actor KanbanHost {
         try await Self.mappingCallFailure {
             try await BoardRead(readingFolder: folder, reportingTo: configuration.workerObserver)
         }
+    }
+
+    /// Gives a cheap stamp of the board of a folder, so that a reader that holds a ``BoardSnapshot`` reads the board
+    /// again only after a change (TestudoApp D214). Compare the stamp with ``BoardSnapshot/stamp``.
+    ///
+    /// The call reads no log file: it lists the node directories and calls `stat` on each log file. It opens no
+    /// session, takes no lock, runs no git, and writes no file. A change of a task, a column, or another node, a new
+    /// log file, and a removed log file each change the stamp. The lock of a session does not change it.
+    /// ``BoardStamp`` states the limit of the stamp.
+    ///
+    /// - Parameter folder: The folder that holds `.kanban/`. The call does not go up to a parent folder.
+    /// - Returns: The stamp, or `nil` when the folder has no `.kanban/` folder (no board).
+    public nonisolated func boardStamp(ofFolder folder: URL) -> BoardStamp? {
+        BoardStamp(ofBoardAt: folder)
     }
 
     /// Runs the body of a public call, and gives each error of the body that the caller can correct as its

@@ -151,17 +151,20 @@ struct BoardSnapshotTests {
     /// Reads the board of a folder with the GraphQL query of a session, and makes the snapshot that the read must
     /// give.
     ///
-    /// - Parameter graph: The session.
+    /// - Parameters:
+    ///   - graph: The session.
+    ///   - folder: The folder of the board. The expected snapshot holds the stamp of its board now.
     /// - Returns: The expected snapshot.
-    /// - Throws: An error when the query fails or its response does not decode.
-    static func expectedSnapshot(from graph: KanbanGraph) async throws -> BoardSnapshot {
+    /// - Throws: An error when the query fails, its response does not decode, or the folder gives no stamp.
+    static func expectedSnapshot(from graph: KanbanGraph, in folder: URL) async throws -> BoardSnapshot {
         let response = try await KanbanGraphTests.execute(boardQuery, on: graph)
         let board = try JSONDecoder().decode(BoardResponse.self, from: Data(response.utf8)).data.board
         return BoardSnapshot(
             columns: try board.columns.map { column in
                 BoardSnapshot.Column(id: try localID(of: column.id), name: column.name, order: column.order)
             },
-            tasks: try board.tasks.edges.map { edge in try expectedTask(from: edge.node) }
+            tasks: try board.tasks.edges.map { edge in try expectedTask(from: edge.node) },
+            stamp: try #require(KanbanHost.shared.boardStamp(ofFolder: folder))
         )
     }
 
@@ -322,7 +325,7 @@ struct BoardSnapshotTests {
     func sessionBoardGivesQueryValues() async throws {
         let directory = try TemporaryDirectory()
         let board = try await Self.writeSessionBoard(in: directory.url)
-        let expected = try await Self.expectedSnapshot(from: board.graph)
+        let expected = try await Self.expectedSnapshot(from: board.graph, in: directory.url)
         await board.graph.close()
         try Self.requireSessionValues(in: expected, firstTask: board.firstTask)
         #expect(try await KanbanHost.shared.readBoard(inFolder: directory.url) == .board(expected))
@@ -337,7 +340,7 @@ struct BoardSnapshotTests {
         let body = "Needs \(marker) #\(Self.markerTag)"
         let field = #"addTask(input: { title: "\#(Self.markerTitle)", body: "\#(body)" }) { id }"#
         _ = try await CommentTests.run(field, on: board.graph)
-        let expected = try await Self.expectedSnapshot(from: board.graph)
+        let expected = try await Self.expectedSnapshot(from: board.graph, in: directory.url)
         await board.graph.close()
         let markerTask = try #require(expected.tasks.first { task in task.title == Self.markerTitle })
         try #require(markerTask.tags == [Self.markerTag] && markerTask.dependsOn == [board.firstTask])
@@ -454,7 +457,7 @@ struct BoardSnapshotTests {
 
 extension BoardRead {
     /// The snapshot of a read that found a board, or `nil` for no board. Only the tests read it.
-    fileprivate var snapshot: BoardSnapshot? {
+    var snapshot: BoardSnapshot? {
         guard case .board(let snapshot) = self else {
             return nil
         }
