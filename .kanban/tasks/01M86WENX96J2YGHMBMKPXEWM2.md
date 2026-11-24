@@ -32,10 +32,26 @@ comments:
     - evidence: local commit of KanbanHost.boardChanges(inFolder:), BoardFolderChange, and the EventLog.isBoardDirectory(at:) canonical path fix
     - next: review
   timestamp: 2026-11-24T15:06:54.420415+00:00
+- actor: wballard
+  id: 01m871ppa02c22mde09jc3ra7c
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (a10c21f), 0 findings (confirmed 0, refuted 2, attempted 7, failed 0); 4 files reviewed; 2 .kanban files not reviewed (.reviewignore)
+    - next: the task is in done. Send the public API names and the commit a10c21f to the FoundationModelsACPAgent session and to the TestudoApp session.
+  timestamp: 2026-11-24T15:10:03.072349+00:00
+- actor: wballard
+  id: 01m871qdzc22j4nzytf4dm87gc
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — Observe/BoardFolderChanges.swift, KanbanHost.boardChanges(inFolder:), 16 tests
+    - test: green — swift test, 1976 passed; the test step fixed EventLog.isBoardDirectory(at:) (canonical path)
+    - commit: a10c21f
+    - review: clean — 0 findings
+  timestamp: 2026-11-24T15:10:27.308864+00:00
 depends_on:
 - 01M86WEGWCS6X5RW20HFKQB54D
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffd080
 title: Add a change stream of the board of a folder that opens no session
 ---
 ## Problem
