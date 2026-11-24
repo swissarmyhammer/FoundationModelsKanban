@@ -72,6 +72,18 @@ struct ReadmeExamplesTests {
     /// The kind of the update of a new node.
     private static let createdKind = UpdateKind.created.rawValue
 
+    /// The call of example 6 that reads the board of a folder with no session.
+    private static let readBoardCall = "try await KanbanHost.shared.readBoard(inFolder: folder)"
+
+    /// The check of example 6 that compares the stamp of the board now with the stamp of the read.
+    private static let stampCheck = "KanbanHost.shared.boardStamp(ofFolder: folder) == snapshot.stamp"
+
+    /// The call of example 6 that starts the change stream of the board of a folder.
+    private static let boardChangesCall = "try await KanbanHost.shared.boardChanges(inFolder: folder)"
+
+    /// The call of example 6 that ends the loop that reads the change stream.
+    private static let followerCancel = "follower.cancel()"
+
     /// Each GraphQL document of a Swift code block of the README.
     private static let swiftDocuments: Set = [
         addTaskMutation,
@@ -173,6 +185,25 @@ struct ReadmeExamplesTests {
     private static func expectReadmeShows(_ response: String) throws {
         let blocks = try readmeBlocks(of: .json)
         #expect(blocks.contains(response), "README.md must have the json block \(response); found \(blocks)")
+    }
+
+    /// Checks that the README has a text.
+    ///
+    /// - Parameter text: The text, for example one line of a Swift code block.
+    /// - Throws: An error when the README cannot be read.
+    private static func expectReadmeContains(_ text: String) throws {
+        #expect(try RepositoryFile.text(at: readmePath).contains(text), "README.md must contain \(text)")
+    }
+
+    /// Gives the snapshot of a read of the board of a folder.
+    ///
+    /// - Parameter read: The result of ``KanbanHost/readBoard(inFolder:)``.
+    /// - Returns: The snapshot, or `nil` for ``BoardRead/noBoard``.
+    private static func snapshot(of read: BoardRead) -> BoardSnapshot? {
+        guard case .board(let snapshot) = read else {
+            return nil
+        }
+        return snapshot
     }
 
     /// Gives the response of a call that writes as the README shows it: with ``readmeTransaction`` in place of the
@@ -372,7 +403,58 @@ struct ReadmeExamplesTests {
         #expect(rest == [])
     }
 
-    // MARK: - Example 6: the layout of .kanban/
+    // MARK: - Example 6: read and watch a folder with no session
+
+    @Test("readBoard(inFolder:) of a folder with no .kanban/ folder gives noBoard")
+    func readOfFolderWithNoBoardGivesNoBoard() async throws {
+        let directory = try TemporaryDirectory()
+        let read = try await KanbanHost.shared.readBoard(inFolder: directory.url)
+        #expect(read == .noBoard)
+        try Self.expectReadmeContains(Self.readBoardCall)
+    }
+
+    @Test("After a read with no change of the board, the stamp of the folder is the stamp of the snapshot")
+    func stampAfterReadWithNoChangeIsSnapshotStamp() async throws {
+        let directory = try TemporaryDirectory()
+        _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
+        let read = try await KanbanHost.shared.readBoard(inFolder: directory.url)
+        let snapshot = try #require(Self.snapshot(of: read), "the folder must have a board")
+        #expect(KanbanHost.shared.boardStamp(ofFolder: directory.url) == snapshot.stamp)
+        try Self.expectReadmeContains(Self.stampCheck)
+    }
+
+    @Test("A task that a session of a different host adds shows in the change stream of the folder")
+    func newTaskShowsInFolderStream() async throws {
+        let directory = try TemporaryDirectory()
+        _ = try KanbanGraphTests.writeFixture(inRepoAt: directory.url)
+        let changes = try await KanbanHost.shared.boardChanges(inFolder: directory.url)
+        let graph = try KanbanGraphTests.makeGraph(at: directory.url)
+        let uri = try await CrossRepoFixture.addTask(with: "", on: graph)
+        let added = try BoardFolderChangesTests.taskID(ofURI: uri)
+        let boardDirectory = EventLog(repositoryAt: directory.url).directory
+        let shows = try await BoardFolderChangesTests.waitsForChange(of: changes, ofTask: added, at: boardDirectory)
+        await graph.close()
+        #expect(shows)
+        try Self.expectReadmeContains(Self.boardChangesCall)
+    }
+
+    @Test("A cancel of the task that reads the change stream ends its loop")
+    func cancelEndsLoopOfFolderStream() async throws {
+        let directory = try TemporaryDirectory()
+        let changes = try await KanbanHost.shared.boardChanges(inFolder: directory.url)
+        let follower = Task {
+            for await _ in changes {}
+            return Task.isCancelled
+        }
+        follower.cancel()
+        let ended = try await FolderEventWait.value(waitingFor: "the end of the loop", at: directory.url.path) {
+            await follower.value
+        }
+        #expect(ended)
+        try Self.expectReadmeContains(Self.followerCancel)
+    }
+
+    // MARK: - Example 7: the layout of .kanban/
 
     @Test("The README layout of .kanban/ names each entry that a board can have")
     func readmeLayoutNamesBoardEntries() throws {

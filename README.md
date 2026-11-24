@@ -275,7 +275,108 @@ other sessions. After `close()`, the loop of `watcher` ends:
 await graph.close()
 ```
 
-### 6. The layout of `.kanban/`
+### 6. Read and watch a folder with no session
+
+A host that has no session can read the board of a folder, keep a stamp of
+it, and follow its changes. For example, an app can give the tasks of each
+folder to Spotlight. These three calls open no session and load no engine.
+They run no git, and they do not go up to a parent folder: `folder` is the
+folder that holds `.kanban/`.
+
+`readBoard(inFolder:)` reads the board one time. It gives `.noBoard` when the
+folder has no `.kanban/` folder:
+
+```swift
+let folder = URL(filePath: "/path/to/my-project")
+let read = try await KanbanHost.shared.readBoard(inFolder: folder)
+switch read {
+case .noBoard:
+    print("The folder has no board")
+case .board(let snapshot):
+    for task in snapshot.tasks {
+        print(task.shortID, task.title, task.column ?? "no column")
+    }
+}
+```
+
+- The read takes no lock and writes no file. Thus a git repo with no commit
+  gets no first commit.
+- The read is safe while a session writes the same board. A torn last line of
+  a log file does not show. A transaction that is not complete in all its log
+  files does not show.
+- The `BoardSnapshot` has the columns and the tasks of the board. Each task
+  has its comments, its assignees, and its dependencies. A dependency on a
+  task of a different board gives the URI text of that task.
+
+`boardStamp(ofFolder:)` gives a cheap stamp of the board. Compare it with the
+stamp of the snapshot, and read the board again only after a change:
+
+```swift
+if case .board(let snapshot) = read,
+   KanbanHost.shared.boardStamp(ofFolder: folder) == snapshot.stamp {
+    print("The board did not change after the read")
+}
+```
+
+- The stamp reads no log file. It calls `stat` on each log file. It takes no
+  lock and writes no file. It is `nil` when the folder has no `.kanban/`
+  folder.
+- A new line in a log file, a new log file, and a removed log file each
+  change the stamp. The lock file of a session does not change it.
+- The limit: on a file system with times of one second or more (for example
+  HFS+, FAT, or some network shares), the stamp does not see a rewrite of a
+  log file in place with the same size in the same second. APFS times have
+  nanoseconds, and a session only appends to a log file. Thus each write of a
+  session changes the stamp.
+- The stamp is the same in each process and after a restart, so you can keep
+  it. After the volume mounts again, the stamp can change one time with no
+  change of the board.
+
+`boardChanges(inFolder:)` gives a stream of the changes of the board. Read the
+board first: the stream gives no change for the board as it is at the start.
+Each `BoardFolderChange` has the folder, the stamp of the board after the
+change, and a kind:
+
+```swift
+let changes = try await KanbanHost.shared.boardChanges(inFolder: folder)
+let follower = Task {
+    for await change in changes {
+        switch change.kind {
+        case .tasksChanged(let ids):
+            print("New or changed tasks:", ids)
+        case .tasksRemoved(let ids):
+            print("Removed tasks:", ids)
+        case .boardChanged:
+            print("A column, a tag, an actor, or the board changed")
+        case .boardRemoved:
+            print("The .kanban/ folder went away")
+        }
+    }
+}
+```
+
+- The stream gets the changes from a file watcher on the folder. Thus it
+  gives the changes of a session of this process, of a different process (for
+  example the `sah` tools), and of each other writer of the log files.
+- `tasksChanged` and `tasksRemoved` give the ULID text of each task, the same
+  as `BoardSnapshot.Task.id`. A change of a comment gives the id of its task.
+  Read the board again to get the new values.
+- After `boardRemoved`, the stream continues. When a new `.kanban/` folder
+  comes, the stream gives `boardChanged`, and `tasksChanged` with the id of
+  each task.
+- The stream writes only when it merges the iCloud conflict versions of a log
+  file. A board in iCloud Drive gets these versions when two Macs write the
+  same log. The stream writes the merged log under the board lock, the same
+  as a session. A board with no conflict version gets no lock and no write.
+- The stream ends only when you cancel the task that reads it, or when the
+  host closes. The file watcher then stops. Thus you must cancel the task
+  when you do not need the changes of the folder any more:
+
+```swift
+follower.cancel()
+```
+
+### 7. The layout of `.kanban/`
 
 The first mutation makes the `.kanban/` directory in the folder of the board.
 Each node has its own log file. Each line of a log file is one event of that
