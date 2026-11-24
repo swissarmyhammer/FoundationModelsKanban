@@ -1,8 +1,41 @@
 ---
+comments:
+- actor: wballard
+  id: 01m870j7dch2vcjykbv6epxpv9
+  text: 'Research done. Plan: new file Observe/BoardFolderChanges.swift holds the public enum BoardFolderChange, an internal BoardFolderFeed (the stream, the BoardWatcher on the folder, and the consumer task), and an internal BoardFolderReader (a LiveGraph or no board). The reader keeps only the paths that are a node log (EventLog.ref(ofFileAt:)), the .kanban directory, a node directory, or the watched folder (lost events). Thus a batch with only the lock file changes nothing and reads no file. A batch with a directory compares each file (LiveGraph.changedRefs()), else LiveGraph.changedRefs(among:). Then LiveGraph.apply(changedPaths:) and Graph.changedRefs(since:). The reader calls LiveGraph.takeChanges() after each apply, because the feed does not use the pending changes and they must not grow. KanbanHost keeps a weak list of the feed watchers and stops them in close(). A closed host gives a stream that ends at once. Discovery: BoardStamp.entries(ofBoardAt:) states that the change stream compares the entries, but the card says to use LiveGraph signatures; the LiveGraph signatures give the same file compare, so the feed uses them and does not call the stamp. The feed uses FileStamp(ofItemAt:) of .kanban to tell if the board is there, the same check as BoardStamp.'
+  timestamp: 2026-11-24T14:50:08.172496+00:00
+- actor: wballard
+  id: 01m8711fa150mhdsxht3eyzz12
+  text: 'Implementation landed. Added requirement from the FoundationModelsACPAgent consumer (sent by the coordinator): each event gives the folder and the BoardStamp after the change. Thus BoardFolderChange is a public struct with folder: URL, stamp: BoardStamp?, kind: Kind, and Kind is the enum tasksChanged, tasksRemoved, boardChanged, boardRemoved. The reader reads the stamp first, before it reads a log file (the same rule as BoardSnapshot.stamp), and a nil stamp tells that .kanban/ is gone. A new .kanban/ gives boardChanged and tasksChanged with each task id. A full reload (Graph.changedRefs(since:) gives nil) gives boardChanged and each live task as changed. Not verified: whether a caller that drops the stream with no cancel ends the watcher; the doc states only the cancel and the host close as ends.'
+  timestamp: 2026-11-24T14:58:27.777054+00:00
+- actor: wballard
+  id: 01m8711ft77khzs004fm5xbn35
+  text: |-
+    ### implement — changed
+    - evidence: 3 files — Sources/FoundationModelsKanban/Observe/BoardFolderChanges.swift (new), Sources/FoundationModelsKanban/Tool/KanbanHost.swift, Tests/FoundationModelsKanbanTests/Observe/BoardFolderChangesTests.swift (new, 16 tests). swift test --filter BoardFolderChangesTests: 16 passed. Full swift test: 1976 tests in 172 suites passed, 0 warnings.
+    - next: /review
+  timestamp: 2026-11-24T14:58:28.295892+00:00
+- actor: wballard
+  id: 01m871gc2afzhyhknas2mvc4vz
+  text: |-
+    ### test - green
+    - found: the first run failed 1 test of 1976. The test waited 60 seconds for boardRemoved in BoardFolderChangesTests (a different one of the remove tests failed on each run).
+    - cause: EventLog.isBoardDirectory compared paths with resolvingSymlinksInPath. For a removed path, that call keeps /private for the path of an FSEvents event, and not for the path of the log. So each FSEvents batch of a removed .kanban was dropped as no board path. The test passed only when the first compare batch ran after the remove.
+    - fix: EventLog.isBoardDirectory now compares canonicalPath, which gives the same answer before and after a removal.
+    - evidence: swift test, 1976 tests in 172 suites passed, 0 failed, 0 skipped. The only warning is the accepted mlx-swift_Cmlx.bundle warning.
+    - next: review
+  timestamp: 2026-11-24T15:06:35.978254+00:00
+- actor: wballard
+  id: 01m871gy2m5e01mbytybaa0n5b
+  text: |-
+    ### commit - changed
+    - evidence: local commit of KanbanHost.boardChanges(inFolder:), BoardFolderChange, and the EventLog.isBoardDirectory(at:) canonical path fix
+    - next: review
+  timestamp: 2026-11-24T15:06:54.420415+00:00
 depends_on:
 - 01M86WEGWCS6X5RW20HFKQB54D
-position_column: todo
-position_ordinal: '8280'
+position_column: doing
+position_ordinal: '80'
 title: Add a change stream of the board of a folder that opens no session
 ---
 ## Problem
@@ -31,22 +64,27 @@ Now the only stream is `KanbanGraph.subscribe(query:variables:operationName:)` w
 - The stream ends when the caller cancels its loop (`onTermination` stops the watcher) and when the host closes (the internal `KanbanHost.close()` of a test host).
 - Out of scope: the session subscription also sends no `Change` for a removed task file. Make a separate card for that if a session client needs it.
 
+- Added requirement (from the FoundationModelsACPAgent consumer): each event gives the folder (the URL that the caller gave to `boardChanges(inFolder:)`) and the new `BoardStamp` of the board after the change. For "board gone", the stamp is `nil`. The design: `public struct BoardFolderChange { folder: URL; stamp: BoardStamp?; kind: Kind }`, and `Kind` is the enum `tasksChanged(Set<String>)`, `tasksRemoved(Set<String>)`, `boardChanged`, `boardRemoved`. The doc comment states both points, and that the stream works for a folder with no open session.
+
 ## Acceptance Criteria
-- [ ] A task that a second engine on the same folder adds shows in `tasksChanged` of the stream.
-- [ ] A delete of a task file gives its id in `tasksRemoved`.
-- [ ] A `deleteTask` mutation gives the id in `tasksRemoved`. A new comment gives the id of its task in `tasksChanged`.
-- [ ] A remove of `.kanban/` gives `boardRemoved`. A new `.kanban/` later gives `tasksChanged` with each task id.
-- [ ] The stream adds no folder to the FSEvents stream other than the watched folder, and makes no engine in the host.
+- [x] A task that a second engine on the same folder adds shows in `tasksChanged` of the stream.
+- [x] A delete of a task file gives its id in `tasksRemoved`.
+- [x] A `deleteTask` mutation gives the id in `tasksRemoved`. A new comment gives the id of its task in `tasksChanged`.
+- [x] A remove of `.kanban/` gives `boardRemoved`. A new `.kanban/` later gives `tasksChanged` with each task id.
+- [x] The stream adds no folder to the FSEvents stream other than the watched folder, and makes no engine in the host.
+- [x] Each event gives the folder that the caller gave and the stamp of the board after the change; "board gone" has a `nil` stamp.
 
 ## Tests (write them first)
 New file `Tests/FoundationModelsKanbanTests/Observe/BoardFolderChangesTests.swift`. Use `TemporaryDirectory`, `FolderEventWait` (Tests/FoundationModelsKanbanTests/Observe/FolderEventWait.swift), and the patterns of `SubscriptionTests.appendedLineSendsOneChange` (Tests/FoundationModelsKanbanTests/Observe/SubscriptionTests.swift).
-- [ ] A task that a second engine on the same folder adds shows in the stream of the first reader. (Brief test. The second engine is a session view with its own host: `KanbanGraphTests.makeGraph(at:)`. It runs `addTask`.)
-- [ ] A delete of a task file gives the id in the stream (`tasksRemoved`). (Brief test. Use `FileManager.removeItem(at:)` on `EventLog.fileURL(for:)`.)
-- [ ] A line that a different writer appends to a task file (`BoardWatcherTests.writeLaterTitle(to:mintingFrom:in:)`) gives the id in `tasksChanged`.
-- [ ] `deleteTask` gives `tasksRemoved`; `addComment` gives `tasksChanged` with the task id; a column rename gives `boardChanged`.
-- [ ] A remove of `.kanban/` gives `boardRemoved`.
-- [ ] A cancel of the loop stops the watcher (`BoardWatcher.isRunning` is `false`).
-- [ ] `swift test` passes. Run the headless root `swift test` one time only.
+- [x] A task that a second engine on the same folder adds shows in the stream of the first reader. (Brief test. The second engine is a session view with its own host: `KanbanGraphTests.makeGraph(at:)`. It runs `addTask`.)
+- [x] A delete of a task file gives the id in the stream (`tasksRemoved`). (Brief test. Use `FileManager.removeItem(at:)` on `EventLog.fileURL(for:)`.)
+- [x] A line that a different writer appends to a task file (`BoardWatcherTests.writeLaterTitle(to:mintingFrom:in:)`) gives the id in `tasksChanged`.
+- [x] `deleteTask` gives `tasksRemoved`; `addComment` gives `tasksChanged` with the task id; a column rename gives `boardChanged`.
+- [x] A remove of `.kanban/` gives `boardRemoved`.
+- [x] A cancel of the loop stops the watcher (`BoardWatcher.isRunning` is `false`).
+- [x] The stamp of an event equals `KanbanHost.boardStamp(ofFolder:)` right after the change. The folder of an event is the folder that the caller gave. The `boardRemoved` event has no stamp.
+- [x] A lock file alone gives no change.
+- [x] `swift test` passes. Run the headless root `swift test` one time only.
 
 ## Workflow
 - Use `/tdd`: write the failing tests first, then make them pass.

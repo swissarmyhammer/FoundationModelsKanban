@@ -90,6 +90,11 @@ public actor KanbanHost {
     /// alive.
     private var views: [ObjectIdentifier: Weak<KanbanGraph>] = [:]
 
+    /// The file watcher of each change stream of a board folder (``boardChanges(inFolder:)``). The host does not keep
+    /// a watcher alive: the task of its stream keeps it until the stream ends. ``close()`` stops each watcher that is
+    /// still alive, so that its stream ends.
+    private var folderFeedWatchers: [Weak<BoardWatcher>] = []
+
     /// `true` after ``close()``: no file watcher starts.
     private var isClosed = false
 
@@ -198,6 +203,64 @@ public actor KanbanHost {
     /// - Returns: The stamp, or `nil` when the folder has no `.kanban/` folder (no board).
     public nonisolated func boardStamp(ofFolder folder: URL) -> BoardStamp? {
         BoardStamp(ofBoardAt: folder)
+    }
+
+    /// Gives a stream of the changes of the board of a folder that has no open session, for example to keep the tasks
+    /// of the folder current in Spotlight (TestudoApp D214).
+    ///
+    /// The stream works for a folder with no open session. It opens no session, loads no engine, takes no lock, runs
+    /// no git, and writes no file. It keeps its own copy of the board in memory, and gets the changes from a file
+    /// watcher on the folder, on the one FSEvents stream of the host. Thus it gives the changes of a session of this
+    /// process, of a different process (for example the `sah` tools), and of each other writer of the log files. A
+    /// write of the lock file only gives no change.
+    ///
+    /// Each change holds the folder (the URL that the caller gave) and the stamp of the board after the change
+    /// (``BoardFolderChange/stamp``), or no stamp when `.kanban/` went away. When nothing changed after the change,
+    /// the stamp is equal to the stamp that ``boardStamp(ofFolder:)`` gives now.
+    ///
+    /// The stream starts after the board read. It gives no change for the board as it is at the start: read the board
+    /// with ``readBoard(inFolder:)`` first. When `.kanban/` goes away, the stream gives
+    /// ``BoardFolderChange/Kind/boardRemoved`` and continues. When a new `.kanban/` comes, it gives
+    /// ``BoardFolderChange/Kind/boardChanged`` and ``BoardFolderChange/Kind/tasksChanged(_:)`` with the id of each
+    /// task. The stream ends when the caller cancels the task of its loop, and the file watcher then stops.
+    ///
+    /// - Parameter folder: The folder that holds `.kanban/`. It must exist, but it does not have to hold `.kanban/`
+    ///   yet. The stream does not go up to a parent folder.
+    /// - Returns: The stream of the changes.
+    /// - Throws: ``KanbanError/incompatibleBoard(directory:)`` when the `.kanban/` folder is a board of the old Rust
+    ///   kanban. An I/O fault when a folder or a log file cannot be read, or when the file watcher cannot start.
+    public func boardChanges(inFolder folder: URL) async throws -> AsyncStream<BoardFolderChange> {
+        guard let feed = try await startBoardFolderFeed(inFolder: folder) else {
+            return AsyncStream { continuation in continuation.finish() }
+        }
+        return feed.changes
+    }
+
+    /// Starts the change stream of the board of a folder (``boardChanges(inFolder:)``), and records its watcher, so
+    /// that ``close()`` stops it.
+    ///
+    /// - Parameter folder: The folder that holds `.kanban/`.
+    /// - Returns: The feed of the stream, or `nil` when the host is closed: then no watcher starts. A feed that started
+    ///   while the host closed has a stopped watcher, so its stream ends.
+    /// - Throws: The errors of ``boardChanges(inFolder:)``.
+    func startBoardFolderFeed(inFolder folder: URL) async throws -> BoardFolderFeed? {
+        guard !isClosed else {
+            return nil
+        }
+        let feed = try await Self.mappingCallFailure {
+            try await BoardFolderFeed.start(
+                watching: folder,
+                in: folderStreams,
+                reportingTo: configuration.workerObserver
+            )
+        }
+        guard !isClosed else {
+            await feed.watcher.stop()
+            return feed
+        }
+        folderFeedWatchers.removeGoneObjects()
+        folderFeedWatchers.append(Weak(object: feed.watcher))
+        return feed
     }
 
     /// Runs the body of a public call, and gives each error of the body that the caller can correct as its
@@ -1111,7 +1174,8 @@ public actor KanbanHost {
     // MARK: - Close
 
     /// Stops the file watcher of each board, of each scan place, of each board that could not load, of each folder
-    /// that a path ref named, and of the folder of each current board outside git, and ends each subscription. The
+    /// that a path ref named, of the folder of each current board outside git, and of each change stream of a board
+    /// folder, and ends each subscription and each such stream. The
     /// boards stay in memory, and a board that loads later has no watcher. A `git init` in the folder of a board
     /// outside git then does not change its key. With no watcher on its places, a scan index is not current any more.
     /// A board that could not load loads again at its next related load. The host forgets what git told about each
@@ -1137,6 +1201,11 @@ public actor KanbanHost {
             case .loading(let load):
                 await (try? load.value)?.close()
             }
+        }
+        let feedWatchers = folderFeedWatchers.compactMap(\.object)
+        folderFeedWatchers = []
+        for watcher in feedWatchers {
+            await watcher.stop()
         }
         let retired = retiredEngines.compactMap(\.object)
         retiredEngines = []

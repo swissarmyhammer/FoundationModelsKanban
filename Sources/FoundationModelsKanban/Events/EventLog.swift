@@ -456,9 +456,11 @@ extension EventLog {
     /// Tells if a directory is the `.kanban/` directory of this board.
     ///
     /// - Parameter folder: The directory.
-    /// - Returns: `true` when the two paths are the same after the symbolic links resolve.
+    /// - Returns: `true` when the two paths are the same after the symbolic links resolve. The compare uses
+    ///   ``Foundation/URL/canonicalPath``, so that a directory that was removed gives the same answer as before the
+    ///   removal: `resolvingSymlinksInPath()` removes `/private` only while the path exists.
     func isBoardDirectory(at folder: URL) -> Bool {
-        folder.resolvingSymlinksInPath().path == directory.resolvingSymlinksInPath().path
+        folder.canonicalPath == directory.canonicalPath
     }
 
     /// Reads the local ref of a log file from its name.
