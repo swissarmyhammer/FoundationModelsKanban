@@ -29,13 +29,30 @@ comments:
     - evidence: README section 6 documents readBoard(inFolder:), boardStamp(ofFolder:) and boardChanges(inFolder:) with one example and their limits. ReadmeExamplesTests runs the same code (4 tests).
     - next: none. The commit is local. It is not pushed.
   timestamp: 2026-11-24T16:00:54.034363+00:00
+- actor: wballard
+  id: 01m874q24kpfw5p57rk3y3cy21
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (147c4ed) — 0 findings, 0 confirmed, 1 refuted, 7 attempted, 0 failed. Reviewed: Tests/FoundationModelsKanbanTests/ReadmeExamplesTests.swift. Not reviewed: README.md (no validator matches), 2 .kanban/ files (.reviewignore).
+    - next: the coordinator sends the API names and the commits to the two sessions, then moves the task to done.
+  timestamp: 2026-11-24T16:02:40.915775+00:00
+- actor: wballard
+  id: 01m874r9b3z2pq3p16e6y2aw9j
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — README.md section 6, ReadmeExamplesTests (4 tests)
+    - test: green — swift test, 1989 passed
+    - commit: 147c4ed
+    - review: clean — 0 findings
+    - API names and commits sent to foundationmodelsrouter-09 and testudoapp
+  timestamp: 2026-11-24T16:03:21.059076+00:00
 depends_on:
 - 01M86WE7KQXHJCAX08PMRGYRKR
 - 01M86WEGWCS6X5RW20HFKQB54D
 - 01M86WENX96J2YGHMBMKPXEWM2
 - 01M86WEWDS64Z68K378JCYR7MK
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffd280
 title: Document the read, the stamp, and the change stream of a folder, and send the API names
 ---
 ## Problem
@@ -51,7 +68,7 @@ The read, the stamp, and the change stream of a folder with no session are new p
 - [x] The README has the new section with code that compiles.
 - [x] `ReadmeExamplesTests` runs each new example and passes.
 - [x] `DocumentationTests` passes.
-- [ ] The two sessions got the API names and the commits.
+- [x] The two sessions got the API names and the commits (foundationmodelsrouter-09 and testudoapp, 147c4ed).
 
 ## Tests (write them first)
 - [x] Add a test in `Tests/FoundationModelsKanbanTests/ReadmeExamplesTests.swift` for each new README example: a folder with no `.kanban/` folder gives "no board"; the stamp is the same after a read with no change; a new task shows in the stream.
