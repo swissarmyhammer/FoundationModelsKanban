@@ -44,6 +44,52 @@ comments:
     - evidence: commit feat(snapshot): ^mrgyrkr read the board of a folder with no session
     - next: review
   timestamp: 2026-11-24T14:02:38.126558+00:00
+- actor: wballard
+  id: 01m86y6awwwyb7d7wdkxjxgypp
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (d13f2ec); 6 findings — Sources/FoundationModelsKanban/GraphQL/Schema.swift:128, Sources/FoundationModelsKanban/Observe/ChangeRound.swift:162 (2), Sources/FoundationModelsKanban/Tool/Commit.swift:1023, Sources/FoundationModelsKanban/Tool/Commit.swift:1024, Sources/FoundationModelsKanban/Tool/KanbanHost.swift:186
+    - next: implement the open items of the Review Findings (2026-11-24 08:03) section; the task stays in review
+  timestamp: 2026-11-24T14:08:41.372908+00:00
+- actor: wballard
+  id: 01m86y7hd875s9zwawm06p44tj
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — Snapshot/BoardSnapshot.swift, KanbanHost.readBoard(inFolder:), KeyedBoard rename in 9 files
+    - test: green — swift test, 1949 passed
+    - commit: d13f2ec
+    - review: findings — GraphQL/Schema.swift:128, Observe/ChangeRound.swift:162 (2), Tool/Commit.swift:1023, Tool/Commit.swift:1024, Tool/KanbanHost.swift:186
+  timestamp: 2026-11-24T14:09:20.808540+00:00
+- actor: wballard
+  id: 01m86yj6rqb1a9r5qaep6xrexq
+  text: |-
+    Fixes of the 6 findings of Review Findings (2026-11-24 08:03). No behavior changed.
+    - KeyedBoard construction: new CommitSession.snapshot(with:) (Tool/Commit.swift) makes the board from the key and the source of the session and a graph. CommitSession.snapshot, RelatedWork.snapshot and ChangeRound (5 calls) use it. The static ChangeRound.snapshot(of:graph:) is deleted.
+    - GraphQL/Schema.swift: new private BoardStore.snapshot(of: MutationTarget) holds the only KeyedBoard construction of the file. The current board uses the key and source of the store (the store has no session); a related board uses session.snapshot(with:). BoardStore.snapshot and view(of:) call it. Thus the two copies of the file (snapshot and the related case of view(of:)) are now one.
+    - Tool/KanbanHost.swift: new private nonisolated(nonsending) static mappingCallFailure(_:) holds the KanbanError(callFailure:) ?? error mapping. session(workingDirectory:actor:) and readBoard(inFolder:) use it. nonisolated(nonsending) lets the actor-isolated session call pass its closure with no sending check.
+    - Not changed: GraphQL/CollectBoardsField.swift also has the same error mapping and GraphQL/CheckLinksField.swift and CollectBoardsField.swift make a KeyedBoard from a BoardView or a merged graph. These files are not in the findings and were not changed.
+  timestamp: 2026-11-24T14:15:10.359748+00:00
+- actor: wballard
+  id: 01m86yjcm1g7s7tn6qh96ezwpf
+  text: |-
+    ### implement — changed
+    - evidence: swift test (root, headless): 1949 tests in 170 suites passed, 0 failures; the only warning is the accepted mlx-swift_Cmlx.bundle one. swift test --filter (BoardSnapshotTests, ChangeRound, RelatedBoard, KanbanHost): 58 tests passed. Files: Sources/FoundationModelsKanban/Tool/Commit.swift, Sources/FoundationModelsKanban/Observe/ChangeRound.swift, Sources/FoundationModelsKanban/GraphQL/Schema.swift, Sources/FoundationModelsKanban/Tool/KanbanHost.swift. All 6 findings of Review Findings (2026-11-24 08:03) are checked.
+    - next: /review. Not committed.
+  timestamp: 2026-11-24T14:15:16.353583+00:00
+- actor: wballard
+  id: 01m86ym84pqt3an5tz36pm3qaq
+  text: |-
+    ### test - green
+    - evidence: swift test at package root - 1949 tests in 170 suites passed, 0 failures, 0 skipped; only the accepted mlx-swift_Cmlx.bundle warning
+    - next: review
+  timestamp: 2026-11-24T14:16:17.302284+00:00
+- actor: wballard
+  id: 01m86ymrx3c5zrrt4fct9ta087
+  text: |-
+    ### commit — changed
+    - evidence: one local commit holds the source changes, the review findings and the .kanban task files
+    - next: none. The commit is local. Do not push.
+  timestamp: 2026-11-24T14:16:34.467701+00:00
 position_column: doing
 position_ordinal: '80'
 title: Add a read of the board of a folder that opens no session
@@ -95,3 +141,17 @@ New file `Tests/FoundationModelsKanbanTests/Snapshot/BoardSnapshotTests.swift`. 
 
 ## Note
 This work is for TestudoApp D214. When it is done, send the public API names and the commit to the FoundationModelsACPAgent session and to the TestudoApp session. #testudo
+
+## Review Findings (2026-11-24 08:03)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 12 file(s) reviewed, 12 not reviewed.
+
+> 12 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 12 file(s)
+
+- [x] `Sources/FoundationModelsKanban/GraphQL/Schema.swift:128` `reuse/reuse` — The new BoardStore.snapshot property repeats the KeyedBoard construction that CommitSession.snapshot and RelatedWork.snapshot already do. Three near-identical copies now exist for one pattern. Add one shared initializer or helper that makes a KeyedBoard from a board key, a graph, and a source. Use it in all three properties, and in ChangeRound, so the construction is written once.
+- [x] `Sources/FoundationModelsKanban/Observe/ChangeRound.swift:162` `duplication/duplication` — The static `snapshot(of:graph:)` builds `KeyedBoard(key: session.key.description, graph: graph, source: session.source)`. The same construction is written in RelatedWork (Commit.swift:1024) and in CommitSession (Commit.swift:527) with different arguments. Three places must be kept in step. Make `ChangeRound.snapshot(of:graph:)` call the shared `KeyedBoard` initializer, or delete it and call that initializer directly from the `place` and `view` helpers. Then remove the copies that repeat the same construction.
+- [x] `Sources/FoundationModelsKanban/Observe/ChangeRound.swift:162` `reuse/reuse` — The new static snapshot(of:graph:) builds a KeyedBoard from a CommitSession's key and source. This is the same construction that CommitSession.snapshot already does, with the graph as the only difference. The logic is copied instead of extended. Add a CommitSession method that takes a graph, for example func snapshot(graph: Graph) -> KeyedBoard, and have CommitSession.snapshot call it with displayGraph. Then ChangeRound calls session.snapshot(graph:) and the copy is removed.
+- [x] `Sources/FoundationModelsKanban/Tool/Commit.swift:1023` `reuse/reuse` — The new RelatedWork.snapshot property repeats the KeyedBoard construction that CommitSession.snapshot already does. The only difference is the source of the graph and the key. The logic is copied instead of shared. Add a shared helper that makes a KeyedBoard from a session and a graph. Call it from RelatedWork.snapshot, CommitSession.snapshot, and the other copies, passing the graph that each one uses.
+- [x] `Sources/FoundationModelsKanban/Tool/Commit.swift:1024` `duplication/duplication` — The `snapshot` property of `RelatedWork` builds `KeyedBoard(key: session.key.description, graph: work.graph, source: session.source)`. This is the same constructor call as the `snapshot` copies in ChangeRound.swift:162 and Commit.swift:527. It differs only in its arguments. Call the shared `KeyedBoard` initializer that takes the session and a graph, with `work.graph` as the graph argument. Delete the inline construction.
+- [x] `Sources/FoundationModelsKanban/Tool/KanbanHost.swift:186` `reuse/reuse` — The new readBoard catch block maps errors with KanbanError(callFailure: error) ?? error. The same mapping is already written in session(workingDirectory:actor:). The copy repeats the error-mapping logic instead of sharing one helper. Move the mapping into one private helper, for example a func mapped<T>(_ body: () async throws(EventLogError) -> T) async throws -> T that applies the KanbanError(callFailure:) rule. Use it in readBoard and session(workingDirectory:actor:).

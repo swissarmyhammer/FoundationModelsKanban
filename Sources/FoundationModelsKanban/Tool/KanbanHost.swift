@@ -153,10 +153,8 @@ public actor KanbanHost {
             actingAs: KanbanGraph.sessionActor(named: actor),
             locatedBy: locator
         )
-        do {
+        try await Self.mappingCallFailure {
             try await view.prepareBoard()
-        } catch {
-            throw KanbanError(callFailure: error) ?? error
         }
         return view
     }
@@ -180,8 +178,23 @@ public actor KanbanHost {
     /// - Throws: ``KanbanError/incompatibleBoard(directory:)`` when the `.kanban/` folder is a board of the old Rust
     ///   kanban, as for a session (divergence.md Q6). An I/O fault when a folder or a log file cannot be read.
     public nonisolated func readBoard(inFolder folder: URL) async throws -> BoardRead {
+        try await Self.mappingCallFailure {
+            try await BoardRead(readingFolder: folder, reportingTo: configuration.workerObserver)
+        }
+    }
+
+    /// Runs the body of a public call, and gives each error of the body that the caller can correct as its
+    /// ``KanbanError`` (``KanbanError/init(callFailure:)``). An I/O fault that the caller cannot correct stays as it
+    /// is.
+    ///
+    /// - Parameter body: The work of the call.
+    /// - Returns: The value of the body.
+    /// - Throws: The ``KanbanError`` of the error of the body, else the error of the body.
+    private nonisolated(nonsending) static func mappingCallFailure<Value>(
+        _ body: nonisolated(nonsending) () async throws -> Value
+    ) async throws -> Value {
         do {
-            return try await BoardRead(readingFolder: folder, reportingTo: configuration.workerObserver)
+            return try await body()
         } catch {
             throw KanbanError(callFailure: error) ?? error
         }

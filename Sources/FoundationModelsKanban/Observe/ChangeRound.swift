@@ -81,11 +81,11 @@ struct ChangeRound {
             path == currentPath ? boards.with(current: board) : boards.with(board: board, atPath: path)
         }
         let after = sessions.reduce(related) { boards, entry in
-            place(boards, entry.key, Self.snapshot(of: entry.value, graph: entry.value.live.graph))
+            place(boards, entry.key, entry.value.snapshot(with: entry.value.live.graph))
         }
         self.after = after
         before = changed.reduce(after) { boards, entry in
-            place(boards, entry.key, Self.snapshot(of: entry.value.session, graph: entry.value.before))
+            place(boards, entry.key, entry.value.session.snapshot(with: entry.value.before))
         }
     }
 
@@ -105,8 +105,8 @@ struct ChangeRound {
         let key = session.key.description
         return own.changes.flatMap { change in
             let builder = ChangeBuilder(
-                from: Self.snapshot(of: session, graph: change.before).view(reading: before),
-                to: Self.snapshot(of: session, graph: change.after).view(reading: after)
+                from: session.snapshot(with: change.before).view(reading: before),
+                to: session.snapshot(with: change.after).view(reading: after)
             )
             let batch = BatchTransaction.grouping(change.events, inBoard: key, markingUndoneBy: undone)
             return builder.changes(ofBatch: batch)
@@ -149,16 +149,6 @@ struct ChangeRound {
     ///   - boards: The other boards as the reads see them.
     /// - Returns: The read view.
     private func view(of session: CommitSession, reading boards: RelatedBoards) -> BoardView {
-        Self.snapshot(of: session, graph: session.live.graph).view(reading: boards)
-    }
-
-    /// Gives a board with one of its graphs.
-    ///
-    /// - Parameters:
-    ///   - session: The session of the board.
-    ///   - graph: The graph of the board: before or after a change.
-    /// - Returns: The board.
-    private static func snapshot(of session: CommitSession, graph: Graph) -> KeyedBoard {
-        KeyedBoard(key: session.key.description, graph: graph, source: session.source)
+        session.snapshot(with: session.live.graph).view(reading: boards)
     }
 }

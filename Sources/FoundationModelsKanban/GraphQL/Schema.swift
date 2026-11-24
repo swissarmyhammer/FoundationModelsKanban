@@ -125,7 +125,7 @@ actor BoardStore {
 
     /// The working graph now, as a read of a related board sees the current board.
     private var snapshot: KeyedBoard {
-        KeyedBoard(key: boardKey, graph: work.graph, source: source)
+        snapshot(of: .current)
     }
 
     /// The related boards as the reads of the run see them now: each board that the run changed shows its working
@@ -506,12 +506,17 @@ actor BoardStore {
     /// - Parameter target: The board.
     /// - Returns: The read view.
     func view(of target: MutationTarget) -> BoardView {
+        snapshot(of: target).view(reading: reading)
+    }
+
+    /// Gives a board of a mutation field with its working graph now.
+    ///
+    /// - Parameter target: The board.
+    /// - Returns: The board: the current key, the source, and the working graph of the board in the run.
+    private func snapshot(of target: MutationTarget) -> KeyedBoard {
         switch target {
-        case .current:
-            view
-        case .related(let board):
-            KeyedBoard(key: key(of: target), graph: workingCopy(of: target).graph, source: board.session.source)
-                .view(reading: reading)
+        case .current: KeyedBoard(key: boardKey, graph: work.graph, source: source)
+        case .related(let board): board.session.snapshot(with: workingCopy(of: target).graph)
         }
     }
 

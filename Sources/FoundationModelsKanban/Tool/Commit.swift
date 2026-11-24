@@ -524,7 +524,16 @@ struct CommitSession: Sendable {
     /// The board as a read of a related board sees it: the live graph, with an empty board in memory when the board
     /// has no board node (plan.md §6.6, board name).
     var snapshot: KeyedBoard {
-        KeyedBoard(key: key.description, graph: displayGraph, source: source)
+        snapshot(with: displayGraph)
+    }
+
+    /// Gives the board with one of its graphs: the key and the source of this session, and the graph.
+    ///
+    /// - Parameter graph: The graph of the board, for example the live graph, the graph before or after a change, or
+    ///   the working graph of a run.
+    /// - Returns: The board.
+    func snapshot(with graph: Graph) -> KeyedBoard {
+        KeyedBoard(key: key.description, graph: graph, source: source)
     }
 
     /// The live graph, with an empty board in memory with the name of the repo directory when the board has no board
@@ -1021,7 +1030,7 @@ struct RelatedWork: Sendable {
 
     /// The board as the reads of the run see it now: the working graph.
     var snapshot: KeyedBoard {
-        KeyedBoard(key: session.key.description, graph: work.graph, source: session.source)
+        session.snapshot(with: work.graph)
     }
 
     /// The board as the commit writes it.
