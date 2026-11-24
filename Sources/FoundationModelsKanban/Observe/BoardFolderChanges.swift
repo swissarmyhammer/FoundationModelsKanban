@@ -261,7 +261,8 @@ struct BoardFolderReader: Sendable {
         }
     }
 
-    /// Merges the iCloud conflict versions of some changed files, and records a failure with swift-log.
+    /// Merges the iCloud conflict versions of some changed files, and records a failure with swift-log
+    /// (``EventLog/resolveConflicts(ofFilesAt:addingFiles:scanningBoardDirectory:with:recordingFailureAs:metadata:)``).
     ///
     /// - Parameters:
     ///   - paths: The changed paths, with the board directory in place of the watched folder.
@@ -274,17 +275,15 @@ struct BoardFolderReader: Sendable {
         scanningBoardDirectory scansBoard: Bool,
         addingChangedFiles addsChangedFiles: Bool
     ) async -> Bool {
-        do {
-            let files = addsChangedFiles ? paths + (try changedFiles()) : paths
-            _ = try await log.resolveConflicts(ofFilesAt: files, scanningBoardDirectory: scansBoard, with: fileVersions)
-            return true
-        } catch {
-            Log.kanban.error(
+        await log.resolveConflicts(
+            ofFilesAt: paths,
+            addingFiles: { () throws(EventLogError) in addsChangedFiles ? try changedFiles() : [] },
+            scanningBoardDirectory: scansBoard,
+            with: fileVersions,
+            recordingFailureAs:
                 "The change stream of a board folder cannot resolve a conflict of a board file in iCloud Drive",
-                metadata: ["folder": "\(folder.path)", "paths": "\(paths.map(\.path))", "error": "\(error)"]
-            )
-            return false
-        }
+            metadata: ["folder": "\(folder.path)"]
+        )
     }
 
     /// Gives the log files that the compare of the board in memory finds changed: the files that the apply of a batch

@@ -486,7 +486,8 @@ actor BoardEngine {
     /// person must never resolve a conflict of a board in iCloud Drive. The merge runs outside the serial gate: it gets
     /// only the board lock, the same as a commit, so it waits for no gate while it holds the lock. The write of a merge
     /// gives a new batch, and that batch applies the merged log. A merge that fails is recorded with swift-log, and the
-    /// next batch of the file tries again.
+    /// next batch of the file tries again
+    /// (``EventLog/resolveConflicts(ofFilesAt:addingFiles:scanningBoardDirectory:with:recordingFailureAs:metadata:)``).
     ///
     /// - Parameters:
     ///   - paths: The changed paths of the batch.
@@ -494,21 +495,12 @@ actor BoardEngine {
     /// - Returns: `true` when the check ended with no error.
     @discardableResult
     private func resolveConflicts(in paths: [URL], scanningBoardDirectory scansBoard: Bool) async -> Bool {
-        let log = session.live.log
-        do {
-            _ = try await log.resolveConflicts(
-                ofFilesAt: paths,
-                scanningBoardDirectory: scansBoard,
-                with: fileVersions
-            )
-            return true
-        } catch {
-            Log.kanban.error(
-                "A conflict of a board file in iCloud Drive cannot be resolved",
-                metadata: ["paths": "\(paths.map(\.path))", "error": "\(error)"]
-            )
-            return false
-        }
+        await session.live.log.resolveConflicts(
+            ofFilesAt: paths,
+            scanningBoardDirectory: scansBoard,
+            with: fileVersions,
+            recordingFailureAs: "A conflict of a board file in iCloud Drive cannot be resolved"
+        )
     }
 
     /// Applies one batch inside the serial gate, and then sends the changes of the board to the session views. The

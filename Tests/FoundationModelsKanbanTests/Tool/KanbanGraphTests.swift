@@ -115,6 +115,8 @@ struct KanbanGraphTests {
     ///   - batchObserver: Gets a call when the file watcher applies a batch, or `nil` for no calls.
     ///   - writer: The writer of the appends of each commit. The default writes the log files.
     ///   - extend: Adds test fields to the public schema. The default adds no field.
+    ///   - fileVersions: The store of the iCloud conflict versions of the board files. The default is a fake store with
+    ///     no conflict version, so that no test reads the iCloud Drive store of the machine.
     /// - Returns: The engine.
     static func makeGraph(
         at root: URL,
@@ -128,7 +130,8 @@ struct KanbanGraphTests {
         reportingTo observer: (any KanbanCallObserver)? = nil,
         observingBatchesWith batchObserver: (any LiveGraphObserver)? = nil,
         writingLogsWith writer: any EventLogWriter = FileEventLogWriter(),
-        extendingSchemaWith extend: SchemaExtension? = nil
+        extendingSchemaWith extend: SchemaExtension? = nil,
+        readingVersionsWith fileVersions: any FileVersionSource = FakeFileVersionSource(conflicts: [:])
     ) throws -> KanbanGraph {
         try KanbanGraph(
             root: root,
@@ -142,7 +145,8 @@ struct KanbanGraphTests {
             reportingTo: observer,
             observingBatchesWith: batchObserver,
             writingLogsWith: writer,
-            extendingSchemaWith: extend
+            extendingSchemaWith: extend,
+            readingVersionsWith: fileVersions
         )
     }
 

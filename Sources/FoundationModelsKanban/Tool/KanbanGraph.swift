@@ -129,6 +129,8 @@ public actor KanbanGraph: GraphQLEndpoint {
     ///   - logWriter: The writer of the appends of each commit. The default writes the log files.
     ///   - extend: Adds test fields to the public schema, for example a field that adds a warning. The default adds no
     ///     field.
+    ///   - fileVersions: The store of the iCloud conflict versions of the board files. The default is the store of
+    ///     iCloud Drive.
     /// - Throws: An error from Graphiti when a type of the public schema is not valid.
     init(
         root: URL,
@@ -143,7 +145,8 @@ public actor KanbanGraph: GraphQLEndpoint {
         reportingTo observer: (any KanbanCallObserver)? = nil,
         observingBatchesWith batchObserver: (any LiveGraphObserver)? = nil,
         writingLogsWith logWriter: any EventLogWriter = FileEventLogWriter(),
-        extendingSchemaWith extend: SchemaExtension? = nil
+        extendingSchemaWith extend: SchemaExtension? = nil,
+        readingVersionsWith fileVersions: any FileVersionSource = ICloudFileVersions()
     ) throws {
         let configuration = HostConfiguration(
             keyReader: keyReader,
@@ -154,7 +157,8 @@ public actor KanbanGraph: GraphQLEndpoint {
             embedder: embedder,
             filterModel: filterModel,
             batchObserver: batchObserver,
-            logWriter: logWriter
+            logWriter: logWriter,
+            fileVersions: fileVersions
         )
         try self.init(
             host: KanbanHost(configuration: configuration),

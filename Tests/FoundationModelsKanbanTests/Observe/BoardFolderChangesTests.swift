@@ -315,33 +315,33 @@ struct BoardFolderChangesTests {
     }
 
     /// Writes a conflict version of the task log, starts the stream on a host whose version store gives that version,
-    /// and waits for the change of the task. The host uses ``QuietFolderEvents``, so the only batch is the first
+    /// and waits for the first change of tasks. The host uses ``QuietFolderEvents``, so the only batch is the first
     /// compare of each file after the start, and the test is deterministic.
     ///
     /// - Returns: The run of the merge. The caller closes its host.
-    /// - Throws: An error when a file cannot be written, when the stream cannot start, or when no change of the task
-    ///   comes.
+    /// - Throws: An error when a file cannot be written, when the stream cannot start, or when the stream ends or the
+    ///   time limit comes before a change of tasks.
     mutating func runMerge() async throws -> MergeRun {
         let (version, eventIDs) = try writeConflictVersion()
         let file = log.fileURL(for: .task(task))
         let source = FakeFileVersionSource(conflicts: [file.canonicalPath: [version]])
         let host = HostFixture.makeHost(watchingWith: QuietFolderEvents(), readingVersionsWith: source)
         let changes = try await host.boardChanges(inFolder: directory.url)
-        let id = taskID
-        let wait = "the merge of task \(id)"
-        let change = try await Self.firstChange(of: changes, waitingFor: wait, at: file) { change in
-            guard case .tasksChanged(let ids) = change.kind else {
+        let wait = "the change of tasks of the merge of task \(taskID)"
+        let found = try await Self.firstChange(of: changes, waitingFor: wait, at: file) { change in
+            guard case .tasksChanged = change.kind else {
                 return false
             }
-            return ids.contains(id)
+            return true
         }
+        let change = try #require(found, "The stream ended before the change of tasks of the merge")
         return MergeRun(host: host, change: change, source: source, file: file, eventIDs: eventIDs)
     }
 
     @Test("A conflict version of a task log gives the id of the task in tasksChanged")
     mutating func conflictVersionGivesTaskID() async throws {
         let run = try await runMerge()
-        #expect(run.change != nil)
+        #expect(run.change.kind == .tasksChanged([taskID]))
         await run.host.close()
     }
 
@@ -362,7 +362,7 @@ struct BoardFolderChangesTests {
     @Test("The stamp of the change of a merge is the stamp of the board after the merge")
     mutating func mergeChangeHoldsStampAfterMerge() async throws {
         let run = try await runMerge()
-        #expect(run.change?.stamp == run.host.boardStamp(ofFolder: directory.url))
+        #expect(run.change.stamp == run.host.boardStamp(ofFolder: directory.url))
         await run.host.close()
     }
 
@@ -447,8 +447,8 @@ struct MergeRun {
     /// The host of the stream. The test closes it.
     let host: KanbanHost
 
-    /// The first change that holds the id of the task, or `nil` when the stream ended first.
-    let change: BoardFolderChange?
+    /// The first change of tasks of the stream: the change of the merge.
+    let change: BoardFolderChange
 
     /// The version store of the host. It records each resolve.
     let source: FakeFileVersionSource

@@ -237,6 +237,81 @@ struct LogVersionMergeTests {
         #expect(log.holdsBoardDirectory([directory.url, log.directory]))
         #expect(!log.holdsBoardDirectory([directory.url, file]))
     }
+
+    // MARK: - The check that records its failure
+
+    /// The message that the tests of the check that records its failure give for a failure.
+    static let failureMessage = "A test check of the conflict versions failed"
+
+    /// Writes a task log with one event, and a conflict version of the log that holds one more event.
+    ///
+    /// - Parameter directory: The temporary directory of the test.
+    /// - Returns: The event log, the ref of the task, the log file, the version store that gives the conflict version,
+    ///   and the ids of the events of both versions, in event id order.
+    /// - Throws: An error when a file cannot be written.
+    static func writeLogWithConflict(
+        in directory: TemporaryDirectory
+    ) throws -> (log: EventLog, ref: LocalRef, file: URL, source: FakeFileVersionSource, eventIDs: [ULID]) {
+        let log = EventLog(repositoryAt: directory.url)
+        let first = try EventLogTests.titleEvent(atStep: 1, setting: "first")
+        let second = try EventLogTests.titleEvent(atStep: 2, setting: "second")
+        try log.append(contentsOf: [first], toLogOf: first.patch.node)
+        let file = log.fileURL(for: first.patch.node)
+        let version = directory.url.appending(path: "conflict.jsonl", directoryHint: .notDirectory)
+        try Self.file([try second.encodedLine()]).write(to: version)
+        let source = FakeFileVersionSource(conflicts: [file.canonicalPath: [version]])
+        return (log, first.patch.node, file, source, [first.id, second.id])
+    }
+
+    @Test("The check that records its failure merges a log with conflict versions, and tells that it ended")
+    func recordingCheckMergesAndEnds() async throws {
+        let directory = try TemporaryDirectory()
+        let board = try Self.writeLogWithConflict(in: directory)
+
+        let isChecked = await board.log.resolveConflicts(
+            ofFilesAt: [board.file],
+            scanningBoardDirectory: false,
+            with: board.source,
+            recordingFailureAs: "\(Self.failureMessage)"
+        )
+
+        #expect(isChecked)
+        #expect(board.source.resolvedPaths == [board.file.canonicalPath])
+    }
+
+    @Test("The check that records its failure also checks the files that the caller adds")
+    func recordingCheckChecksAddedFiles() async throws {
+        let directory = try TemporaryDirectory()
+        let board = try Self.writeLogWithConflict(in: directory)
+        let added = board.file
+
+        await board.log.resolveConflicts(
+            ofFilesAt: [],
+            addingFiles: { () throws(EventLogError) in [added] },
+            scanningBoardDirectory: false,
+            with: board.source,
+            recordingFailureAs: "\(Self.failureMessage)"
+        )
+
+        #expect(try board.log.readLog(of: board.ref).events.map(\.id) == board.eventIDs)
+    }
+
+    @Test("The check that records its failure tells that it did not end when the added files cannot be read")
+    func recordingCheckFailsWhenAddedFilesFail() async throws {
+        let directory = try TemporaryDirectory()
+        let board = try Self.writeLogWithConflict(in: directory)
+        let path = board.file.path
+
+        let isChecked = await board.log.resolveConflicts(
+            ofFilesAt: [board.file],
+            addingFiles: { () throws(EventLogError) in throw .fileSystem(path: path, detail: Self.failureMessage) },
+            scanningBoardDirectory: false,
+            with: board.source,
+            recordingFailureAs: "\(Self.failureMessage)"
+        )
+
+        #expect(!isChecked)
+    }
 }
 
 /// A ``FileVersionSource`` that a test controls: it gives fixed conflict version files, and records each resolve.

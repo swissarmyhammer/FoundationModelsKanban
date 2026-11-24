@@ -1,4 +1,5 @@
 import Foundation
+import Logging
 import ULID
 
 /// The merge of the versions of one log file into one file (TestudoApp D179).
@@ -262,6 +263,41 @@ extension EventLog {
         let resolved = Result { () throws(EventLogError) in try Self.resolve(candidates, with: source) }
         lock.unlock()
         return try resolved.get()
+    }
+
+    /// Merges the conflict versions of the changed files of one batch of a watcher, and records a failure with
+    /// swift-log (TestudoApp D179). The engine of a board and the change stream of a folder both use this step, with
+    /// ``resolveConflicts(ofFilesAt:scanningBoardDirectory:with:)``. A check that fails gives `false`, and the next
+    /// batch of the file tries again.
+    ///
+    /// - Parameters:
+    ///   - paths: The changed paths of the batch.
+    ///   - addedFiles: Gives more files to check, for example the files that a compare of the board in memory finds
+    ///     changed. The default gives no file. An error of this call is a failure of the check.
+    ///   - scansBoard: `true` when the board directory checks each file of the board.
+    ///   - source: The version store.
+    ///   - message: The message of the swift-log record of a failure.
+    ///   - metadata: More metadata of the swift-log record of a failure. The record always holds the paths and the
+    ///     error.
+    /// - Returns: `true` when the check ended with no error.
+    @discardableResult
+    func resolveConflicts(
+        ofFilesAt paths: [URL],
+        addingFiles addedFiles: () throws(EventLogError) -> [URL] = { [] },
+        scanningBoardDirectory scansBoard: Bool,
+        with source: some FileVersionSource,
+        recordingFailureAs message: Logger.Message,
+        metadata: Logger.Metadata = [:]
+    ) async -> Bool {
+        do {
+            let files = paths + (try addedFiles())
+            _ = try await resolveConflicts(ofFilesAt: files, scanningBoardDirectory: scansBoard, with: source)
+            return true
+        } catch {
+            let failure: Logger.Metadata = ["paths": "\(paths.map(\.path))", "error": "\(error)"]
+            Log.kanban.error(message, metadata: metadata.merging(failure) { _, recorded in recorded })
+            return false
+        }
     }
 
     /// Merges and resolves the conflict versions of some files. The caller holds the board lock.

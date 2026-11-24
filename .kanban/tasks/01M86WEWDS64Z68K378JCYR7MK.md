@@ -29,6 +29,47 @@ comments:
     - evidence: the commit holds the folder stream change, its tests, and the kanban task files
     - next: review
   timestamp: 2026-11-24T15:25:59.367714+00:00
+- actor: wballard
+  id: 01m872tg1mq2cf3886f762q7b1
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (a669b19), 4 findings (4 confirmed, 0 refuted) — Sources/FoundationModelsKanban/Observe/BoardFolderChanges.swift:272, Sources/FoundationModelsKanban/Observe/BoardFolderChanges.swift:279, Tests/FoundationModelsKanbanTests/Observe/BoardFolderChangesTests.swift:344, Tests/FoundationModelsKanbanTests/Tool/KanbanHostTests.swift:584
+    - next: implement the 4 open items of the Review Findings (2026-11-24 09:26) section; the task stays in review
+  timestamp: 2026-11-24T15:29:36.308841+00:00
+- actor: wballard
+  id: 01m872v3bepyd27ras9mv8z4yy
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 7 files (4 Sources, 3 Tests), 6 new tests
+    - test: green — swift test, 1982 passed
+    - commit: a669b19
+    - review: findings — Observe/BoardFolderChanges.swift:272, Observe/BoardFolderChanges.swift:279, BoardFolderChangesTests.swift:344, KanbanHostTests.swift:584
+  timestamp: 2026-11-24T15:29:56.078736+00:00
+- actor: wballard
+  id: 01m8739gwghepxp3yd09ath1rj
+  text: 'Findings of 2026-11-24 09:26 fixed. (1, 2) New shared step: EventLog.resolveConflicts(ofFilesAt:addingFiles:scanningBoardDirectory:with:recordingFailureAs:metadata:) in Events/LogVersionMerge.swift. It calls the throwing resolveConflicts, catches the error, and writes one Log.kanban.error with the paths and the error. BoardEngine.resolveConflicts(in:scanningBoardDirectory:) and BoardFolderReader.resolveConflicts(in:scanningBoardDirectory:addingChangedFiles:) now only call it with their own message (the reader also gives the folder metadata). The changed-files addition of the reader goes in as the addingFiles closure, so that an error of changedFiles() is still a failure of the check and the record still holds only the batch paths (no change of the log text). The BoardEngine call site changed in this task, as the orchestrator ordered; the "separate task" text of finding 2 was not followed. 3 new tests in LogVersionMergeTests. (3) runMerge now waits for the first tasksChanged of any ids and uses #require, so a stream that ends first fails the test; MergeRun.change is not optional. conflictVersionGivesTaskID asserts kind == .tasksChanged([taskID]). Other tests of the file: waitsForChange/waitsForRemoval/waits(for:) match the kind and the id in the predicate, and lockFileGivesNoChange asserts first?.kind, so they already assert the contents. (4) HostFixture.makeHost defaults readingVersionsWith to FakeFileVersionSource(conflicts: [:]). makeGitHost goes through makeHost, so it gets the fake; no git test injects versions, so no new parameter. Same cause in KanbanGraphTests.makeGraph: it goes through KanbanGraph.init(root:...), which made a HostConfiguration with ICloudFileVersions(). That init got a readingVersionsWith parameter (default ICloudFileVersions(), no behavior change), and makeGraph gives the fake by default. Not changed: ReadmeExamplesTests uses KanbanHost.shared on purpose (it runs the README code, which has no injection point); BoardSnapshotTests use KanbanHost.shared only for readBoard(inFolder:), which does not read the version store. Mistake: a first description update read a stale desc.md from the scratchpad, because a python step failed; the description was restored from the saved copy at once, and the only difference from the original is the 4 checked boxes.'
+  timestamp: 2026-11-24T15:37:48.688292+00:00
+- actor: wballard
+  id: 01m8739h741jnzyggvmfs7j47m
+  text: |-
+    ### implement — changed
+    - evidence: swift test (one full run): 1985 tests in 172 suites passed, 0 failed; only the accepted mlx-swift_Cmlx.bundle warning. --filter LogVersionMergeTests|BoardFolderChangesTests|KanbanHostTests: 62 passed (3 new). Files: Sources/FoundationModelsKanban/Events/LogVersionMerge.swift, Sources/FoundationModelsKanban/Observe/BoardFolderChanges.swift, Sources/FoundationModelsKanban/Tool/BoardEngine.swift, Sources/FoundationModelsKanban/Tool/KanbanGraph.swift, Tests/FoundationModelsKanbanTests/Events/LogVersionMergeTests.swift, Tests/FoundationModelsKanbanTests/Observe/BoardFolderChangesTests.swift, Tests/FoundationModelsKanbanTests/Tool/KanbanGraphTests.swift, Tests/FoundationModelsKanbanTests/Tool/KanbanHostTests.swift
+    - next: /test, then commit, then /review. All 4 findings checked.
+  timestamp: 2026-11-24T15:37:49.028728+00:00
+- actor: wballard
+  id: 01m873c5mdjy7t7bgj8jce81sw
+  text: |-
+    ### test — green
+    - evidence: swift test at the package root, 1985 tests in 172 suites passed, 0 failed, 0 skipped. The only warning is the accepted mlx-swift_Cmlx.bundle warning.
+    - next: review
+  timestamp: 2026-11-24T15:39:15.469033+00:00
+- actor: wballard
+  id: 01m873cttb2cvej1vw9c8jv9wh
+  text: |-
+    ### commit — changed
+    - evidence: One commit holds the fix of the 4 findings of the 2026-11-24 09:26 review. EventLog.resolveConflicts is the one merge step. BoardEngine and the folder stream call it. The merge test asserts .tasksChanged([taskID]). makeHost and makeGraph use a fake version store by default. KanbanGraph.init(root:...) takes readingVersionsWith. No behavior change.
+    - next: review
+  timestamp: 2026-11-24T15:39:37.163112+00:00
 depends_on:
 - 01M86WENX96J2YGHMBMKPXEWM2
 position_column: doing
@@ -65,3 +106,15 @@ Add to `Tests/FoundationModelsKanbanTests/Observe/BoardFolderChangesTests.swift`
 
 ## Note
 This work is for TestudoApp D214 (and D179). When it is done, send the public API names and the commit to the FoundationModelsACPAgent session and to the TestudoApp session. #testudo
+
+## Review Findings (2026-11-24 09:26)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 7 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Sources/FoundationModelsKanban/Observe/BoardFolderChanges.swift:272` `reuse/reuse` — The new private func resolveConflicts(in:scanningBoardDirectory:addingChangedFiles:) in BoardFolderReader repeats the body of the existing BoardEngine.resolveConflicts(in:scanningBoardDirectory:). Both call log.resolveConflicts(ofFilesAt:scanningBoardDirectory:with: fileVersions), both catch the error, both write one Log.kanban.error line with the paths and the error, and both return a Bool. Only the log message, the folder metadata, and the optional changed-files list differ. Two copies of the merge-and-log step must now be kept in step. A fix to one copy, such as a change to the lock or the error policy, does not reach the other. Move the shared step into one function, for example a free function or an extension of EventLog, that takes the log, the file version source, the paths, the scansBoard flag, and a log message. Have BoardEngine and BoardFolderReader both call it. Each caller keeps only its own addingChangedFiles logic and its own log message.
+- [x] `Sources/FoundationModelsKanban/Observe/BoardFolderChanges.swift:279` `duplication/duplication` — The private resolveConflicts(in:scanningBoardDirectory:addingChangedFiles:) in BoardFolderReader repeats the body of BoardEngine.resolveConflicts(in:scanningBoardDirectory:). Both call log.resolveConflicts(ofFilesAt:scanningBoardDirectory:with: fileVersions), return true on success, and on failure write a Log.kanban.error with the same shape and return false. Only the log message, the metadata keys, and the optional changed-files list differ. The two copies can drift, for example if the merge call or its error policy changes in one place only. Extract one shared helper that takes the file list, the scansBoard flag, the fileVersions store, and the error message. Call it from both BoardFolderReader and BoardEngine. Keep the optional changed-files addition in the BoardFolderReader caller, so the helper gets the final file list. Because the BoardEngine copy is outside this change, report its call-site change as a separate task rather than editing it here.
+- [x] `Tests/FoundationModelsKanbanTests/Observe/BoardFolderChangesTests.swift:344` `test-integrity/no-test-cheating` — The assertion `run.change != nil` may always pass, so it proves little. MergeRun.change is optional, but the value comes from firstChange(...), which returns a non-optional change. If firstChange only returns after it finds a match, this check adds nothing beyond the wait. The test should assert the change's contents (for example, that its kind is tasksChanged with the task id), not just that it exists. Remove the nil check, or replace it with an assertion on the change's kind and id, for example `#expect(run.change?.kind == .tasksChanged([taskID]))`. If firstChange can return nil, make runMerge fail the test in that case instead of passing a nil through.
+- [x] `Tests/FoundationModelsKanbanTests/Tool/KanbanHostTests.swift:584` `completeness/invariant-propagation` — The new `readingVersionsWith` parameter of `makeHost` defaults to `ICloudFileVersions()`, the real iCloud Drive store. Every other default in this fixture is a fake or a fixed value (`fakeKey`, `fakeTop`, `mutationIDs`, the fixed clock), and the doc comment at line 554 says the fixture makes a host with the fake readers. Each test that calls `makeHost` without this argument now reads the real iCloud store, so test results can depend on the machine. Default `readingVersionsWith` to a fake or empty `FileVersionSource` in this fixture, so tests stay hermetic. Add a pass-through parameter to `makeGitHost` if a git-backed test needs to inject versions. Keep the real `ICloudFileVersions()` default only in production configuration.
