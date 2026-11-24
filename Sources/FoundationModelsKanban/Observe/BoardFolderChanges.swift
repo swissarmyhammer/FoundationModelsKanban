@@ -15,9 +15,10 @@ public struct BoardFolderChange: Hashable, Sendable {
     public let folder: URL
 
     /// The stamp of the board after the change (``KanbanHost/boardStamp(ofFolder:)``), or `nil` for
-    /// ``Kind/boardRemoved``. The stream reads the stamp before it reads the changed log files, the same as
-    /// ``BoardSnapshot/stamp``. Thus, when nothing changed after the change, the stamp is equal to the stamp that
-    /// ``KanbanHost/boardStamp(ofFolder:)`` gives now, and a write during the read gives a different stamp.
+    /// ``Kind/boardRemoved``. The stream reads the stamp after the merge of the iCloud conflict versions of the batch,
+    /// and before it reads the changed log files, the same as ``BoardSnapshot/stamp``. Thus, when nothing changed after
+    /// the change, the stamp is equal to the stamp that ``KanbanHost/boardStamp(ofFolder:)`` gives now, and a write
+    /// during the read gives a different stamp.
     public let stamp: BoardStamp?
 
     /// What changed.
@@ -45,8 +46,10 @@ public struct BoardFolderChange: Hashable, Sendable {
 
 /// The change stream of the board of one folder, with the file watcher that feeds it (TestudoApp D214).
 ///
-/// The feed opens no session and makes no ``BoardEngine``. It keeps its own ``LiveGraph`` of the board. It takes no
-/// lock, runs no git, and writes no file. The watcher watches the folder that holds `.kanban/`, on the one
+/// The feed opens no session and makes no ``BoardEngine``. It keeps its own ``LiveGraph`` of the board, and runs no
+/// git. Its only write is the merge of the iCloud conflict versions of a log file (TestudoApp D179), under the board
+/// lock, as in a session (``BoardFolderReader/changes(after:)``). A board with no conflict version gets no lock and no
+/// write. The watcher watches the folder that holds `.kanban/`, on the one
 /// ``FolderStreams`` of the host, so that the feed sees the remove and the return of `.kanban/` too.
 struct BoardFolderFeed: Sendable {
     /// The changes of the board, in the order of the batches of the watcher. The stream ends when the watcher stops:
@@ -70,6 +73,7 @@ struct BoardFolderFeed: Sendable {
     ///   - folder: The folder that holds `.kanban/`. It must exist. It does not have to hold `.kanban/` yet.
     ///   - folderStreams: The FSEvents stream of the host.
     ///   - observer: Gets a call when each worker of the loader reads a file, or `nil` for no calls.
+    ///   - fileVersions: The store of the iCloud conflict versions of the board files.
     /// - Returns: The started feed.
     /// - Throws: ``BoardWatcherError/streamNotStarted(path:)`` when the watcher cannot start.
     ///   ``EventLogError/incompatibleBoard(directory:)`` when `.kanban/` is a board of the old Rust kanban.
@@ -77,12 +81,17 @@ struct BoardFolderFeed: Sendable {
     static func start(
         watching folder: URL,
         in folderStreams: FolderStreams,
-        reportingTo observer: (any LoaderWorkerObserver)?
+        reportingTo observer: (any LoaderWorkerObserver)?,
+        readingVersionsWith fileVersions: any FileVersionSource
     ) async throws -> BoardFolderFeed {
         let watcher = try await BoardWatcher(watching: folder, in: folderStreams)
         let reader: BoardFolderReader
         do {
-            reader = try await BoardFolderReader(readingFolder: folder, reportingTo: observer)
+            reader = try await BoardFolderReader(
+                readingFolder: folder,
+                reportingTo: observer,
+                readingVersionsWith: fileVersions
+            )
         } catch {
             await watcher.stop()
             throw error
@@ -135,19 +144,34 @@ struct BoardFolderReader: Sendable {
     /// Gets a call when each worker of the loader reads a file, or `nil` for no calls.
     private let observer: (any LoaderWorkerObserver)?
 
+    /// The store of the iCloud conflict versions of the board files.
+    private let fileVersions: any FileVersionSource
+
     /// The board in memory, or `nil` when the folder has no `.kanban/` folder.
     private var live: LiveGraph?
+
+    /// `true` after a conflict check read each file of the board one time without an error: the check of the first
+    /// batch that holds the board directory or the watched folder. After that, such a batch checks only the
+    /// files that its compare finds changed, the same as ``BoardEngine``. With many boards, a check of each file of
+    /// each board for each such batch is too slow.
+    private var checkedEachFileForConflicts = false
 
     /// Loads the board of a folder, when the folder has a `.kanban/` folder.
     ///
     /// - Parameters:
     ///   - folder: The folder that holds `.kanban/`.
     ///   - observer: Gets a call when each worker of the loader reads a file, or `nil` for no calls.
+    ///   - fileVersions: The store of the iCloud conflict versions of the board files.
     /// - Throws: ``EventLogError/incompatibleBoard(directory:)`` when `.kanban/` is a board of the old Rust kanban.
     ///   ``EventLogError/fileSystem(path:detail:)`` when a folder or a file is there and cannot be read.
-    init(readingFolder folder: URL, reportingTo observer: (any LoaderWorkerObserver)?) async throws(EventLogError) {
+    init(
+        readingFolder folder: URL,
+        reportingTo observer: (any LoaderWorkerObserver)?,
+        readingVersionsWith fileVersions: any FileVersionSource
+    ) async throws(EventLogError) {
         self.folder = folder
         self.observer = observer
+        self.fileVersions = fileVersions
         log = EventLog(repositoryAt: folder)
         live = try await Self.loadedBoard(of: log, reportingTo: observer)
     }
@@ -187,6 +211,10 @@ struct BoardFolderReader: Sendable {
     /// reads no file and gives no change. A batch that cannot be read is recorded with swift-log and gives no change.
     /// The board in memory then does not change, and the compare of the next batch finds the change.
     ///
+    /// Before the read of the stamp, the reader merges the iCloud conflict versions of the changed files of the batch
+    /// (``resolveConflicts(amongBoardPaths:)``). Thus the read gives the changes of the merged result, with the stamp
+    /// after the merge.
+    ///
     /// - Parameter paths: The changed paths of the batch.
     /// - Returns: The changes, or an empty list when the board did not change.
     mutating func changes(after paths: [URL]) async -> [BoardFolderChange] {
@@ -194,6 +222,7 @@ struct BoardFolderReader: Sendable {
         guard !boardPaths.isEmpty else {
             return []
         }
+        await resolveConflicts(amongBoardPaths: boardPaths)
         do {
             return try await changes(afterBoardPaths: boardPaths)
         } catch {
@@ -203,6 +232,71 @@ struct BoardFolderReader: Sendable {
             )
             return []
         }
+    }
+
+    /// Merges the iCloud conflict versions of the changed files of one batch, and marks them resolved (TestudoApp
+    /// D179), with ``EventLog/resolveConflicts(ofFilesAt:scanningBoardDirectory:with:)``: the same call as a session.
+    /// The call gets the board lock only when a file has a conflict version, so the merge is safe while a session of
+    /// this process or of a different process writes the same board, and a board with no conflict gets no lock and no
+    /// write.
+    ///
+    /// The watched folder stands for the board directory. The first batch that holds it checks each file of the board
+    /// one time, the same as ``BoardEngine``. After that, such a batch checks only the files that its compare finds
+    /// changed: the files that the apply reads again. While no board is in memory, such a batch checks each file, so
+    /// that a new `.kanban/` folder gets its check before its load. A check that fails is recorded with swift-log, and
+    /// the next batch of the file tries again.
+    ///
+    /// - Parameter paths: The changed paths of the board in the batch.
+    private mutating func resolveConflicts(amongBoardPaths paths: [URL]) async {
+        let checked = paths.map { path in path.canonicalPath == folder.canonicalPath ? log.directory : path }
+        let holdsBoard = log.holdsBoardDirectory(checked)
+        let scansBoard = holdsBoard && (live == nil || !checkedEachFileForConflicts)
+        let isChecked = await resolveConflicts(
+            in: checked,
+            scanningBoardDirectory: scansBoard,
+            addingChangedFiles: holdsBoard && !scansBoard
+        )
+        if scansBoard && isChecked {
+            checkedEachFileForConflicts = true
+        }
+    }
+
+    /// Merges the iCloud conflict versions of some changed files, and records a failure with swift-log.
+    ///
+    /// - Parameters:
+    ///   - paths: The changed paths, with the board directory in place of the watched folder.
+    ///   - scansBoard: `true` when the board directory checks each file of the board.
+    ///   - addsChangedFiles: `true` when the check also reads each file that the compare of the board in memory finds
+    ///     changed.
+    /// - Returns: `true` when the check ended with no error.
+    private func resolveConflicts(
+        in paths: [URL],
+        scanningBoardDirectory scansBoard: Bool,
+        addingChangedFiles addsChangedFiles: Bool
+    ) async -> Bool {
+        do {
+            let files = addsChangedFiles ? paths + (try changedFiles()) : paths
+            _ = try await log.resolveConflicts(ofFilesAt: files, scanningBoardDirectory: scansBoard, with: fileVersions)
+            return true
+        } catch {
+            Log.kanban.error(
+                "The change stream of a board folder cannot resolve a conflict of a board file in iCloud Drive",
+                metadata: ["folder": "\(folder.path)", "paths": "\(paths.map(\.path))", "error": "\(error)"]
+            )
+            return false
+        }
+    }
+
+    /// Gives the log files that the compare of the board in memory finds changed: the files that the apply of a batch
+    /// that holds the board directory reads again. The compare reads the signatures of the files, not their lines.
+    ///
+    /// - Returns: The log files, in the order of their refs. No files when no board is in memory.
+    /// - Throws: ``EventLogError/fileSystem(path:detail:)`` when a directory or a file cannot be read.
+    private func changedFiles() throws(EventLogError) -> [URL] {
+        guard let live else {
+            return []
+        }
+        return try live.changedRefs().sorted().map(log.fileURL(for:))
     }
 
     /// Reads one batch of paths of the board, and gives the changes of the board with the folder and the stamp.

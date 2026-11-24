@@ -23,6 +23,10 @@ struct BoardFolderChangesTests {
     /// The new name of the column that the second engine renames.
     static let renamedColumn = "Backlog"
 
+    /// The name of the file of a conflict version of a task log. It is outside `.kanban/`, the same as the version
+    /// store of iCloud Drive.
+    static let conflictVersionName = "conflict.jsonl"
+
     // MARK: - Fixture
 
     /// The temporary folder of the test. It holds the fixture board.
@@ -291,6 +295,98 @@ struct BoardFolderChangesTests {
         await host.close()
     }
 
+    // MARK: - iCloud conflict versions
+
+    /// Writes a conflict version of the log of the task of the fixture board, as iCloud Drive makes it when two Macs
+    /// write the same log: the version holds the current lines of the log and one more title line. The log itself
+    /// keeps its current version.
+    ///
+    /// - Returns: The file of the conflict version, and the ids of the events of both versions, in file order.
+    /// - Throws: An error when a file cannot be read or written.
+    mutating func writeConflictVersion() throws -> (version: URL, eventIDs: [ULID]) {
+        let file = log.fileURL(for: .task(task))
+        let current = try Data(contentsOf: file)
+        try BoardWatcherTests.writeLaterTitle(to: task, mintingFrom: &ids, in: log)
+        let eventIDs = try log.readLog(of: .task(task)).events.map(\.id)
+        let version = directory.url.appending(path: Self.conflictVersionName, directoryHint: .notDirectory)
+        try FileManager.default.moveItem(at: file, to: version)
+        try current.write(to: file)
+        return (version, eventIDs)
+    }
+
+    /// Writes a conflict version of the task log, starts the stream on a host whose version store gives that version,
+    /// and waits for the change of the task. The host uses ``QuietFolderEvents``, so the only batch is the first
+    /// compare of each file after the start, and the test is deterministic.
+    ///
+    /// - Returns: The run of the merge. The caller closes its host.
+    /// - Throws: An error when a file cannot be written, when the stream cannot start, or when no change of the task
+    ///   comes.
+    mutating func runMerge() async throws -> MergeRun {
+        let (version, eventIDs) = try writeConflictVersion()
+        let file = log.fileURL(for: .task(task))
+        let source = FakeFileVersionSource(conflicts: [file.canonicalPath: [version]])
+        let host = HostFixture.makeHost(watchingWith: QuietFolderEvents(), readingVersionsWith: source)
+        let changes = try await host.boardChanges(inFolder: directory.url)
+        let id = taskID
+        let wait = "the merge of task \(id)"
+        let change = try await Self.firstChange(of: changes, waitingFor: wait, at: file) { change in
+            guard case .tasksChanged(let ids) = change.kind else {
+                return false
+            }
+            return ids.contains(id)
+        }
+        return MergeRun(host: host, change: change, source: source, file: file, eventIDs: eventIDs)
+    }
+
+    @Test("A conflict version of a task log gives the id of the task in tasksChanged")
+    mutating func conflictVersionGivesTaskID() async throws {
+        let run = try await runMerge()
+        #expect(run.change != nil)
+        await run.host.close()
+    }
+
+    @Test("After the change of a merge, the task log holds the events of both versions")
+    mutating func mergedLogHoldsBothVersions() async throws {
+        let run = try await runMerge()
+        #expect(try log.readLog(of: .task(task)).events.map(\.id) == run.eventIDs)
+        await run.host.close()
+    }
+
+    @Test("After the change of a merge, the conflict versions of the task log are resolved")
+    mutating func mergeResolvesVersions() async throws {
+        let run = try await runMerge()
+        #expect(run.source.resolvedPaths == [run.file.canonicalPath])
+        await run.host.close()
+    }
+
+    @Test("The stamp of the change of a merge is the stamp of the board after the merge")
+    mutating func mergeChangeHoldsStampAfterMerge() async throws {
+        let run = try await runMerge()
+        #expect(run.change?.stamp == run.host.boardStamp(ofFolder: directory.url))
+        await run.host.close()
+    }
+
+    @Test("After the change of a merge, a read of the board shows the title of the conflict version")
+    mutating func mergedBoardShowsConflictTitle() async throws {
+        let run = try await runMerge()
+        let snapshot = try #require(try await run.host.readBoard(inFolder: directory.url).snapshot)
+        let merged = snapshot.tasks.first { snapshotTask in snapshotTask.id == taskID }
+        #expect(merged?.title == KanbanGraphTests.laterTitle)
+        await run.host.close()
+    }
+
+    @Test("A board with no conflict version gets no lock file from the stream")
+    mutating func noConflictMakesNoLock() async throws {
+        let source = FakeFileVersionSource(conflicts: [:])
+        let host = HostFixture.makeHost(watchingWith: QuietFolderEvents(), readingVersionsWith: source)
+        let feed = try #require(try await host.startBoardFolderFeed(inFolder: directory.url))
+        try BoardWatcherTests.writeLaterTitle(to: task, mintingFrom: &ids, in: log)
+        feed.watcher.compareEachFile()
+        #expect(try await Self.waits(for: .tasksChanged([taskID]), in: feed.changes, at: log.directory))
+        #expect(!FileManager.default.fileExists(atPath: log.lockFileURL.path))
+        await host.close()
+    }
+
     // MARK: - Life of the stream
 
     @Test("The stream adds only the watched folder to the FSEvents stream, and makes no engine in the host")
@@ -342,4 +438,24 @@ struct BoardFolderChangesTests {
         #expect(received.isEmpty)
         #expect(events.startCount == 0)
     }
+}
+
+// MARK: - Merge run
+
+/// One run of the stream on a board with a conflict version of its task log (``BoardFolderChangesTests/runMerge()``).
+struct MergeRun {
+    /// The host of the stream. The test closes it.
+    let host: KanbanHost
+
+    /// The first change that holds the id of the task, or `nil` when the stream ended first.
+    let change: BoardFolderChange?
+
+    /// The version store of the host. It records each resolve.
+    let source: FakeFileVersionSource
+
+    /// The log file of the task.
+    let file: URL
+
+    /// The ids of the events of both versions of the task log, in file order.
+    let eventIDs: [ULID]
 }

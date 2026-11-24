@@ -208,11 +208,21 @@ public actor KanbanHost {
     /// Gives a stream of the changes of the board of a folder that has no open session, for example to keep the tasks
     /// of the folder current in Spotlight (TestudoApp D214).
     ///
-    /// The stream works for a folder with no open session. It opens no session, loads no engine, takes no lock, runs
-    /// no git, and writes no file. It keeps its own copy of the board in memory, and gets the changes from a file
-    /// watcher on the folder, on the one FSEvents stream of the host. Thus it gives the changes of a session of this
-    /// process, of a different process (for example the `sah` tools), and of each other writer of the log files. A
-    /// write of the lock file only gives no change.
+    /// The stream works for a folder with no open session. It opens no session, loads no engine, and runs no git. It
+    /// keeps its own copy of the board in memory, and gets the changes from a file watcher on the folder, on the one
+    /// FSEvents stream of the host. Thus it gives the changes of a session of this process, of a different process
+    /// (for example the `sah` tools), and of each other writer of the log files. A write of the lock file only gives
+    /// no change.
+    ///
+    /// The stream merges the iCloud conflict versions of a log file, the same as a session (TestudoApp D179): a board
+    /// in iCloud Drive gets them when two Macs write the same log. This merge is the only write of the stream. It
+    /// writes the merged log under the board lock, with the same code as a session, so it is safe while a session of
+    /// this process or of a different process writes the same board. Before each read of a batch, the stream checks
+    /// the changed files of the batch for conflict versions. The first check after the start checks each file of the
+    /// board. A board with no conflict version gets no lock and no write. The stream then gives the changes of the
+    /// merged result: ``BoardFolderChange/Kind/tasksChanged(_:)`` with the id of each task whose log got lines of a
+    /// conflict version, with the stamp of the board after the merge. A merge that fails is recorded with swift-log,
+    /// and the next change of the file tries again.
     ///
     /// Each change holds the folder (the URL that the caller gave) and the stamp of the board after the change
     /// (``BoardFolderChange/stamp``), or no stamp when `.kanban/` went away. When nothing changed after the change,
@@ -251,7 +261,8 @@ public actor KanbanHost {
             try await BoardFolderFeed.start(
                 watching: folder,
                 in: folderStreams,
-                reportingTo: configuration.workerObserver
+                reportingTo: configuration.workerObserver,
+                readingVersionsWith: configuration.fileVersions
             )
         }
         guard !isClosed else {
@@ -1266,6 +1277,11 @@ struct HostConfiguration: Sendable {
     /// after a cursor that is at most this many changes old (KANBAN-7).
     let changeLogCapacity: Int
 
+    /// The store of the iCloud conflict versions of the board files (TestudoApp D179). The engine of each board and
+    /// each change stream of a folder (``KanbanHost/boardChanges(inFolder:)``) merge the conflict versions that it
+    /// gives. A test gives a store of plain files, because only a ubiquitous item has real conflict versions.
+    let fileVersions: any FileVersionSource
+
     /// The number of the newest changes that the change log of each board of the process keeps: the default of the
     /// toolkit `ChangeLog`.
     static let defaultChangeLogCapacity = 1024
@@ -1307,6 +1323,7 @@ struct HostConfiguration: Sendable {
     ///   - folderEvents: The FSEvents calls of the file watchers of the host.
     ///   - changeLogCapacity: The number of the newest changes that the change log of each board keeps. It must be at
     ///     least 1.
+    ///   - fileVersions: The store of the iCloud conflict versions of the board files.
     init(
         keyReader: @escaping BoardKeyReader = BoardKey.read(fromRepoAt:),
         topReader: @escaping WorktreeTopReader = BoardKey.worktreeTop(of:),
@@ -1321,7 +1338,8 @@ struct HostConfiguration: Sendable {
         workerObserver: (any LoaderWorkerObserver)? = nil,
         scanObserver: (any BoardScanObserver)? = nil,
         folderEvents: any FolderEventService = SystemFolderEvents(),
-        changeLogCapacity: Int = defaultChangeLogCapacity
+        changeLogCapacity: Int = defaultChangeLogCapacity,
+        fileVersions: any FileVersionSource = ICloudFileVersions()
     ) {
         self.keyReader = keyReader
         self.topReader = topReader
@@ -1337,6 +1355,7 @@ struct HostConfiguration: Sendable {
         self.scanObserver = scanObserver
         self.folderEvents = folderEvents
         self.changeLogCapacity = changeLogCapacity
+        self.fileVersions = fileVersions
     }
 }
 

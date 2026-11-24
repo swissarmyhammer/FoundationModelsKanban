@@ -121,6 +121,9 @@ actor BoardEngine {
     /// Gets a call when the watcher applies a batch, or `nil` for no calls.
     private let batchObserver: (any LiveGraphObserver)?
 
+    /// The store of the iCloud conflict versions of the board files (``HostConfiguration/fileVersions``).
+    private let fileVersions: any FileVersionSource
+
     /// Sends the changes of a batch of the watcher to the session views.
     private let publish: ChangePublisher
 
@@ -136,6 +139,7 @@ actor BoardEngine {
     ///   - capacity: The number of the newest changes that the change log of the board keeps.
     ///   - filterModel: The model of the filter agent, or `nil` for no filter agent.
     ///   - batchObserver: Gets a call when the watcher applies a batch, or `nil` for no calls.
+    ///   - fileVersions: The store of the iCloud conflict versions of the board files.
     ///   - publish: Sends the changes of a batch of the watcher to the session views.
     ///   - reportRetirement: Tells the host that the engine retired.
     private init(
@@ -145,6 +149,7 @@ actor BoardEngine {
         keepingChanges capacity: Int,
         translatingFiltersWith filterModel: (any LanguageModel)?,
         observingBatchesWith batchObserver: (any LiveGraphObserver)?,
+        readingVersionsWith fileVersions: any FileVersionSource,
         publishingTo publish: @escaping ChangePublisher,
         reportingRetirementTo reportRetirement: @escaping EngineRetirement
     ) async {
@@ -159,6 +164,7 @@ actor BoardEngine {
         newestCursor = cursor
         loggedSession = session.read(atCursor: cursor)
         self.batchObserver = batchObserver
+        self.fileVersions = fileVersions
         self.publish = publish
         self.reportRetirement = reportRetirement
         watchState = .unwatched
@@ -222,6 +228,7 @@ actor BoardEngine {
             keepingChanges: request.configuration.changeLogCapacity,
             translatingFiltersWith: request.filterModel,
             observingBatchesWith: request.configuration.batchObserver,
+            readingVersionsWith: request.configuration.fileVersions,
             publishingTo: request.publish,
             reportingRetirementTo: request.reportRetirement
         )
@@ -492,7 +499,7 @@ actor BoardEngine {
             _ = try await log.resolveConflicts(
                 ofFilesAt: paths,
                 scanningBoardDirectory: scansBoard,
-                with: ICloudFileVersions()
+                with: fileVersions
             )
             return true
         } catch {

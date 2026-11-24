@@ -171,9 +171,10 @@ enum LogVersionMerge {
 
 // MARK: - Conflict versions
 
-/// Gives the conflict versions of a file, and marks them resolved. The engine uses ``ICloudFileVersions``. A test
-/// uses a source that gives plain files, because only a ubiquitous item has real conflict versions.
-protocol FileVersionSource {
+/// Gives the conflict versions of a file, and marks them resolved. The host uses ``ICloudFileVersions``
+/// (``HostConfiguration/fileVersions``). A test uses a source that gives plain files, because only a ubiquitous item
+/// has real conflict versions. The host configuration goes to many tasks, so a source is `Sendable`.
+protocol FileVersionSource: Sendable {
     /// One conflict version of a file.
     associatedtype Version
 

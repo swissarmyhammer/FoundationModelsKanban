@@ -240,7 +240,7 @@ struct LogVersionMergeTests {
 }
 
 /// A ``FileVersionSource`` that a test controls: it gives fixed conflict version files, and records each resolve.
-final class FakeFileVersionSource: FileVersionSource {
+final class FakeFileVersionSource: FileVersionSource, Sendable {
     /// The conflict version files of each file, by the canonical path of the file.
     private let conflicts: [String: [URL]]
 

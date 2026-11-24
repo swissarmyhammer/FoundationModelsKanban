@@ -567,6 +567,8 @@ enum HostFixture {
     ///   - folderEvents: The FSEvents calls of the file watchers. The default is the FSEvents service of the system.
     ///   - changeLogCapacity: The number of the newest changes that the change log of each board keeps. The default is
     ///     the capacity of the process.
+    ///   - fileVersions: The store of the iCloud conflict versions of the board files. The default is the store of
+    ///     iCloud Drive.
     /// - Returns: The host.
     static func makeHost(
         readingKeyWith keyReader: @escaping BoardKeyReader = KanbanGraphTests.fakeKey,
@@ -578,7 +580,8 @@ enum HostFixture {
         observingScansWith scanObserver: (any BoardScanObserver)? = nil,
         observingBatchesWith batchObserver: (any LiveGraphObserver)? = nil,
         watchingWith folderEvents: any FolderEventService = SystemFolderEvents(),
-        keepingChanges changeLogCapacity: Int = HostConfiguration.defaultChangeLogCapacity
+        keepingChanges changeLogCapacity: Int = HostConfiguration.defaultChangeLogCapacity,
+        readingVersionsWith fileVersions: any FileVersionSource = ICloudFileVersions()
     ) -> KanbanHost {
         KanbanHost(
             configuration: HostConfiguration(
@@ -592,7 +595,8 @@ enum HostFixture {
                 workerObserver: workerObserver,
                 scanObserver: scanObserver,
                 folderEvents: folderEvents,
-                changeLogCapacity: changeLogCapacity
+                changeLogCapacity: changeLogCapacity,
+                fileVersions: fileVersions
             )
         )
     }
