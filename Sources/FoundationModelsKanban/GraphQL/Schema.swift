@@ -124,8 +124,8 @@ actor BoardStore {
     }
 
     /// The working graph now, as a read of a related board sees the current board.
-    private var snapshot: BoardSnapshot {
-        BoardSnapshot(key: boardKey, graph: work.graph, source: source)
+    private var snapshot: KeyedBoard {
+        KeyedBoard(key: boardKey, graph: work.graph, source: source)
     }
 
     /// The related boards as the reads of the run see them now: each board that the run changed shows its working
@@ -510,7 +510,7 @@ actor BoardStore {
         case .current:
             view
         case .related(let board):
-            BoardSnapshot(key: key(of: target), graph: workingCopy(of: target).graph, source: board.session.source)
+            KeyedBoard(key: key(of: target), graph: workingCopy(of: target).graph, source: board.session.source)
                 .view(reading: reading)
         }
     }

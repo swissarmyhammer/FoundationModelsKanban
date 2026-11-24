@@ -523,8 +523,8 @@ struct CommitSession: Sendable {
 
     /// The board as a read of a related board sees it: the live graph, with an empty board in memory when the board
     /// has no board node (plan.md §6.6, board name).
-    var snapshot: BoardSnapshot {
-        BoardSnapshot(key: key.description, graph: displayGraph, source: source)
+    var snapshot: KeyedBoard {
+        KeyedBoard(key: key.description, graph: displayGraph, source: source)
     }
 
     /// The live graph, with an empty board in memory with the name of the repo directory when the board has no board
@@ -1020,8 +1020,8 @@ struct RelatedWork: Sendable {
     }
 
     /// The board as the reads of the run see it now: the working graph.
-    var snapshot: BoardSnapshot {
-        BoardSnapshot(key: session.key.description, graph: work.graph, source: session.source)
+    var snapshot: KeyedBoard {
+        KeyedBoard(key: session.key.description, graph: work.graph, source: session.source)
     }
 
     /// The board as the commit writes it.

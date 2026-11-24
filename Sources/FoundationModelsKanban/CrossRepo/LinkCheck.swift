@@ -90,7 +90,7 @@ extension LinkCheck {
 /// The board that the board key of a stored link names, as one run sees it (divergence.md M9).
 enum LinkedBoard: Sendable {
     /// A loaded board: the current board, or a loaded related board.
-    case loaded(BoardSnapshot)
+    case loaded(KeyedBoard)
 
     /// A related board that cannot be read (divergence.md Q7). The response has a warning that names it.
     case unreadable(UnreadableBoard)

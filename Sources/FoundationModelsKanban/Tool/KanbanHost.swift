@@ -161,6 +161,32 @@ public actor KanbanHost {
         return view
     }
 
+    /// Reads the board of a folder that has no open session, for example to give its tasks to Spotlight (TestudoApp
+    /// D214).
+    ///
+    /// The read opens no session, loads no engine, starts no file watcher, takes no lock, runs no git, and writes no
+    /// file. Thus a git repo with no commit gets no first commit. The read is safe while a session writes the same
+    /// board: a torn last line of a log file and a transaction that is not complete in all its log files do not show
+    /// (divergence.md Q23).
+    ///
+    /// The read loads only this board. A dependency on a task of a different board gives the URI text of that task,
+    /// and an assignee that is an actor of a different board is left out. The board key of the dependency markers
+    /// is the key that the board log recorded at the last write, not the key that git gives now
+    /// (``BoardSnapshot/Task/dependsOn``).
+    ///
+    /// - Parameter folder: The folder that holds `.kanban/`. The read does not go up to a parent folder, and it does
+    ///   not ask git for the top folder of the worktree.
+    /// - Returns: ``BoardRead/noBoard`` when the folder has no `.kanban/` folder, else the snapshot of the board.
+    /// - Throws: ``KanbanError/incompatibleBoard(directory:)`` when the `.kanban/` folder is a board of the old Rust
+    ///   kanban, as for a session (divergence.md Q6). An I/O fault when a folder or a log file cannot be read.
+    public nonisolated func readBoard(inFolder folder: URL) async throws -> BoardRead {
+        do {
+            return try await BoardRead(readingFolder: folder, reportingTo: configuration.workerObserver)
+        } catch {
+            throw KanbanError(callFailure: error) ?? error
+        }
+    }
+
     // MARK: - Engines
 
     /// Gives the engine of a board, and loads the board when no engine has it yet (divergence.md §16).

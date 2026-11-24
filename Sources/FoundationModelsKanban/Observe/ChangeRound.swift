@@ -77,7 +77,7 @@ struct ChangeRound {
         reading related: RelatedBoards
     ) {
         self.changed = changed
-        let place = { (boards: RelatedBoards, path: String, board: BoardSnapshot) in
+        let place = { (boards: RelatedBoards, path: String, board: KeyedBoard) in
             path == currentPath ? boards.with(current: board) : boards.with(board: board, atPath: path)
         }
         let after = sessions.reduce(related) { boards, entry in
@@ -158,7 +158,7 @@ struct ChangeRound {
     ///   - session: The session of the board.
     ///   - graph: The graph of the board: before or after a change.
     /// - Returns: The board.
-    private static func snapshot(of session: CommitSession, graph: Graph) -> BoardSnapshot {
-        BoardSnapshot(key: session.key.description, graph: graph, source: session.source)
+    private static func snapshot(of session: CommitSession, graph: Graph) -> KeyedBoard {
+        KeyedBoard(key: session.key.description, graph: graph, source: session.source)
     }
 }

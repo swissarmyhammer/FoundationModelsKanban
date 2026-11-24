@@ -1,0 +1,1 @@
+{"id":"01M86WE7KSJ35S1Y8FJ2Y4F1HE","timestamp":"2026-11-24T13:38:03.001299Z","op":"create","item_id":"01M86WE7KRJC7KFV0YTWX8H20C","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: 0075ca\n+tag_name: testudo\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: 0075ca\n-tag_name: testudo\n","transaction_id":null}

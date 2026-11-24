@@ -96,7 +96,7 @@ struct BoardSource: Sendable {
 }
 
 /// A loaded board that the read views of one run read: its key, its graph, and its source.
-struct BoardSnapshot: Sendable {
+struct KeyedBoard: Sendable {
     /// The current key of the board.
     let key: String
 
@@ -196,14 +196,14 @@ struct RelatedBoards: Sendable {
     private var keyCopies: [String: [BoardResolution]] = [:]
 
     /// The loaded related boards as the reads of the run see them, by the canonical path of their repo directory.
-    private var boards: [String: BoardSnapshot] = [:]
+    private var boards: [String: KeyedBoard] = [:]
 
     /// The session of each loaded related board, by the canonical path of its repo directory. A mutation on a
     /// related board makes its working copy from the session (plan.md §6.6).
     private var sessions: [String: CommitSession] = [:]
 
     /// The current board as the run sees it now, or `nil` when the value has no current board.
-    private var current: BoardSnapshot?
+    private var current: KeyedBoard?
 
     /// Makes an empty value.
     ///
@@ -216,7 +216,7 @@ struct RelatedBoards: Sendable {
     ///
     /// - Parameter board: The current board.
     /// - Returns: The value with the board.
-    func with(current board: BoardSnapshot) -> RelatedBoards {
+    func with(current board: KeyedBoard) -> RelatedBoards {
         var related = self
         related.current = board
         return related
@@ -238,7 +238,7 @@ struct RelatedBoards: Sendable {
     ///   - board: The board.
     ///   - path: The canonical path of the repo directory of the board.
     /// - Returns: The value with the board.
-    func with(board: BoardSnapshot, atPath path: String) -> RelatedBoards {
+    func with(board: KeyedBoard, atPath path: String) -> RelatedBoards {
         var related = self
         related.boards[path] = board
         return related
@@ -359,7 +359,7 @@ struct RelatedBoards: Sendable {
     ///
     /// - Parameter resolution: The board.
     /// - Returns: The loaded board, or `nil` when the board is not found, cannot be read, or is not loaded.
-    func board(resolvedAs resolution: BoardResolution) -> BoardSnapshot? {
+    func board(resolvedAs resolution: BoardResolution) -> KeyedBoard? {
         switch resolution {
         case .current: current
         case .copy(let copy): boards[copy.directory.canonicalPath]
@@ -397,7 +397,7 @@ struct RelatedBoards: Sendable {
     /// - Parameter ref: The stored ref.
     /// - Returns: The board, the slot, and the state of the task, live or tombstoned. `nil` for a local ref, and for
     ///   a task that no loaded board has.
-    func task(for ref: StoredRef) -> (board: BoardSnapshot, slot: Int, state: TaskNode)? {
+    func task(for ref: StoredRef) -> (board: KeyedBoard, slot: Int, state: TaskNode)? {
         node(for: ref, as: TaskNode.self)
     }
 
@@ -412,7 +412,7 @@ struct RelatedBoards: Sendable {
     func node<State: NodeState>(
         for ref: StoredRef,
         as type: State.Type
-    ) -> (board: BoardSnapshot, slot: Int, state: State)? {
+    ) -> (board: KeyedBoard, slot: Int, state: State)? {
         guard
             case .remote(let uri) = ref,
             let board = board(forKey: uri.boardKey),
@@ -428,7 +428,7 @@ struct RelatedBoards: Sendable {
     ///
     /// - Parameter key: The board key of a URI, as the URI holds it.
     /// - Returns: The board, or `nil` when no loaded board has the key.
-    func board(forKey key: String) -> BoardSnapshot? {
+    func board(forKey key: String) -> KeyedBoard? {
         resolution(ofBoard: key).flatMap(board(resolvedAs:))
     }
 

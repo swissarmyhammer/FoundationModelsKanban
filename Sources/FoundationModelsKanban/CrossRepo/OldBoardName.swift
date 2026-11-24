@@ -26,7 +26,7 @@ struct OldBoardName: Hashable, BoardWarning {
     }
 }
 
-extension BoardSnapshot {
+extension KeyedBoard {
     /// The names of the board (divergence.md M9): the current key, and the board IDs and the old names of the board
     /// node of its graph.
     var names: BoardNames {

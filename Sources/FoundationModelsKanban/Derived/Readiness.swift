@@ -355,7 +355,7 @@ extension WalkBoard {
     /// Makes the board of a walk from a loaded related board.
     ///
     /// - Parameter board: The loaded board.
-    init(of board: BoardSnapshot) {
+    init(of board: KeyedBoard) {
         self.init(key: board.key, graph: board.graph)
     }
 }
