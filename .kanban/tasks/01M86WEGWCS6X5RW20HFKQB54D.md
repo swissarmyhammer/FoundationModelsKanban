@@ -41,10 +41,26 @@ comments:
     - evidence: the commit adds BoardStamp, KanbanHost.boardStamp(ofFolder:) and BoardSnapshot.stamp, with tests
     - next: review
   timestamp: 2026-11-24T14:39:27.081409+00:00
+- actor: wballard
+  id: 01m87038q8m2ve7m6yjf251xez
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (7ab254b): 0 findings, 0 confirmed, 0 refuted; 5 files reviewed, 2 .kanban/ files not reviewed (.reviewignore)
+    - next: none. The task is in done.
+  timestamp: 2026-11-24T14:41:57.992564+00:00
+- actor: wballard
+  id: 01m87044wfxmpm4dn4gbxhwpq9
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — Snapshot/BoardStamp.swift, KanbanHost.boardStamp(ofFolder:), BoardSnapshot.stamp, 11 tests
+    - test: green — swift test, 1960 passed
+    - commit: 7ab254b
+    - review: clean — 0 findings
+  timestamp: 2026-11-24T14:42:26.831256+00:00
 depends_on:
 - 01M86WE7KQXHJCAX08PMRGYRKR
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffcf80
 title: Add a cheap stamp of the board of a folder that reads no task file
 ---
 ## Problem
