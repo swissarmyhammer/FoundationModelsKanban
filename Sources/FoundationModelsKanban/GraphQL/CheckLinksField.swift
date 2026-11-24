@@ -87,7 +87,7 @@ extension BoardStore {
         let key = link.target.boardKey
         let linked =
             key == view.boardKey || ownNames.contains(BoardKey.normalizedText(of: key))
-            ? LinkedBoard.loaded(KeyedBoard(key: view.boardKey, graph: view.graph, source: view.source))
+            ? LinkedBoard.loaded(KeyedBoard.make(key: view.boardKey, graph: view.graph, source: view.source))
             : linkedBoard(named: key)
         return linked.map { linked in LinkCheck(of: link, in: view, against: linked) }
     }

@@ -533,7 +533,7 @@ struct CommitSession: Sendable {
     ///   the working graph of a run.
     /// - Returns: The board.
     func snapshot(with graph: Graph) -> KeyedBoard {
-        KeyedBoard(key: key.description, graph: graph, source: source)
+        KeyedBoard.make(key: key.description, graph: graph, source: source)
     }
 
     /// The live graph, with an empty board in memory with the name of the repo directory when the board has no board

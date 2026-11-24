@@ -90,6 +90,52 @@ comments:
     - evidence: one local commit holds the source changes, the review findings and the .kanban task files
     - next: none. The commit is local. Do not push.
   timestamp: 2026-11-24T14:16:34.467701+00:00
+- actor: wballard
+  id: 01m86yt63251qsaevav1qc9r3g
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (d13f2ec..7c6783f), 4 files reviewed, 2 .kanban/ files ignored. counts: findings 1, confirmed 1, refuted 5. Sources/FoundationModelsKanban/GraphQL/Schema.swift:518 duplication/duplication. All 6 items of the 2026-11-24 08:03 section are checked.
+    - next: implement the unchecked item of the 2026-11-24 08:17 section (one KeyedBoard construction also for the .current case of BoardStore), then commit and review again.
+  timestamp: 2026-11-24T14:19:31.810335+00:00
+- actor: wballard
+  id: 01m86ytt4vh8ky2s2a6vb61ycp
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 4 files (CommitSession.snapshot(with:), BoardStore.snapshot(of:), mappingCallFailure(_:)); 6 prior findings checked
+    - test: green — swift test, 1949 passed
+    - commit: 7c6783f
+    - review: findings — GraphQL/Schema.swift:518
+  timestamp: 2026-11-24T14:19:52.347966+00:00
+- actor: wballard
+  id: 01m86z4s8byrdp689jsqperc1d
+  text: |-
+    Fix of the finding of Review Findings (2026-11-24 08:17). No behavior changed.
+    - KeyedBoard (CrossRepo/RelatedBoards.swift) has a new static make(key:graph:source:). The init is now private, so the compiler makes sure that each site uses make. Thus the construction of a board is written one time.
+    - The 4 sites of the module call KeyedBoard.make: CommitSession.snapshot(with:) (Tool/Commit.swift), the .current case of BoardStore.snapshot(of:) (GraphQL/Schema.swift), the link check of a read view (GraphQL/CheckLinksField.swift), and the merged board of collectBoards (GraphQL/CollectBoardsField.swift).
+    - The arguments are different at each site (the key and source of a session, of the store, or of a view; collectBoards gives no source). These are data of each case, not copied logic.
+    - Note: a full swift test run with a grep pipe lost the summary line, because the output was not saved. The second run saved the log to a file.
+  timestamp: 2026-11-24T14:25:19.115987+00:00
+- actor: wballard
+  id: 01m86z4smfhbt3sfkw6h1nrcj4
+  text: |-
+    ### implement — changed
+    - evidence: swift test (root, headless): 1949 tests in 170 suites passed, 0 failures; the only warning is the accepted mlx-swift_Cmlx.bundle one. swift test --filter CheckLinks|CollectBoards|RelatedBoard: 50 tests in 9 suites passed. Files: Sources/FoundationModelsKanban/CrossRepo/RelatedBoards.swift, Sources/FoundationModelsKanban/Tool/Commit.swift, Sources/FoundationModelsKanban/GraphQL/Schema.swift, Sources/FoundationModelsKanban/GraphQL/CheckLinksField.swift, Sources/FoundationModelsKanban/GraphQL/CollectBoardsField.swift. The finding of Review Findings (2026-11-24 08:17) is checked.
+    - next: /review. Not committed.
+  timestamp: 2026-11-24T14:25:19.503825+00:00
+- actor: wballard
+  id: 01m86z78bz6qywdfnep850gqg7
+  text: |-
+    ### test — green
+    - evidence: swift test at the package root, one run: 1949 tests in 170 suites passed, 0 failed, 0 skipped. Only warning: the accepted mlx-swift_Cmlx.bundle warning.
+    - next: review
+  timestamp: 2026-11-24T14:26:40.127958+00:00
+- actor: wballard
+  id: 01m86z7q0xbkrn1mfq720gxgsn
+  text: |-
+    ### commit — changed
+    - evidence: one commit holds the KeyedBoard.make change and the kanban task files
+    - next: review
+  timestamp: 2026-11-24T14:26:55.133673+00:00
 position_column: doing
 position_ordinal: '80'
 title: Add a read of the board of a folder that opens no session
@@ -155,3 +201,12 @@ This work is for TestudoApp D214. When it is done, send the public API names and
 - [x] `Sources/FoundationModelsKanban/Tool/Commit.swift:1023` `reuse/reuse` — The new RelatedWork.snapshot property repeats the KeyedBoard construction that CommitSession.snapshot already does. The only difference is the source of the graph and the key. The logic is copied instead of shared. Add a shared helper that makes a KeyedBoard from a session and a graph. Call it from RelatedWork.snapshot, CommitSession.snapshot, and the other copies, passing the graph that each one uses.
 - [x] `Sources/FoundationModelsKanban/Tool/Commit.swift:1024` `duplication/duplication` — The `snapshot` property of `RelatedWork` builds `KeyedBoard(key: session.key.description, graph: work.graph, source: session.source)`. This is the same constructor call as the `snapshot` copies in ChangeRound.swift:162 and Commit.swift:527. It differs only in its arguments. Call the shared `KeyedBoard` initializer that takes the session and a graph, with `work.graph` as the graph argument. Delete the inline construction.
 - [x] `Sources/FoundationModelsKanban/Tool/KanbanHost.swift:186` `reuse/reuse` — The new readBoard catch block maps errors with KanbanError(callFailure: error) ?? error. The same mapping is already written in session(workingDirectory:actor:). The copy repeats the error-mapping logic instead of sharing one helper. Move the mapping into one private helper, for example a func mapped<T>(_ body: () async throws(EventLogError) -> T) async throws -> T that applies the KanbanError(callFailure:) rule. Use it in readBoard and session(workingDirectory:actor:).
+
+## Review Findings (2026-11-24 08:17)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Sources/FoundationModelsKanban/GraphQL/Schema.swift:518` `duplication/duplication` — The `.current` case builds a `KeyedBoard(key:graph:source:)` inline. That is the same construction that the new `CommitSession.snapshot(with:)` now owns. The commit states that it makes one KeyedBoard construction, but this site still builds the value by hand, so a change to the construction must be made in two places. Add a `BoardStore`-level helper, or pass the key in explicitly, so that both sites call one function that wraps `KeyedBoard(key:graph:source:)`. Alternatively, document why the store's current board is not a CommitSession, and keep the single construction in one helper.

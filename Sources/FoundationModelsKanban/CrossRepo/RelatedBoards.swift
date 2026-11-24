@@ -110,13 +110,26 @@ struct KeyedBoard: Sendable {
     /// The live columns of the board in board order. A task in the terminal column is done.
     private let columnOrder: ColumnOrder
 
-    /// Makes a loaded board.
+    /// Makes a loaded board. Each site of the module makes a board through this function, so that the construction
+    /// of a board is written one time: a session (``CommitSession/snapshot(with:)``), the current board of a run
+    /// (``BoardStore``), a link check of a read view, and the merged board of `collectBoards`.
     ///
     /// - Parameters:
     ///   - key: The current key of the board.
     ///   - graph: The graph of the board.
     ///   - source: The directory, the search, and the events of the board, or `nil` for a board in memory only.
-    init(key: String, graph: Graph, source: BoardSource?) {
+    /// - Returns: The board.
+    static func make(key: String, graph: Graph, source: BoardSource?) -> KeyedBoard {
+        KeyedBoard(key: key, graph: graph, source: source)
+    }
+
+    /// Makes a loaded board. Only ``make(key:graph:source:)`` calls it.
+    ///
+    /// - Parameters:
+    ///   - key: The current key of the board.
+    ///   - graph: The graph of the board.
+    ///   - source: The directory, the search, and the events of the board, or `nil` for a board in memory only.
+    private init(key: String, graph: Graph, source: BoardSource?) {
         self.key = key
         self.graph = graph
         self.source = source

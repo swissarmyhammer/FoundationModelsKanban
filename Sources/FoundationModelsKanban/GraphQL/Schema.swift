@@ -515,7 +515,7 @@ actor BoardStore {
     /// - Returns: The board: the current key, the source, and the working graph of the board in the run.
     private func snapshot(of target: MutationTarget) -> KeyedBoard {
         switch target {
-        case .current: KeyedBoard(key: boardKey, graph: work.graph, source: source)
+        case .current: KeyedBoard.make(key: boardKey, graph: work.graph, source: source)
         case .related(let board): board.session.snapshot(with: workingCopy(of: target).graph)
         }
     }

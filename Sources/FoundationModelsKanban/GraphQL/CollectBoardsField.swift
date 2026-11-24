@@ -165,7 +165,7 @@ extension BoardStore {
         merged.merge(sources.flatMap(\.events))
         try merged.addCollected(sources, at: time)
         let names = Set(sources.flatMap(\.names))
-        let snapshot = KeyedBoard(key: targetView.boardKey, graph: merged.graph, source: nil)
+        let snapshot = KeyedBoard.make(key: targetView.boardKey, graph: merged.graph, source: nil)
         guard let links = checkedLinks(of: snapshot.view(reading: .unavailable), naming: names) else {
             return nil
         }
