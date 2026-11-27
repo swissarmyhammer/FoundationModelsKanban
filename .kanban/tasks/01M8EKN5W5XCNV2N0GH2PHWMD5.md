@@ -37,10 +37,26 @@ comments:
     - evidence: swift test — 2091 tests in 180 suites passed, 0 failed, 0 skipped. The only warning is the allowed SwiftPM "missing creator" warning.
     - next: review
   timestamp: 2026-11-27T15:11:45.464746+00:00
+- actor: claude-code
+  id: 01m8es5wzvwfrbva9ej3rzdzkj
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (5ff2a51). 0 findings, 0 confirmed, 2 refuted, 21 attempted, 0 failed. No validator matched Documentation/kanban/SKILL.md, Tests/Fixtures/kanban.graphql and divergence.md.
+    - next: none. The task is in done.
+  timestamp: 2026-11-27T15:14:59.707753+00:00
+- actor: claude-code
+  id: 01m8es6849pf66y6sbzrnvs80z
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 4 new files, 14 changed
+    - test: green — swift test, 2091 passed in 180 suites
+    - commit: 5ff2a51
+    - review: clean — 0 findings; task in done
+  timestamp: 2026-11-27T15:15:11.113573+00:00
 depends_on:
 - 01M8EKMNE2J1878SKPN89E0CYQ
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffd580
 title: Add the deleteChecklistItem mutation
 ---
 ## Goal
