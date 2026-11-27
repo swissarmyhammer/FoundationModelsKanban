@@ -147,6 +147,12 @@ extension SchemaDescription {
         task gives STALE_WRITE, and the call writes nothing.
         """
 
+    /// The `Mutation.updateChecklistItem` field (divergence.md §30).
+    static let updateChecklistItem = """
+        Sets the state of one checklist item of the body of a task, and can change its text. Each other line of the \
+        body does not change. A second call with the same value changes nothing.
+        """
+
     /// The `Mutation.moveTask` field.
     static let moveTask = """
         Moves a task to a column and to a place in that column. No place puts the task at the end of the column. A \
@@ -545,6 +551,33 @@ extension SchemaDescription {
 
     /// The `tags` field of `TagTaskInput` and `UntagTaskInput`.
     static let tagTaskTags = "The tags to add or to remove. \(tagForms)"
+
+    // MARK: - Checklist item input
+
+    /// The `UpdateChecklistItemInput` type (divergence.md §30).
+    static let updateChecklistItemInput = """
+        The fields of updateChecklistItem. Give checked, text, or both. A field that is not set does not change. An \
+        input with neither field gives the task with no change and a warning.
+        """
+
+    /// The `item` field of `UpdateChecklistItemInput` (divergence.md §30).
+    static let checklistItemReference = """
+        The checklist item: an index from 0, for example 2 or "2", or the text of the item. The call tries an index in \
+        range, then the exact text, then the text with case and white space ignored, then a prefix, then a part of \
+        the text. The first step with one match names the item. Two matches at one step give AMBIGUOUS_ITEM, and no \
+        match gives NOT_FOUND. Each error lists the items with their indexes.
+        """
+
+    /// The `checked` field of `UpdateChecklistItemInput` (divergence.md §30).
+    static let checklistItemChecked = """
+        The new state of the item: true checks it, and false unchecks it. The state that the item already has writes \
+        nothing. No value keeps the state.
+        """
+
+    /// The `text` field of `UpdateChecklistItemInput` (divergence.md §30).
+    static let checklistItemText = """
+        The new text of the item, after its box. A line break becomes a space. No value keeps the text.
+        """
 
     // MARK: - Comment inputs
 

@@ -15,12 +15,18 @@ struct NodeID: Codable, Sendable, Hashable {
 }
 
 extension NodeID {
-    /// Decodes the id from its text.
+    /// Decodes the id from its text, or from an integer, as the GraphQL `ID` input rule gives (divergence.md §30).
+    /// Thus `item: 2` and `item: "2"` give the same id.
     ///
-    /// - Parameter decoder: The decoder that holds the text.
-    /// - Throws: A `DecodingError` when the value is not text.
+    /// - Parameter decoder: The decoder that holds the text or the integer.
+    /// - Throws: A `DecodingError` when the value is not text and not an integer.
     init(from decoder: any Decoder) throws {
-        try self.init(text: decoder.singleValueContainer().decode(String.self))
+        let container = try decoder.singleValueContainer()
+        guard let text = try? container.decode(String.self) else {
+            try self.init(text: String(container.decode(Int.self)))
+            return
+        }
+        self.init(text: text)
     }
 
     /// Encodes the id as its text.

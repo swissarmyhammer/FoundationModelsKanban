@@ -156,6 +156,15 @@ enum KanbanFieldAliases {
         "target": ["into", "to", "destination", "targetBoard", "toBoard"],
     ]) { option, _ in option }
 
+    /// The aliases of the fields of `UpdateChecklistItemInput` (divergence.md §30): the task, the item, the state, and
+    /// the text.
+    private static let checklistItemChange = [
+        "id": taskID,
+        "item": ["subtask", "checklistItem", "index", "line"],
+        "checked": ["done", "isChecked", "isDone", "complete", "completed"],
+        "text": ["newText", "title", "name"],
+    ]
+
     /// The aliases of the fields of `AssignTaskInput` and `UnassignTaskInput`: the task and the actor.
     private static let taskAssignee = ["id": taskID, "actor": ["assignee", "actorId", "user", "who"]]
 
@@ -187,6 +196,7 @@ enum KanbanFieldAliases {
         "Mutation": [
             "unassignTask": ["removeAssignee"], "assignTask": ["addAssignee"], "undoChange": ["undo"],
             "redoChange": ["redo"], "rejectTask": ["rejectReview"],
+            "updateChecklistItem": ["checkSubtask", "updateSubtask", "checkItem"],
         ],
         "Subscription": ["changes": ["kanbanChanges"]],
         "AddTaskInput": [
@@ -209,6 +219,7 @@ enum KanbanFieldAliases {
         "DeleteTasksInput": taskList,
         "UndeleteTasksInput": taskList,
         "RejectTaskInput": taskReject,
+        "UpdateChecklistItemInput": checklistItemChange,
         "AddCommentInput": ["task": commentTask, "actor": ["author", "user"]],
         "UpdateCommentInput": commentReference,
         "DeleteCommentInput": commentReference,

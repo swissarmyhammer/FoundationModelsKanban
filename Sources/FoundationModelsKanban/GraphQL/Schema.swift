@@ -1391,6 +1391,7 @@ struct PublicSchema: API {
                 .addMoveColumnMutation()
                 .addTaskMutations()
                 .addTaskOperationMutations()
+                .addChecklistItemMutation()
                 .addTaskTransferMutations()
                 .addCommentMutations()
                 .addRejectTaskMutation()

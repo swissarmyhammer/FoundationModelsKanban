@@ -66,6 +66,19 @@ struct KanbanErrorTests {
         (.noPreviousColumn(task: "^aaaaaaa", column: firstColumn), "NO_PREVIOUS_COLUMN"),
         (.boardBusy(attempts: commitAttempts), "BOARD_BUSY"),
         (.incompatibleBoard(directory: rustBoardPath), "INCOMPATIBLE_BOARD"),
+        (.ambiguousChecklistItem(task: "^aaaaaaa", item: "add", matches: checklistMatches), "AMBIGUOUS_ITEM"),
+    ]
+
+    /// The two checklist items of the `updateChecklistItem` error tests (divergence.md §30).
+    static let checklistMatches = [
+        KanbanError.ChecklistMatch(index: 0, text: "Add a test"),
+        KanbanError.ChecklistMatch(index: 1, text: "Add a doc"),
+    ]
+
+    /// The error of a checklist item ref that names no item (divergence.md §30). It has the code of the node error in
+    /// ``codes``, so the test of distinct codes does not read it.
+    static let checklistItemCodes: [(KanbanError, String)] = [
+        (.checklistItemNotFound(task: "^aaaaaaa", item: "deploy", items: checklistMatches), "NOT_FOUND"),
     ]
 
     /// The old version of the task in the `STALE_WRITE` tests: the version that the caller read.
@@ -99,12 +112,15 @@ struct KanbanErrorTests {
         (.conflictingColumnPlacement(after: firstColumn, before: lastColumn), "CONFLICTING_PLACEMENT"),
     ]
 
+    /// Each case of each code table.
+    static let allCodes = codes + reservedSlugCodes + columnPlacementCodes + checklistItemCodes
+
     /// The slug of the terminal column in the `CONFLICTING_PLACEMENT` test of `moveColumn`.
     static let lastColumn = "done"
 
     // MARK: - Codes
 
-    @Test("Each case gives its exact code", arguments: codes + reservedSlugCodes + columnPlacementCodes)
+    @Test("Each case gives its exact code", arguments: allCodes)
     func caseGivesItsCode(error: KanbanError, expectedCode: String) {
         #expect(error.code == expectedCode)
     }
@@ -137,7 +153,7 @@ struct KanbanErrorTests {
 
     @Test(
         "An error with no filter error gives no extension field",
-        arguments: (codes + reservedSlugCodes + columnPlacementCodes).map(\.0).filter { error in
+        arguments: allCodes.map(\.0).filter { error in
             !spanCodes.contains(error.code)
         }
     )
@@ -404,6 +420,36 @@ struct KanbanErrorTests {
             KanbanError.emptyComment.message
                 == "The comment is empty, so the call wrote nothing. Give a comment that tells why the task goes back, "
                 + "and then send the call again."
+        )
+    }
+
+    @Test("NOT_FOUND of a checklist item names the task and the ref, and lists each item with its index")
+    func checklistItemNotFoundMessage() {
+        #expect(
+            KanbanError.checklistItemNotFound(task: "^aaaaaaa", item: "deploy", items: Self.checklistMatches).message
+                == "No checklist item of the task \"^aaaaaaa\" matches \"deploy\", so the call wrote nothing. The "
+                + "items are: 0 \"Add a test\", 1 \"Add a doc\". Give the index or the text of one item as item, and "
+                + "then send the call again."
+        )
+    }
+
+    @Test("NOT_FOUND of a checklist item on a body with no item tells how to add an item")
+    func checklistItemNotFoundOnEmptyBodyMessage() {
+        #expect(
+            KanbanError.checklistItemNotFound(task: "^aaaaaaa", item: "0", items: []).message
+                == "No checklist item of the task \"^aaaaaaa\" matches \"0\", so the call wrote nothing. The body "
+                + "of the task has no checklist line. Add a line such as - [ ] <text> to the body with updateTask, "
+                + "and then send the call again."
+        )
+    }
+
+    @Test("AMBIGUOUS_ITEM names the ref and the task, and lists the matches with their indexes")
+    func ambiguousChecklistItemMessage() {
+        #expect(
+            KanbanError.ambiguousChecklistItem(task: "^aaaaaaa", item: "add", matches: Self.checklistMatches).message
+                == "The item \"add\" matches more than one checklist item of the task \"^aaaaaaa\": 0 \"Add a "
+                + "test\", 1 \"Add a doc\", so the call wrote nothing. Give the index of one item as item, and then "
+                + "send the call again."
         )
     }
 

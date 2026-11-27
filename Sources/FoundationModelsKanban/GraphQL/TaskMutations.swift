@@ -120,8 +120,9 @@ struct TaskChange {
     let edges: [String: [StoredRef]]
 }
 
-/// The result of the body of one `addTask` or `updateTask` field: the task, and the warnings of the field.
-private struct TaskWrite: Sendable {
+/// The result of the body of one `addTask`, `updateTask`, or `updateChecklistItem` field: the task, and the warnings
+/// of the field.
+struct TaskWrite: Sendable {
     /// The local ref of the task.
     let ref: LocalRef
 
@@ -228,8 +229,8 @@ extension KanbanResolver {
 }
 
 extension KanbanContext {
-    /// Runs one `addTask` or `updateTask` field with ``runMutation(named:on:_:)``, and adds the warnings of the field
-    /// to the warnings of the run.
+    /// Runs one `addTask`, `updateTask`, or `updateChecklistItem` field with ``runMutation(named:on:_:)``, and adds
+    /// the warnings of the field to the warnings of the run.
     ///
     /// - Parameters:
     ///   - operation: The name of the public mutation of the field.
@@ -239,7 +240,7 @@ extension KanbanContext {
     /// - Returns: The task, live or tombstoned, or `nil` when the engine did not load the board yet.
     /// - Throws: ``KanbanError/boardNotFound(reference:searchRoots:)`` when the scan finds no board for the ref. The
     ///   error of the body, or an ``EventError`` when a patch breaks a rule of the log.
-    fileprivate func changeTask(
+    func changeTask(
         named operation: String,
         on board: MutationBoard,
         _ body: sending (inout WorkingCopy, RefResolver, DateTime) throws -> TaskWrite

@@ -17,7 +17,7 @@ Do the tasks of the kanban board.
 ## Use the board for all task tracking
 
 - The board is your todo list. Do not use TodoWrite, TaskCreate, or a different task tool. Use only `kanban`. The board is the one record for all agent sessions.
-- A subtask is one line of a GFM checklist (`- [ ]` or `- [x]`) in the `body` of the task. There is no subtask API. Put the checklist in the body when you add the task, or change the body with `updateTask`.
+- A subtask is one line of a GFM checklist (`- [ ]` or `- [x]`) in the `body` of the task. Put the checklist in the body when you add the task. To check off one subtask or to change its text, use `updateChecklistItem`. To add or remove subtasks, change the body with `updateTask`.
 
 ## Call the tool
 
@@ -133,15 +133,13 @@ return r.data.board.task;
 
 ### 4. Do each subtask, and check it off immediately
 
-After each subtask, change its `- [ ]` to `- [x]` in the body. Do not wait to check off many subtasks together. Keep all other text of the body. `body` is the full new text: the tool calculates the change.
+After each subtask, check it off with `updateChecklistItem`. Do not wait to check off many subtasks together. `item` is the index of the subtask (`0` or `"0"` is the first) or its text. A part of the text is enough when only one subtask has it. `checked: true` checks the subtask, and `checked: false` unchecks it. A second call with the same value changes nothing. The call does not change the other lines of the body.
 
 ```js
-const t = (await tools.kanban({ query: `{ board { task(id: "fix-the-login-bug") { id body } } }` })).data.board.task;
 const r = await tools.kanban({
-  query: `mutation($id: ID!, $body: String!) { updateTask(input: { id: $id, body: $body }) { progress { completed total } } }`,
-  variables: { id: t.id, body: t.body.replace("- [ ] Find the cause", "- [x] Find the cause") }
+  query: `mutation { updateChecklistItem(input: { id: "fix-the-login-bug", item: "Find the cause", checked: true }) { progress { completed total } } }`
 });
-return r.data.updateTask.progress;
+return r.data.updateChecklistItem.progress;
 ```
 
 ```json

@@ -139,6 +139,15 @@ enum KanbanError: CodedError, Hashable {
     /// changes other boards, for example `boards` or `collectBoards` (``BoardReach/ownBoard``; EXTRAS-9 rule 4). The
     /// field is the name of that field or argument.
     case unreachableBoards(field: String)
+
+    /// `NOT_FOUND`: no checklist item of the task matches the item ref of `updateChecklistItem` (divergence.md §30).
+    /// The task and the item are the refs as the call wrote them. The items are each item of the body, with its index,
+    /// so that the next call can name one of them.
+    case checklistItemNotFound(task: String, item: String, items: [ChecklistMatch])
+
+    /// `AMBIGUOUS_ITEM`: two or more checklist items of the task match the item ref of `updateChecklistItem` at one
+    /// step of the match (divergence.md §30). The matches are these items, with their indexes.
+    case ambiguousChecklistItem(task: String, item: String, matches: [ChecklistMatch])
 }
 
 // MARK: - Code and message
@@ -182,6 +191,8 @@ extension KanbanError {
         case .noPreviousColumn: "NO_PREVIOUS_COLUMN"
         case .boardBusy: "BOARD_BUSY"
         case .unreachableBoard, .unreachableBoards: "UNREACHABLE_BOARD"
+        case .checklistItemNotFound: "NOT_FOUND"
+        case .ambiguousChecklistItem: "AMBIGUOUS_ITEM"
         }
     }
 
@@ -287,12 +298,35 @@ extension KanbanError {
         case .unreachableBoards(let field):
             "This client reaches only the board of the folder of its session, so the call cannot use \(field), "
                 + "which reaches other boards. \(Self.ownBoardCorrection)"
+        case .checklistItemNotFound(let task, let item, let items):
+            Self.checklistItemNotFoundMessage(task: task, item: item, items: items)
+        case .ambiguousChecklistItem(let task, let item, let matches):
+            "The item \"\(item)\" matches more than one checklist item of the task \"\(task)\": "
+                + "\(matches.map(\.label).joined(separator: Self.listSeparator)), so the call wrote nothing. Give the "
+                + "index of one item as item, and then send the call again."
         }
     }
 
     /// The correction for a call that reaches a board other than the board of the folder of its session.
     static let ownBoardCorrection = "Leave out the board ref, or name the board of that folder, and then send the "
         + "call again."
+
+    /// Gives the message of ``checklistItemNotFound(task:item:items:)``.
+    ///
+    /// - Parameters:
+    ///   - task: The task ref as the call wrote it.
+    ///   - item: The item ref as the call wrote it.
+    ///   - items: Each checklist item of the task.
+    /// - Returns: The message. It lists the items, or tells how to add one when the task has none.
+    private static func checklistItemNotFoundMessage(task: String, item: String, items: [ChecklistMatch]) -> String {
+        let problem = "No checklist item of the task \"\(task)\" matches \"\(item)\", so the call wrote nothing."
+        guard !items.isEmpty else {
+            return problem + " The body of the task has no checklist line. Add a line such as - [ ] <text> to the "
+                + "body with \(MutationName.updateTask), and then send the call again."
+        }
+        return problem + " The items are: \(items.map(\.label).joined(separator: Self.listSeparator)). Give the "
+            + "index or the text of one item as item, and then send the call again."
+    }
 
     /// Gives the noun of a node type in a message, for example `task`.
     ///
@@ -342,7 +376,8 @@ extension KanbanError {
             .actorNotFound, .duplicateID, .columnNotEmpty, .dependencyCycle, .tagRenameCycle, .nothingToUndo,
             .undoConflict, .filterAgentFailed, .invalidTagName, .reservedTagName, .virtualTagName, .invalidSlug,
             .reservedSlug, .invalidOrdinal, .conflictingPlacement, .conflictingColumnPlacement, .missingColumnPlacement,
-            .staleWrite, .emptyComment, .noPreviousColumn, .boardBusy, .unreachableBoard, .unreachableBoards:
+            .staleWrite, .emptyComment, .noPreviousColumn, .boardBusy, .unreachableBoard, .unreachableBoards,
+            .checklistItemNotFound, .ambiguousChecklistItem:
             [:]
         }
     }
@@ -389,5 +424,32 @@ extension KanbanError {
             }
             return "\(id) \"\(title)\""
         }
+    }
+}
+
+// MARK: - Checklist item
+
+extension KanbanError {
+    /// One checklist item that an error of `updateChecklistItem` lists (divergence.md §30).
+    struct ChecklistMatch: Hashable, Sendable {
+        /// The index of the item among the items of the body, from 0.
+        let index: Int
+
+        /// The text of the item.
+        let text: String
+
+        /// The item in a message: the index, then the text in quotes, for example `1 "Add a test"`.
+        var label: String {
+            "\(index) \"\(text)\""
+        }
+    }
+}
+
+extension KanbanError.ChecklistMatch {
+    /// Makes the match of an item of a body.
+    ///
+    /// - Parameter item: The checklist item.
+    init(_ item: ChecklistItem) {
+        self.init(index: item.index, text: String(item.text))
     }
 }
