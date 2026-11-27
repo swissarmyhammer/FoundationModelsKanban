@@ -38,6 +38,42 @@ comments:
     - swiftlint: the project has no .swiftlint.yml and CI has no lint step. A plain `swiftlint lint` in the repo root also reads the SwiftLint configs of the packages in .build, so it prints only a version warning (0.48.0 against 0.65.1) and exits 2. I ran `swiftlint lint --no-cache Sources Tests IntegrationTests` with the default rules. It gives 598 findings (300 trailing_comma, 69 file_length, 62 line_length). 548 of them are in files that this task did not change. Schema.swift already had 1406 lines at HEAD. No written project rule exists for lint, so I made no change. I did not reformat.
     - next: review
   timestamp: 2026-11-27T14:36:29.802830+00:00
+- actor: claude-code
+  id: 01m8eqcf34x452xdx7v32a8e4y
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (a9dbc24): 4 findings (4 confirmed, 2 refuted) — Sources/FoundationModelsKanban/Derived/ChecklistItemMatch.swift:91 (duplication/duplication), Sources/FoundationModelsKanban/Derived/ChecklistItemMatch.swift:91 (reuse/reuse), Sources/FoundationModelsKanban/GraphQL/SchemaDescription+Mutations.swift:616 (duplication/duplication), Tests/FoundationModelsKanbanTests/Derived/ChecklistItemAdditionTests.swift:57 (reuse/reuse)
+    - next: implement the 4 open items in the "Review Findings (2026-11-27 08:36)" section. The task stays in review.
+  timestamp: 2026-11-27T14:43:37.700368+00:00
+- actor: claude-code
+  id: 01m8eqegwrcvszajc0aazsjx0k
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 17 files
+    - test: green — swift test, 2072 passed in 177 suites
+    - commit: a9dbc24
+    - review: findings — Sources/FoundationModelsKanban/Derived/ChecklistItemMatch.swift:91 (x2), Sources/FoundationModelsKanban/GraphQL/SchemaDescription+Mutations.swift:616, Tests/FoundationModelsKanbanTests/Derived/ChecklistItemAdditionTests.swift:57
+  timestamp: 2026-11-27T14:44:45.080715+00:00
+- actor: claude-code
+  id: 01m8eqym44rg76xmcwp61t19tz
+  text: |-
+    Review findings of 2026-11-27 08:36: all 4 items are fixed.
+    - ChecklistItemMatch.swift: the new private predicate `hasSameText(_:key:)` holds the same-text rule. Step 2 of `textSteps(for:)` and `items(withTextLike:among:)` both use it. Steps 3 and 4 have different rules (prefix, part), so they stay.
+    - SchemaDescription+Mutations.swift: the cause is a `before` text and an `after` text that differ only by the side word. The file had this cause in three places: the checklist item fields, and the two `PlaceFields` values (`oneTask`, `taskBlock`). The new private `neighborText(of:placing:on:forms:rule:)` builds each `before` and `after` text from `NeighborSide`. `columnNeighborText(on:)`, the new `checklistItemNeighborText(on:)`, and the new `PlaceFields.init(ordinal:placing:)` call it. Each text is the same as before, so the golden SDL did not change.
+    - Tests: the new `Tests/FoundationModelsKanbanTests/KanbanErrorCapture.swift` has `KanbanErrorCapture.error(sourceLocation:of:)`, and `KanbanErrorCaptureTests.swift` tests it. `draftError` and `ChecklistItemMatchTests.error` call it.
+    - Discovery: a typed-throws closure literal `{ () throws(KanbanError) in throw x }` passed to the generic helper crashes the Swift compiler in IRGen. A plain throwing static function avoids the crash.
+
+    ### implement — changed
+    - evidence: `swift test`: 2073 tests in 178 suites passed, 0 failures. The only warning is the allowed SwiftPM "missing creator" warning for mlx-swift_Cmlx.bundle. 6 files: 2 new (Tests/FoundationModelsKanbanTests/KanbanErrorCapture.swift, Tests/FoundationModelsKanbanTests/KanbanErrorCaptureTests.swift), 4 changed (Sources/FoundationModelsKanban/Derived/ChecklistItemMatch.swift, Sources/FoundationModelsKanban/GraphQL/SchemaDescription+Mutations.swift, Tests/FoundationModelsKanbanTests/Derived/ChecklistItemAdditionTests.swift, Tests/FoundationModelsKanbanTests/Derived/ChecklistItemMatchTests.swift). 4 of 4 findings checked.
+    - next: /review
+  timestamp: 2026-11-27T14:53:32.676365+00:00
+- actor: claude-code
+  id: 01m8er27aqatpxt47ats2bdscv
+  text: |-
+    ### test — green
+    - evidence: swift test (full suite) — 2073 tests in 178 suites passed, 0 failed, 0 skipped; no compiler warnings other than the allowed mlx-swift Metal and SwiftPM missing creator warnings.
+    - next: review. Note: the log lines "skipped a line of a JSONL file" are runtime log output of tests that check that behavior. They are not compiler warnings.
+  timestamp: 2026-11-27T14:55:30.647920+00:00
 depends_on:
 - 01M8EKMNE2J1878SKPN89E0CYQ
 position_column: doing
@@ -80,4 +116,21 @@ input AddChecklistItemInput {
 - [x] Add schema descriptions, and update the SDL signature tests.
 - [x] Tests: the end of the checklist, an empty body, a body with no checklist, before and after by index and by text, a marker in the text, a conflict, a line break in the text, a duplicate text warning, a new tag marker, undo.
 - [x] Update SKILL.md and divergence.md.
+
+## Review Findings (2026-11-27 08:36)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 14 file(s) reviewed, 7 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 3 file(s) not reviewed — no validator matched:
+> - `Documentation/kanban/SKILL.md` — no validator matches this file
+> - `Tests/Fixtures/kanban.graphql` — no validator matches this file
+> - `divergence.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsKanban/Derived/ChecklistItemMatch.swift:91` `duplication/duplication` — The same-text predicate is written twice in this change. `items(withTextLike:among:)` filters with `comparisonKey(of: item.text) == key`. Step 2 of `textSteps(for:)` (line 65, unchanged) uses the same predicate. The rule that decides when two texts are the same now lives in two places, so a later change to one can drift from the other. Add one private predicate, for example `private static func hasSameText(_ item: ChecklistItem, key: String) -> Bool`, and use it in both the step closure and `items(withTextLike:among:)`. Or have step 2 call `items(withTextLike:among:)` and check for a single match.
+- [x] `Sources/FoundationModelsKanban/Derived/ChecklistItemMatch.swift:91` `reuse/reuse` — The new items(withTextLike:) builds its filter predicate, comparisonKey(of: item.text) == key, which is the same predicate as step 2 of textSteps(for:). The same text-equality rule now lives in two places. A later change to the rule could update one place and miss the other, so the two matches could diverge. Pull the predicate into one private helper, for example `private static func hasSameKey(_ item: ChecklistItem, _ key: String) -> Bool`, or a closure builder `sameKey(as:)`. Use it in the step 2 closure of textSteps(for:) and in items(withTextLike:). This keeps one definition of the rule.
+- [x] `Sources/FoundationModelsKanban/GraphQL/SchemaDescription+Mutations.swift:616` `duplication/duplication` — The description of `after` is a near-verbatim copy of the description of `before`. The two strings differ only by the words `before` and `after`. Each copy must be kept in step by hand, and the shared sentences can drift apart. Build both descriptions from one function that takes the word as an argument, for example `static func checklistItemPlacement(_ side: String) -> String`. Then `newChecklistItemBefore` and `newChecklistItemAfter` each call it with `"before"` or `"after"`.
+- [x] `Tests/FoundationModelsKanbanTests/Derived/ChecklistItemAdditionTests.swift:57` `reuse/reuse` — The draftError helper repeats the error-capture pattern of ChecklistItemMatchTests.error: it calls `#expect(throws: KanbanError.self)` around a throwing call, then `#require` the result. The same pattern is written twice in separate files, so a fix to one copy will not reach the other. The two helpers differ only in the throwing call, so a shared generic helper that takes a closure would serve both. Move the error-capture pattern into one shared test helper that takes a throwing closure and returns the KanbanError. Make draftError and ChecklistItemMatchTests.error call it, each passing its own throwing expression. Keep the per-test constants in their own files.
 #checklist #graphql-endpoint

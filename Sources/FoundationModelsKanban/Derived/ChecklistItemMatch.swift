@@ -62,7 +62,7 @@ enum ChecklistItemMatch {
         }
         return [
             { item in item.text == text },
-            { item in comparisonKey(of: item.text) == key },
+            { item in hasSameText(item, key: key) },
             { item in comparisonKey(of: item.text).hasPrefix(key) },
             { item in comparisonKey(of: item.text).contains(key) },
         ]
@@ -88,7 +88,17 @@ enum ChecklistItemMatch {
     /// - Returns: The items with the same text, in text order.
     static func items(withTextLike text: String, among items: [ChecklistItem]) -> [ChecklistItem] {
         let key = comparisonKey(of: text)
-        return items.filter { item in comparisonKey(of: item.text) == key }
+        return items.filter { item in hasSameText(item, key: key) }
+    }
+
+    /// Tells if the text of an item is the same as a text, with case and white space ignored.
+    ///
+    /// - Parameters:
+    ///   - item: The checklist item.
+    ///   - key: The ``comparisonKey(of:)`` of the text.
+    /// - Returns: True when the comparison key of the item text is the key.
+    private static func hasSameText(_ item: ChecklistItem, key: String) -> Bool {
+        comparisonKey(of: item.text) == key
     }
 
     /// Gives the form of a text for a match with case and white space ignored.

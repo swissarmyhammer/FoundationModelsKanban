@@ -54,8 +54,7 @@ struct ChecklistItemAdditionTests {
     ///   - checked: The `checked` value of the call.
     /// - Returns: The error.
     static func draftError(of text: String, checked: Bool? = nil) throws -> KanbanError {
-        let error = #expect(throws: KanbanError.self) { try ChecklistItemDraft(reading: text, checked: checked) }
-        return try #require(error)
+        try KanbanErrorCapture.error { try ChecklistItemDraft(reading: text, checked: checked) }
     }
 
     // MARK: - Draft

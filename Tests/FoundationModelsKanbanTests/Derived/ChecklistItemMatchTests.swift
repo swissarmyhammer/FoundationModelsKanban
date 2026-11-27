@@ -45,8 +45,7 @@ struct ChecklistItemMatchTests {
     /// - Parameter reference: The item ref as the caller wrote it.
     /// - Returns: The error.
     static func error(for reference: String) throws -> KanbanError {
-        let error = #expect(throws: KanbanError.self) { try index(for: reference) }
-        return try #require(error)
+        try KanbanErrorCapture.error { try index(for: reference) }
     }
 
     // MARK: - Steps

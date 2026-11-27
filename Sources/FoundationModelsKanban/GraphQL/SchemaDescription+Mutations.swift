@@ -368,12 +368,38 @@ extension SchemaDescription {
         live column, the call gives NOT_FOUND and writes nothing.
         """
 
+    /// Gives the description of a `before` or an `after` place field: the neighbor, the forms of its ref, and the
+    /// rule of the ref.
+    ///
+    /// - Parameters:
+    ///   - neighbor: The kind of the neighbor, for example "column".
+    ///   - placed: The thing that the call puts, for example "this column".
+    ///   - side: The place field.
+    ///   - forms: The forms of the ref.
+    ///   - rule: The sentences of the rule of the ref.
+    /// - Returns: The description, for example "The column to put this column before: …".
+    private static func neighborText(
+        of neighbor: String,
+        placing placed: String,
+        on side: NeighborSide,
+        forms: String,
+        rule: String
+    ) -> String {
+        "The \(neighbor) to put \(placed) \(side.rawValue): \(forms). \(rule)"
+    }
+
     /// Gives the description of the `before` or the `after` field of `MoveColumnInput` (divergence.md §25).
     ///
     /// - Parameter side: The place field.
     /// - Returns: The description, for example "The column to put this column before: …".
     private static func columnNeighborText(on side: NeighborSide) -> String {
-        "The column to put this column \(side.rawValue): \(slugForms(of: .column)). \(missingColumnNeighbor)"
+        neighborText(
+            of: "column",
+            placing: "this column",
+            on: side,
+            forms: slugForms(of: .column),
+            rule: missingColumnNeighbor
+        )
     }
 
     /// The `before` field of `MoveColumnInput` (divergence.md §25).
@@ -494,14 +520,40 @@ extension SchemaDescription {
         /// The description of the `after` field (divergence.md P1).
         let after: String
 
+        /// Makes the place fields of a move or a copy.
+        ///
+        /// - Parameters:
+        ///   - ordinal: The description of the `ordinal` field.
+        ///   - placed: The tasks that the call puts, for example "this task".
+        init(ordinal: String, placing placed: String) {
+            self.ordinal = ordinal
+            before = Self.taskNeighborText(placing: placed, on: .before)
+            after = Self.taskNeighborText(placing: placed, on: .after)
+        }
+
+        /// Gives the description of the `before` or the `after` field of a move or a copy (divergence.md P1).
+        ///
+        /// - Parameters:
+        ///   - placed: The tasks that the call puts.
+        ///   - side: The place field.
+        /// - Returns: The description, for example "The task to put this task before: …".
+        private static func taskNeighborText(placing placed: String, on side: NeighborSide) -> String {
+            neighborText(
+                of: "task",
+                placing: placed,
+                on: side,
+                forms: "a full URI or a short form",
+                rule: missingNeighbor
+            )
+        }
+
         /// The place fields of `MoveTaskInput` and `CopyTaskInput`: the place of one task.
         static let oneTask = PlaceFields(
             ordinal: """
                 The place in the column, as a fractional index. No ordinal, before, or after puts the task at the end \
                 of the column.
                 """,
-            before: "The task to put this task before: a full URI or a short form. \(missingNeighbor)",
-            after: "The task to put this task after: a full URI or a short form. \(missingNeighbor)"
+            placing: "this task"
         )
 
         /// The place fields of `MoveTasksInput`: the place of the block of tasks (divergence.md §20).
@@ -510,8 +562,7 @@ extension SchemaDescription {
                 The place of the first task in the column, as a fractional index. Each next task goes after the task \
                 before it. No ordinal, before, or after puts the tasks at the end of the column.
                 """,
-            before: "The task to put the tasks before: a full URI or a short form. \(missingNeighbor)",
-            after: "The task to put the tasks after: a full URI or a short form. \(missingNeighbor)"
+            placing: "the tasks"
         )
     }
 
@@ -605,17 +656,25 @@ extension SchemaDescription {
         the box in text, or an open box. A box in text with a different state gives CONFLICTING_ITEM_STATE.
         """
 
+    /// Gives the description of the `before` or the `after` field of `AddChecklistItemInput` (divergence.md §31).
+    ///
+    /// - Parameter side: The place field.
+    /// - Returns: The description, for example "The item to put the new item before: …".
+    private static func checklistItemNeighborText(on side: NeighborSide) -> String {
+        neighborText(
+            of: "item",
+            placing: "the new item",
+            on: side,
+            forms: #"an index from 0, for example 2 or "2", or the text of the item"#,
+            rule: "The match is the match of item in updateChecklistItem. The new item gets the indent of this item."
+        )
+    }
+
     /// The `before` field of `AddChecklistItemInput` (divergence.md §31).
-    static let newChecklistItemBefore = """
-        The item to put the new item before: an index from 0, for example 2 or "2", or the text of the item. The \
-        match is the match of item in updateChecklistItem. The new item gets the indent of this item.
-        """
+    static let newChecklistItemBefore = checklistItemNeighborText(on: .before)
 
     /// The `after` field of `AddChecklistItemInput` (divergence.md §31).
-    static let newChecklistItemAfter = """
-        The item to put the new item after: an index from 0, for example 2 or "2", or the text of the item. The match \
-        is the match of item in updateChecklistItem. The new item gets the indent of this item.
-        """
+    static let newChecklistItemAfter = checklistItemNeighborText(on: .after)
 
     // MARK: - Comment inputs
 
