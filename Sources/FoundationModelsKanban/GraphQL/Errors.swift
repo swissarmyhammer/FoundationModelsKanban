@@ -140,10 +140,10 @@ enum KanbanError: CodedError, Hashable {
     /// field is the name of that field or argument.
     case unreachableBoards(field: String)
 
-    /// `NOT_FOUND`: no checklist item of the task matches an item ref of `updateChecklistItem` or `addChecklistItem`
-    /// (divergence.md §30, §31). The task and the item are the refs as the call wrote them. The items are each item of
-    /// the body, with its index, so that the next call can name one of them. The field is the input field of the item
-    /// ref, for example `item` or `before`.
+    /// `NOT_FOUND`: no checklist item of the task matches an item ref of `updateChecklistItem`, `addChecklistItem`, or
+    /// `deleteChecklistItem` (divergence.md §30, §31, §32). The task and the item are the refs as the call wrote them.
+    /// The items are each item of the body, with its index, so that the next call can name one of them. The field is
+    /// the input field of the item ref, for example `item` or `before`.
     case checklistItemNotFound(
         task: String,
         item: String,
@@ -151,9 +151,9 @@ enum KanbanError: CodedError, Hashable {
         field: String = checklistItemField
     )
 
-    /// `AMBIGUOUS_ITEM`: two or more checklist items of the task match an item ref of `updateChecklistItem` or
-    /// `addChecklistItem` at one step of the match (divergence.md §30, §31). The matches are these items, with their
-    /// indexes. The field is the input field of the item ref.
+    /// `AMBIGUOUS_ITEM`: two or more checklist items of the task match an item ref of `updateChecklistItem`,
+    /// `addChecklistItem`, or `deleteChecklistItem` at one step of the match (divergence.md §30, §31, §32). The matches
+    /// are these items, with their indexes. The field is the input field of the item ref.
     case ambiguousChecklistItem(
         task: String,
         item: String,
@@ -358,8 +358,8 @@ extension KanbanError {
     static let ownBoardCorrection = "Leave out the board ref, or name the board of that folder, and then send the "
         + "call again."
 
-    /// The input field of the item ref of `updateChecklistItem`: the field of a checklist item error that names no
-    /// other field (divergence.md §30).
+    /// The input field of the item ref of `updateChecklistItem` and `deleteChecklistItem`: the field of a checklist
+    /// item error that names no other field (divergence.md §30, §32).
     static let checklistItemField = "item"
 
     /// Gives the message of ``checklistItemNotFound(task:item:items:field:)``.
@@ -369,7 +369,8 @@ extension KanbanError {
     ///   - item: The item ref as the call wrote it.
     ///   - items: Each checklist item of the task.
     ///   - field: The input field of the item ref.
-    /// - Returns: The message. It lists the items, or tells how to add one when the task has none.
+    /// - Returns: The message. It lists the items. When the task has none, it tells how to add one, in words that are
+    ///   correct for each checklist mutation.
     private static func checklistItemNotFoundMessage(
         task: String,
         item: String,
@@ -378,8 +379,8 @@ extension KanbanError {
     ) -> String {
         let problem = "No checklist item of the task \"\(task)\" matches \"\(item)\", so the call wrote nothing."
         guard !items.isEmpty else {
-            return problem + " The body of the task has no checklist line. Add an item with "
-                + "\(MutationName.addChecklistItem) and no before or after, and then send the call again."
+            return problem + " The body of the task has no checklist line, so no item can match. To add an item, use "
+                + "\(MutationName.addChecklistItem) with no before or after."
         }
         return problem + " The items are: \(items.map(\.label).joined(separator: Self.listSeparator)). Give the "
             + "index or the text of one item as \(field), and then send the call again."
@@ -488,7 +489,8 @@ extension KanbanError {
 // MARK: - Checklist item
 
 extension KanbanError {
-    /// One checklist item that an error of `updateChecklistItem` or `addChecklistItem` lists (divergence.md §30, §31).
+    /// One checklist item that an error of `updateChecklistItem`, `addChecklistItem`, or `deleteChecklistItem` lists
+    /// (divergence.md §30, §31, §32).
     struct ChecklistMatch: Hashable, Sendable {
         /// The index of the item among the items of the body, from 0.
         let index: Int

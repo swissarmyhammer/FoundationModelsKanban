@@ -120,8 +120,8 @@ struct TaskChange {
     let edges: [String: [StoredRef]]
 }
 
-/// The result of the body of one `addTask`, `updateTask`, or `updateChecklistItem` field: the task, and the warnings
-/// of the field.
+/// The result of the body of one `addTask` field, one `updateTask` field, or one checklist field: the task, and the
+/// warnings of the field.
 struct TaskWrite: Sendable {
     /// The local ref of the task.
     let ref: LocalRef
@@ -229,8 +229,8 @@ extension KanbanResolver {
 }
 
 extension KanbanContext {
-    /// Runs one `addTask`, `updateTask`, or `updateChecklistItem` field with ``runMutation(named:on:_:)``, and adds
-    /// the warnings of the field to the warnings of the run.
+    /// Runs one `addTask` field, one `updateTask` field, or one checklist field with ``runMutation(named:on:_:)``, and
+    /// adds the warnings of the field to the warnings of the run.
     ///
     /// - Parameters:
     ///   - operation: The name of the public mutation of the field.
@@ -250,6 +250,35 @@ extension KanbanContext {
         }
         await warnings.add(contentsOf: changed.value.warnings)
         return changed.view.object(of: changed.value.ref)
+    }
+
+    /// Runs one checklist field (`updateChecklistItem`, `addChecklistItem`, or `deleteChecklistItem`) with
+    /// ``changeTask(named:on:_:)``: finds the live task, gives its body to the edit, and writes the new body as the
+    /// body diff of `updateTask` (divergence.md §30, §31, §32). Thus undo, the change stream, the tag markers, the
+    /// dependency markers, and the timeline work with the field.
+    ///
+    /// - Parameters:
+    ///   - operation: The name of the public mutation of the field.
+    ///   - id: The task ref as the call wrote it.
+    ///   - board: The board of a short task ref, or `nil` for the current board
+    ///     (``MutationBoard/holding(_:orNamed:)``).
+    ///   - edit: Gives the new body and the warnings of the field from the current body.
+    /// - Returns: The task after the change, or `nil` when the engine did not load the board yet.
+    /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live task has the id. The error of the edit. The
+    ///   errors of ``changeTask(named:on:_:)``.
+    func changeTaskBody(
+        named operation: String,
+        of id: NodeID,
+        inBoard board: String?,
+        _ edit: sending (String) throws -> (body: String, warnings: [ResponseWarning])
+    ) async throws -> TaskObject? {
+        try await changeTask(named: operation, on: .holding(id, orNamed: board)) { work, resolver, time in
+            let ref = try resolver.nodeRef(for: id, ofType: .task)
+            let edited = try edit(work.graph.body(of: ref))
+            let change = TaskChange(values: [:], body: .changed(edited.body), edges: [:])
+            let warnings = try work.write(change, toTask: ref, inBoard: resolver.boardKey, at: time)
+            return TaskWrite(ref: ref, warnings: warnings + edited.warnings)
+        }
     }
 }
 

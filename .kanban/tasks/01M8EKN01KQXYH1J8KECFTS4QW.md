@@ -74,10 +74,26 @@ comments:
     - evidence: swift test (full suite) — 2073 tests in 178 suites passed, 0 failed, 0 skipped; no compiler warnings other than the allowed mlx-swift Metal and SwiftPM missing creator warnings.
     - next: review. Note: the log lines "skipped a line of a JSONL file" are runtime log output of tests that check that behavior. They are not compiler warnings.
   timestamp: 2026-11-27T14:55:30.647920+00:00
+- actor: claude-code
+  id: 01m8er5y27ceqc28ztk714wvsy
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (f4d7ca9): 0 findings, 0 confirmed, 1 refuted, 7 attempted, 0 failed. 6 files reviewed. All 4 items of "Review Findings (2026-11-27 08:36)" are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-11-27T14:57:32.231658+00:00
+- actor: claude-code
+  id: 01m8er68f2400k8v153hvpmptm
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 6 files, 4/4 findings checked
+    - test: green — swift test, 2073 passed in 178 suites
+    - commit: f4d7ca9
+    - review: clean — 0 findings; task in done
+  timestamp: 2026-11-27T14:57:42.882152+00:00
 depends_on:
 - 01M8EKMNE2J1878SKPN89E0CYQ
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffd480
 title: Add the addChecklistItem mutation
 ---
 ## Goal

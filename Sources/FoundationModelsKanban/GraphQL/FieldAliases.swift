@@ -159,11 +159,15 @@ enum KanbanFieldAliases {
     /// The aliases of the state of a checklist item (divergence.md §30, §31).
     private static let checklistItemChecked = ["done", "isChecked", "isDone", "complete", "completed"]
 
+    /// The aliases of the item ref of `UpdateChecklistItemInput` and `DeleteChecklistItemInput` (divergence.md §30,
+    /// §32).
+    private static let checklistItemReference = ["subtask", "checklistItem", "index", "line"]
+
     /// The aliases of the fields of `UpdateChecklistItemInput` (divergence.md §30): the task, the item, the state, and
     /// the text.
     private static let checklistItemChange = [
         "id": taskID,
-        "item": ["subtask", "checklistItem", "index", "line"],
+        "item": checklistItemReference,
         "checked": checklistItemChecked,
         "text": ["newText", "title", "name"],
     ]
@@ -177,6 +181,9 @@ enum KanbanFieldAliases {
         "before": ["beforeItem", "beforeIndex", "above"],
         "after": ["afterItem", "afterIndex", "below"],
     ]
+
+    /// The aliases of the fields of `DeleteChecklistItemInput` (divergence.md §32): the task and the item.
+    private static let checklistItemDeletion = ["id": taskID, "item": checklistItemReference]
 
     /// The aliases of the fields of `AssignTaskInput` and `UnassignTaskInput`: the task and the actor.
     private static let taskAssignee = ["id": taskID, "actor": ["assignee", "actorId", "user", "who"]]
@@ -211,6 +218,9 @@ enum KanbanFieldAliases {
             "redoChange": ["redo"], "rejectTask": ["rejectReview"],
             "updateChecklistItem": ["checkSubtask", "updateSubtask", "checkItem"],
             "addChecklistItem": ["addSubtask", "addItem", "appendSubtask"],
+            "deleteChecklistItem": [
+                "deleteSubtask", "deleteItem", "removeChecklistItem", "removeSubtask", "removeItem",
+            ],
         ],
         "Subscription": ["changes": ["kanbanChanges"]],
         "AddTaskInput": [
@@ -235,6 +245,7 @@ enum KanbanFieldAliases {
         "RejectTaskInput": taskReject,
         "UpdateChecklistItemInput": checklistItemChange,
         "AddChecklistItemInput": checklistItemAddition,
+        "DeleteChecklistItemInput": checklistItemDeletion,
         "AddCommentInput": ["task": commentTask, "actor": ["author", "user"]],
         "UpdateCommentInput": commentReference,
         "DeleteCommentInput": commentReference,

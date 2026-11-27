@@ -443,8 +443,8 @@ struct KanbanErrorTests {
         #expect(
             KanbanError.checklistItemNotFound(task: "^aaaaaaa", item: "0", items: []).message
                 == "No checklist item of the task \"^aaaaaaa\" matches \"0\", so the call wrote nothing. The body "
-                + "of the task has no checklist line. Add an item with addChecklistItem and no before or after, and "
-                + "then send the call again."
+                + "of the task has no checklist line, so no item can match. To add an item, use addChecklistItem with "
+                + "no before or after."
         )
     }
 

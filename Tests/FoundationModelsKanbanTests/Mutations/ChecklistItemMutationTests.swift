@@ -90,6 +90,29 @@ struct ChecklistItemMutationTests {
         return try KanbanGraphTests.object(named: name, in: response)["body"] as? String
     }
 
+    /// Runs one checklist field on the fixture task with a body, then one `undoChange` of its transaction, and gives
+    /// the task after the undo.
+    ///
+    /// The test fails when the field writes a different set of transactions than its own one.
+    ///
+    /// - Parameters:
+    ///   - body: The body of the task before the call.
+    ///   - makeField: Gives the field, with a `body` selection, from the ULID of the task.
+    /// - Returns: The response JSON text of a query of the body of the task after the undo.
+    static func bodyAfterUndo(of body: String, field makeField: (ULID) -> String) async throws -> String {
+        let directory = try TemporaryDirectory()
+        let fixture = try await taskWithBody(body, in: directory)
+        let document = AddUpdateTaskTests.mutation(of: makeField(fixture.task))
+        let call = try await ResponseTransactionTests.run(document, on: fixture.graph, in: directory)
+        let txn = try ResponseTransactionTests.transaction(of: call.response)
+        #expect(call.written == [txn], "\(call.response)")
+        let undo = UndoTests.reverseField(MutationName.undoChange, with: #"txn: "\#(txn)""#)
+        _ = try await CommentTests.run(undo, on: fixture.graph)
+        let task = try await CommentTests.respond(toQueryOf: fixture.task, selecting: bodySelection, on: fixture.graph)
+        await fixture.graph.close()
+        return task
+    }
+
     /// Runs one `updateChecklistItem` field that fails, and gives its error.
     ///
     /// - Parameters:
@@ -186,21 +209,9 @@ struct ChecklistItemMutationTests {
 
     @Test("One undoChange of the call gives back the old body")
     func undoGivesBackOldBody() async throws {
-        let directory = try TemporaryDirectory()
-        let fixture = try await Self.taskWithBody(Self.twoOpenItems, in: directory)
-        let field = Self.itemField(of: fixture.task, with: #"item: "0", checked: true"#)
-        let document = AddUpdateTaskTests.mutation(of: field)
-        let call = try await ResponseTransactionTests.run(document, on: fixture.graph, in: directory)
-        let txn = try ResponseTransactionTests.transaction(of: call.response)
-        #expect(call.written == [txn], "\(call.response)")
-        let undo = UndoTests.reverseField(MutationName.undoChange, with: #"txn: "\#(txn)""#)
-        _ = try await CommentTests.run(undo, on: fixture.graph)
-        let task = try await CommentTests.respond(
-            toQueryOf: fixture.task,
-            selecting: Self.bodySelection,
-            on: fixture.graph
-        )
-        await fixture.graph.close()
+        let task = try await Self.bodyAfterUndo(of: Self.twoOpenItems) { task in
+            Self.itemField(of: task, with: #"item: "0", checked: true"#)
+        }
         #expect(task == #"{"data":{"board":{"task":{"body":"- [ ] one\n- [ ] two"}}}}"#)
     }
 

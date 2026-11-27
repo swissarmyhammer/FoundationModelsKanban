@@ -159,6 +159,13 @@ extension SchemaDescription {
         after put the item after the last checklist item, or at the end of a body that has no checklist item.
         """
 
+    /// The `Mutation.deleteChecklistItem` field (divergence.md §32).
+    static let deleteChecklistItem = """
+        Removes one checklist item from the body of a task: the line of the item and its line break. Each other line \
+        of the body does not change. If the item is on the last line and that line has no line break, the line break \
+        before it also goes away. An item ref that names no item gives NOT_FOUND, and the call writes nothing.
+        """
+
     /// The `Mutation.moveTask` field.
     static let moveTask = """
         Moves a task to a column and to a place in that column. No place puts the task at the end of the column. A \
@@ -675,6 +682,12 @@ extension SchemaDescription {
 
     /// The `after` field of `AddChecklistItemInput` (divergence.md §31).
     static let newChecklistItemAfter = checklistItemNeighborText(on: .after)
+
+    /// The `DeleteChecklistItemInput` type (divergence.md §32).
+    static let deleteChecklistItemInput = """
+        The fields of deleteChecklistItem. The call removes the item that item names, and gives the task after the \
+        change.
+        """
 
     // MARK: - Comment inputs
 

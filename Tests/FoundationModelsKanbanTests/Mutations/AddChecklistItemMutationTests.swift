@@ -109,20 +109,9 @@ struct AddChecklistItemMutationTests {
 
     @Test("One undoChange of the call gives back the old body")
     func undoGivesBackOldBody() async throws {
-        let directory = try TemporaryDirectory()
-        let fixture = try await ChecklistItemMutationTests.taskWithBody(Self.twoOpenItems, in: directory)
-        let document = AddUpdateTaskTests.mutation(of: Self.addField(of: fixture.task, with: #"text: "three""#))
-        let call = try await ResponseTransactionTests.run(document, on: fixture.graph, in: directory)
-        let txn = try ResponseTransactionTests.transaction(of: call.response)
-        #expect(call.written == [txn], "\(call.response)")
-        let undo = UndoTests.reverseField(MutationName.undoChange, with: #"txn: "\#(txn)""#)
-        _ = try await CommentTests.run(undo, on: fixture.graph)
-        let task = try await CommentTests.respond(
-            toQueryOf: fixture.task,
-            selecting: Self.bodySelection,
-            on: fixture.graph
-        )
-        await fixture.graph.close()
+        let task = try await ChecklistItemMutationTests.bodyAfterUndo(of: Self.twoOpenItems) { task in
+            Self.addField(of: task, with: #"text: "three""#)
+        }
         #expect(task == #"{"data":{"board":{"task":{"body":"- [ ] one\n- [ ] two"}}}}"#)
     }
 

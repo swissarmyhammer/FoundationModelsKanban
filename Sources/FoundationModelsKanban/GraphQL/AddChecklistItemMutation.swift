@@ -74,26 +74,23 @@ extension KanbanResolver {
     /// - Throws: The errors of ``ChecklistItemDraft/init(reading:checked:)`` when the text is not one item.
     ///   ``KanbanError/notFound(type:reference:)`` when no live task has the id. The errors of
     ///   ``ChecklistItemAddition/init(adding:to:before:after:ofTask:)`` when the place is not clear. The errors of
-    ///   ``WorkingCopy/write(_:toTask:inBoard:at:)``.
+    ///   ``KanbanContext/changeTaskBody(named:of:inBoard:_:)``.
     fileprivate func addChecklistItem(
         context: KanbanContext,
         arguments: InputArguments<AddChecklistItemInput>
     ) async throws -> TaskObject? {
         let input = arguments.input
         let draft = try ChecklistItemDraft(reading: input.text, checked: input.checked)
-        let board = MutationBoard.holding(input.id, orNamed: input.board)
-        return try await context.changeTask(named: MutationName.addChecklistItem, on: board) { work, resolver, time in
-            let ref = try resolver.nodeRef(for: input.id, ofType: .task)
+        let name = MutationName.addChecklistItem
+        return try await context.changeTaskBody(named: name, of: input.id, inBoard: input.board) { body in
             let addition = try ChecklistItemAddition(
                 adding: draft,
-                to: work.graph.body(of: ref),
+                to: body,
                 before: input.before?.text,
                 after: input.after?.text,
                 ofTask: input.id.text
             )
-            let change = TaskChange(values: [:], body: .changed(addition.body), edges: [:])
-            let warnings = try work.write(change, toTask: ref, inBoard: resolver.boardKey, at: time)
-            return TaskWrite(ref: ref, warnings: warnings + addition.sameTextWarnings(ofTask: input.id.text))
+            return (addition.body, addition.sameTextWarnings(ofTask: input.id.text))
         }
     }
 }

@@ -106,26 +106,22 @@ extension KanbanResolver {
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live task has the id.
     ///   ``KanbanError/checklistItemNotFound(task:item:items:field:)`` and
     ///   ``KanbanError/ambiguousChecklistItem(task:item:matches:field:)`` when the item ref does not name one item.
-    ///   The errors of ``WorkingCopy/write(_:toTask:inBoard:at:)``.
+    ///   The errors of ``KanbanContext/changeTaskBody(named:of:inBoard:_:)``.
     fileprivate func updateChecklistItem(
         context: KanbanContext,
         arguments: InputArguments<UpdateChecklistItemInput>
     ) async throws -> TaskObject? {
         let input = arguments.input
-        let board = MutationBoard.holding(input.id, orNamed: input.board)
         let name = MutationName.updateChecklistItem
-        let task = try await context.changeTask(named: name, on: board) { work, resolver, time in
-            let ref = try resolver.nodeRef(for: input.id, ofType: .task)
-            let body = try ChecklistItemUpdate.body(
-                work.graph.body(of: ref),
+        let task = try await context.changeTaskBody(named: name, of: input.id, inBoard: input.board) { body in
+            let edited = try ChecklistItemUpdate.body(
+                body,
                 changing: input.item.text,
                 checking: input.checked,
                 text: input.text,
                 ofTask: input.id.text
             )
-            let change = TaskChange(values: [:], body: .changed(body), edges: [:])
-            let warnings = try work.write(change, toTask: ref, inBoard: resolver.boardKey, at: time)
-            return TaskWrite(ref: ref, warnings: warnings)
+            return (edited, [])
         }
         if input.checked == nil, input.text == nil {
             await context.warnings.add(contentsOf: [ChecklistItemUpdate.nothingToChangeWarning])
