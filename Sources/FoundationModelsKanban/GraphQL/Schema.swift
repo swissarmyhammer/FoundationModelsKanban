@@ -1392,6 +1392,7 @@ struct PublicSchema: API {
                 .addTaskMutations()
                 .addTaskOperationMutations()
                 .addChecklistItemMutation()
+                .addChecklistItemAdditionMutation()
                 .addTaskTransferMutations()
                 .addCommentMutations()
                 .addRejectTaskMutation()

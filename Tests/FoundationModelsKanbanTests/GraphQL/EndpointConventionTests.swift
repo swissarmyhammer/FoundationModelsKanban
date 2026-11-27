@@ -85,6 +85,7 @@ struct EndpointConventionTests {
         RefResolver.sharedTitleSlugWarningCode,
         GraphQLRemovedParameter.warningCode,
         ChecklistItemUpdate.nothingToChangeWarningCode,
+        ChecklistItemAddition.sameTextWarningCode,
     ]
 
     /// The code of the warning of the toolkit when it reads a raw line break in a quoted string as `\n`. The toolkit

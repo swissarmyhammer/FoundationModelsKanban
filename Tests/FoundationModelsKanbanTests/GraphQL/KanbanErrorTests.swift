@@ -67,6 +67,8 @@ struct KanbanErrorTests {
         (.boardBusy(attempts: commitAttempts), "BOARD_BUSY"),
         (.incompatibleBoard(directory: rustBoardPath), "INCOMPATIBLE_BOARD"),
         (.ambiguousChecklistItem(task: "^aaaaaaa", item: "add", matches: checklistMatches), "AMBIGUOUS_ITEM"),
+        (.emptyChecklistItemText, "INVALID_ITEM_TEXT"),
+        (.conflictingChecklistItemState(text: "- [x] a", checked: false), "CONFLICTING_ITEM_STATE"),
     ]
 
     /// The two checklist items of the `updateChecklistItem` error tests (divergence.md §30).
@@ -75,10 +77,13 @@ struct KanbanErrorTests {
         KanbanError.ChecklistMatch(index: 1, text: "Add a doc"),
     ]
 
-    /// The error of a checklist item ref that names no item (divergence.md §30). It has the code of the node error in
-    /// ``codes``, so the test of distinct codes does not read it.
+    /// The errors of the checklist mutations that share a code of ``codes`` (divergence.md §30, §31): a checklist item
+    /// ref that names no item, a new item text with a line break, and a `before` and an `after` that name different
+    /// places. The test of distinct codes does not read them.
     static let checklistItemCodes: [(KanbanError, String)] = [
         (.checklistItemNotFound(task: "^aaaaaaa", item: "deploy", items: checklistMatches), "NOT_FOUND"),
+        (.multilineChecklistItemText(text: "a\nb"), "INVALID_ITEM_TEXT"),
+        (.conflictingChecklistPlacement(task: "^aaaaaaa", before: "0", after: "1"), "CONFLICTING_PLACEMENT"),
     ]
 
     /// The old version of the task in the `STALE_WRITE` tests: the version that the caller read.
@@ -438,8 +443,69 @@ struct KanbanErrorTests {
         #expect(
             KanbanError.checklistItemNotFound(task: "^aaaaaaa", item: "0", items: []).message
                 == "No checklist item of the task \"^aaaaaaa\" matches \"0\", so the call wrote nothing. The body "
-                + "of the task has no checklist line. Add a line such as - [ ] <text> to the body with updateTask, "
-                + "and then send the call again."
+                + "of the task has no checklist line. Add an item with addChecklistItem and no before or after, and "
+                + "then send the call again."
+        )
+    }
+
+    @Test("NOT_FOUND of a checklist item names the field of the ref")
+    func checklistItemNotFoundNamesField() {
+        let error = KanbanError.checklistItemNotFound(
+            task: "^aaaaaaa",
+            item: "deploy",
+            items: Self.checklistMatches,
+            field: "before"
+        )
+        #expect(error.message.hasSuffix("Give the index or the text of one item as before, and then send the call "
+            + "again."))
+    }
+
+    @Test("AMBIGUOUS_ITEM names the field of the ref")
+    func ambiguousChecklistItemNamesField() {
+        let error = KanbanError.ambiguousChecklistItem(
+            task: "^aaaaaaa",
+            item: "add",
+            matches: Self.checklistMatches,
+            field: "after"
+        )
+        #expect(error.message.hasSuffix("Give the index of one item as after, and then send the call again."))
+    }
+
+    @Test("INVALID_ITEM_TEXT of an empty text asks for the text of the item")
+    func emptyChecklistItemTextMessage() {
+        #expect(
+            KanbanError.emptyChecklistItemText.message
+                == "The text of the new checklist item is empty, so the call wrote nothing. Give the text of the "
+                + "item, for example text: \"Add a test\", and then send the call again."
+        )
+    }
+
+    @Test("INVALID_ITEM_TEXT of a text with a line break asks for one call for each item")
+    func multilineChecklistItemTextMessage() {
+        #expect(
+            KanbanError.multilineChecklistItemText(text: "a\nb").message
+                == "The text \"a\nb\" has a line break, so it is not one checklist item, and the call wrote "
+                + "nothing. Send one call for each item, and then send the call again."
+        )
+    }
+
+    @Test("CONFLICTING_ITEM_STATE names the box of the text and the value of checked")
+    func conflictingChecklistItemStateMessage() {
+        #expect(
+            KanbanError.conflictingChecklistItemState(text: "- [x] a", checked: false).message
+                == "The text \"- [x] a\" has a checked box, and checked is false, so the state of the new item is "
+                + "not clear, and the call wrote nothing. Remove the box from the text, or give the state of the box "
+                + "as checked, and then send the call again."
+        )
+    }
+
+    @Test("CONFLICTING_PLACEMENT of a checklist item names the two refs")
+    func conflictingChecklistPlacementMessage() {
+        #expect(
+            KanbanError.conflictingChecklistPlacement(task: "^aaaaaaa", before: "0", after: "1").message
+                == "The before item \"0\" and the after item \"1\" of the task \"^aaaaaaa\" are not next to each "
+                + "other, so the place of the new item is not clear, and the call wrote nothing. Give only one of "
+                + "before and after, or give two items that are next to each other, and then send the call again."
         )
     }
 

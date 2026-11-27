@@ -104,9 +104,9 @@ extension KanbanResolver {
     /// - Returns: The task after the change. The GraphQL field is nullable, so that an error gives `null` for this
     ///   field only.
     /// - Throws: ``KanbanError/notFound(type:reference:)`` when no live task has the id.
-    ///   ``KanbanError/checklistItemNotFound(task:item:items:)`` and
-    ///   ``KanbanError/ambiguousChecklistItem(task:item:matches:)`` when the item ref does not name one item. The
-    ///   errors of ``WorkingCopy/write(_:toTask:inBoard:at:)``.
+    ///   ``KanbanError/checklistItemNotFound(task:item:items:field:)`` and
+    ///   ``KanbanError/ambiguousChecklistItem(task:item:matches:field:)`` when the item ref does not name one item.
+    ///   The errors of ``WorkingCopy/write(_:toTask:inBoard:at:)``.
     fileprivate func updateChecklistItem(
         context: KanbanContext,
         arguments: InputArguments<UpdateChecklistItemInput>

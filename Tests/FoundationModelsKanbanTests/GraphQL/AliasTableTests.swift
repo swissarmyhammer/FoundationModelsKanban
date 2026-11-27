@@ -45,7 +45,7 @@ struct AliasTableTests {
     /// The task mutations whose `input` names the task in the field `id`.
     private static let taskOperations = [
         "updateTask", "moveTask", "completeTask", "assignTask", "unassignTask", "tagTask", "untagTask", "deleteTask",
-        "undeleteTask", "rejectTask", "updateChecklistItem",
+        "undeleteTask", "rejectTask", "updateChecklistItem", "addChecklistItem",
     ]
 
     /// The mutations whose `input` has the place fields of a move: the column and the neighbors.
@@ -76,11 +76,18 @@ struct AliasTableTests {
         AliasRow.rows(on: ["rejectTask"], mapping: rejectCommentNames, to: "comment"),
         AliasRow.rows(on: ["updateChecklistItem"], mapping: ["subtask", "checklistItem", "index", "line"], to: "item"),
         AliasRow.rows(
-            on: ["updateChecklistItem"],
+            on: ["updateChecklistItem", "addChecklistItem"],
             mapping: ["done", "isChecked", "isDone", "complete", "completed"],
             to: "checked"
         ),
         AliasRow.rows(on: ["updateChecklistItem"], mapping: ["newText", "title", "name"], to: "text"),
+        AliasRow.rows(
+            on: ["addChecklistItem"],
+            mapping: ["item", "subtask", "checklistItem", "title", "name"],
+            to: "text"
+        ),
+        AliasRow.rows(on: ["addChecklistItem"], mapping: ["beforeItem", "beforeIndex", "above"], to: "before"),
+        AliasRow.rows(on: ["addChecklistItem"], mapping: ["afterItem", "afterIndex", "below"], to: "after"),
         AliasRow.rows(
             on: ["addTask", "updateTask"] + placementOperations,
             mapping: ["state", "status", "lane", "col", "columnId", "column_id", "to", "toColumn"],

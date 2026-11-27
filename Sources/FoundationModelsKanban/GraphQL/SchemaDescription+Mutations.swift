@@ -153,6 +153,12 @@ extension SchemaDescription {
         body does not change. A second call with the same value changes nothing.
         """
 
+    /// The `Mutation.addChecklistItem` field (divergence.md §31).
+    static let addChecklistItem = """
+        Adds one checklist item to the body of a task. Each other line of the body does not change. No before and no \
+        after put the item after the last checklist item, or at the end of a body that has no checklist item.
+        """
+
     /// The `Mutation.moveTask` field.
     static let moveTask = """
         Moves a task to a column and to a place in that column. No place puts the task at the end of the column. A \
@@ -577,6 +583,38 @@ extension SchemaDescription {
     /// The `text` field of `UpdateChecklistItemInput` (divergence.md §30).
     static let checklistItemText = """
         The new text of the item, after its box. A line break becomes a space. No value keeps the text.
+        """
+
+    /// The `AddChecklistItemInput` type (divergence.md §31).
+    static let addChecklistItemInput = """
+        The fields of addChecklistItem. Give at most one of before and after. A before and an after that name two \
+        items next to each other are also correct. Other before and after items give CONFLICTING_PLACEMENT.
+        """
+
+    /// The `text` field of `AddChecklistItemInput` (divergence.md §31).
+    static let newChecklistItemText = """
+        The text of the new item. A box or a bullet at the start, for example - [ ], [x], or -, is removed, and a box \
+        gives the state when checked has no value. An empty text or a text with a line break gives \
+        INVALID_ITEM_TEXT. A #tag marker in the text adds the tag to the task. A text that a different item has gives \
+        the warning DUPLICATE_ITEM_TEXT.
+        """
+
+    /// The `checked` field of `AddChecklistItemInput` (divergence.md §31).
+    static let newChecklistItemChecked = """
+        The state of the new item: true gives a checked box, and false gives an open box. No value gives the state of \
+        the box in text, or an open box. A box in text with a different state gives CONFLICTING_ITEM_STATE.
+        """
+
+    /// The `before` field of `AddChecklistItemInput` (divergence.md §31).
+    static let newChecklistItemBefore = """
+        The item to put the new item before: an index from 0, for example 2 or "2", or the text of the item. The \
+        match is the match of item in updateChecklistItem. The new item gets the indent of this item.
+        """
+
+    /// The `after` field of `AddChecklistItemInput` (divergence.md §31).
+    static let newChecklistItemAfter = """
+        The item to put the new item after: an index from 0, for example 2 or "2", or the text of the item. The match \
+        is the match of item in updateChecklistItem. The new item gets the indent of this item.
         """
 
     // MARK: - Comment inputs

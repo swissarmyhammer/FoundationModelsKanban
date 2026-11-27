@@ -1441,6 +1441,39 @@ input UpdateChecklistItemInput {
 }
 
 """
+The fields of addChecklistItem. Give at most one of before and after. A before and an after that name two items next to each other are also correct. Other before and after items give CONFLICTING_PLACEMENT.
+"""
+input AddChecklistItemInput {
+  """The task: a full URI or a short form."""
+  id: ID!
+
+  """
+  The text of the new item. A box or a bullet at the start, for example - [ ], [x], or -, is removed, and a box gives the state when checked has no value. An empty text or a text with a line break gives INVALID_ITEM_TEXT. A #tag marker in the text adds the tag to the task. A text that a different item has gives the warning DUPLICATE_ITEM_TEXT.
+  """
+  text: String!
+
+  """
+  The state of the new item: true gives a checked box, and false gives an open box. No value gives the state of the box in text, or an open box. A box in text with a different state gives CONFLICTING_ITEM_STATE.
+  """
+  checked: Boolean
+
+  """
+  The item to put the new item before: an index from 0, for example 2 or "2", or the text of the item. The match is the match of item in updateChecklistItem. The new item gets the indent of this item.
+  """
+  before: ID
+
+  """
+  The item to put the new item after: an index from 0, for example 2 or "2", or the text of the item. The match is the match of item in updateChecklistItem. The new item gets the indent of this item.
+  """
+  after: ID
+
+  """
+  The board to change. A board key, a repo directory name, a repo path, or a kanban://<board-key> URI. No value changes the current board. The short refs of the input name nodes of this board.
+  """
+  board: String
+}
+
+"""
 The fields of copyTask. Give at most one of ordinal, before, and after.
 """
 input CopyTaskInput {
@@ -2136,6 +2169,16 @@ type Mutation {
     The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
     """
     input: UpdateChecklistItemInput!
+  ): Task
+
+  """
+  Adds one checklist item to the body of a task. Each other line of the body does not change. No before and no after put the item after the last checklist item, or at the end of a body that has no checklist item.
+  """
+  addChecklistItem(
+    """
+    The input object of the call. Its type tells what each field does. The input is required: a call that sets no field sends input: {}.
+    """
+    input: AddChecklistItemInput!
   ): Task
 
   """

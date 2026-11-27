@@ -29,7 +29,7 @@ struct ChecklistItemMutationTests {
     ///   - body: The body. Each line break is a `\n` escape in the GraphQL string.
     ///   - task: The ULID of the fixture task.
     /// - Returns: The document.
-    private static func bodySetup(_ body: String, of task: ULID) -> String {
+    static func bodySetup(_ body: String, of task: ULID) -> String {
         let escaped = body.replacingOccurrences(of: "\n", with: #"\n"#)
         return AddUpdateTaskTests.mutation(of: AddUpdateTaskTests.updateTask(task, with: #"body: "\#(escaped)""#))
     }
@@ -51,7 +51,7 @@ struct ChecklistItemMutationTests {
     ///   - body: The body of the fixture task.
     ///   - directory: The temporary repo directory.
     /// - Returns: The engine and the ULID of the fixture task.
-    private static func taskWithBody(
+    static func taskWithBody(
         _ body: String,
         in directory: TemporaryDirectory
     ) async throws -> (graph: KanbanGraph, task: ULID) {
@@ -67,12 +67,27 @@ struct ChecklistItemMutationTests {
     ///   - body: The body of the task before the call.
     /// - Returns: The body that the field gives.
     private static func bodyAfter(_ input: String, on body: String) async throws -> String? {
+        try await bodyAfter(mutationName, on: body) { task in itemField(of: task, with: input) }
+    }
+
+    /// Runs one checklist field on a task with a body, and gives the body after the call.
+    ///
+    /// - Parameters:
+    ///   - name: The response key of the field, for example `updateChecklistItem`.
+    ///   - body: The body of the task before the call.
+    ///   - makeField: Gives the field, with a `body` selection, from the ULID of the task.
+    /// - Returns: The body that the field gives.
+    static func bodyAfter(
+        _ name: String,
+        on body: String,
+        field makeField: (ULID) -> String
+    ) async throws -> String? {
         let directory = try TemporaryDirectory()
         let fixture = try await taskWithBody(body, in: directory)
-        let response = try await CommentTests.run(itemField(of: fixture.task, with: input), on: fixture.graph)
+        let response = try await CommentTests.run(makeField(fixture.task), on: fixture.graph)
         await fixture.graph.close()
         withExtendedLifetime(directory) {}
-        return try KanbanGraphTests.object(named: mutationName, in: response)["body"] as? String
+        return try KanbanGraphTests.object(named: name, in: response)["body"] as? String
     }
 
     /// Runs one `updateChecklistItem` field that fails, and gives its error.
@@ -82,9 +97,19 @@ struct ChecklistItemMutationTests {
     ///   - body: The body of the task before the call.
     /// - Returns: The error.
     private static func failure(of input: String, on body: String) async throws -> KanbanError {
+        try await failure(on: body) { task in itemField(of: task, with: input) }
+    }
+
+    /// Runs one checklist field that fails on the fixture task with a body, and gives its error.
+    ///
+    /// - Parameters:
+    ///   - body: The body of the task before the call.
+    ///   - makeField: Gives the field from the ULID of the task.
+    /// - Returns: The error.
+    static func failure(on body: String, field makeField: (ULID) -> String) async throws -> KanbanError {
         let task = try AddUpdateTaskTests.fixtureTask()
         return try await ColumnActorTests.failure(
-            of: AddUpdateTaskTests.mutation(of: itemField(of: task, with: input)),
+            of: AddUpdateTaskTests.mutation(of: makeField(task)),
             after: bodySetup(body, of: task),
             in: try TemporaryDirectory()
         )

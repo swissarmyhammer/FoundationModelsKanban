@@ -61,8 +61,24 @@ comments:
     - The `swift format lint` errors (78957, all repo-wide Indentation, LineLength and AddLines from the tool defaults) are not a gate of this project. The project has no .swift-format file, and earlier tasks (for example ^4ADZWD88DR notes, 2026-10-07) record that only the idiom rules apply. The tester reported stuck only because the orchestrator asked for the full format lint.
     - next: /commit, then /review HEAD~1..HEAD
   timestamp: 2026-11-27T14:14:38.742429+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m8ep0n6y6ktwq9p8xga1ynq7
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (abcba05): 0 findings, 0 confirmed, 2 refuted, 21 pairs attempted, 0 failed. No earlier Review Findings sections.
+    - next: none. The task is in done.
+  timestamp: 2026-11-27T14:19:42.174282+00:00
+- actor: claude-code
+  id: 01m8ep13hghsvbeydw6kr92dxg
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 18 files, then 7 files (item is ID!; the ID scalar accepts an integer)
+    - test: green — swift test, 2030 passed in 175 suites; swiftlint 0
+    - commit: abcba05
+    - review: clean — 0 findings; task in done
+  timestamp: 2026-11-27T14:19:56.848306+00:00
+position_column: done
+position_ordinal: ffd380
 title: Add the updateChecklistItem mutation
 ---
 ## Goal

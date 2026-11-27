@@ -17,7 +17,7 @@ Do the tasks of the kanban board.
 ## Use the board for all task tracking
 
 - The board is your todo list. Do not use TodoWrite, TaskCreate, or a different task tool. Use only `kanban`. The board is the one record for all agent sessions.
-- A subtask is one line of a GFM checklist (`- [ ]` or `- [x]`) in the `body` of the task. Put the checklist in the body when you add the task. To check off one subtask or to change its text, use `updateChecklistItem`. To add or remove subtasks, change the body with `updateTask`.
+- A subtask is one line of a GFM checklist (`- [ ]` or `- [x]`) in the `body` of the task. Put the checklist in the body when you add the task. To check off one subtask or to change its text, use `updateChecklistItem`. To add one subtask, use `addChecklistItem`. To remove subtasks, change the body with `updateTask`.
 
 ## Call the tool
 
@@ -134,6 +134,8 @@ return r.data.board.task;
 ### 4. Do each subtask, and check it off immediately
 
 After each subtask, check it off with `updateChecklistItem`. Do not wait to check off many subtasks together. `item` is the index of the subtask (`0` or `"0"` is the first) or its text. A part of the text is enough when only one subtask has it. `checked: true` checks the subtask, and `checked: false` unchecks it. A second call with the same value changes nothing. The call does not change the other lines of the body.
+
+When you find more work during the task, add a subtask with `addChecklistItem`, for example `addChecklistItem(input: { id: "fix-the-login-bug", text: "Add a regression test" })`. `text` is the text of the subtask, without a box. No `before` and no `after` put the subtask after the last subtask. `after: 0` puts it after the first subtask, and `before: "Find the cause"` puts it before that subtask. Send one call for each subtask. The call does not change the other lines of the body.
 
 ```js
 const r = await tools.kanban({
